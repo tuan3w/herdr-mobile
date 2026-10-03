@@ -18,19 +18,19 @@ connection, backoff and reconnect; one machine failing never affects another.
 ![herdr mobile](docs/screenshots/hero.png)
 
 <p>
-  <img src="docs/screenshots/agents.png" width="32%" alt="Agents across machines, grouped by what needs you">
+  <img src="docs/screenshots/board.png" width="32%" alt="Live board: previews and one-tap replies">
+  <img src="docs/screenshots/tabs.png" width="32%" alt="Browser-style tabs for open agents">
+  <img src="docs/screenshots/tray.png" width="32%" alt="Tab tray with a preview per agent">
+</p>
+<p>
   <img src="docs/screenshots/new-session.png" width="32%" alt="Start an agent session on any machine">
   <img src="docs/screenshots/pane.png" width="32%" alt="A live terminal pane, drawn cell by cell">
+  <img src="docs/screenshots/links.png" width="32%" alt="Links and file paths in agent output are tappable">
 </p>
 <p>
-  <img src="docs/screenshots/links.png" width="32%" alt="Links and file paths in agent output are tappable">
   <img src="docs/screenshots/files.png" width="32%" alt="Remote file viewer with line numbers">
   <img src="docs/screenshots/image.png" width="32%" alt="Remote image viewer with pinch to zoom">
-</p>
-<p>
-  <img src="docs/screenshots/needs-you.png" width="32%" alt="Status shown as shapes, readable without colour">
   <img src="docs/screenshots/machines.png" width="32%" alt="Machines">
-  <img src="docs/screenshots/tailscale.png" width="32%" alt="Tailscale SSH sign-in approval">
 </p>
 
 Regenerate with `tool/screenshots/run.sh` (renders a demo fleet through the real
@@ -43,6 +43,14 @@ widgets, then frames it; needs Pillow).
 - Agents board across all machines, grouped by urgency
   (blocked → working → done → idle) with a badge for what needs you.
 - Machine browser: workspaces → tabs → panes.
+- **Live board**: every agent is a card with a preview of its terminal's last
+  rows, the time it has been in its state, and, when it is blocked on a prompt,
+  one-tap answers taken from the prompt itself (`1. Yes`, `2. No`...). A
+  "N need you" pill steps through the blocked agents; answer from a sheet
+  without leaving the board. Working agents have a slowly stepping arc.
+- **Browser-style tabs** in the pane screen: a strip of open agents, a dot on a
+  background tab that needs you, and a tray with a preview card per tab. Each
+  tab keeps its scroll and history; only the visible one reads.
 - Live pane view in colour (truecolor/256/16, bold/dim/italic/underline),
   virtualized so a long scrollback stays at full frame rate. Type a line or
   send keys (esc, tab, ctrl+c, arrows, enter). Updates arrive on activity,
@@ -149,14 +157,15 @@ app/lib/
                     machine_connection.dart   one machine: snapshot + reconnect
                     fleet_repository.dart     all machines, merged agent list
                     terminal_settings.dart    pane font size + wrap mode, saved
+                    app_settings.dart         theme choice (light by default), saved
   ui/
     core/           theme, motion tokens, shared widgets, ansi parser,
                     terminal view: a cell grid (backgrounds and box drawing
                     painted per row, snapped to device pixels; see
                     terminal_cells.dart, box_drawing.dart), line wrapping
                     to the phone's width (line_wrap.dart), pinch to zoom
-    features/       agents/, machines/, pane/   (views + view models)
-    shell/          bottom navigation
+    features/       agents/, machines/, pane/, settings/   (views + view models)
+    shell/          bottom navigation (Agents, Machines, Settings)
 docs/herdr-api.schema.json   protocol schema, from `herdr api schema` (0.8.2)
 third_party/                 reference clones (not part of the build)
 .agents/skills/              Flutter + Dart skills (flutter/agent-plugins) and

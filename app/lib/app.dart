@@ -3,10 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'data/models/machine_profile.dart';
+import 'data/repositories/app_settings.dart';
 import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/machine_connection.dart';
 import 'data/repositories/machine_repository.dart';
 import 'data/repositories/new_session_settings.dart';
+import 'data/repositories/open_tabs.dart';
+import 'data/repositories/pane_previews.dart';
 import 'data/repositories/terminal_settings.dart';
 import 'data/services/herdr_api.dart';
 import 'data/services/network_monitor.dart';
@@ -24,6 +27,7 @@ class HerdrMobileApp extends StatefulWidget {
     required this.snapshotCache,
     required this.terminalSettings,
     required this.newSessionSettings,
+    required this.appSettings,
     this.connect,
   });
 
@@ -32,6 +36,9 @@ class HerdrMobileApp extends StatefulWidget {
   final SnapshotCache snapshotCache;
   final TerminalSettings terminalSettings;
   final NewSessionSettings newSessionSettings;
+
+  /// Already loaded, so the first frame is in the chosen theme.
+  final AppSettings appSettings;
 
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
@@ -47,6 +54,13 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     connect: widget.connect ?? _sshConnection,
     network: widget.network,
   );
+
+  /// Live terminal previews for the agent cards and pane tabs on screen.
+  late final PanePreviews _previews =
+      PanePreviews(changes: _fleet, connection: _fleet.connection);
+
+  /// The agents opened as tabs in the pane screen.
+  final OpenTabs _openTabs = OpenTabs();
 
   MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) {
     // The transport reports login banners; they belong to the connection it
@@ -74,12 +88,16 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) =>
-      _fleet.onLifecycleState(state);
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _fleet.onLifecycleState(state);
+    _previews.onLifecycleState(state);
+  }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _previews.dispose();
+    _openTabs.dispose();
     _fleet.dispose();
     super.dispose();
   }
@@ -91,27 +109,45 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           ChangeNotifierProvider.value(value: _fleet),
           ChangeNotifierProvider.value(value: widget.terminalSettings),
           ChangeNotifierProvider.value(value: widget.newSessionSettings),
+          ChangeNotifierProvider.value(value: widget.appSettings),
+          ChangeNotifierProvider.value(value: _openTabs),
+          Provider<PanePreviews>.value(value: _previews),
           Provider<TransportFactory>.value(value: createSshTransport),
         ],
-        child: MaterialApp(
-          title: 'herdr',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.light(),
-          darkTheme: AppTheme.dark(),
-          themeMode: ThemeMode.system,
-          // Lets the navigator and screens that opt in (non-secret form text,
-          // the selected tab) survive Android reclaiming the process.
-          restorationScopeId: 'herdr',
-          // One region for every screen, including ones without an AppBar
-          // (the empty state), so the bars never fall back to OEM defaults.
-          builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-                value: AppTheme.systemBars(Theme.of(context).brightness),
-                // Edge to edge draws under the bars; screens handle top and
-                // bottom themselves, but nothing else clears the side insets
-                // (landscape 3-button bar, camera cutout).
-                child: SafeArea(top: false, bottom: false, child: child!),
-              ),
-          home: const HomeShell(),
+        child: ListenableBuilder(
+          listenable: widget.appSettings,
+          builder: (context, _) => MaterialApp(
+            title: 'herdr',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            themeMode: themeModeOf(widget.appSettings.theme),
+            // A switch is instant: a cross-fade would lerp ThemeData on every
+            // frame and rebuild every mounted screen with it, including the
+            // hidden Agents board and a live pane.
+            themeAnimationDuration: Duration.zero,
+            // Lets the navigator and screens that opt in (non-secret form text,
+            // the selected tab) survive Android reclaiming the process.
+            restorationScopeId: 'herdr',
+            // One region for every screen, including ones without an AppBar
+            // (the empty state), so the bars never fall back to OEM defaults.
+            // The theme here is the resolved one, so `system` follows the phone.
+            builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+                  value: AppTheme.systemBars(Theme.of(context).brightness),
+                  // Edge to edge draws under the bars; screens handle top and
+                  // bottom themselves, but nothing else clears the side insets
+                  // (landscape 3-button bar, camera cutout).
+                  child: SafeArea(top: false, bottom: false, child: child!),
+                ),
+            home: const HomeShell(),
+          ),
         ),
       );
 }
+
+/// How a saved [ThemeChoice] maps onto the app's [ThemeMode].
+ThemeMode themeModeOf(ThemeChoice choice) => switch (choice) {
+      ThemeChoice.light => ThemeMode.light,
+      ThemeChoice.dark => ThemeMode.dark,
+      ThemeChoice.system => ThemeMode.system,
+    };

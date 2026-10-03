@@ -356,6 +356,112 @@ void main() {
     });
   });
 
+  group('paused (a background tab)', () {
+    _scenario('reads nothing while paused, however busy the pane is', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+
+      vm.pause();
+      f.flood(50, _ms(10));
+      async.elapse(const Duration(minutes: 1));
+
+      expect(f.reads, hasLength(1));
+      expect(vm.paused, isTrue);
+      expect(async.pendingTimers, isEmpty, reason: 'no poll waits to fire');
+      vm.dispose();
+    });
+
+    _scenario('keeps what it had, and resume reads at once, once', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+      vm.pause();
+      f.flood(20, _ms(10));
+      async.elapse(const Duration(seconds: 30));
+      final shownAt = async.elapsed;
+      f.text = 'newer';
+      expect(vm.text, 'one', reason: 'still the old text while hidden');
+
+      vm.resume();
+      async.flushMicrotasks();
+
+      expect(f.reads, [Duration.zero, shownAt],
+          reason: 'no replay of the events missed, no wait for the cooldown');
+      expect(vm.text, 'newer');
+      expect(vm.paused, isFalse);
+      async.elapse(const Duration(seconds: 4));
+      expect(f.reads, hasLength(3), reason: 'the poll runs again');
+      vm.dispose();
+    });
+
+    _scenario('a read in flight when it pauses still lands, then stays quiet', (async, f) {
+      f.latency = _ms(300);
+      final vm = f.vm();
+      async.elapse(_ms(100));
+
+      vm.pause();
+      async.elapse(const Duration(seconds: 20));
+
+      expect(vm.text, 'one');
+      expect(f.reads, hasLength(1));
+      expect(async.pendingTimers, isEmpty);
+      vm.dispose();
+    });
+
+    _scenario('pausing twice, or resuming a shown pane, does nothing', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+
+      vm.resume();
+      vm.pause();
+      vm.pause();
+      vm.resume();
+      vm.resume();
+      async.flushMicrotasks();
+
+      expect(f.reads, hasLength(2), reason: 'one on creation, one on the real resume');
+      vm.dispose();
+    });
+
+    _scenario('the app resuming does not read a pane that is paused', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+      vm.pause();
+
+      vm.didChangeAppLifecycleState(AppLifecycleState.paused);
+      vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      async.elapse(const Duration(seconds: 10));
+
+      expect(f.reads, hasLength(1));
+      vm.dispose();
+    });
+
+    _scenario('a wrap change while hidden is read from the new source on resume', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+      vm.pause();
+
+      vm.setWrap(true);
+      async.elapse(const Duration(seconds: 10));
+      expect(f.reads, hasLength(1), reason: 'hidden: not read yet');
+
+      vm.resume();
+      async.flushMicrotasks();
+
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(vm.text, 'one, unwrapped');
+      vm.dispose();
+    });
+
+    _scenario('pausing and disposing leaves no timers', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(50));
+      vm.pause();
+      vm.dispose();
+
+      expect(async.pendingTimers, isEmpty);
+    });
+  });
+
   group('state', () {
     _scenario('identical text does not notify', (async, f) {
       final vm = f.vm();

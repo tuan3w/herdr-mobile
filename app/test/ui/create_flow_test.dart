@@ -4,6 +4,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/repositories/open_tabs.dart';
+import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/core/controls.dart';
@@ -81,6 +83,11 @@ Future<void> _pump(
       ChangeNotifierProvider.value(value: h.fleet),
       ChangeNotifierProvider.value(value: h.settings),
       ChangeNotifierProvider.value(value: TerminalSettings(MemoryTerminalSettingsStore())),
+      ChangeNotifierProvider(create: (_) => OpenTabs()),
+      Provider<PanePreviews>(
+        create: (_) => PanePreviews(changes: h.fleet, connection: h.fleet.connection),
+        dispose: (_, previews) => previews.dispose(),
+      ),
       Provider<TransportFactory>.value(value: (p, s, a, b) => throw StateError('unused')),
     ],
     child: MaterialApp(

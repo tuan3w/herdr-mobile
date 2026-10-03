@@ -51,7 +51,10 @@ class MachineConnection extends ChangeNotifier {
     this.structuralDelay = const Duration(milliseconds: 150),
     this.churnInterval = const Duration(milliseconds: 1500),
     this.cacheWriteInterval = const Duration(seconds: 5),
+    this._clock = DateTime.now,
   });
+
+  final DateTime Function() _clock;
 
   final MachineProfile profile;
   final HerdrApi _api;
@@ -90,6 +93,9 @@ class MachineConnection extends ChangeNotifier {
 
   Timer? _persistTimer;
   bool _persistDirty = false;
+
+  final Map<String, ({AgentStatus status, DateTime? since})> _statusSince = {};
+  bool _statusTracked = false;
 
   final _activity = StreamController<String>.broadcast();
 
@@ -252,10 +258,44 @@ class MachineConnection extends ChangeNotifier {
     final s = await _api.snapshot();
     if (_disposed) return;
     _lastSync = DateTime.now();
+    _trackStatuses(s);
     if (s == _snapshot) return;
     _snapshot = s;
     _persist();
     notifyListeners();
+  }
+
+  /// Remembers when each pane was first seen in its current status. Runs on
+  /// every live snapshot, even an unchanged one (the first live snapshot
+  /// often equals the cached one).
+  void _trackStatuses(Snapshot s) {
+    final first = !_statusTracked;
+    _statusTracked = true;
+    final now = _clock();
+    final next = <String, ({AgentStatus status, DateTime? since})>{};
+    for (final p in s.panes) {
+      final known = _statusSince[p.id];
+      next[p.id] = known != null && known.status == p.status
+          ? known
+          // Panes already there when we connected: how long they have been
+          // in this status is unknown. Anything appearing or changing later
+          // was seen happening.
+          : (status: p.status, since: first ? null : now);
+    }
+    _statusSince
+      ..clear()
+      ..addAll(next);
+  }
+
+  /// When this app last observed [paneId] enter its current status; null if
+  /// the pane was already in it when we first connected (or is unknown).
+  DateTime? statusSince(String paneId) => _statusSince[paneId]?.since;
+
+  /// How long [paneId] has been in its current status, as observed; null
+  /// when [statusSince] is.
+  Duration? timeInStatus(String paneId) {
+    final since = statusSince(paneId);
+    return since == null ? null : _clock().difference(since);
   }
 
   Future<void> _watch() async {

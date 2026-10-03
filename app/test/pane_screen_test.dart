@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/repositories/machine_repository.dart';
+import 'package:herdr_mobile/data/repositories/open_tabs.dart';
+import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -13,12 +17,16 @@ import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
+import 'package:herdr_mobile/ui/features/pane/pane_host_screen.dart';
+import 'package:herdr_mobile/ui/features/pane/pane_navigation.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 import 'support/fake_fs.dart';
+import 'support/fake_network.dart';
 import 'support/fake_transport.dart';
+import 'support/memory_stores.dart';
 import 'support/memory_terminal_settings_store.dart';
 
 const _pane = 'w1:p1';
@@ -121,14 +129,39 @@ void main() {
     settings = TerminalSettings(store);
   });
 
+  late FleetRepository fleet;
+  late OpenTabs tabs;
+  late PanePreviews previews;
+
+  /// The pane screen as the app opens it: [machine] in a fleet, its pane the
+  /// open tab. [home] replaces the screen (to test opening it).
   Future<void> pumpPane(WidgetTester tester, {Widget? home}) async {
-    machine.start();
+    final repo = MachineRepository(
+      profiles: MemoryProfileStore(),
+      secrets: MemorySecretStore(),
+    );
+    await repo.load();
+    fleet = FleetRepository(
+      machines: repo,
+      network: FakeNetwork(),
+      connect: (profile, secrets) => machine,
+    );
+    await repo.save(machine.profile, secrets: const MachineSecrets(password: 'x'));
+    await fleet.settled();
+    tabs = OpenTabs();
+    if (home == null) tabs.open(machine.profile.id, _pane);
+    previews = PanePreviews(changes: fleet, connection: fleet.connection);
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: settings,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider.value(value: fleet),
+          ChangeNotifierProvider.value(value: tabs),
+          Provider<PanePreviews>.value(value: previews),
+        ],
         child: MaterialApp(
           theme: AppTheme.dark(),
-          home: home ?? PaneScreen(machine: machine, paneId: _pane),
+          home: home ?? const PaneHostScreen(),
         ),
       ),
     );
@@ -137,7 +170,9 @@ void main() {
 
   Future<void> teardown(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox());
-    machine.dispose();
+    previews.dispose();
+    tabs.dispose();
+    fleet.dispose();
   }
 
   /// The machine's event stream fails and it falls back to reconnecting.
@@ -151,6 +186,10 @@ void main() {
         ));
     await _settle(tester);
   }
+
+  /// Text in the top bar (the tab strip repeats the title in its chip).
+  Finder inBar(String text) =>
+      find.descendant(of: find.byType(PaneTopBar), matching: find.text(text));
 
   /// The strip's message is rich text (title, then quieter detail).
   Finder banner(String text) => find.textContaining(text, findRichText: true);
@@ -173,15 +212,21 @@ void main() {
     await pumpPane(tester);
 
     // The fake snapshot gives every pane the title "title <id>".
-    expect(find.text('title $_pane'), findsOneWidget);
-    expect(find.text('claude · box'), findsOneWidget);
-    expect(find.text(' · $_pane'), findsOneWidget);
+    expect(inBar('title $_pane'), findsOneWidget);
+    expect(inBar('claude · box'), findsOneWidget);
+    expect(inBar(' · $_pane'), findsOneWidget);
     expect(
-      tester.getSemantics(find.text('title $_pane')),
+      tester.getSemantics(inBar('title $_pane')),
       matchesSemantics(label: 'title $_pane', isHeader: true),
     );
-    expect(find.bySemanticsLabel('Working'), findsOneWidget,
-        reason: 'the status is named once, by the glyph');
+    expect(
+      find.descendant(
+        of: find.byType(PaneTopBar),
+        matching: find.bySemanticsLabel('Working'),
+      ),
+      findsOneWidget,
+      reason: 'the status is named once in the bar, by the glyph',
+    );
     semantics.dispose();
     await teardown(tester);
   });
@@ -193,8 +238,8 @@ void main() {
 
     await pumpPane(tester);
 
-    expect(find.text('claude'), findsOneWidget);
-    expect(find.text('box'), findsOneWidget,
+    expect(inBar('claude'), findsOneWidget);
+    expect(inBar('box'), findsOneWidget,
         reason: 'the agent is not repeated on the subtitle line');
     await teardown(tester);
   });
@@ -212,36 +257,29 @@ void main() {
     await pumpPane(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text(' · $_pane'), findsOneWidget, reason: 'the id is never cut');
+    expect(inBar(' · $_pane'), findsOneWidget, reason: 'the id is never cut');
     await teardown(tester);
   });
 
   testWidgets('the back button leaves the pane', (tester) async {
-    machine.start();
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: settings,
-        child: MaterialApp(
-          theme: AppTheme.dark(),
-          home: Builder(
-            builder: (context) => GestureDetector(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => PaneScreen(machine: machine, paneId: _pane),
-              )),
-              child: const Text('open'),
-            ),
-          ),
+    await pumpPane(
+      tester,
+      home: Builder(
+        builder: (context) => GestureDetector(
+          onTap: () => openPaneTab(context, machine, _pane),
+          child: const Text('open'),
         ),
       ),
     );
     await tester.tap(find.text('open'));
     await _settle(tester);
+    expect(find.byType(PaneHostScreen), findsOneWidget);
     expect(find.byType(PaneScreen), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await _settle(tester);
 
-    expect(find.byType(PaneScreen), findsNothing);
+    expect(find.byType(PaneHostScreen), findsNothing);
     await teardown(tester);
   });
 
@@ -538,7 +576,9 @@ void main() {
       await _settle(tester);
 
       expect(tester.takeException(), isNull);
-      machine.dispose();
+      previews.dispose();
+      tabs.dispose();
+      fleet.dispose();
     });
   });
 
@@ -560,8 +600,10 @@ void main() {
       expect(banner('This pane was closed'), findsOneWidget);
       expect(find.text('Pane closed'), findsOneWidget);
       expect(tester.widget<TextField>(composer()).enabled, isFalse);
-      expect(find.text('title $_pane'), findsOneWidget,
+      expect(inBar('title $_pane'), findsOneWidget,
           reason: 'still says which task this was');
+      expect(find.text('title $_pane'), findsNWidgets(2),
+          reason: 'and so does its tab');
       expect(find.text('Retry'), findsNothing, reason: 'there is nothing to retry');
 
       await tester.tap(find.text('esc'));
@@ -949,7 +991,7 @@ void main() {
 
       expect(notified, greaterThan(0), reason: 'the machine did notify');
       expect(
-        rebuilt.where({'_TopBar', '_Banner', '_QuickKeys', '_Composer', '_TerminalPanel', '_PaneView'}.contains),
+        rebuilt.where({'PaneTopBar', '_Banner', '_QuickKeys', '_Composer', '_TerminalPanel', '_PaneView'}.contains),
         isEmpty,
       );
 
@@ -961,7 +1003,8 @@ void main() {
       ]);
       await tester.runAsync(machine.refresh);
       await tester.pump();
-      expect(rebuilt, contains('_TopBar'));
+      expect(rebuilt, contains('ValueListenableBuilder<List<TabInfo>>'),
+          reason: 'the title block follows the pane');
       expect(rebuilt.where({'_QuickKeys', '_Composer', '_Banner'}.contains), isEmpty);
       await teardown(tester);
     });

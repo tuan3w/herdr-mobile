@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/core/chrome.dart';
 import 'package:herdr_mobile/ui/core/controls.dart';
 import 'package:herdr_mobile/ui/core/rows.dart';
 import 'package:herdr_mobile/ui/core/status_panel.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/agents/agent_card.dart';
 import 'package:herdr_mobile/ui/features/agents/agents_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machines_screen.dart';
@@ -45,7 +47,14 @@ void _push(UiHarness h, List<Pane> panes) {
 
 Finder _chip(String label) => find.widgetWithText(AppChip, label);
 
-Finder _row(String title) => find.widgetWithText(ListRow, title);
+Finder _row(String title) => find.widgetWithText(AgentCard, title);
+
+/// The card's tappable body: one semantics node reading the whole card.
+Finder _body(String title) =>
+    find.descendant(of: _row(title), matching: find.byType(PressBuilder)).first;
+
+/// Tall enough to build every card of a small fleet at once (cards are ~170dp).
+const _tall = 2400.0;
 
 /// Makes every machine fail like a rejected login, so each becomes a notice.
 Future<void> _failAll(WidgetTester tester, UiHarness h, String error) async {
@@ -79,7 +88,7 @@ void main() {
 
     testWidgets('one chip per status that has agents, with its count', (tester) async {
       final h = await mixed();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       expect(find.byType(AppChip), findsNWidgets(3));
       expect(find.descendant(of: _chip('Working'), matching: find.text('2')), findsOneWidget);
@@ -90,46 +99,46 @@ void main() {
     testWidgets('tapping a chip narrows the list, tapping it again restores it',
         (tester) async {
       final h = await mixed();
-      await pumpUi(tester, h);
-      expect(find.byType(ListRow), findsNWidgets(4));
+      await pumpUi(tester, h, height: _tall);
+      expect(find.byType(AgentCard), findsNWidgets(4));
 
       await tester.tap(_chip('Working'));
       await settle(tester);
-      expect(find.byType(ListRow), findsNWidgets(2));
+      expect(find.byType(AgentCard), findsNWidgets(2));
       expect(_row('task 2'), findsOneWidget);
       expect(_row('task 1'), findsNothing);
 
       // Choosing another chip replaces the filter instead of adding to it.
       await tester.tap(_chip('Idle'));
       await settle(tester);
-      expect(find.byType(ListRow), findsNWidgets(1));
+      expect(find.byType(AgentCard), findsNWidgets(1));
       expect(_row('task 4'), findsOneWidget);
 
       await tester.tap(_chip('Idle'));
       await settle(tester);
-      expect(find.byType(ListRow), findsNWidgets(4));
+      expect(find.byType(AgentCard), findsNWidgets(4));
       await teardownUi(tester, h);
     });
 
     testWidgets('a filter whose agents disappeared stops hiding everything',
         (tester) async {
       final h = await mixed();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       await tester.tap(_chip('Idle'));
       await settle(tester);
-      expect(find.byType(ListRow), findsNWidgets(1));
+      expect(find.byType(AgentCard), findsNWidgets(1));
 
       _push(h, [_pane(1, 'blocked'), _pane(2, 'working')]);
       await settle(tester);
 
-      expect(find.byType(ListRow), findsNWidgets(2));
+      expect(find.byType(AgentCard), findsNWidgets(2));
       await teardownUi(tester, h);
     });
 
     testWidgets('and does not come back when an agent of that status returns',
         (tester) async {
       final h = await mixed();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       await tester.tap(_chip('Idle'));
       await settle(tester);
 
@@ -138,7 +147,7 @@ void main() {
       _push(h, [_pane(1, 'blocked'), _pane(2, 'working'), _pane(4, 'idle')]);
       await settle(tester);
 
-      expect(find.byType(ListRow), findsNWidgets(3), reason: 'the old filter must not re-apply');
+      expect(find.byType(AgentCard), findsNWidgets(3), reason: 'the old filter must not re-apply');
       expect(tester.widget<AppChip>(_chip('Idle')).selected, isFalse);
       await teardownUi(tester, h);
     });
@@ -155,7 +164,7 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       double y(String t) => tester.getTopLeft(_row(t)).dy;
       expect(y('task 3'), lessThan(y('task 2')));
@@ -183,7 +192,7 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       expect(_row('claude'), findsOneWidget);
       expect(_row('codex'), findsOneWidget);
@@ -200,10 +209,10 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
-      final row = find.byType(ListRow);
-      expect(tester.getSize(row).height, lessThan(110));
+      final row = find.byType(AgentCard);
+      expect(tester.getSize(row).height, lessThan(230));
       final title = find.descendant(of: row, matching: find.textContaining('Refactor'));
       expect(tester.widget<Text>(title).maxLines, 2);
       await teardownUi(tester, h);
@@ -221,7 +230,7 @@ void main() {
                   : snapshotWith(const []),
             ),
         ]);
-        await pumpUi(tester, h);
+        await pumpUi(tester, h, height: _tall);
         expect(find.text(line), findsOneWidget);
         await teardownUi(tester, h);
       }
@@ -241,7 +250,7 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       expect(find.descendant(of: _chip('Working'), matching: find.text('120')), findsOneWidget);
 
       await tester.fling(find.byType(CustomScrollView).first, const Offset(0, -20000), 20000);
@@ -250,7 +259,7 @@ void main() {
       await settle(tester);
 
       final last = tester
-          .widgetList(find.byType(ListRow))
+          .widgetList(find.byType(AgentCard))
           .map((w) => tester.getRect(find.byWidget(w)).bottom)
           .reduce((a, b) => a > b ? a : b);
       final bar = tester.getRect(find.byType(FloatingTabBar));
@@ -263,7 +272,7 @@ void main() {
   group('states', () {
     testWidgets('no machines offers to add one', (tester) async {
       final h = await UiHarness.create(const []);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       await tester.tap(find.text('Add your first machine'));
       await settle(tester);
@@ -276,7 +285,7 @@ void main() {
         (profile: _machine('a', 'solo'), snapshot: snapshotWith(const [])),
         (profile: _machine('b', 'duo'), snapshot: snapshotWith(const [])),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       expect(find.text('No agents running'), findsOneWidget);
       expect(find.byType(AppChip), findsNothing);
@@ -305,7 +314,7 @@ void main() {
       expect(find.textContaining('3 not connected'), findsOneWidget);
 
       // The agents the person came for are still on the first screen.
-      expect(tester.getTopLeft(find.byType(ListRow).first).dy, lessThan(300));
+      expect(tester.getTopLeft(find.byType(AgentCard).first).dy, lessThan(300));
 
       await tester.tap(find.byType(StatusStrip));
       await settle(tester);
@@ -322,7 +331,7 @@ void main() {
         ),
         (profile: _machine('b', 'duo'), snapshot: snapshotWith(const [])),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       h.transports['a']!.failure = HerdrTransportException('Host key changed', fatal: true);
       h.fleet.connections.first.reconnect();
       await settle(tester);
@@ -381,7 +390,7 @@ void main() {
           snapshot: snapshotWith(const []),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       expect(h.fleet.connections.last.state, LinkState.disabled);
       expect(find.byType(StatusStrip), findsNothing);
@@ -397,7 +406,7 @@ void main() {
           snapshot: snapshotWith([_pane(1, 'blocked')], title: (_) => 'Needs a decision'),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       h.network.goOffline();
       await settle(tester);
 
@@ -424,7 +433,7 @@ void main() {
         ]),
       ),
     ]);
-    await pumpUi(tester, h);
+    await pumpUi(tester, h, height: _tall);
 
     expect(
       find.descendant(of: find.byType(FloatingTabBar), matching: find.text('2')),
@@ -452,7 +461,7 @@ void main() {
     testWidgets('closing a section animates its rows away instead of cutting them',
         (tester) async {
       final h = await two();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       await tester.tap(find.text('Working').last);
       await tester.pump();
@@ -467,7 +476,7 @@ void main() {
     testWidgets('an agent moving between sections keeps every row in place',
         (tester) async {
       final h = await two();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       final before = {
         for (final t in ['task 1', 'task 2', 'task 3']) t: tester.element(_row(t)),
       };
@@ -493,7 +502,7 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       await tester.tap(find.text('Working').last);
       await settle(tester);
 
@@ -510,7 +519,7 @@ void main() {
 
     testWidgets('the pull-to-refresh spinner starts below the whole header', (tester) async {
       final h = await two();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       final header = tester.getRect(
         find.descendant(of: find.byType(SliverPersistentHeader), matching: find.byType(ClipRect)).first,
@@ -535,7 +544,7 @@ void main() {
     testWidgets('are tappable while visible and not once they slid under the bar',
         (tester) async {
       final h = await many();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
       final scroll = find.byType(CustomScrollView).first;
 
       await tester.drag(scroll, const Offset(0, -60));
@@ -557,11 +566,11 @@ void main() {
 
     testWidgets('rows fading out behind the tab bar can still be tapped', (tester) async {
       final h = await many();
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       final bar = tester.getRect(find.byType(FloatingTabBar));
-      // Left of the pill, in the strip the fade covers.
-      await tester.tapAt(Offset(6, bar.center.dy));
+      // Left of the pill, in the strip the fade covers (inside the card's margin).
+      await tester.tapAt(Offset(24, bar.center.dy));
       await settle(tester);
       expect(find.byType(PaneScreen), findsOneWidget);
       await teardownUi(tester, h);
@@ -588,8 +597,8 @@ void main() {
       return n;
     }
 
-    Finder tab(String label) =>
-        find.descendant(of: find.byType(FloatingTabBar), matching: find.text(label));
+    // Only the selected tab shows its label, so tabs are found by key.
+    Finder tab(String label) => find.byKey(FloatingTabBar.tabKey(label));
 
     testWidgets('only a change to what the tab draws rebuilds it, and not while hidden',
         (tester) async {
@@ -602,7 +611,7 @@ void main() {
           ),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
       // The fleet spoke but nothing the tab draws changed.
       _push(h, [_pane(1, 'working'), _pane(2, 'idle')]);
@@ -636,9 +645,9 @@ void main() {
           snapshot: snapshotWith([_pane(1, 'blocked')], title: (_) => 'Pick a strategy'),
         ),
       ]);
-      await pumpUi(tester, h);
+      await pumpUi(tester, h, height: _tall);
 
-      final label = tester.getSemantics(_row('Pick a strategy')).label;
+      final label = tester.getSemantics(_body('Pick a strategy')).label;
       for (final part in ['Pick a strategy', 'Needs you', 'claude']) {
         expect(RegExp(RegExp.escape(part)).allMatches(label), hasLength(1),
             reason: '"$part" in: $label');
@@ -659,6 +668,8 @@ void main() {
           providers: [
             ChangeNotifierProvider.value(value: h.machines),
             ChangeNotifierProvider.value(value: h.fleet),
+            ChangeNotifierProvider.value(value: h.openTabs),
+            Provider<PanePreviews>.value(value: h.previews),
           ],
           child: MaterialApp(
             restorationScopeId: 'app',
@@ -690,7 +701,7 @@ void main() {
       expect(_row('task 1'), findsOneWidget);
       expect(_row('task 2'), findsNothing, reason: 'Working stayed collapsed');
 
-      await tester.tap(find.descendant(of: find.byType(FloatingTabBar), matching: find.text('Machines')));
+      await tester.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
       await settle(tester);
       await tester.restartAndRestore();
       await settle(tester);

@@ -7,8 +7,9 @@ import '../core/chrome.dart';
 import '../core/tokens.dart';
 import '../features/agents/agents_screen.dart';
 import '../features/machines/machines_screen.dart';
+import '../features/settings/settings_screen.dart';
 
-/// The two root tabs with a floating tab bar over them. The tab bar gives its
+/// The three root tabs with a floating tab bar over them. The tab bar gives its
 /// own selection haptic.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -20,9 +21,14 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with RestorationMixin {
   static const _agents = 0;
   static const _machines = 1;
+  static const _settings = 2;
 
   // The tab survives the process being reclaimed.
   final _tab = RestorableInt(_agents);
+
+  // Settings is the quietest tab: built on first visit, then kept (with its
+  // scroll position) like the others.
+  bool _settingsOpened = false;
 
   @override
   String get restorationId => 'home';
@@ -45,6 +51,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
     final ds = context.ds;
     final needYou = context.select<FleetRepository, int>((f) => f.attentionCount);
     final index = _tab.value;
+    if (index == _settings) _settingsOpened = true;
     return Scaffold(
       body: Stack(
         children: [
@@ -57,6 +64,10 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
                 child: AgentsScreen(onShowMachines: () => _select(_machines)),
               ),
               TickerMode(enabled: index == _machines, child: const MachinesScreen()),
+              TickerMode(
+                enabled: index == _settings,
+                child: _settingsOpened ? const SettingsScreen() : const SizedBox.shrink(),
+              ),
             ],
           ),
           // Rows fade out into the page instead of being cut off behind the
@@ -88,6 +99,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
               tabs: [
                 TabSpec(icon: LucideIcons.layoutList, label: 'Agents', badge: needYou),
                 const TabSpec(icon: LucideIcons.server, label: 'Machines'),
+                const TabSpec(icon: LucideIcons.settings, label: 'Settings'),
               ],
             ),
           ),

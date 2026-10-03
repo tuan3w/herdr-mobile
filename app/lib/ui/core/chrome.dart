@@ -290,6 +290,10 @@ class TabSpec {
 /// [clearance] at the bottom. Opaque-ish surface with a hairline and one soft
 /// shadow: no backdrop blur, which costs a full-screen blur pass per frame on
 /// mid-range GPUs.
+///
+/// Only the selected tab shows its label; the others are icon-only (48 x 48),
+/// so three or four tabs still fit a 320 dp phone. Every tab keeps its full
+/// name for screen readers, and [tabKey] finds one by label in tests.
 class FloatingTabBar extends StatelessWidget {
   const FloatingTabBar({
     super.key,
@@ -301,6 +305,10 @@ class FloatingTabBar extends StatelessWidget {
   final List<TabSpec> tabs;
   final int index;
   final ValueChanged<int> onChanged;
+
+  /// Key of the tab labelled [label]. Its text is only in the tree while the
+  /// tab is selected, so tests and callers find tabs by this key.
+  static Key tabKey(String label) => ValueKey('tab:$label');
 
   static const _height = 56.0;
   static const _margin = 12.0;
@@ -342,6 +350,7 @@ class FloatingTabBar extends StatelessWidget {
                 children: [
                   for (final (i, tab) in tabs.indexed)
                     _TabItem(
+                      key: tabKey(tab.label),
                       tab: tab,
                       selected: i == index,
                       onTap: () => onChanged(i),
@@ -358,6 +367,7 @@ class FloatingTabBar extends StatelessWidget {
 
 class _TabItem extends StatelessWidget {
   const _TabItem({
+    super.key,
     required this.tab,
     required this.selected,
     required this.onTap,
@@ -371,6 +381,7 @@ class _TabItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final badge = tab.badge;
+    final reduced = Motion.reduced(context);
     return PressBuilder(
       onTap: onTap,
       haptic: !selected,
@@ -380,7 +391,6 @@ class _TabItem extends StatelessWidget {
       builder: (context, pressed) => AnimatedContainer(
         duration: Motion.pressing(pressed),
         curve: Motion.easeOut,
-        constraints: const BoxConstraints(minWidth: 104),
         padding: const EdgeInsets.symmetric(horizontal: 14),
         height: 48,
         decoration: BoxDecoration(
@@ -427,14 +437,33 @@ class _TabItem extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                tab.label,
-                style: Type.label.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
-                ),
+              // The label grows in from the icon (width and colour alpha) and
+              // is not built at all once it has shrunk to nothing.
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: selected ? 1 : 0),
+                duration: reduced ? Duration.zero : Motion.standard,
+                curve: Motion.easeOut,
+                builder: (context, t, _) => t == 0
+                    ? const SizedBox.shrink()
+                    : ClipRect(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: t,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              tab.label,
+                              maxLines: 1,
+                              softWrap: false,
+                              style: Type.label.copyWith(
+                                color: (color ?? ds.text).withValues(alpha: t),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
               ),
             ],
           ),

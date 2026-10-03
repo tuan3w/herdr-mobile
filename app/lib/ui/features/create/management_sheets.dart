@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../core/chrome.dart';
-import '../pane/pane_screen.dart';
+import '../pane/pane_navigation.dart';
 import 'machine_actions.dart';
 import 'rename_sheet.dart';
 
@@ -25,9 +25,9 @@ Future<void> showWorkspaceActions(
     final r = await actions.newTab(workspace);
     if (r.error case final error?) return toast(error);
     if (r.paneId case final paneId?) {
-      await navigator.push(MaterialPageRoute<void>(
-        builder: (_) => PaneScreen(machine: machine, paneId: paneId),
-      ));
+      // The navigator outlives the sheet that started this.
+      // ignore: use_build_context_synchronously
+      await openPaneTab(navigator.context, machine, paneId);
     }
   }
 

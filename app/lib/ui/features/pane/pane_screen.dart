@@ -19,6 +19,7 @@ import '../../core/theme.dart';
 import '../files/files_navigation.dart';
 import 'link_sheet.dart';
 import 'pane_view_model.dart';
+import 'tab_swipe.dart';
 
 /// Height of the composer with one line.
 const _composerMinHeight = 48.0;
@@ -30,30 +31,71 @@ const _sendSize = 36.0;
 const _sendHit = 44.0;
 const _quickKeysHeight = 44.0;
 
+/// One open pane: its banner, terminal, quick keys and composer. The tab
+/// screen ([PaneHostScreen]) owns the view model and the chrome around it
+/// (back, title, tabs); this page keeps what belongs to the tab itself, such as
+/// the draft in the composer and the terminal's scroll position, for as long as
+/// the host keeps it mounted.
 class PaneScreen extends StatelessWidget {
-  const PaneScreen({super.key, required this.machine, required this.paneId});
+  const PaneScreen({
+    super.key,
+    required this.machine,
+    required this.paneId,
+    required this.viewModel,
+    this.onSwipe,
+  });
 
   final MachineConnection machine;
   final String paneId;
+  final PaneViewModel viewModel;
+
+  /// A horizontal swipe on the terminal asks for the neighbouring tab (+1
+  /// next, -1 previous). Only offered while lines wrap to the screen: the
+  /// terminal has nothing to scroll sideways then.
+  final ValueChanged<int>? onSwipe;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
         providers: [
           ChangeNotifierProvider.value(value: machine),
-          ChangeNotifierProvider(
-            create: (context) => PaneViewModel.forMachine(
-              machine,
-              paneId,
-              wrap: context.read<TerminalSettings>().wrap,
-            ),
-          ),
+          ChangeNotifierProvider.value(value: viewModel),
         ],
-        child: _PaneView(paneId: paneId),
+        child: _PaneView(paneId: paneId, onSwipe: onSwipe),
       );
 }
 
+/// Tells the pane regions whether the layout is compact: landscape with the
+/// keyboard up. It sits ABOVE the host's `Scaffold`, which strips the keyboard
+/// inset from what its body sees, and only notifies when the answer changes
+/// (the inset itself changes every frame of the keyboard animation).
+class CompactScope extends StatelessWidget {
+  const CompactScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => _Compact(
+        compact: MediaQuery.orientationOf(context) == Orientation.landscape &&
+            MediaQuery.viewInsetsOf(context).bottom > 0,
+        child: child,
+      );
+}
+
+class _Compact extends InheritedWidget {
+  const _Compact({required this.compact, required super.child});
+
+  final bool compact;
+
+  @override
+  bool updateShouldNotify(_Compact old) => old.compact != compact;
+}
+
+/// Whether the host shows only the terminal and composer (see [CompactScope]).
+bool compactLayout(BuildContext context) =>
+    context.dependOnInheritedWidgetOfExactType<_Compact>()?.compact ?? false;
+
 /// [id] in the machine's last snapshot, if herdr still has it.
-Pane? _paneIn(MachineConnection machine, String id) {
+Pane? paneIn(MachineConnection machine, String id) {
   for (final pane in machine.snapshot.panes) {
     if (pane.id == id) return pane;
   }
@@ -62,15 +104,16 @@ Pane? _paneIn(MachineConnection machine, String id) {
 
 /// Whether input can reach the pane: the machine is live and the pane exists.
 bool _acceptsInput(MachineConnection machine, String id) =>
-    machine.isLive && _paneIn(machine, id) != null;
+    machine.isLive && paneIn(machine, id) != null;
 
 /// Owns what outlives a rebuild (the composer's text, the keys toggle) and
 /// composes the regions. Every region selects only what it shows, so a
 /// notify about some other pane rebuilds nothing here.
 class _PaneView extends StatefulWidget {
-  const _PaneView({required this.paneId});
+  const _PaneView({required this.paneId, this.onSwipe});
 
   final String paneId;
+  final ValueChanged<int>? onSwipe;
 
   @override
   State<_PaneView> createState() => _PaneViewState();
@@ -105,14 +148,6 @@ class _PaneViewState extends State<_PaneView> {
     if (sent && mounted && _input.text == text) _input.clear();
   }
 
-  void _toggleWrap() {
-    HapticFeedback.selectionClick();
-    final settings = context.read<TerminalSettings>();
-    final next = !settings.wrap;
-    _vm.setWrap(next);
-    unawaited(settings.setWrap(next));
-  }
-
   void _retry() {
     context.read<MachineConnection>().retry();
     _vm.refresh();
@@ -133,35 +168,26 @@ class _PaneViewState extends State<_PaneView> {
             context,
             machine,
             link.target,
-            cwd: _paneIn(machine, widget.paneId)?.cwd,
+            cwd: paneIn(machine, widget.paneId)?.cwd,
             line: link.line,
           ),
         );
     }
   }
 
-  void _openFiles() {
-    final machine = context.read<MachineConnection>();
-    unawaited(
-      openFileBrowser(
-        context,
-        machine,
-        startDir: _paneIn(machine, widget.paneId)?.cwd,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) => _PaneLayout(
         keysOpen: _keysOpen,
         onToggleKeys: () => setState(() => _keysOpen = !_keysOpen),
-        topBar: _TopBar(
-          paneId: widget.paneId,
-          onToggleWrap: _toggleWrap,
-          onOpenFiles: _openFiles,
-        ),
         banner: _Banner(paneId: widget.paneId, onRetry: _retry),
-        terminal: _TerminalPanel(paneId: widget.paneId, onLinkTap: _openLink),
+        terminal: Builder(
+          builder: (context) => TabSwipeDetector(
+            enabled: widget.onSwipe != null &&
+                context.select<TerminalSettings, bool>((s) => s.wrap),
+            onSwipe: (delta) => widget.onSwipe?.call(delta),
+            child: _TerminalPanel(paneId: widget.paneId, onLinkTap: _openLink),
+          ),
+        ),
         keys: _QuickKeys(
           paneId: widget.paneId,
           onKey: (keys) {
@@ -177,16 +203,16 @@ class _PaneViewState extends State<_PaneView> {
       );
 }
 
-/// Stacks the regions. With the keyboard up in landscape there is room for
-/// little more than the terminal, so the top bar goes and the quick keys wait
-/// behind a toggle beside the composer.
+/// Stacks the regions under the host's chrome. With the keyboard up in
+/// landscape there is room for little more than the terminal, so the host drops
+/// its top bar and tabs ([compactLayout]) and the quick keys wait behind a
+/// toggle beside the composer.
 ///
 /// The regions are built by the caller and only placed here: this widget
 /// depends on the window insets, which change every frame of the keyboard's
 /// animation, and must not rebuild them.
 class _PaneLayout extends StatelessWidget {
   const _PaneLayout({
-    required this.topBar,
     required this.banner,
     required this.terminal,
     required this.keys,
@@ -195,7 +221,6 @@ class _PaneLayout extends StatelessWidget {
     required this.onToggleKeys,
   });
 
-  final Widget topBar;
   final Widget banner;
   final Widget terminal;
   final Widget keys;
@@ -205,13 +230,10 @@ class _PaneLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.orientationOf(context) == Orientation.landscape &&
-        MediaQuery.viewInsetsOf(context).bottom > 0;
+    final compact = compactLayout(context);
     final top = MediaQuery.paddingOf(context).top;
-    return Scaffold(
-      body: Column(
+    return Column(
         children: [
-          if (!compact) topBar,
           banner,
           Expanded(
             child: Padding(
@@ -253,126 +275,6 @@ class _PaneLayout extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Back, the pane's task title with where it lives, a button for the machine's
-/// files and the wrap toggle. No bottom border: the terminal panel below is
-/// the anchor.
-class _TopBar extends StatefulWidget {
-  const _TopBar({
-    required this.paneId,
-    required this.onToggleWrap,
-    required this.onOpenFiles,
-  });
-
-  final String paneId;
-  final VoidCallback onToggleWrap;
-  final VoidCallback onOpenFiles;
-
-  @override
-  State<_TopBar> createState() => _TopBarState();
-}
-
-class _TopBarState extends State<_TopBar> {
-  /// The pane as last seen in a snapshot: once it is closed, the bar keeps
-  /// saying what it was.
-  Pane? _known;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final id = widget.paneId;
-    final pane = context.select<MachineConnection, Pane?>((m) => _paneIn(m, id));
-    final live = context.select<MachineConnection, bool>((m) => m.isLive);
-    final stale = context.select<PaneViewModel, bool>((v) => v.isStale);
-    final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
-    final machineLabel = context.read<MachineConnection>().profile.label;
-    final files = machineSupportsFiles(context.read<MachineConnection>());
-    if (pane != null) _known = pane;
-    final shown = pane ?? _known;
-
-    // The task the agent is on; the agent, then the id, when it has none.
-    final task = shown?.title.trim() ?? '';
-    final title = task.isNotEmpty ? task : (shown?.agent ?? id);
-    final where = [
-      if (shown?.agent != null && shown!.agent != title) shown.agent!,
-      machineLabel,
-    ].join(' · ');
-    final secondary = Type.secondary.copyWith(color: ds.textSecondary);
-    return Padding(
-      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 60),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-          child: Row(
-            children: [
-              CircleButton(
-                icon: LucideIcons.chevronLeft,
-                tooltip: 'Back',
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              const SizedBox(width: Gap.md),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(
-                      header: true,
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Type.barTitle.copyWith(color: ds.text),
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Row(
-                      children: [
-                        // The glyph names the status for screen readers; the
-                        // text beside it is not repeated.
-                        if (pane != null) ...[
-                          StatusGlyph(status: pane.status, size: 16, dim: !live || stale),
-                          const SizedBox(width: 6),
-                        ],
-                        // The id is short and never cut; the rest gives way.
-                        Flexible(
-                          child: Text(
-                            where,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: secondary,
-                          ),
-                        ),
-                        Text(' · $id', maxLines: 1, style: secondary),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: Gap.md),
-              if (files) ...[
-                CircleButton(
-                  icon: LucideIcons.folderOpen,
-                  tooltip: 'Browse files',
-                  onPressed: widget.onOpenFiles,
-                ),
-                const SizedBox(width: Gap.sm),
-              ],
-              CircleButton(
-                icon: LucideIcons.wrapText,
-                tooltip: wrap ? 'Show exact terminal layout' : 'Wrap lines to screen',
-                active: wrap,
-                onPressed: widget.onToggleWrap,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -405,7 +307,7 @@ class _TerminalPanel extends StatelessWidget {
               );
               // What it shows is a pane that is gone: dimmed, not live.
               final closed = context.select<MachineConnection, bool>(
-                (m) => m.isLive && _paneIn(m, paneId) == null,
+                (m) => m.isLive && paneIn(m, paneId) == null,
               );
               final settings = context.read<TerminalSettings>();
               final vm = context.read<PaneViewModel>();
@@ -485,7 +387,7 @@ class _BannerState extends State<_Banner> {
     final ds = context.ds;
     final id = widget.paneId;
     final link = context.select<MachineConnection, ({LinkState state, String? error, bool open})>(
-      (m) => (state: m.state, error: m.error, open: _paneIn(m, id) != null),
+      (m) => (state: m.state, error: m.error, open: paneIn(m, id) != null),
     );
     final readError = context.select<PaneViewModel, String?>((v) => v.error);
 
@@ -669,7 +571,7 @@ class _Composer extends StatelessWidget {
     final ds = context.ds;
     final (state, open, agent) = context.select<MachineConnection, (LinkState, bool, String?)>(
       (m) {
-        final pane = _paneIn(m, paneId);
+        final pane = paneIn(m, paneId);
         return (m.state, pane != null, pane?.agent);
       },
     );

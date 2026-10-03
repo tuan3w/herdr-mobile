@@ -8,14 +8,15 @@ import '../../core/approval_button.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/glyphs.dart';
-import '../../core/motion.dart';
 import '../../core/rows.dart';
 import '../../core/status_panel.dart';
 import '../../core/tokens.dart';
 import '../create/new_session_screen.dart';
 import '../machines/machine_form_screen.dart';
-import '../pane/pane_screen.dart';
+import 'agent_card.dart';
 import 'agents_grouping.dart';
+import 'reply_sheet.dart';
+import 'triage_pill.dart';
 
 /// Every agent across every machine, grouped by how much it needs you.
 class AgentsScreen extends StatefulWidget {
@@ -36,6 +37,9 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   // being reclaimed. Nothing secret lives here.
   final _collapsedBits = RestorableInt(0);
 
+  // Cards or compact rows, for the session (and across process death).
+  final _density = RestorableEnum<AgentDensity>(AgentDensity.cards, values: AgentDensity.values);
+
   // The last page built. A hidden tab hands this back instead of rebuilding,
   // so fleet updates cost the tab that is not on screen one cheap build call.
   Widget? _page;
@@ -46,11 +50,13 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   @override
   void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
     registerForRestoration(_collapsedBits, 'collapsed');
+    registerForRestoration(_density, 'density');
   }
 
   @override
   void dispose() {
     _collapsedBits.dispose();
+    _density.dispose();
     super.dispose();
   }
 
@@ -77,6 +83,10 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
 
   void _toggleSection(AgentStatus s) =>
       setState(() => _collapsedBits.value ^= 1 << s.index);
+
+  void _toggleDensity() => setState(() {
+        _density.value = _density.value == AgentDensity.cards ? AgentDensity.compact : AgentDensity.cards;
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -129,8 +139,12 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     final chips = [for (final s in filterableStatuses) if (groups.containsKey(s)) s];
     final chipsHeight = chips.isEmpty ? 0.0 : AppChip.height;
     final troubled = overview.troubled;
+    final blocked = blockedAgents(overview.agents);
+    final cards = _density.value == AgentDensity.cards;
+    // Room under the last row for the floating triage pill.
+    final pillSpace = blocked.isEmpty ? 0.0 : TriagePill.height + Gap.md;
 
-    return AppRefresh(
+    final list = AppRefresh(
       onRefresh: context.read<FleetRepository>().retryAll,
       edgeOffset: SliverLargeTitle.extent(context, hasSubtitle: true, bottomHeight: chipsHeight),
       child: CustomScrollView(
@@ -145,6 +159,11 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             actions: [
+              CircleButton(
+                icon: cards ? LucideIcons.list : LucideIcons.layoutGrid,
+                tooltip: cards ? 'Compact list' : 'Cards with preview',
+                onPressed: _toggleDensity,
+              ),
               CircleButton(
                 icon: LucideIcons.plus,
                 tooltip: 'New',
@@ -213,14 +232,32 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
                 final AgentLine l => Collapse(
                     key: l.key,
                     open: l.open,
-                    child: _AgentRow(agent: l.agent, divider: !l.last),
+                    child: cards
+                        ? AgentCard(agent: l.agent)
+                        : AgentCompactRow(agent: l.agent, divider: !l.last),
                   ),
               },
             ),
-            SliverToBoxAdapter(child: SizedBox(height: clearance)),
+            SliverToBoxAdapter(child: SizedBox(height: clearance + pillSpace)),
           ],
         ],
       ),
+    );
+    // Always a Stack, so the list keeps its elements (rows, scroll offset)
+    // when the pill comes and goes.
+    return Stack(
+      children: [
+        Positioned.fill(child: list),
+        if (blocked.isNotEmpty)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: clearance,
+            child: Center(
+              child: TriagePill(count: blocked.length, onTap: () => showTriageSheet(context)),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -232,45 +269,6 @@ String _summary(AgentsOverview o) {
     o.agents.isEmpty ? 'no agents' : count(o.agents.length, 'agent'),
     if (o.troubled.isNotEmpty) '${o.troubled.length} not connected',
   ].join(' · ');
-}
-
-class _AgentRow extends StatelessWidget {
-  const _AgentRow({required this.agent, required this.divider});
-
-  final AgentRowData agent;
-  final bool divider;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return ListRow(
-      // Staleness dims the whole row once; the glyph is not dimmed again.
-      leading: StatusGlyph(status: agent.status, size: 20),
-      title: agent.title,
-      subtitle: agent.subtitle,
-      titleMaxLines: 2,
-      trailing: Icon(LucideIcons.chevronRight, size: 16, color: ds.textTertiary),
-      dim: agent.stale,
-      divider: divider,
-      // Merged from the glyph and the texts, plus what dimming only implies.
-      semanticLabel: agent.stale
-          ? [
-              agent.status.label,
-              agent.title,
-              if (agent.subtitle.isNotEmpty) agent.subtitle,
-              'offline',
-            ].join(', ')
-          : null,
-      onTap: () {
-        tapFeedback();
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PaneScreen(machine: agent.machine, paneId: agent.paneId),
-          ),
-        );
-      },
-    );
-  }
 }
 
 /// Machines that are not connected, in one line. One machine is named and can

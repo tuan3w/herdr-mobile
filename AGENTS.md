@@ -72,9 +72,12 @@ check which one loads before relying on it.
   never construct `SshTransport` on the main isolate. Keep cipher preference in
   `sshAlgorithms` (GCM is ~30x slower in dartssh2); `ssh_algorithms_test.dart`
   guards it. Never add a looping animation (they keep the GPU busy forever); the
-  one exception is `BusySpinner` (`ui/core/controls.dart`) for work the user is
-  actively waiting on (a saving/testing button, a send in flight). It must stop
-  when the work does. Avoid `Opacity`/`AnimatedOpacity`/`FadeTransition` at
+  exceptions are `BusySpinner` (`ui/core/controls.dart`) for work the user is
+  actively waiting on (a saving/testing button, a send in flight; it must stop
+  when the work does) and the working agent's `StatusGlyph` arc, which steps at
+  <= 4 Hz from ONE shared clock (`step_clock.dart`) that runs only while a
+  working glyph is visible, stops in the background and under reduced motion,
+  and repaints only each glyph's own `RepaintBoundary`. Avoid `Opacity`/`AnimatedOpacity`/`FadeTransition` at
   opacity 1: each is a composited layer (wrap only when actually dimmed).
 - **Measure on a phone, not a desktop.** Frame stalls only showed up on a real
   device: profile build (`flutter build apk --profile`), real touch input

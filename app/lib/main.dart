@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
+import 'data/repositories/app_settings.dart';
 import 'data/repositories/machine_repository.dart';
 import 'data/repositories/new_session_settings.dart';
 import 'data/repositories/terminal_settings.dart';
@@ -20,11 +21,15 @@ Future<void> main() async {
   await terminalSettings.load();
   final newSessionSettings = NewSessionSettings(PrefsNewSessionStore());
   await newSessionSettings.load();
+  // Before runApp, so the first frame is already in the chosen theme.
+  final appSettings = AppSettings(PrefsAppSettingsStore());
+  await appSettings.load();
   runApp(HerdrMobileApp(
     machines: machines,
     network: ConnectivityNetworkMonitor(),
     snapshotCache: PrefsSnapshotCache(),
     terminalSettings: terminalSettings,
     newSessionSettings: newSessionSettings,
+    appSettings: appSettings,
   ));
 }

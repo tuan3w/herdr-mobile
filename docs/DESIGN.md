@@ -22,8 +22,8 @@ hairlines, status as shape, one accent used sparingly).
 6. **Press, don't ripple.** Feedback starts on pointer-down (after the scroll
    intent delay) and is a soft tint or a 0.92–0.98 scale. No ink splashes.
 7. **Motion is quiet.** Under 300 ms, `Motion.easeOut`, transform/opacity only,
-   interruptible, reduced-motion respected. Never a looping animation, with one
-   exception: `BusySpinner` (below).
+   interruptible, reduced-motion respected. Never a looping animation, with two
+   exceptions: `BusySpinner` and the working agent's stepped arc (below).
 8. **Icons are Lucide** (thin line, 1.5 px), not Material icons.
 9. **Everything is reachable.** Touch targets are at least 44 x 44 even where the
    painted shape is smaller; every control has one accessible name.
@@ -116,8 +116,16 @@ and never over the first row.
 `BusySpinner` is a round-capped 2 px ring, 14 px in buttons and the composer's
 send. It is allowed only for work the user is actively waiting on (a button that
 is saving or testing, a send in flight) and must disappear when that work
-ends. It is never decoration and never part of a resting screen. Everything
-else, including "working" agents, is static.
+ends. It is never decoration and never part of a resting screen.
+
+### Working agent arc (the other one)
+
+A working agent's `StatusGlyph` has an arc that hops 8 positions at 4 steps per
+second. It exists because "is it alive?" is the most useful thing on a board of
+many agents. It is cheap by construction: one shared `StepClock` that runs only
+while a working glyph is mounted and visible, stops when the app is
+backgrounded or animations are disabled, and repaints each glyph's own
+`RepaintBoundary` and nothing else. Every other status is static.
 
 ## Touch targets
 
@@ -161,6 +169,33 @@ control above follows:
   never restore keys, passwords or passphrases.
 - Sheets read colours from the theme, so a light/dark switch while one is open
   restyles it. The sheet body scrolls when it does not fit.
+
+## Theme and Settings
+
+The theme is a setting (`ThemeChoice` light / dark / system, `AppSettings`),
+**light by default**, including for installs that never chose. It is loaded in
+`main()` before `runApp`, so the first frame is already right. `MaterialApp`
+switches instantly (`themeAnimationDuration: Duration.zero`): a cross-fade
+would lerp `ThemeData` per frame and rebuild every mounted screen, including
+the hidden Agents board. The system bars follow the resolved brightness, so
+`system` follows the phone.
+
+Settings is the third tab (`features/settings/`): Appearance (theme control and
+a paper / ink preview), Terminal (font size stepper 8 to 22 with a sample line,
+wrap switch; both edit the pane's `TerminalSettings`), About (version, what it
+talks to, source link, licences). The version is `lib/data/app_info.dart`;
+`test/app_settings_test.dart` fails when it differs from `pubspec.yaml`.
+`AppSwitch` / `SwitchRow` live there until another screen needs a switch.
+
+The native launch window is the paper colour in day **and** night
+(`herdr_bg`, no `values-night`): the chosen theme is not readable before
+Flutter starts, and light is the default. A person who chose Dark sees a brief
+paper-coloured launch (the Android 12 splash is paper with the app icon) before
+the first dark frame.
+
+`FloatingTabBar` shows the label of the selected tab only; the others are 48 x
+48 icon-only targets (their names stay in semantics), so three tabs fit 320 dp
+at 2x text. Tests find a tab with `FloatingTabBar.tabKey(label)`.
 
 ## Checking a screen
 

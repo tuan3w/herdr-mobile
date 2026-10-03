@@ -183,4 +183,50 @@ void main() {
       expect(entryIndexes(e)[ValueKey(AgentStatus.working)], 3);
     });
   });
+
+  group('time in state', () {
+    test('is minutes, then hours, then days: never seconds', () {
+      expect(formatElapsed(Duration.zero), '<1m');
+      expect(formatElapsed(const Duration(seconds: 59)), '<1m');
+      expect(formatElapsed(const Duration(seconds: 60)), '1m');
+      expect(formatElapsed(const Duration(minutes: 12, seconds: 59)), '12m');
+      expect(formatElapsed(const Duration(minutes: 59, seconds: 59)), '59m');
+      expect(formatElapsed(const Duration(hours: 1)), '1h');
+      expect(formatElapsed(const Duration(hours: 1, minutes: 5)), '1h 05m');
+      expect(formatElapsed(const Duration(hours: 23, minutes: 59)), '23h 59m');
+      expect(formatElapsed(const Duration(hours: 24)), '1d');
+      expect(formatElapsed(const Duration(days: 3, hours: 7)), '3d');
+    });
+
+    test('a clock that stepped back (a set-back device clock) never shows a negative', () {
+      expect(formatElapsed(const Duration(minutes: -5)), '<1m');
+    });
+
+    test('is a state word and a duration; unknown has no word to say', () {
+      const d = Duration(minutes: 12);
+      expect(timeInState(AgentStatus.working, d), 'working 12m');
+      expect(timeInState(AgentStatus.blocked, const Duration(minutes: 3)), 'needs you 3m');
+      expect(timeInState(AgentStatus.done, const Duration(hours: 2)), 'done 2h');
+      expect(timeInState(AgentStatus.idle, d), 'idle 12m');
+      expect(timeInState(AgentStatus.unknown, d), '');
+    });
+  });
+
+  group('triage list', () {
+    test('keeps blocked agents that can be reached, in board order', () async {
+      final h = await _fleet({'a': [_pane(1, 'blocked'), _pane(2, 'working'), _pane(3, 'blocked')]});
+      final m = h.fleet.connections.single;
+      AgentRowData row(String k, AgentStatus s, {bool stale = false}) =>
+          (key: k, machine: m, paneId: k, status: s, title: k, subtitle: '', stale: stale);
+
+      final list = blockedAgents([
+        row('1', AgentStatus.blocked),
+        row('2', AgentStatus.working),
+        row('3', AgentStatus.blocked, stale: true),
+        row('4', AgentStatus.blocked),
+      ]);
+      expect(list.map((a) => a.key), ['1', '4'], reason: 'offline "needs you" cannot be answered');
+      h.dispose();
+    });
+  });
 }

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
+import 'package:herdr_mobile/data/repositories/open_tabs.dart';
+import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
@@ -14,15 +17,20 @@ import 'package:provider/provider.dart';
 import '../support/fake_network.dart';
 import '../support/fake_transport.dart';
 import '../support/memory_stores.dart';
+import '../support/memory_app_settings_store.dart';
 import '../support/memory_terminal_settings_store.dart';
 
 typedef Pane = ({String id, String ws, String? agent, String status});
 
-/// A fake machine that also answers `pane.read`, with [paneText] for every pane.
+/// A fake machine that also answers `pane.read`: [paneTexts] for the pane
+/// asked about, else [paneText] (the same for every pane).
 class UiTransport extends FakeTransport {
   UiTransport(super.snapshot);
 
   String paneText = '';
+
+  /// Text per pane id; wins over [paneText].
+  final Map<String, String> paneTexts = {};
 
   @override
   Future<Map<String, dynamic>> request(
@@ -31,19 +39,30 @@ class UiTransport extends FakeTransport {
   ]) {
     if (method != 'pane.read') return super.request(method, params);
     calls.add((method, params));
+    final text = paneTexts[params['pane_id']] ?? paneText;
     return Future.value({
       'type': 'pane_read',
-      'read': {'text': paneText, 'truncated': false},
+      'read': {'text': text, 'truncated': false},
     });
   }
 }
 
 /// A fleet of fake machines wired like the app wires real ones.
 class UiHarness {
-  UiHarness._(this.machines, this.fleet, this.network, this.transports);
+  UiHarness._(this.machines, this.fleet, this.network, this.transports)
+      : previews = PanePreviews(changes: fleet, connection: fleet.connection);
 
   /// Terminal font/wrap settings the pane screen reads, kept in memory.
   final terminalSettings = TerminalSettings(MemoryTerminalSettingsStore());
+
+  /// App settings (the theme) the Settings tab edits, kept in memory.
+  final appSettings = AppSettings(MemoryAppSettingsStore());
+
+  /// Live previews, wired to [fleet] like the app wires them.
+  final PanePreviews previews;
+
+  /// The agents open as tabs in the pane screen.
+  final openTabs = OpenTabs();
 
   final MachineRepository machines;
   final FleetRepository fleet;
@@ -76,7 +95,11 @@ class UiHarness {
     return UiHarness._(machines, fleet, network, transports);
   }
 
-  void dispose() => fleet.dispose();
+  void dispose() {
+    previews.dispose();
+    openTabs.dispose();
+    fleet.dispose();
+  }
 }
 
 /// Pumps the real app shell at a phone size.
@@ -98,6 +121,9 @@ Future<void> pumpUi(
         ChangeNotifierProvider.value(value: h.machines),
         ChangeNotifierProvider.value(value: h.fleet),
         ChangeNotifierProvider.value(value: h.terminalSettings),
+        ChangeNotifierProvider.value(value: h.appSettings),
+        ChangeNotifierProvider.value(value: h.openTabs),
+        Provider<PanePreviews>.value(value: h.previews),
         // "Test connection" talks to a fake that answers with an empty fleet.
         Provider<TransportFactory>.value(
           value: (profile, secrets, onPin, onNotice) => UiTransport(snapshotWith(const [])),

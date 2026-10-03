@@ -14,6 +14,43 @@ const filterableStatuses = [
   AgentStatus.idle,
 ];
 
+/// How the board draws an agent: a card with a live terminal preview, or the
+/// dense two-line row.
+enum AgentDensity { cards, compact }
+
+/// "<1m", "12m", "1h 05m", "3d": the time an agent has been in its state,
+/// by the minute. Never seconds, so a label changes at most once a minute.
+String formatElapsed(Duration d) {
+  final minutes = d.inMinutes;
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return '${minutes}m';
+  if (d.inHours < 24) {
+    final m = minutes % 60;
+    return m == 0 ? '${d.inHours}h' : '${d.inHours}h ${m.toString().padLeft(2, '0')}m';
+  }
+  return '${d.inDays}d';
+}
+
+/// "working 12m", "needs you 3m"; empty for an agent whose state has no
+/// useful word ("unknown").
+String timeInState(AgentStatus status, Duration d) {
+  final word = switch (status) {
+    AgentStatus.blocked => 'needs you',
+    AgentStatus.working => 'working',
+    AgentStatus.done => 'done',
+    AgentStatus.idle => 'idle',
+    AgentStatus.unknown => '',
+  };
+  return word.isEmpty ? '' : '$word ${formatElapsed(d)}';
+}
+
+/// The agents the triage pill and sheet walk: blocked and reachable (an
+/// offline machine's last-known "needs you" cannot be answered from here).
+List<AgentRowData> blockedAgents(Iterable<AgentRowData> agents) => [
+      for (final a in agents)
+        if (a.status == AgentStatus.blocked && !a.stale) a,
+    ];
+
 /// Everything one agent row shows. A record, so two equal rows compare equal
 /// and the screen can tell that nothing it draws has changed.
 typedef AgentRowData = ({

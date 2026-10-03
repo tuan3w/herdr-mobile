@@ -3,7 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/ui/core/rows.dart';
+import 'package:herdr_mobile/ui/core/controls.dart';
+import 'package:herdr_mobile/ui/features/agents/agent_card.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../support/shot.dart' show loadAppFonts;
@@ -83,7 +84,7 @@ void main() {
         final h = await _worstCase();
         await pumpUi(tester, h, width: width, textScale: scale);
 
-        expect(find.byType(ListRow), findsWidgets);
+        expect(find.byType(AgentCard), findsWidgets);
         // Walk the whole list so every row is built and laid out.
         final list = find.byType(CustomScrollView).first;
         for (var i = 0; i < 12; i++) {
@@ -121,7 +122,7 @@ void main() {
 
     // A phone shows a handful. Building all 120 up front is the stutter
     // break-ui warns about for unpaginated lists.
-    expect(find.byType(ListRow).evaluate().length, lessThan(30));
+    expect(find.byType(AgentCard).evaluate().length, lessThan(30));
     await teardownUi(tester, h);
   });
 
@@ -156,14 +157,14 @@ void main() {
       await pumpUi(tester, h);
       expect(find.textContaining('No network'), findsNothing);
       expect(
-          tester.widgetList<ListRow>(find.byType(ListRow)).any((r) => r.dim), isFalse);
+          tester.widgetList<AgentCard>(find.byType(AgentCard)).any((c) => c.agent.stale), isFalse);
 
       h.network.goOffline();
       await settle(tester);
 
       expect(find.textContaining('No network'), findsWidgets);
       expect(
-          tester.widgetList<ListRow>(find.byType(ListRow)).every((r) => r.dim), isTrue,
+          tester.widgetList<AgentCard>(find.byType(AgentCard)).every((c) => c.agent.stale), isTrue,
           reason: 'rows keep their data but are marked stale');
       await teardownUi(tester, h);
     });
@@ -181,7 +182,8 @@ void main() {
     final semantics = tester.ensureSemantics();
     await pumpUi(tester, h);
 
-    expect(tester.getSemantics(find.byType(ListRow).first).label, contains('Needs you'));
+    final body = find.descendant(of: find.byType(AgentCard).first, matching: find.byType(PressBuilder));
+    expect(tester.getSemantics(body.first).label, contains('Needs you'));
     semantics.dispose();
     await teardownUi(tester, h);
   });

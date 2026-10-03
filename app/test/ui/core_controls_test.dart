@@ -210,10 +210,13 @@ void main() {
           ),
         ),
       );
-      final agents = tester.getSemantics(find.text('Agents'));
+      final agents = tester.getSemantics(find.byKey(FloatingTabBar.tabKey('Agents')));
       expect(agents.label, 'Agents, 2 need you');
       expect(agents.flagsCollection.isSelected, Tristate.isTrue);
-      expect(tester.getSemantics(find.text('Machines')).flagsCollection.isSelected, Tristate.isFalse);
+      expect(
+        tester.getSemantics(find.byKey(FloatingTabBar.tabKey('Machines'))).flagsCollection.isSelected,
+        Tristate.isFalse,
+      );
       handle.dispose();
     });
 

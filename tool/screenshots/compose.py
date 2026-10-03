@@ -31,10 +31,12 @@ INK = {"bg_top": (13, 14, 16), "bg_bottom": (22, 23, 34), "text": (236, 237, 239
        "muted": (141, 144, 152), "glow": (94, 106, 210)}
 
 # slug -> (theme of the slide, headline, sub line). Dict order is display
-# order; themes alternate so the gallery has a rhythm.
+# order; themes alternate (light first, the app's default look) so the
+# gallery has a rhythm. Each slug is the raw render `<slug>_<theme>.png`.
 SLIDES: dict[str, tuple[str, str, str]] = {
-    "agents": ("dark", "Every agent.\nOne glance.", "See which one needs you, across all your machines."),
-    "needs-you": ("light", "Know the moment\nit needs you.", "Status you can read without colour."),
+    "board": ("light", "Answer without\nopening anything.", "Live previews and one-tap replies, right on the board."),
+    "tabs": ("dark", "Jump between agents\nlike browser tabs.", "Every agent you open gets a tab."),
+    "tray": ("light", "See every open\nagent at once.", "A tray of live previews, one card per tab."),
     "new-session": ("dark", "Start an agent\nfrom anywhere.", "Choose a machine, a folder and an agent."),
     "pane": ("light", "Answer from\nyour pocket.", "A real terminal, drawn cell by cell."),
     "links": ("dark", "Tap links\nand files.", "URLs and paths in agent output open in one tap."),
@@ -45,13 +47,9 @@ SLIDES: dict[str, tuple[str, str, str]] = {
     "tailscale": ("light", "Tailscale SSH,\nbuilt in.", "Approve a sign-in without leaving the app."),
 }
 
-
-# Slides that reuse another render (slug -> raw name).
-SOURCE = {"needs-you": "agents"}
-
 # The three renders in the hero, left to right: (raw name, tone). The middle
 # phone sits highest.
-HERO_PICKS = [("links", "light"), ("agents", "dark"), ("image", "light")]
+HERO_PICKS = [("tray", "light"), ("board", "light"), ("links", "dark")]
 
 
 def font(name: str, size: int) -> ImageFont.FreeTypeFont:
@@ -161,19 +159,29 @@ def background(theme: dict, size=(W, H)) -> Image.Image:
 
 def text_block(canvas, theme, headline: str, sub: str, y: int) -> int:
     d = ImageDraw.Draw(canvas)
-    f = font("Inter-Bold.ttf", 118)
-    fs = font("Inter-Regular.ttf", 48)
-    for line in headline.split("\n"):
-        w = d.textlength(line, font=f)
-        # Inter has no variable tracking here: tighten by drawing per glyph.
-        track = -3.2
-        total = w + track * (len(line) - 1)
+    lines = headline.split("\n")
+    # Inter has no variable tracking here: tighten by drawing per glyph.
+    track = -3.2
+    room = canvas.width - 140
+    size = 118
+    while size > 80:
+        f = font("Inter-Bold.ttf", size)
+        if max(d.textlength(line, font=f) + track * (len(line) - 1) for line in lines) <= room:
+            break
+        size -= 2
+    f = font("Inter-Bold.ttf", size)
+    for line in lines:
+        total = d.textlength(line, font=f) + track * (len(line) - 1)
         x = (canvas.width - total) / 2
         for ch in line:
             d.text((x, y), ch, font=f, fill=theme["text"])
             x += d.textlength(ch, font=f) + track
         y += 132
     y += 22
+    sub_size = 48
+    while sub_size > 34 and d.textlength(sub, font=font("Inter-Regular.ttf", sub_size)) > room:
+        sub_size -= 1
+    fs = font("Inter-Regular.ttf", sub_size)
     w = d.textlength(sub, font=fs)
     d.text(((canvas.width - w) / 2, y), sub, font=fs, fill=theme["muted"])
     return y + 70
@@ -181,7 +189,7 @@ def text_block(canvas, theme, headline: str, sub: str, y: int) -> int:
 
 def slide(slug: str) -> Image.Image | None:
     theme_name, headline, sub = SLIDES[slug]
-    src = RAW / f"{SOURCE.get(slug, slug)}_{theme_name}.png"
+    src = RAW / f"{slug}_{theme_name}.png"
     if not src.exists():
         print(f"skip {slug}: {src} missing")
         return None

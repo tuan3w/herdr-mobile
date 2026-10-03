@@ -33,6 +33,9 @@ typedef PaneReader = Future<PaneRead> Function(ReadSource source, int lines);
 /// are kept (see [ScrollbackHistory]), so the user can scroll back further
 /// than herdr serves, for as long as the screen is open.
 ///
+/// A pane that is not the visible tab is [pause]d: it stops reading, keeps what
+/// it has (text, history), and [resume] reads at once.
+///
 /// In [wrap] mode the pane is read as `recent_unwrapped` (herdr joins the rows
 /// the terminal soft-wrapped, leaving one logical line per line, for the view
 /// to re-flow to the screen); otherwise as `recent`, the terminal's own rows.
@@ -104,6 +107,9 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// one trailing read will pick it up.
   bool _pending = false;
   bool _active = true;
+
+  /// Not the visible tab: no reads until [resume].
+  bool _paused = false;
   bool _fatal = false;
   bool _disposed = false;
   bool _wrap;
@@ -144,6 +150,30 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   /// The last read failed, so [text] may be out of date.
   bool get isStale => _stale;
+
+  /// Whether reads are suspended because the pane is not on screen.
+  bool get paused => _paused;
+
+  /// The pane left the screen (a background tab): stops reading. What was read
+  /// stays, so coming back shows it while the next read is under way.
+  void pause() {
+    if (_paused || _disposed) return;
+    _paused = true;
+    _cooldown?.cancel();
+    _cooldown = null;
+    _fallback?.cancel();
+    _fallback = null;
+    _pending = false;
+  }
+
+  /// The pane is on screen again: reads now, without waiting out the interval.
+  void resume() {
+    if (!_paused || _disposed) return;
+    _paused = false;
+    _cooldown?.cancel();
+    _cooldown = null;
+    refresh();
+  }
 
   /// Reads now (still throttled), and retries after a fatal failure.
   void refresh() {
@@ -202,7 +232,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _schedule() {
-    if (_disposed || !_active || _fatal) return;
+    if (_disposed || !_active || _paused || _fatal) return;
     if (_inFlight || _cooldown != null) {
       _pending = true;
       return;
@@ -236,7 +266,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
       }
     } finally {
       _inFlight = false;
-      if (!_disposed && _active && !_fatal) {
+      if (!_disposed && _active && !_paused && !_fatal) {
         _fallback = Timer(fallbackInterval, _schedule);
         if (_pending && _cooldown == null) unawaited(_run());
       }

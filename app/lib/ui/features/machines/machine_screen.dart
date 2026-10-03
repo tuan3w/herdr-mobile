@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -15,7 +17,7 @@ import '../../core/status_panel.dart';
 import '../create/management_sheets.dart';
 import '../create/new_session_screen.dart';
 import '../files/files_navigation.dart';
-import '../pane/pane_screen.dart';
+import '../pane/pane_navigation.dart';
 
 /// Everything running on one machine: workspaces → tabs → panes.
 class MachineScreen extends StatelessWidget {
@@ -338,9 +340,7 @@ class _PaneRow extends StatelessWidget {
       trailing: Icon(LucideIcons.chevronRight, size: 16, color: ds.textTertiary),
       onTap: () {
         HapticFeedback.selectionClick();
-        Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => PaneScreen(machine: machine, paneId: pane.id),
-        ));
+        unawaited(openPaneTab(context, machine, pane.id));
       },
     );
   }

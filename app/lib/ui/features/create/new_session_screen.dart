@@ -16,7 +16,7 @@ import '../../core/rows.dart';
 import '../../core/status_panel.dart';
 import '../../core/tokens.dart';
 import '../files/files_navigation.dart';
-import '../pane/pane_screen.dart';
+import '../pane/pane_navigation.dart';
 import 'new_session_view_model.dart';
 
 /// Opens the new-session form, on [machine] when given.
@@ -112,9 +112,7 @@ class _FormState extends State<_Form> {
       prompt: _prompt.text,
     ));
     if (launch == null || !mounted) return;
-    unawaited(nav.pushReplacement(MaterialPageRoute<void>(
-      builder: (_) => PaneScreen(machine: launch.machine, paneId: launch.paneId),
-    )));
+    unawaited(openPaneTab(nav.context, launch.machine, launch.paneId, replace: true));
     if (launch.notice case final notice?) {
       messenger.showSnackBar(SnackBar(content: Text(notice)));
     }
