@@ -112,15 +112,18 @@ List<String> _footerRows(int step) => [
       '\x1b[2m? for shortcuts\x1b[0m',
     ];
 
-/// The text `pane.read` returns at [step]: the last [_window] rows.
-String _read(int step) {
-  final newest = 1000 + step * _slide;
+/// The text `pane.read` returns when the pane's newest body row is [newest],
+/// at animation [step]: the last [_window] rows.
+String _readAt(int newest, int step) {
   final rows = <String>[
     for (var a = newest - (_window - _footer); a < newest; a++) _bodyRow(a),
     ..._footerRows(step),
   ];
   return '${rows.join('\r\n')}\r\n';
 }
+
+/// The text `pane.read` returns at [step]: the last [_window] rows.
+String _read(int step) => _readAt(1000 + step * _slide, step);
 
 // ---------------------------------------------------------------------------
 
@@ -150,18 +153,19 @@ Widget _app(String text, List<String> history, {required bool wrap}) =>
     );
 
 /// Streams [steps] reads through history + view; returns per-step ms split
-/// into (history merge, view update).
+/// into (history merge, view update). [read] gives the text of read `s`.
 Future<({List<double> history, List<double> view})> _stream(
   WidgetTester tester,
   ScrollbackHistory history,
   int from,
   int steps, {
   required bool wrap,
+  String Function(int s) read = _read,
 }) async {
   final hist = <double>[];
   final view = <double>[];
   for (var s = from; s < from + steps; s++) {
-    final text = _read(s);
+    final text = read(s);
     final sw = Stopwatch()..start();
     history.update(text, truncated: true);
     final a = sw.elapsedMicroseconds;
@@ -171,6 +175,140 @@ Future<({List<double> history, List<double> view})> _stream(
     view.add(b / 1000);
   }
   return (history: hist, view: view);
+}
+
+/// The vertical scroll position of the terminal's row list.
+ScrollPosition _rows(WidgetTester tester) => tester
+    .state<ScrollableState>(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Scrollable &&
+            axisDirectionToAxis(w.axisDirection) == Axis.vertical,
+      ),
+    )
+    .position;
+
+/// Rows of history the deep scenario builds up before it starts measuring: a
+/// pane that has been busy for a long while (the history keeps up to 20000).
+const _deepRows = 10000;
+
+/// Rows the pane moves between two reads while the history builds up (a busy
+/// agent between two throttled reads); streaming at depth uses [_slide].
+const _deepSlide = 30;
+const _deepFlings = 8;
+const _deepSteps = 60;
+
+/// The same pane after ~[_deepRows] rows of history: what streaming, opening,
+/// dragging, flinging and jumping cost when there is a lot to scroll through.
+Future<void> _deepScenario(
+  WidgetTester tester,
+  String name, {
+  required bool wrap,
+}) async {
+  final history = ScrollbackHistory();
+  var newest = 1000;
+  var step = 0;
+  history.update(_readAt(newest, step), truncated: true);
+  final fill = <double>[];
+  for (var i = 0; i < _deepRows ~/ _deepSlide; i++) {
+    newest += _deepSlide;
+    step++;
+    final text = _readAt(newest, step); // not timed
+    final sw = Stopwatch()..start();
+    history.update(text, truncated: true);
+    fill.add(sw.elapsedMicroseconds / 1000);
+  }
+  expect(history.rows.length, greaterThan(_deepRows - 400));
+  _report('${name}_history', fill);
+
+  // Cold open: parse (and, wrapping, flow) every line, lay out one screen.
+  final cold = Stopwatch()..start();
+  await tester.pumpWidget(_app(history.window, history.rows, wrap: wrap));
+  _metric('${name}_open_ms', cold.elapsedMicroseconds / 1000);
+
+  // Streaming with the whole history in the view.
+  final base = newest;
+  final baseStep = step;
+  String read(int s) => _readAt(base + (s - baseStep) * _slide, s);
+  await _stream(tester, history, step + 1, _warmup, wrap: wrap, read: read);
+  final streamed = await _stream(
+    tester,
+    history,
+    step + 1 + _warmup,
+    _deepSteps,
+    wrap: wrap,
+    read: read,
+  );
+  step += _warmup + _deepSteps;
+  _report('${name}_step', [
+    for (var i = 0; i < _deepSteps; i++)
+      streamed.history[i] + streamed.view[i],
+  ]);
+
+  // Fling back through the history: every row that comes on screen is new.
+  final view = find.byType(TerminalView);
+  final frames = <double>[];
+  for (var f = 0; f < _deepFlings; f++) {
+    await tester.fling(view, const Offset(0, 300), 8000);
+    for (var i = 0; i < 400 && tester.binding.hasScheduledFrame; i++) {
+      final sw = Stopwatch()..start();
+      await tester.pump(const Duration(milliseconds: 16));
+      frames.add(sw.elapsedMicroseconds / 1000);
+    }
+  }
+  _report('${name}_fling', frames);
+  final flung = _rows(tester);
+  _metric('${name}_fling_reach_px', flung.pixels);
+  _metric('${name}_extent_px', flung.maxScrollExtent);
+  expect(flung.maxScrollExtent, greaterThan(_deepRows * 10.0));
+  expect(flung.pixels, greaterThan(20 * flung.viewportDimension));
+
+  // Jump a long way in one go (a scrollbar-style drag to the far end and
+  // back): the frame that lands somewhere never seen.
+  final jumps = <double>[];
+  for (var j = 0; j < 4; j++) {
+    final gesture = await tester.startGesture(const Offset(200, 300));
+    // Many pointer moves, then one frame: the scroll position has already
+    // moved when the frame lays out, as when the finger outruns the display.
+    for (var k = 0; k < 150; k++) {
+      await gesture.moveBy(Offset(0, j.isEven ? 1000 : -1000));
+    }
+    final sw = Stopwatch()..start();
+    await tester.pump(const Duration(milliseconds: 16));
+    jumps.add(sw.elapsedMicroseconds / 1000);
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+  _report('${name}_jump', jumps);
+  _metric('${name}_jump_end_px', _rows(tester).pixels);
+
+  // Slow drag at depth.
+  final gesture = await tester.startGesture(const Offset(200, 300));
+  final drag = <double>[];
+  for (var i = 0; i < _scrollFrames; i++) {
+    final sw = Stopwatch()..start();
+    await gesture.moveBy(const Offset(0, 14));
+    await tester.pump(const Duration(milliseconds: 16));
+    drag.add(sw.elapsedMicroseconds / 1000);
+  }
+  _report('${name}_drag', drag);
+
+  // Keep streaming while the user is reading deep in the history.
+  final scrolled = await _stream(
+    tester,
+    history,
+    step + 1,
+    _deepSteps,
+    wrap: wrap,
+    read: read,
+  );
+  _report('${name}_scrolled_step', [
+    for (var i = 0; i < _deepSteps; i++)
+      scrolled.history[i] + scrolled.view[i],
+  ]);
+  await gesture.up();
+
+  expect(find.byType(TerminalLineView).evaluate().length, greaterThan(20));
 }
 
 Future<void> _scenario(
@@ -255,5 +393,21 @@ void main() {
       ..devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     await _scenario(tester, 'wrap', wrap: true);
+  });
+
+  testWidgets('deep history, native rows', semanticsEnabled: false, (tester) async {
+    tester.view
+      ..physicalSize = const Size(392 * 2.75, 760 * 2.75)
+      ..devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await _deepScenario(tester, 'deep', wrap: false);
+  });
+
+  testWidgets('deep history, wrapped', semanticsEnabled: false, (tester) async {
+    tester.view
+      ..physicalSize = const Size(392 * 2.75, 760 * 2.75)
+      ..devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await _deepScenario(tester, 'deepwrap', wrap: true);
   });
 }
