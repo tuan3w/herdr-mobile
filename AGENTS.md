@@ -11,12 +11,43 @@ Flutter and Dart skills from `flutter/agent-plugins` are installed in
 `flutter-fix-layout-issues` for overflow errors.
 Upstream source is cloned at `third_party/agent-plugins`.
 
+Design/motion skills from `emilkowalski/skills` (clone: `third_party/skills`)
+set the quality bar for UI. Both sets are pinned to their GitHub sources in
+`skills-lock.json`; refresh with `npx skills add <owner/repo> --skill '*' --agent universal --yes`.
+
+| Use for | Skill |
+| --- | --- |
+| Any UI polish or critique; the main bar | `emil-design-eng` |
+| Motion decisions, then strict review | `animate`, `review-animations` |
+| Audit existing motion / find where motion belongs | `improve-animations`, `find-animation-opportunities` |
+| Precise wording when describing motion | `animation-vocabulary` |
+| Fluid-motion and interface principles | `apple-design` |
+| Worst-case data (long names, huge counts, empty lists) | `break-ui` |
+| Touch feel, safe areas, "test on real hardware" | `mobile-native` (principles only) |
+| Performance rules of thumb | `third_party/skills/performance-cheatsheet.md` |
+
+These skills are written for web (CSS, React). Translate, don't copy:
+`cubic-bezier(0.23, 1, 0.32, 1)` → `Cubic(0.23, 1, 0.32, 1)`; animate
+transform/opacity (`AnimatedScale`, `FadeTransition`, `SlideTransition`), not
+layout; virtualize long lists (`ListView.builder`); isolate repaints with
+`RepaintBoundary`; UI motion stays under ~300 ms; never animate frequent or
+keyboard-driven actions.
+
+Not applicable to this Flutter app: `animate-expo` (React Native),
+`write-swift`, `pick-ui-library` and `ask-sonner` (web libraries). The
+installed `prototype` skill shares its name with a global `prototype` skill;
+check which one loads before relying on it.
+
 ## Rules of the road
 
 - Layering is strict: `ui/` → view models → `data/repositories` →
   `data/services`. Widgets never touch transports.
-- herdr's socket takes **one request per connection**; `events.subscribe` is
-  the only long-lived channel. Never assume a persistent request channel.
+- herdr's socket takes **one request per connection** and `events.subscribe`
+  is the only long-lived herdr channel. Latency comes from not paying a
+  connection per request: `SshTransport` multiplexes requests over one
+  persistent channel (`mux_client.dart`) and falls back to a channel per
+  request only when the mux is unavailable. Never open a channel per call in
+  new code.
 - Every `HerdrTransportException` must say whether it is `fatal`; fatal means
   stop retrying and surface `LinkState.attention`.
 - Remote commands are built in `bridge_command.dart`. Anything interpolated

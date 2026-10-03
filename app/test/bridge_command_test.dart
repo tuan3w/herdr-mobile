@@ -1,6 +1,7 @@
 @TestOn('linux || mac-os')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,11 +14,12 @@ Future<({String out, String err, int code})> _run(
   String command,
   Directory home, {
   String input = '',
+  Map<String, String> env = const {},
 }) async {
   final p = await Process.start(
     '/bin/sh',
     ['-c', command],
-    environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+    environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', ...env},
     includeParentEnvironment: false,
   );
   p.stdin.write(input);
@@ -170,4 +172,329 @@ esac
     expect(File('${home.path}/pwned').existsSync(), isFalse);
     expect(r.code, isNot(0));
   });
+
+  group('multiplexed request channel', () {
+    late String xdg;
+    setUp(() => xdg = Directory('${home.path}/xdg').path);
+
+    Future<_MuxProc> start({
+      String session = 'default',
+      String? socketPath,
+      Map<String, String>? env,
+    }) =>
+        _MuxProc.start(
+          buildMuxCommand(session: session, socketPath: socketPath),
+          home,
+          env ?? {'XDG_CONFIG_HOME': xdg},
+        );
+
+    String pong(Object? id) => jsonEncode({'id': id, 'result': {'type': 'pong'}});
+
+    Future<_FakeHerdr> serve(
+      String path, [
+      Future<String?> Function(Map<String, dynamic>)? handler,
+    ]) =>
+        _FakeHerdr.bind(path, handler ?? (req) async => pong(req['id']));
+
+    test('prints the ready line before anything else', () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+
+      expect(await mux.next(), muxReadyLine);
+    });
+
+    test('answers pipelined requests and matches them by id out of order',
+        () async {
+      final fastSeen = Completer<void>();
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
+        if (req['id'] == 'slow') {
+          await fastSeen.future; // replies only after 'fast' was served
+          // Let the fast response reach the wire first; without a real delay the
+          // continuation races ahead of the fast handler's own write.
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        } else if (!fastSeen.isCompleted) {
+          fastSeen.complete();
+        }
+        return pong(req['id']);
+      });
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'slow', 'method': 'ping', 'params': {}});
+      mux.send({'id': 'fast', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'fast');
+      expect(jsonDecode(await mux.next())['id'], 'slow');
+    });
+
+    test('relays a response larger than 1 MB intact', () async {
+      final blob = List.filled(1500000, 'x').join();
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'blob': blob}}));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
+
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+      expect(reply['id'], 'big');
+      expect((reply['result'] as Map)['blob'], blob);
+    });
+
+    test('a server that closes without replying yields an error with that id',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          req['id'] == 'mute' ? null : pong(req['id']));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'mute', 'method': 'ping', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'mute');
+      expect((reply['error'] as Map)['code'], 'bridge_error');
+      // The channel keeps serving afterwards.
+      mux.send({'id': 'next', 'method': 'ping', 'params': {}});
+      expect(jsonDecode(await mux.next())['id'], 'next');
+    });
+
+    test('an unreachable socket yields an error with that id', () async {
+      // The path exists as a socket at start, but nothing listens any more.
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(mux.stop);
+      await mux.next();
+      await herdr.close();
+
+      mux.send({'id': 'gone', 'method': 'ping', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'gone');
+      expect((reply['error'] as Map)['code'], 'bridge_error');
+    });
+
+    test('still delivers pending responses after stdin closes, then exits 0',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(herdr.close);
+      await mux.next();
+
+      mux.send({'id': 'last', 'method': 'ping', 'params': {}});
+      await mux.process.stdin.close();
+
+      expect(jsonDecode(await mux.next())['id'], 'last');
+      expect(await mux.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('default session resolves to \$XDG_CONFIG_HOME/herdr/herdr.sock',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('without XDG_CONFIG_HOME the default session uses \$HOME/.config',
+        () async {
+      final herdr = await serve('${home.path}/.config/herdr/herdr.sock');
+      final mux = await start(env: {});
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('a named session resolves to sessions/<name>/herdr.sock', () async {
+      final herdr = await serve('$xdg/herdr/sessions/work/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'type': 'work'}}));
+      // A default-session server must not be picked for a named session.
+      final other = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'type': 'default'}}));
+      final mux = await start(session: 'work');
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+        await other.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['result']['type'], 'work');
+    });
+
+    test('an explicit socket path wins over the session-derived one', () async {
+      final herdr = await serve('${home.path}/custom.sock');
+      final mux = await start(session: 'work', socketPath: '${home.path}/custom.sock');
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('a missing socket exits 78 with a hint and no ready line', () async {
+      final r = await _run(
+        buildMuxCommand(session: 'work'),
+        home,
+        env: {'XDG_CONFIG_HOME': xdg},
+      );
+
+      expect(r.code, 78);
+      expect(r.out, isEmpty);
+      expect(r.err, contains('no herdr socket'));
+      expect(r.err, contains('$xdg/herdr/sessions/work/herdr.sock'));
+    });
+
+    test('missing python3 exits 78 with a hint', () async {
+      final bin = Directory('${home.path}/bin')..createSync();
+      for (final tool in ['sh', 'base64']) {
+        for (final d in ['/usr/bin', '/bin']) {
+          if (File('$d/$tool').existsSync()) {
+            Link('${bin.path}/$tool').createSync('$d/$tool');
+            break;
+          }
+        }
+      }
+      final p = await Process.start(
+        '/bin/sh',
+        ['-c', buildMuxCommand(session: 'default')],
+        environment: {'HOME': home.path, 'PATH': bin.path},
+        includeParentEnvironment: false,
+      );
+      await p.stdin.close();
+      final err = await utf8.decodeStream(p.stderr);
+
+      expect(await p.exitCode, 78);
+      expect(err, contains('python3'));
+    });
+
+    test('shell metacharacters in a socket path are never executed', () async {
+      for (final evil in [
+        "x'; touch ${home.path}/pwned; '",
+        '\$(touch ${home.path}/pwned)',
+        '`touch ${home.path}/pwned`',
+        'x"; touch ${home.path}/pwned; "',
+      ]) {
+        final r = await _run(
+            buildMuxCommand(session: 'work', socketPath: evil), home);
+
+        expect(File('${home.path}/pwned').existsSync(), isFalse, reason: evil);
+        expect(r.code, 78, reason: evil);
+      }
+    });
+
+    test('rejects session names that could inject shell', () {
+      for (final bad in ['a b', r'x;rm -rf /', r'$(id)', "a'b", '', '../x']) {
+        expect(() => buildMuxCommand(session: bad), throwsArgumentError,
+            reason: bad);
+      }
+    });
+  }, skip: _has('python3') ? false : 'needs python3');
+}
+
+/// A running mux command with line-oriented access to its stdout.
+class _MuxProc {
+  _MuxProc._(this.process)
+      : _lines = StreamIterator(
+            utf8.decoder.bind(process.stdout).transform(const LineSplitter()));
+
+  static Future<_MuxProc> start(
+    String command,
+    Directory home,
+    Map<String, String> env,
+  ) async {
+    final p = await Process.start(
+      '/bin/sh',
+      ['-c', command],
+      environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', ...env},
+      includeParentEnvironment: false,
+    );
+    unawaited(p.stderr.drain<void>());
+    return _MuxProc._(p);
+  }
+
+  final Process process;
+  final StreamIterator<String> _lines;
+
+  void send(Map<String, dynamic> request) =>
+      process.stdin.writeln(jsonEncode(request));
+
+  Future<String> next() async {
+    if (!await _lines.moveNext().timeout(const Duration(seconds: 10))) {
+      throw StateError('mux closed its stdout');
+    }
+    return _lines.current;
+  }
+
+  Future<void> stop() async {
+    process.kill();
+    await process.exitCode;
+  }
+}
+
+/// Stands in for herdr's socket: one request per connection. [handler]
+/// returns the response line, or null to hang up without answering.
+class _FakeHerdr {
+  _FakeHerdr._(this._server);
+
+  static Future<_FakeHerdr> bind(
+    String path,
+    Future<String?> Function(Map<String, dynamic> request) handler,
+  ) async {
+    Directory(File(path).parent.path).createSync(recursive: true);
+    final server = await ServerSocket.bind(
+      InternetAddress(path, type: InternetAddressType.unix),
+      0,
+    );
+    server.listen((client) async {
+      final line = await utf8.decoder
+          .bind(client)
+          .transform(const LineSplitter())
+          .first;
+      final reply = await handler(jsonDecode(line) as Map<String, dynamic>);
+      if (reply != null) client.write('$reply\n');
+      await client.close();
+    });
+    return _FakeHerdr._(server);
+  }
+
+  final ServerSocket _server;
+
+  Future<void> close() async {
+    await _server.close();
+  }
 }

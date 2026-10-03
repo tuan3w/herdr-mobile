@@ -57,6 +57,12 @@ class HerdrApi {
       });
 
   /// Subscribes to coarse change events. Any event means "re-fetch".
+  ///
+  /// Only parameterless types belong here: `pane.agent_status_changed`,
+  /// `pane.output_matched` and `pane.scroll_changed` require a `pane_id`, and
+  /// herdr rejects the WHOLE subscription if one entry is invalid (the event
+  /// channel then dies and the connection flaps). A test checks this list
+  /// against the schema.
   Stream<Map<String, dynamic>> changes() => _transport.events(const [
         {'type': 'workspace.created'},
         {'type': 'workspace.updated'},
@@ -72,6 +78,9 @@ class HerdrApi {
         {'type': 'pane.agent_detected'},
         {'type': 'layout.updated'},
       ]);
+
+  /// See [HerdrTransport.reset].
+  void reset() => _transport.reset();
 
   Future<void> close() => _transport.close();
 }

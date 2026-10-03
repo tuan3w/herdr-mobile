@@ -1,0 +1,110 @@
+name: Release
+
+# Tag a version (git tag v0.2.0 && git push --tags) to build and publish APKs.
+#
+# Signing needs these repository secrets (see README, "Android release build"):
+#   ANDROID_KEYSTORE_BASE64   base64 of release.jks
+#   ANDROID_KEYSTORE_PASSWORD store and key password
+#   ANDROID_KEY_ALIAS         e.g. herdr-mobile
+# Without them the run is skipped with a warning: a debug-signed APK must never
+# be published, and a release can still be built and uploaded by hand.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check signing secrets
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Release skipped::Signing secrets are not configured, so nothing was built or published. See README, 'Android release build'."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.sign.outputs.enabled == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.sign.outputs.enabled == 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        if: steps.sign.outputs.enabled == 'true'
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+
+      - name: Verify tag matches pubspec version
+        if: steps.sign.outputs.enabled == 'true'
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(sed -n 's/^version: \([0-9.]*\)+.*/\1/p' app/pubspec.yaml)"
+          [ "$want" = "$have" ] || { echo "tag $want != pubspec $have"; exit 1; }
+
+      - name: Analyze and test
+        if: steps.sign.outputs.enabled == 'true'
+        run: tool/check.sh
+
+      - name: Restore signing key
+        if: steps.sign.outputs.enabled == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyPassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+          } > app/android/key.properties
+
+      - name: Build APKs
+        if: steps.sign.outputs.enabled == 'true'
+        working-directory: app
+        run: flutter build apk --release --split-per-abi
+
+      - name: Verify signature is not the debug key
+        if: steps.sign.outputs.enabled == 'true'
+        run: |
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            | tee /tmp/cert.txt
+          ! grep -qi "Android Debug" /tmp/cert.txt
+
+      - name: Collect assets
+        if: steps.sign.outputs.enabled == 'true'
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          mkdir dist
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "app/build/app/outputs/flutter-apk/app-$abi-release.apk" "dist/herdr-mobile-$v-$abi.apk"
+          done
+          (cd dist && sha256sum *.apk > SHA256SUMS)
+
+      - name: Publish release
+        if: steps.sign.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            && gh release upload "$GITHUB_REF_NAME" dist/* --clobber \
+            || gh release create "$GITHUB_REF_NAME" dist/* --title "herdr mobile $GITHUB_REF_NAME" --generate-notes

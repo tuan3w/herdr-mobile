@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models/herdr_models.dart';
+import 'motion.dart';
 import 'status_style.dart';
 import 'theme.dart';
 
@@ -22,21 +23,28 @@ class _PulsingDotState extends State<PulsingDot> with SingleTickerProviderStateM
     duration: const Duration(milliseconds: 1400),
   );
 
+  bool get _wantsPulse => widget.pulse && !Motion.reduced(context);
+
+  /// Reduced motion keeps the dot, drops the breathing.
+  void _sync() {
+    if (_wantsPulse) {
+      if (!_c.isAnimating) _c.repeat(reverse: true);
+    } else if (_c.isAnimating || _c.value != 0) {
+      _c.stop();
+      _c.value = 0;
+    }
+  }
+
   @override
-  void initState() {
-    super.initState();
-    if (widget.pulse) _c.repeat(reverse: true);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
   }
 
   @override
   void didUpdateWidget(PulsingDot old) {
     super.didUpdateWidget(old);
-    if (widget.pulse && !_c.isAnimating) {
-      _c.repeat(reverse: true);
-    } else if (!widget.pulse && _c.isAnimating) {
-      _c.value = 0;
-      _c.stop();
-    }
+    _sync();
   }
 
   @override
@@ -248,15 +256,4 @@ String cwdTail(String? cwd) {
   if (cwd == null || cwd.isEmpty) return '';
   final parts = cwd.split('/').where((s) => s.isNotEmpty);
   return parts.isEmpty ? '/' : parts.last;
-}
-
-final _spinnerGlyphs = RegExp(r'[\u2800-\u28FF]');
-final _leadingNoise = RegExp(r'^[^\p{L}\p{N}]+', unicode: true);
-
-/// Terminal titles carry agent chrome (braille spinners, omp's π mark,
-/// separators). Strip it so the actual task title reads cleanly.
-String cleanTitle(String raw) {
-  var t = raw.replaceAll(_spinnerGlyphs, '').trim();
-  if (t.startsWith('π')) t = t.substring(1);
-  return t.replaceFirst(_leadingNoise, '').trim();
 }

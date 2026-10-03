@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/machine_repository.dart';
+import '../../core/motion.dart';
 import '../../core/theme.dart';
 import 'machine_form_view_model.dart';
 
@@ -263,6 +264,7 @@ class _FormState extends State<_Form> {
             Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                expansionAnimationStyle: Motion.expansion,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: Gap.md),
                 initiallyExpanded: _session.text != 'default' || _socket.text.isNotEmpty,
@@ -384,7 +386,8 @@ class _TestResult extends StatelessWidget {
       _ => null,
     };
     return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
+      duration: Motion.expand,
+      curve: Motion.easeOut,
       alignment: Alignment.topCenter,
       child: view == null
           ? const SizedBox(width: double.infinity)

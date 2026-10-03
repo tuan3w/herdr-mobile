@@ -3,9 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/repositories/machine_connection.dart';
+import '../../core/terminal_view.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'pane_view_model.dart';
+
+/// Scrollback lines requested per read.
+const _readLines = 300;
+
+const _easeOut = Cubic(0.23, 1, 0.32, 1);
 
 class PaneScreen extends StatelessWidget {
   const PaneScreen({super.key, required this.machine, required this.paneId});
@@ -18,7 +24,14 @@ class PaneScreen extends StatelessWidget {
         providers: [
           ChangeNotifierProvider.value(value: machine),
           ChangeNotifierProvider(
-            create: (_) => PaneViewModel(api: machine.api, paneId: paneId),
+            create: (_) => PaneViewModel(
+              activity: machine.paneActivity,
+              paneId: paneId,
+              read: () =>
+                  machine.api.readPane(paneId, lines: _readLines, ansi: true),
+              sendLine: (text) => machine.api.sendLine(paneId, text),
+              sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
+            ),
           ),
         ],
         child: _PaneView(paneId: paneId),
@@ -36,8 +49,6 @@ class _PaneView extends StatefulWidget {
 
 class _PaneViewState extends State<_PaneView> {
   final _input = TextEditingController();
-  final _scroll = ScrollController();
-  bool _follow = true;
 
   /// Label, herdr key combo(s).
   static const _quickKeys = <(String, List<String>)>[
@@ -53,29 +64,9 @@ class _PaneViewState extends State<_PaneView> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(() {
-      if (!_scroll.hasClients) return;
-      final atBottom =
-          _scroll.position.pixels >= _scroll.position.maxScrollExtent - 24;
-      if (atBottom != _follow) setState(() => _follow = atBottom);
-    });
-  }
-
-  @override
   void dispose() {
     _input.dispose();
-    _scroll.dispose();
     super.dispose();
-  }
-
-  void _stickToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_follow && _scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
-      }
-    });
   }
 
   Future<void> _submit(PaneViewModel vm) async {
@@ -90,15 +81,28 @@ class _PaneViewState extends State<_PaneView> {
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<PaneViewModel>();
+    // Text updates only rebuild the terminal (below), not the whole screen.
+    final vm = context.read<PaneViewModel>();
+    final (sending, error, stale) =
+        context.select<PaneViewModel, (bool, String?, bool)>(
+      (v) => (v.sending, v.error, v.isStale),
+    );
     final machine = context.watch<MachineConnection>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final pane = machine.snapshot.panes
         .where((p) => p.id == widget.paneId)
         .firstOrNull;
-    final problem = !machine.isLive ? (machine.error ?? 'Offline') : vm.error;
-    _stickToBottom();
+    final live = machine.isLive;
+    final problem = !live ? (machine.error ?? 'Offline') : error;
+    final hint = switch (machine.state) {
+      LinkState.online => 'Message ${pane?.agent ?? 'pane'}…',
+      LinkState.connecting => 'Connecting…',
+      LinkState.reconnecting || LinkState.offline => 'Offline — reconnecting',
+      LinkState.attention => 'Needs attention — see above',
+      LinkState.disabled => 'Machine disabled',
+    };
+    final canSend = live && !sending;
 
     return Scaffold(
       appBar: AppBar(
@@ -119,7 +123,7 @@ class _PaneViewState extends State<_PaneView> {
           if (pane != null)
             Padding(
               padding: const EdgeInsets.only(right: Gap.lg),
-              child: StatusPill(status: pane.status, dim: !machine.isLive),
+              child: StatusPill(status: pane.status, dim: !live || stale),
             ),
         ],
       ),
@@ -148,46 +152,9 @@ class _PaneViewState extends State<_PaneView> {
                     border: Border.all(color: TerminalColors.border),
                     borderRadius: BorderRadius.circular(Radii.card - 4),
                   ),
-                  child: Stack(
-                    children: [
-                      // Vertical scroll for history; horizontal so box-drawing
-                      // and tables keep their shape on a narrow screen.
-                      SingleChildScrollView(
-                        controller: _scroll,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.all(Gap.md),
-                          child: SelectionArea(
-                            child: Text(
-                              vm.text.isEmpty ? ' ' : vm.text,
-                              softWrap: false,
-                              style: const TextStyle(
-                                fontFamily: monoFamily,
-                                fontSize: 11.5,
-                                height: 1.3,
-                                color: TerminalColors.foreground,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: Gap.md,
-                        bottom: Gap.md,
-                        child: AnimatedScale(
-                          scale: _follow ? 0 : 1,
-                          duration: const Duration(milliseconds: 160),
-                          child: FloatingActionButton.small(
-                            heroTag: null,
-                            onPressed: () {
-                              setState(() => _follow = true);
-                              _scroll.jumpTo(_scroll.position.maxScrollExtent);
-                            },
-                            child: const Icon(Icons.keyboard_double_arrow_down_rounded),
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: Selector<PaneViewModel, String>(
+                    selector: (_, v) => v.text,
+                    builder: (_, text, _) => TerminalView(text: text),
                   ),
                 ),
               ),
@@ -204,12 +171,12 @@ class _PaneViewState extends State<_PaneView> {
                 final (label, keys) = _quickKeys[i];
                 return _KeyButton(
                   label: label,
-                  onPressed: vm.sending
-                      ? null
-                      : () {
+                  onPressed: canSend
+                      ? () {
                           HapticFeedback.selectionClick();
                           vm.sendKeys(keys);
-                        },
+                        }
+                      : null,
                 );
               },
             ),
@@ -224,28 +191,33 @@ class _PaneViewState extends State<_PaneView> {
                   Expanded(
                     child: TextField(
                       controller: _input,
+                      enabled: live,
                       minLines: 1,
                       maxLines: 5,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _submit(vm),
                       style: const TextStyle(fontFamily: monoFamily, fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: 'Message ${pane?.agent ?? 'pane'}…',
+                        hintText: hint,
                         fillColor: scheme.surfaceContainerHigh,
                       ),
                     ),
                   ),
                   const SizedBox(width: Gap.sm),
-                  SizedBox.square(
-                    dimension: 48,
-                    child: IconButton.filled(
-                      onPressed: vm.sending ? null : () => _submit(vm),
-                      icon: vm.sending
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_upward_rounded),
+                  _PressScale(
+                    enabled: canSend,
+                    child: SizedBox.square(
+                      dimension: 48,
+                      child: IconButton.filled(
+                        onPressed: canSend ? () => _submit(vm) : null,
+                        icon: sending
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.arrow_upward_rounded),
+                      ),
                     ),
                   ),
                 ],
@@ -258,6 +230,41 @@ class _PaneViewState extends State<_PaneView> {
   }
 }
 
+/// Scales its child to 0.97 while a pointer is down on it, so a tap answers
+/// the finger before the action completes.
+class _PressScale extends StatefulWidget {
+  const _PressScale({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _pressed = false;
+
+  void _setPressed(bool pressed) {
+    if (_pressed != pressed) setState(() => _pressed = pressed);
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        onPointerDown: (_) => _setPressed(true),
+        onPointerUp: (_) => _setPressed(false),
+        onPointerCancel: (_) => _setPressed(false),
+        child: AnimatedScale(
+          scale: _pressed && widget.enabled ? 0.97 : 1,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 120),
+          curve: _easeOut,
+          child: widget.child,
+        ),
+      );
+}
+
 class _KeyButton extends StatelessWidget {
   const _KeyButton({required this.label, required this.onPressed});
 
@@ -267,23 +274,26 @@ class _KeyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(Radii.chip),
-      child: InkWell(
+    return _PressScale(
+      enabled: onPressed != null,
+      child: Material(
+        color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(Radii.chip),
-        onTap: onPressed,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 44),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: monoFamily,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: onPressed == null ? scheme.outline : scheme.onSurface,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(Radii.chip),
+          onTap: onPressed,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 44),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: monoFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: onPressed == null ? scheme.outline : scheme.onSurface,
+              ),
             ),
           ),
         ),

@@ -23,6 +23,27 @@ abstract final class TerminalColors {
   static const foreground = Color(0xFFD7DCE3);
   static const dim = Color(0xFF7C8591);
   static const border = Color(0xFF1E252E);
+
+  /// The 16 ANSI colours (0-7 normal, 8-15 bright), tuned for [background]:
+  /// black and bright black stay legible, and nothing outshines [foreground].
+  static const ansi = <Color>[
+    Color(0xFF3B4252),
+    Color(0xFFE06C75),
+    Color(0xFF98C379),
+    Color(0xFFE5C07B),
+    Color(0xFF61AFEF),
+    Color(0xFFC678DD),
+    Color(0xFF56B6C2),
+    Color(0xFFC5CBD3),
+    Color(0xFF737D8C),
+    Color(0xFFF4858D),
+    Color(0xFFB5E08E),
+    Color(0xFFF2D38F),
+    Color(0xFF7FC1FF),
+    Color(0xFFD99BEA),
+    Color(0xFF7FD3DE),
+    Color(0xFFF1F4F8),
+  ];
 }
 
 const _accent = Color(0xFF5EEAD4);

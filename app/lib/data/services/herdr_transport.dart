@@ -29,8 +29,9 @@ class HerdrApiException implements Exception {
 
 /// Request/response and event-stream access to one herdr server.
 ///
-/// herdr's socket serves one request per connection, so implementations open
-/// a fresh channel per [request] and keep one long-lived channel per
+/// herdr's own socket serves one request per connection, but implementations
+/// should not pay a connection per [request]: [SshTransport] multiplexes
+/// requests over one persistent channel and keeps one long-lived channel per
 /// [events] subscription.
 abstract interface class HerdrTransport {
   /// Sends [method] and returns the `result` object.
@@ -41,10 +42,16 @@ abstract interface class HerdrTransport {
     Map<String, dynamic> params = const {},
   ]);
 
-  /// Subscribes to event [types] (e.g. `pane.agent_status_changed`).
+  /// Subscribes to event [types] (e.g. `pane.updated`).
   /// Emits each event object; errors with [HerdrTransportException] if the
   /// channel drops. Cancelling the subscription closes the channel.
   Stream<Map<String, dynamic>> events(List<Map<String, dynamic>> subscriptions);
+
+  /// Drops the underlying connection immediately, without waiting for a
+  /// timeout: the network changed or the app was suspended, so the socket is
+  /// presumed dead. In-flight requests and event streams fail with a
+  /// retryable [HerdrTransportException]; the next call reconnects.
+  void reset();
 
   Future<void> close();
 }

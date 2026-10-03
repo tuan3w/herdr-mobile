@@ -82,11 +82,20 @@ void main() {
       expect(p.title, 'stripped');
       expect(p.cwd, '/work/sub');
       expect(p.status, AgentStatus.blocked);
-      expect(p.viewportRows, 28);
     });
 
     test('only panes with a detected agent count as agents', () {
       expect(snap.agentPanes.map((p) => p.id), ['wB:p1']);
+    });
+
+    test('round-trips through toJson and the tolerant fromJson', () {
+      final copy = Snapshot.fromJson(snap.toJson());
+      expect(copy, snap);
+      expect(copy.hashCode, snap.hashCode);
+      expect(copy.panes.first.cwd, '/work/sub');
+      expect(copy.panes.last.agent, isNull);
+      expect(copy.workspace('wB')!.status, AgentStatus.working);
+      expect(Snapshot.fromJson(Snapshot.empty.toJson()), Snapshot.empty);
     });
 
     test('navigates workspace → tab → pane', () {
@@ -94,6 +103,51 @@ void main() {
       expect(snap.panesOf(tab.id).map((p) => p.id), ['wB:p1', 'wB:p3']);
       expect(snap.workspace('wB')!.label, 'research');
       expect(snap.workspace('nope'), isNull);
+    });
+  });
+
+  group('value equality', () {
+    Map<String, dynamic> pane({int revision = 1, String title = 't'}) => {
+          'pane_id': 'w1:p1',
+          'workspace_id': 'w1',
+          'tab_id': 'w1:t1',
+          'terminal_title': title,
+          'agent': 'omp',
+          'agent_status': 'working',
+          'revision': revision,
+          'scroll': {'viewport_rows': 20 + revision},
+        };
+
+    Snapshot snapshot(List<Map<String, dynamic>> panes) => Snapshot.fromJson({
+          'version': '1',
+          'workspaces': [
+            {'workspace_id': 'w1', 'label': 'a', 'agent_status': 'working'},
+          ],
+          'tabs': [
+            {'tab_id': 'w1:t1', 'workspace_id': 'w1', 'agent_status': 'working'},
+          ],
+          'panes': panes,
+        });
+
+    test('a refetched identical snapshot is equal even if revision churned', () {
+      final a = snapshot([pane(revision: 1)]);
+      final b = snapshot([pane(revision: 99)]);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('any visible field change makes snapshots differ', () {
+      final base = snapshot([pane()]);
+      expect(snapshot([pane(title: 'spinner')]), isNot(base));
+      expect(snapshot([pane(), pane()..['pane_id'] = 'w1:p2']), isNot(base));
+      expect(snapshot(const []), isNot(base));
+      expect(Snapshot.fromJson({...base.toJson(), 'version': '2'}), isNot(base));
+      final moved = base.toJson();
+      (moved['workspaces'] as List).first['label'] = 'renamed';
+      expect(Snapshot.fromJson(moved), isNot(base));
+      final retabbed = base.toJson();
+      (retabbed['tabs'] as List).first['pane_count'] = 3;
+      expect(Snapshot.fromJson(retabbed), isNot(base));
     });
   });
 

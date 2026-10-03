@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../core/motion.dart';
 import '../../core/status_style.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -152,7 +152,8 @@ class _SummaryTile extends StatelessWidget {
     final active = count > 0;
     final color = active ? status.color : theme.colorScheme.outline;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
+      duration: Motion.standard,
+      curve: Motion.easeOut,
       padding: const EdgeInsets.symmetric(vertical: Gap.md, horizontal: Gap.md),
       decoration: BoxDecoration(
         color: active
@@ -261,7 +262,7 @@ class AgentCard extends StatelessWidget {
     final workspace = agent.workspace?.label ?? '';
     final path = cwdTail(pane.cwd);
 
-    return Opacity(
+    final card = Opacity(
       opacity: stale ? 0.55 : 1,
       child: Material(
         color: urgent
@@ -279,7 +280,7 @@ class AgentCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            HapticFeedback.selectionClick();
+            tapFeedback();
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) =>
@@ -313,10 +314,10 @@ class AgentCard extends StatelessWidget {
                                   color: status.color, size: 8, pulse: !stale),
                           ],
                         ),
-                        if (cleanTitle(pane.title).isNotEmpty) ...[
+                        if (pane.title.isNotEmpty) ...[
                           const SizedBox(height: Gap.sm),
                           Text(
-                            cleanTitle(pane.title),
+                            pane.title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -361,5 +362,8 @@ class AgentCard extends StatelessWidget {
         ),
       ),
     );
+
+    // Status is otherwise conveyed by colour and the section header only.
+    return Semantics(value: status.label, child: Pressable(child: card));
   }
 }

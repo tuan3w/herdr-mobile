@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 
 import '../models/herdr_models.dart';
 import '../models/machine_profile.dart';
+import '../services/network_monitor.dart';
 import 'machine_connection.dart';
 import 'machine_repository.dart';
 
@@ -34,13 +36,33 @@ class FleetRepository extends ChangeNotifier {
   FleetRepository({
     required this._machines,
     required this._connect,
+    required this._network,
+    this.longAway = const Duration(seconds: 5),
+    this.backgroundSuspendAfter = const Duration(seconds: 90),
+    this._clock = DateTime.now,
   }) {
     _machines.addListener(_onMachinesChanged);
+    _networkSub = _network.changes.listen(_onNetworkChanged);
     _onMachinesChanged();
   }
 
   final MachineRepository _machines;
   final ConnectionFactory _connect;
+  final NetworkMonitor _network;
+  final DateTime Function() _clock;
+
+  /// Sockets die while the app is suspended. Back after more than this, the
+  /// connections are reset instead of trusted.
+  final Duration longAway;
+
+  /// Continuous time in the background after which connections are torn
+  /// down to save battery.
+  final Duration backgroundSuspendAfter;
+
+  late final StreamSubscription<NetworkState> _networkSub;
+  DateTime? _backgroundedAt;
+  Timer? _suspendTimer;
+  bool _suspended = false;
   final Map<String, MachineConnection> _connections = {};
   final Map<String, String> _keys = {};
   Future<void> _reconciling = Future.value();
@@ -106,9 +128,9 @@ class FleetRepository extends ChangeNotifier {
 
     for (final id in _connections.keys.toList()) {
       if (!wanted.containsKey(id) || _keys[id] != _keyOf(wanted[id]!)) {
-        _connections.remove(id)!
-          ..removeListener(notifyListeners)
-          ..dispose();
+        final gone = _connections.remove(id)!..removeListener(notifyListeners);
+        if (!wanted.containsKey(id)) gone.forget();
+        gone.dispose();
         _keys.remove(id);
         changed = true;
       }
@@ -120,15 +142,20 @@ class FleetRepository extends ChangeNotifier {
       final c = _connect(p, secrets)..addListener(notifyListeners);
       _connections[p.id] = c;
       _keys[p.id] = _keyOf(p);
-      c.start();
+      if (_network.current.online) {
+        c.start();
+      } else {
+        c.goOffline();
+      }
       changed = true;
     }
     if (changed) notifyListeners();
   }
 
   /// Reconnect machines that are down and refresh the ones that are up.
-  /// Used on app resume and pull-to-refresh.
+  /// Used for pull-to-refresh; does nothing while the device has no network.
   Future<void> retryAll() async {
+    if (!_network.current.online) return;
     await Future.wait([
       for (final c in connections)
         if (c.state == LinkState.online)
@@ -138,12 +165,76 @@ class FleetRepository extends ChangeNotifier {
     ]);
   }
 
+  /// Feeds app lifecycle transitions: `hidden`/`paused` start the background
+  /// clock, `resumed` ends it. `inactive` is transient and ignored.
+  void onLifecycleState(AppLifecycleState state) {
+    if (_disposed) return;
+    switch (state) {
+      case AppLifecycleState.hidden || AppLifecycleState.paused:
+        if (_backgroundedAt != null) return;
+        _backgroundedAt = _clock();
+        _suspendTimer = Timer(backgroundSuspendAfter, onBackgroundTimeout);
+      case AppLifecycleState.resumed:
+        final at = _backgroundedAt;
+        if (at == null) return;
+        _backgroundedAt = null;
+        _suspendTimer?.cancel();
+        _suspendTimer = null;
+        unawaited(onForeground(away: _clock().difference(at)));
+      case AppLifecycleState.inactive || AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  /// The app is back after [away]. A long absence (or a suspension) means
+  /// the sockets are dead, so reset and reconnect now; a short one only
+  /// needs a refresh.
+  Future<void> onForeground({required Duration away}) async {
+    if (_disposed) return;
+    final wasSuspended = _suspended;
+    _suspended = false;
+    if (!_network.current.online) {
+      for (final c in connections) {
+        c.goOffline();
+      }
+    } else if (wasSuspended || away > longAway) {
+      for (final c in connections) {
+        c.reconnect();
+      }
+    } else {
+      await retryAll();
+    }
+  }
+
+  /// Continuously backgrounded for too long: stop every connection until the
+  /// next foreground.
+  void onBackgroundTimeout() {
+    if (_disposed) return;
+    _suspended = true;
+    for (final c in connections) {
+      c.suspend();
+    }
+  }
+
+  void _onNetworkChanged(NetworkState state) {
+    if (_disposed) return;
+    for (final c in connections) {
+      if (!state.online) {
+        c.goOffline();
+      } else if (!_suspended) {
+        c.reconnect();
+      }
+    }
+  }
+
   /// Completes when pending add/remove/edit reconciliation has been applied.
   Future<void> settled() => _reconciling;
 
   @override
   void dispose() {
     _disposed = true;
+    _suspendTimer?.cancel();
+    unawaited(_networkSub.cancel());
     _machines.removeListener(_onMachinesChanged);
     for (final c in _connections.values) {
       c.removeListener(notifyListeners);

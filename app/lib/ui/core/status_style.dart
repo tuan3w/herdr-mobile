@@ -35,7 +35,7 @@ extension LinkStateStyle on LinkState {
         LinkState.online => const Color(0xFF22C55E),
         LinkState.connecting || LinkState.reconnecting => const Color(0xFF3B82F6),
         LinkState.attention => const Color(0xFFF59E0B),
-        LinkState.disabled => const Color(0xFF9CA3AF),
+        LinkState.disabled || LinkState.offline => const Color(0xFF9CA3AF),
       };
 
   String get label => switch (this) {
@@ -44,6 +44,7 @@ extension LinkStateStyle on LinkState {
         LinkState.reconnecting => 'Reconnecting…',
         LinkState.attention => 'Needs attention',
         LinkState.disabled => 'Disabled',
+        LinkState.offline => 'No network',
       };
 }
 

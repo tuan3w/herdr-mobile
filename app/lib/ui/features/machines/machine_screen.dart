@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../core/motion.dart';
 import '../../core/status_style.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -63,13 +64,21 @@ class _MachineView extends StatelessWidget {
                               state == LinkState.reconnecting,
                         ),
                         const SizedBox(width: Gap.xs),
-                        Text(state.label,
-                            style: theme.textTheme.labelLarge
-                                ?.copyWith(color: state.color)),
+                        Flexible(
+                          child: Text(state.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelLarge
+                                  ?.copyWith(color: state.color)),
+                        ),
                         if (snap.version.isNotEmpty)
-                          Text('  ·  herdr ${snap.version}',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant)),
+                          Flexible(
+                            child: Text('  ·  herdr ${snap.version}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant)),
+                          ),
                       ],
                     ),
                   ),
@@ -138,6 +147,7 @@ class _WorkspaceCard extends StatelessWidget {
       child: Theme(
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          expansionAnimationStyle: Motion.expansion,
           initiallyExpanded: machine.snapshot.workspaces.length <= 4 ||
               workspace.status == AgentStatus.blocked ||
               workspace.status == AgentStatus.done,
@@ -190,7 +200,7 @@ class _PaneTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final cleaned = cleanTitle(pane.title);
+    final cleaned = pane.title;
     final title = pane.agent ?? (cleaned.isEmpty ? pane.id : cleaned);
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.field)),
@@ -208,8 +218,16 @@ class _PaneTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+      // The pill shrinks with a huge system font instead of squeezing the title.
       trailing: pane.isAgent
-          ? StatusPill(status: pane.status, dim: !machine.isLive)
+          ? ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 112),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: StatusPill(status: pane.status, dim: !machine.isLive),
+              ),
+            )
           : Icon(Icons.chevron_right_rounded, color: scheme.outline),
       onTap: () {
         HapticFeedback.selectionClick();

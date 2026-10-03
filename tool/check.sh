@@ -8,11 +8,14 @@ FLUTTER_BIN="${HERDR_FLUTTER_BIN:-/media/fatman/data/sdks/flutter/bin}"
 
 cd "$(dirname "$0")/../app"
 
+echo "==> flutter pub get"
+flutter pub get >/dev/null
+
 echo "==> flutter analyze"
-flutter analyze --no-pub
+flutter analyze
 
 if [ "${1:-}" != "--quick" ]; then
   echo "==> flutter test"
-  flutter test --no-pub
+  flutter test
 fi
 echo "OK"

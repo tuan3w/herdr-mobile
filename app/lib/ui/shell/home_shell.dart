@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models/herdr_models.dart';
-import '../core/status_style.dart';
 import '../../data/repositories/fleet_repository.dart';
+import '../core/motion.dart';
+import '../core/status_style.dart';
 import '../features/agents/agents_screen.dart';
 import '../features/machines/machines_screen.dart';
 
@@ -22,14 +22,18 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final needYou = context.select<FleetRepository, int>((f) => f.attentionCount);
     return Scaffold(
+      // Hidden tabs must not keep animating (every working agent pulses).
       body: IndexedStack(
         index: _index,
-        children: const [AgentsScreen(), MachinesScreen()],
+        children: [
+          for (final (i, screen) in const [AgentsScreen(), MachinesScreen()].indexed)
+            TickerMode(enabled: i == _index, child: screen),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) {
-          if (i != _index) HapticFeedback.selectionClick();
+          if (i != _index) tapFeedback();
           setState(() => _index = i);
         },
         destinations: [

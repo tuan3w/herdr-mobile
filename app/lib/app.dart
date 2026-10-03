@@ -6,14 +6,24 @@ import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/machine_connection.dart';
 import 'data/repositories/machine_repository.dart';
 import 'data/services/herdr_api.dart';
+import 'data/services/network_monitor.dart';
+import 'data/services/snapshot_cache.dart';
 import 'data/services/ssh_transport.dart';
 import 'ui/core/theme.dart';
 import 'ui/shell/home_shell.dart';
 
 class HerdrMobileApp extends StatefulWidget {
-  const HerdrMobileApp({super.key, required this.machines, this.connect});
+  const HerdrMobileApp({
+    super.key,
+    required this.machines,
+    required this.network,
+    required this.snapshotCache,
+    this.connect,
+  });
 
   final MachineRepository machines;
+  final NetworkMonitor network;
+  final SnapshotCache snapshotCache;
 
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
@@ -27,11 +37,13 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
   late final FleetRepository _fleet = FleetRepository(
     machines: widget.machines,
     connect: widget.connect ?? _sshConnection,
+    network: widget.network,
   );
 
   MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) =>
       MachineConnection(
         profile: profile,
+        cache: widget.snapshotCache,
         api: HerdrApi(
           SshTransport(
             profile: profile,
@@ -47,12 +59,9 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     WidgetsBinding.instance.addObserver(this);
   }
 
-  /// Sockets die while the app is suspended; reconnect immediately on resume
-  /// instead of waiting out a backoff.
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _fleet.retryAll();
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) =>
+      _fleet.onLifecycleState(state);
 
   @override
   void dispose() {

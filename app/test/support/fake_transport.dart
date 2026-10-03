@@ -106,6 +106,11 @@ class FakeTransport implements HerdrTransport {
       ..close();
   }
 
+  int resets = 0;
+
+  @override
+  void reset() => resets++;
+
   @override
   Future<void> close() async => closed = true;
 }

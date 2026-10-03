@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
@@ -7,6 +6,7 @@ import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/machine_repository.dart';
+import '../../core/motion.dart';
 import '../../core/status_style.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -121,12 +121,12 @@ class _MachineCard extends StatelessWidget {
     final needYou = agents.where((a) => a.status == AgentStatus.blocked).length;
     final problem = state == LinkState.attention || state == LinkState.reconnecting;
 
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: p.enabled
             ? () {
-                HapticFeedback.selectionClick();
+                tapFeedback();
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => MachineScreen(machine: machine),
                 ));
@@ -285,6 +285,8 @@ class _MachineCard extends StatelessWidget {
         ),
       ),
     );
+
+    return Pressable(child: card);
   }
 }
 
@@ -309,9 +311,13 @@ class _Stat extends StatelessWidget {
             style: theme.textTheme.titleSmall
                 ?.copyWith(color: color, fontWeight: FontWeight.w700)),
         const SizedBox(width: 4),
-        Text(label,
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Flexible(
+          child: Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ),
       ],
     );
   }
