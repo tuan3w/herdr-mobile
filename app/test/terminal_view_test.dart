@@ -357,4 +357,49 @@ void main() {
       addTearDown(tester.view.reset);
     });
   });
+
+  testWidgets('a height that changes every frame (the keyboard) rebuilds no rows',
+      (tester) async {
+    final height = ValueNotifier(500.0);
+    addTearDown(height.dispose);
+    // One instance: only the viewport changes, as when the Scaffold above
+    // lifts the pane for the keyboard.
+    final view = TerminalView(text: _lines(0, 300));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: ValueListenableBuilder<double>(
+              valueListenable: height,
+              builder: (context, h, _) =>
+                  SizedBox(width: 360, height: h, child: view),
+            ),
+          ),
+        ),
+      ),
+    );
+    final before = find.byType(TerminalLineView).evaluate().length;
+
+    var rebuilt = 0;
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      if (builtOnce && element.widget is KeyedSubtree) rebuilt++;
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = null);
+    for (var i = 1; i <= 10; i++) {
+      height.value = 500.0 - i * 20;
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(rebuilt, 0);
+
+    // Smaller view: fewer rows, still pinned to the newest.
+    expect(find.byType(TerminalLineView).evaluate().length, lessThan(before));
+    expect(terminalRow('line 299'), findsOneWidget);
+
+    height.value = 500;
+    await tester.pump();
+    expect(find.byType(TerminalLineView).evaluate().length, before);
+    expect(terminalRow('line 299'), findsOneWidget);
+  });
 }
