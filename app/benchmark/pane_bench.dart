@@ -241,7 +241,7 @@ void main() {
     }
   });
 
-  testWidgets('pane stream, native rows', (tester) async {
+  testWidgets('pane stream, native rows', semanticsEnabled: false, (tester) async {
     tester.view
       ..physicalSize = const Size(392 * 2.75, 760 * 2.75)
       ..devicePixelRatio = 2.75;
@@ -249,7 +249,7 @@ void main() {
     await _scenario(tester, 'nowrap', wrap: false);
   });
 
-  testWidgets('pane stream, wrapped', (tester) async {
+  testWidgets('pane stream, wrapped', semanticsEnabled: false, (tester) async {
     tester.view
       ..physicalSize = const Size(392 * 2.75, 760 * 2.75)
       ..devicePixelRatio = 2.75;
