@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
+import '../models/remote_file.dart';
 import 'herdr_transport.dart';
 
 /// Builds the real transport inside the worker isolate.
@@ -79,6 +81,31 @@ class IsolateTransport implements HerdrTransport {
     String method, [
     Map<String, dynamic> params = const {},
   ]) async => (await _ensure()).request(method, params);
+
+  @override
+  bool get supportsFiles => true;
+
+  @override
+  Future<RemoteStat> statFile(String path) async =>
+      RemoteStat.fromJson(await _op('stat', [path]) as Map);
+
+  @override
+  Future<List<RemoteEntry>> listDirectory(String path) async => [
+        for (final e in await _op('list', [path]) as List) RemoteEntry.fromJson(e as Map),
+      ];
+
+  @override
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) async {
+    final bytes = await _op('read', [path, offset, length.clamp(0, remoteReadCap)]);
+    // Moved, not copied: the worker handed over ownership of the buffer.
+    return (bytes! as TransferableTypedData).materialize().asUint8List();
+  }
+
+  @override
+  Future<String> realPath(String path) async => await _op('real', [path]) as String;
+
+  Future<Object?> _op(String name, List<Object?> args) async =>
+      (await _ensure()).op(name, args);
 
   @override
   Stream<Map<String, dynamic>> events(List<Map<String, dynamic>> subscriptions) {
@@ -194,6 +221,7 @@ class _Worker {
 
   final _requests = <int, Completer<Map<String, dynamic>>>{};
   final _streams = <int, StreamController<Map<String, dynamic>>>{};
+  final _ops = <int, Completer<Object?>>{};
   final _gone$ = Completer<void>();
   Completer<void>? _closedAck;
   var _nextId = 0;
@@ -215,6 +243,18 @@ class _Worker {
     final id = _nextId++;
     final reply = _requests[id] = Completer<Map<String, dynamic>>();
     _to.send(['req', id, method, params]);
+    return reply.future;
+  }
+
+  /// A file operation in the worker. The reply is a JSON-like value, or a
+  /// [TransferableTypedData] for bytes.
+  Future<Object?> op(String name, List<Object?> args) {
+    if (_dead) {
+      return Future.error(const HerdrTransportException('herdr connection lost'));
+    }
+    final id = _nextId++;
+    final reply = _ops[id] = Completer<Object?>();
+    _to.send(['op', id, name, args]);
     return reply.future;
   }
 
@@ -243,6 +283,10 @@ class _Worker {
         _requests.remove(m[1] as int)?.complete(m[2]! as Map<String, dynamic>);
       case 'err':
         _requests.remove(m[1] as int)?.completeError(_decodeError(m));
+      case 'ores':
+        _ops.remove(m[1] as int)?.complete(m[2]);
+      case 'oerr':
+        _ops.remove(m[1] as int)?.completeError(_decodeOpError(m));
       case 'evt':
         _streams[m[1] as int]?.add(m[2]! as Map<String, dynamic>);
       case 'evtErr':
@@ -267,6 +311,17 @@ class _Worker {
       ? HerdrApiException(m[3]! as String, m[4]! as String)
       : HerdrTransportException(m[3]! as String, fatal: m[4] == true);
 
+  /// `['oerr', id, 'file', kind, message, fatal, path]`, or the shapes of
+  /// [_decodeError] after the id.
+  Object _decodeOpError(List<Object?> m) => m[2] == 'file'
+      ? RemoteFileException(
+          RemoteFileErrorKind.parse(m[3] as String?),
+          m[4]! as String,
+          fatal: m[5] == true,
+          path: m[6] as String?,
+        )
+      : _decodeError(m);
+
   void _gone() {
     if (_dead) return;
     _dead = true;
@@ -274,6 +329,10 @@ class _Worker {
     for (final reply in _requests.values.toList()) {
       reply.completeError(lost);
     }
+    for (final reply in _ops.values.toList()) {
+      reply.completeError(lost);
+    }
+    _ops.clear();
     _requests.clear();
     for (final out in _streams.values.toList()) {
       out
@@ -326,11 +385,38 @@ void _workerMain(List<Object?> init) {
     }
   }
 
+  Future<void> serveOp(int id, String name, List<Object?> args) async {
+    try {
+      final Object out = switch (name) {
+        'stat' => (await transport.statFile(args[0]! as String)).toJson(),
+        'list' => [
+            for (final e in await transport.listDirectory(args[0]! as String)) e.toJson(),
+          ],
+        'read' => TransferableTypedData.fromList([
+            await transport.readFile(
+              args[0]! as String,
+              offset: args[1]! as int,
+              length: args[2]! as int,
+            ),
+          ]),
+        'real' => await transport.realPath(args[0]! as String),
+        _ => throw HerdrTransportException('Unknown file operation $name'),
+      };
+      main.send(['ores', id, out]);
+    } on RemoteFileException catch (e) {
+      main.send(['oerr', id, 'file', e.kind.name, e.message, e.fatal, e.path]);
+    } on Object catch (e) {
+      main.send(['oerr', id, ..._encodeError(e)]);
+    }
+  }
+
   commands.listen((Object? raw) {
     final m = raw! as List<Object?>;
     switch (m[0]) {
       case 'req':
         unawaited(serve(m[1]! as int, m[2]! as String, m[3]! as Map<String, dynamic>));
+      case 'op':
+        unawaited(serveOp(m[1]! as int, m[2]! as String, (m[3]! as List).cast<Object?>()));
       case 'sub':
         final id = m[1]! as int;
         final subs = (m[2]! as List).cast<Map<String, dynamic>>();

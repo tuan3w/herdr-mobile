@@ -344,7 +344,7 @@ void main() {
 
     testWidgets('keeps the line you are reading in place', (tester) async {
       final zoom = await pumpZoom(tester, _lines(0, 200));
-      await tester.drag(find.byType(ListView), const Offset(0, 600));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
       await tester.pumpAndSettle();
       // The line at the bottom edge of the view, and where it is.
       Element lowest() => (find.textContaining('line ').evaluate().toList()
@@ -379,7 +379,7 @@ void main() {
     testWidgets('one finger scrolls, and does not zoom', (tester) async {
       final zoom = await pumpZoom(tester, _lines(0, 200));
 
-      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
       await tester.pumpAndSettle();
 
       expect(_vertical(tester).position.pixels, greaterThan(100));
@@ -407,7 +407,7 @@ void main() {
       await tester.pump();
       expect(zoom.ends, [defaultTerminalFontSize]);
 
-      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
       await tester.pumpAndSettle();
       expect(_vertical(tester).position.pixels, greaterThan(100));
     });

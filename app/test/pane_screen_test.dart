@@ -1,18 +1,23 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
+import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import 'support/fake_fs.dart';
 import 'support/fake_transport.dart';
 import 'support/memory_terminal_settings_store.dart';
 
@@ -33,6 +38,18 @@ class _PaneTransport extends FakeTransport {
 
   /// While set, `pane.send_input` waits for it before succeeding.
   Completer<void>? sendGate;
+
+  /// What every `pane.read` answers, when set.
+  String? readText;
+
+  /// Answers `pane.read` from its parameters, as (text, truncated), when set.
+  (String, bool) Function(Map<String, dynamic> params)? readFor;
+
+  /// `lines` of every `pane.read`.
+  List<int> get lines => [
+        for (final (method, params) in calls)
+          if (method == 'pane.read') params['lines']! as int,
+      ];
 
   /// `source` of every `pane.read`.
   List<String> get sources => [
@@ -65,12 +82,15 @@ class _PaneTransport extends FakeTransport {
     if (method != 'pane.read') return super.request(method, params);
     calls.add((method, params));
     if (readFailure != null) return Future.error(readFailure!);
-    final text = params['source'] == 'recent_unwrapped'
-        ? 'joined line from herdr'
-        : 'rows as the terminal has them';
+    final custom = readFor?.call(params);
+    final text = custom?.$1 ??
+        readText ??
+        (params['source'] == 'recent_unwrapped'
+            ? 'joined line from herdr'
+            : 'rows as the terminal has them');
     return Future.value({
       'type': 'pane_read',
-      'read': {'text': text, 'truncated': false},
+      'read': {'text': text, 'truncated': custom?.$2 ?? false},
     });
   }
 }
@@ -637,6 +657,270 @@ void main() {
       expect(find.byTooltip('Back'), findsOneWidget);
       expect(find.byTooltip('Show keys'), findsNothing);
       await teardown(tester);
+    });
+  });
+
+  group('links, files and scrollback', () {
+    const docs = 'https://example.com/docs/intro';
+
+    /// Taps the cell of [needle]'s row where [column] of the row is.
+    Future<void> tapText(WidgetTester tester, String needle, {int column = 8}) async {
+      final row = find.byWidgetPredicate(
+        (w) => w is TerminalLineView && w.line.span.toPlainText().contains(needle),
+      );
+      final metrics = CellMetrics.measure(
+        settings.fontSize,
+        tester.view.devicePixelRatio,
+      );
+      final rect = tester.getRect(row.first);
+      await tester.tapAt(Offset(rect.left + (column + 0.5) * metrics.advance, rect.center.dy));
+      await _settle(tester);
+    }
+
+    FakeFs filesystem() {
+      final fs = FakeFs()
+        ..addDir('/work/w1/lib')
+        ..addFile('/work/w1/lib/main.dart', 'void main() {}\n' * 30)
+        ..addFile('/home/dev/notes.md', '# notes');
+      transport.fs = fs;
+      return fs;
+    }
+
+    group('a web link', () {
+      testWidgets('shows the whole address, then open or copy', (tester) async {
+        transport.readText = 'see $docs for more';
+        await pumpPane(tester);
+
+        await tapText(tester, 'for more');
+
+        expect(find.byType(SelectableText), findsOneWidget);
+        expect(tester.widget<SelectableText>(find.byType(SelectableText)).data, docs);
+        expect(find.text('example.com'), findsOneWidget, reason: 'headed by the host');
+        expect(find.text('Open in browser'), findsOneWidget);
+        expect(find.text('Copy link'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('copies the address', (tester) async {
+        transport.readText = 'see $docs for more';
+        String? copied;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied = (call.arguments as Map)['text'] as String?;
+            }
+            return null;
+          },
+        );
+        addTearDown(() => tester.binding.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null));
+        await pumpPane(tester);
+        await tapText(tester, 'for more');
+
+        await tester.tap(find.text('Copy link'));
+        await _settle(tester);
+
+        expect(copied, docs);
+        expect(find.text('Open in browser'), findsNothing, reason: 'the sheet closed');
+        expect(find.text('Link copied'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      for (final local in [
+        'http://localhost:3000/app',
+        'http://127.0.0.1:8080',
+        'https://0.0.0.0:9000/x',
+        'http://[::1]:5173/',
+        'http://devbox.local:4000/ui',
+      ]) {
+        testWidgets('on the machine itself ($local) can only be copied',
+            (tester) async {
+          transport.readText = 'listening on $local now';
+          await pumpPane(tester);
+
+          await tapText(tester, 'listening on', column: 16);
+
+          expect(find.textContaining('on the machine, not your phone'), findsOneWidget);
+          expect(find.text('Open in browser'), findsNothing);
+          expect(find.text('Copy link'), findsOneWidget);
+          await teardown(tester);
+        });
+      }
+
+      testWidgets('plain http is shown, with a warning, before it can be opened',
+          (tester) async {
+        transport.readText = 'see http://example.org/a for more';
+        await pumpPane(tester);
+        await tapText(tester, 'for more');
+
+        expect(find.textContaining('not encrypted'), findsOneWidget);
+        expect(find.text('Open in browser'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('a very long address wraps in the sheet and the sheet scrolls',
+          (tester) async {
+        final long = 'https://example.com/${'segment/' * 40}file.html?x=${'1234567890' * 8}';
+        transport.readText = 'go $long';
+        await pumpPane(tester);
+        await tapText(tester, 'go ');
+
+        expect(tester.widget<SelectableText>(find.byType(SelectableText)).data, long);
+        expect(tester.takeException(), isNull);
+        await teardown(tester);
+      });
+    });
+
+    group('a file path', () {
+      testWidgets('opens the file, found from the pane\'s folder', (tester) async {
+        final fs = filesystem();
+        transport.readText = 'edited lib/main.dart:12:3 just now';
+        await pumpPane(tester);
+
+        await tapText(tester, 'edited', column: 10);
+        await tester.pumpAndSettle();
+
+        expect(fs.calls, contains('stat /work/w1/lib/main.dart'));
+        expect(find.byType(FileViewerScreen), findsOneWidget);
+        expect(find.byType(PaneScreen, skipOffstage: false), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('opens an absolute path and a ~ path', (tester) async {
+        final fs = filesystem();
+        transport.readText = 'wrote ~/notes.md and /work/w1/lib/main.dart';
+        await pumpPane(tester);
+
+        await tapText(tester, 'wrote', column: 10);
+        await tester.pumpAndSettle();
+        expect(fs.calls, contains('stat /home/dev/notes.md'));
+        expect(find.byType(FileViewerScreen), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('a folder opens the browser', (tester) async {
+        final fs = filesystem();
+        transport.readText = 'created /work/w1/lib/ today';
+        await pumpPane(tester);
+
+        await tapText(tester, 'created', column: 12);
+        await tester.pumpAndSettle();
+
+        expect(fs.calls, contains('stat /work/w1/lib'));
+        expect(find.byType(FileBrowserScreen), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('a path that is not there says so quietly', (tester) async {
+        filesystem();
+        transport.readText = 'see src/gone.dart:1 please';
+        await pumpPane(tester);
+
+        await tapText(tester, 'see src', column: 8);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(FileViewerScreen), findsNothing);
+        expect(find.textContaining('gone.dart'), findsWidgets);
+        expect(find.byType(SnackBar), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('on a machine without files, it says so', (tester) async {
+        transport.readText = 'see lib/main.dart please';
+        await pumpPane(tester);
+
+        await tapText(tester, 'see lib', column: 8);
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('not available'), findsOneWidget);
+        expect(find.byType(FileViewerScreen), findsNothing);
+        await teardown(tester);
+      });
+    });
+
+    group('the Files button', () {
+      testWidgets('is there when the machine has files, and opens its browser at the '
+          'pane\'s folder', (tester) async {
+        final fs = filesystem();
+        await pumpPane(tester);
+
+        expect(find.byTooltip('Browse files'), findsOneWidget);
+        await tester.tap(find.byTooltip('Browse files'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(FileBrowserScreen), findsOneWidget);
+        expect(fs.calls, contains('list /work/w1'));
+        await teardown(tester);
+      });
+
+      testWidgets('is not there when the machine cannot do files', (tester) async {
+        await pumpPane(tester);
+
+        expect(find.byTooltip('Browse files'), findsNothing);
+        await teardown(tester);
+      });
+
+      testWidgets('goes with the top bar in landscape with the keyboard up',
+          (tester) async {
+        filesystem();
+        tester.view.physicalSize = const Size(740, 360);
+        tester.view.devicePixelRatio = 1;
+        tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+        addTearDown(tester.view.reset);
+        await pumpPane(tester);
+
+        expect(find.byTooltip('Browse files'), findsNothing);
+
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pump();
+        expect(find.byTooltip('Browse files'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('is a 44dp target', (tester) async {
+        filesystem();
+        await pumpPane(tester);
+
+        final size = tester.getSize(find.byTooltip('Browse files').first);
+        expect(size.width, greaterThanOrEqualTo(44));
+        expect(size.height, greaterThanOrEqualTo(44));
+        await teardown(tester);
+      });
+    });
+
+    group('scrollback', () {
+      testWidgets('reads 300 rows until the user nears the top, then 1000',
+          (tester) async {
+        final rows = [for (var i = 0; i < 2000; i++) 'row $i'];
+        transport.readFor = (params) {
+          final n = (params['lines']! as int).clamp(0, 1000);
+          return (rows.sublist(rows.length - n).join('\r\n'), true);
+        };
+        await pumpPane(tester);
+        expect(transport.lines.toSet(), {300});
+
+        final position = tester
+            .state<ScrollableState>(find
+                .descendant(
+                    of: find.byType(CustomScrollView), matching: find.byType(Scrollable))
+                .first)
+            .position;
+        position.jumpTo(position.maxScrollExtent - 3000);
+        await _settle(tester);
+        expect(transport.lines.toSet(), {300}, reason: 'far from the top yet');
+
+        position.jumpTo(position.maxScrollExtent);
+        await _settle(tester);
+        await tester.pump(const Duration(seconds: 2));
+
+        expect(transport.lines, contains(1000));
+        position.jumpTo(position.maxScrollExtent);
+        await _settle(tester);
+        expect(find.text('row 1000'), findsOneWidget, reason: 'the oldest row herdr serves');
+        expect(find.textContaining('Earlier output is not available'), findsOneWidget);
+        await teardown(tester);
+      });
     });
   });
 

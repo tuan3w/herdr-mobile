@@ -286,7 +286,14 @@ class SectionLabel extends StatelessWidget {
         onTap: onTap,
         haptic: true,
         builder: (context, pressed) => Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.gutter, 22, Gap.gutter, 6),
+          // A trailing action is a 44dp hit box: it brings its own height, so
+          // the label's air above and below shrinks to keep the rhythm.
+          padding: EdgeInsets.fromLTRB(
+            Gap.gutter,
+            trailing == null ? 22 : 8,
+            Gap.gutter,
+            trailing == null ? 6 : 0,
+          ),
           child: Row(
             children: [
               if (leading != null) ...[leading!, const SizedBox(width: 8)],

@@ -7,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart' show ReadSource;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/ui/core/terminal_view.dart' show TerminalTop;
 import 'package:herdr_mobile/ui/features/pane/pane_view_model.dart';
+import 'package:herdr_mobile/ui/features/pane/scrollback_history.dart';
 
 const _pane = 'w1:p1';
 
@@ -32,23 +34,31 @@ class _Fake {
 
   /// Source asked for by each read.
   final sources = <ReadSource>[];
+
+  /// Rows asked for by each read.
+  final depths = <int>[];
+
+  /// Answers reads when set, instead of the canned texts.
+  PaneRead Function(ReadSource source, int lines)? serve;
   final sent = <String>[];
   var running = 0;
   var maxRunning = 0;
 
-  Future<PaneRead> read(ReadSource source) async {
+  Future<PaneRead> read(ReadSource source, int lines) async {
     reads.add(async.elapsed);
     sources.add(source);
+    depths.add(lines);
     running++;
     maxRunning = max(maxRunning, running);
     try {
       if (latency > Duration.zero) await Future<void>.delayed(latency);
       final failure = readFailure;
       if (failure != null) throw failure;
-      return PaneRead(
-        text: source == ReadSource.recentUnwrapped ? unwrappedText : text,
-        truncated: false,
-      );
+      return serve?.call(source, lines) ??
+          PaneRead(
+            text: source == ReadSource.recentUnwrapped ? unwrappedText : text,
+            truncated: false,
+          );
     } finally {
       running--;
     }
@@ -62,6 +72,8 @@ class _Fake {
 
   PaneViewModel vm({
     Duration minReadInterval = const Duration(milliseconds: 120),
+    Duration deepReadInterval = const Duration(milliseconds: 1500),
+    Duration deepRevertDelay = const Duration(seconds: 2),
     Duration fallbackInterval = const Duration(seconds: 4),
     bool wrap = false,
   }) =>
@@ -72,6 +84,8 @@ class _Fake {
         sendLine: _send,
         sendKeys: (keys) => _send(keys.join('+')),
         minReadInterval: minReadInterval,
+        deepReadInterval: deepReadInterval,
+        deepRevertDelay: deepRevertDelay,
         fallbackInterval: fallbackInterval,
         wrap: wrap,
       );
@@ -673,4 +687,272 @@ void main() {
       vm.dispose();
     });
   });
+
+  group('depth', () {
+    // A pane with [count] rows of output; `serve` answers like herdr does:
+    // the last `lines` rows (never more than 1000), `truncated` when older
+    // rows were left out.
+    _Pane pane(_Fake f, int count) {
+      final p = _Pane()..add(count);
+      f.serve = p.read;
+      return p;
+    }
+
+    _scenario('the tail stays 300 rows deep however long the pane is', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      f.flood(40, _ms(130));
+
+      expect(f.depths.toSet(), {300});
+      expect(vm.top, TerminalTop.loading);
+      vm.dispose();
+    });
+
+    _scenario('scrolling near the top reads 1000 rows at once, mid-cooldown', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      expect(f.reads, hasLength(1));
+
+      vm.viewChanged(nearTop: true, following: false);
+      async.flushMicrotasks();
+
+      expect(f.depths, [300, 1000]);
+      expect(f.reads.last, _ms(10), reason: 'not waiting for the 120 ms cooldown');
+      expect(vm.text.split('\n'), hasLength(1000));
+      expect(vm.top, TerminalTop.serverLimit, reason: 'a 1000-row read is all herdr has');
+      vm.dispose();
+    });
+
+    _scenario('a read in flight finishes first, then the deep read follows', (async, f) {
+      pane(f, 5000);
+      f.latency = _ms(50);
+      final vm = f.vm();
+      async.elapse(_ms(200)); // the first read is done: herdr has more
+      f.activity.add(_pane);
+      async.elapse(_ms(10)); // a second read is running
+
+      vm.viewChanged(nearTop: true, following: false);
+      async.elapse(_ms(300));
+
+      expect(f.depths, [300, 300, 1000]);
+      expect(f.maxRunning, 1);
+      vm.dispose();
+    });
+
+    _scenario('deep reads come at most once per 1.5 s while the user is away', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      vm.viewChanged(nearTop: true, following: false);
+
+      f.flood(200, _ms(50)); // ten seconds of constant activity
+
+      final deep = [
+        for (var i = 0; i < f.reads.length; i++)
+          if (f.depths[i] == 1000) f.reads[i],
+      ];
+      expect(deep.length, greaterThanOrEqualTo(5));
+      for (var i = 1; i < deep.length; i++) {
+        expect(deep[i] - deep[i - 1], greaterThanOrEqualTo(_ms(1500)));
+      }
+      expect(f.depths.where((d) => d == 300), hasLength(1), reason: 'only the first read');
+      vm.dispose();
+    });
+
+    _scenario('scrolling away from the bottom without nearing the top stays shallow',
+        (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      vm.viewChanged(nearTop: false, following: false);
+      f.flood(20, _ms(130));
+
+      expect(f.depths.toSet(), {300});
+      vm.dispose();
+    });
+
+    _scenario('nothing deeper to read: no deep read', (async, f) {
+      pane(f, 200); // fits in the tail: not truncated
+      final vm = f.vm();
+      async.elapse(_ms(10));
+
+      vm.viewChanged(nearTop: true, following: false);
+      async.elapse(const Duration(seconds: 5));
+
+      expect(f.depths.toSet(), {300});
+      expect(vm.top, TerminalTop.none);
+      vm.dispose();
+    });
+
+    _scenario('back at the newest row for 2 s drops to the tail again', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      vm.viewChanged(nearTop: true, following: false);
+      async.elapse(_ms(200));
+      vm.viewChanged(nearTop: false, following: true);
+
+      async.elapse(_ms(1900));
+      f.activity.add(_pane);
+      async.elapse(_ms(10));
+      expect(f.depths.last, 1000, reason: 'not yet 2 s');
+
+      async.elapse(_ms(200));
+      f.activity.add(_pane);
+      async.elapse(_ms(1600));
+      expect(f.depths.last, 300);
+
+      f.flood(40, _ms(130));
+      expect(f.depths.skip(f.depths.lastIndexOf(1000) + 1).toSet(), {300});
+      vm.dispose();
+    });
+
+    _scenario('leaving the bottom again before 2 s keeps reads deep', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      vm.viewChanged(nearTop: true, following: false);
+      async.elapse(_ms(200));
+      vm.viewChanged(nearTop: false, following: true);
+      async.elapse(_ms(1500));
+      vm.viewChanged(nearTop: false, following: false);
+
+      async.elapse(const Duration(seconds: 10));
+      f.activity.add(_pane);
+      async.elapse(_ms(10));
+
+      expect(f.depths.last, 1000);
+      vm.dispose();
+    });
+
+    _scenario('reporting a position does not notify listeners', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      var notified = 0;
+      vm.addListener(() => notified++);
+
+      vm.viewChanged(nearTop: true, following: false);
+      expect(notified, 0, reason: 'the view reports while it lays out');
+      async.flushMicrotasks();
+      expect(notified, 1, reason: 'the deep read brought rows');
+      vm.dispose();
+    });
+
+    _scenario('wrap mode follows the same policy on unwrapped lines', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm(wrap: true);
+      async.elapse(_ms(10));
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(f.depths.last, 300);
+
+      vm.viewChanged(nearTop: true, following: false);
+      async.flushMicrotasks();
+
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(f.depths.last, 1000);
+      vm.dispose();
+    });
+
+    _scenario('the read depth survives switching the wrap mode', (async, f) {
+      pane(f, 5000);
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      vm.viewChanged(nearTop: true, following: false);
+      async.elapse(_ms(200));
+
+      vm.setWrap(true);
+      async.elapse(_ms(200));
+
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(f.depths.last, 1000);
+      vm.dispose();
+    });
+  });
+
+  group('scrollback', () {
+    _scenario('rows that slide off the top are kept past what herdr serves', (async, f) {
+      final p = _Pane()..add(1200);
+      f.serve = p.read;
+      final vm = f.vm();
+      for (var i = 0; i < 20; i++) {
+        async.elapse(_ms(200));
+        p.add(250);
+        f.activity.add(_pane);
+        async.elapse(_ms(1));
+      }
+      async.elapse(_ms(200));
+
+      final all = [...vm.history, ...vm.text.split('\n')];
+      expect(all.length, greaterThan(3000), reason: 'far more than the 300 asked for');
+      expect(all, p.rows.sublist(p.rows.length - all.length));
+      expect(vm.history, isNotEmpty);
+      vm.dispose();
+    });
+
+    _scenario('output that outran the window leaves a gap row', (async, f) {
+      final p = _Pane()..add(1000);
+      f.serve = p.read;
+      final vm = f.vm();
+      async.elapse(_ms(10));
+
+      p.add(5000); // far more than a read can hold
+      f.activity.add(_pane);
+      async.elapse(_ms(200));
+
+      expect(vm.history, contains(ScrollbackHistory.gapRow));
+      expect(vm.text.split('\n').first, p.rows[p.rows.length - 300]);
+      vm.dispose();
+    });
+
+    _scenario('switching the wrap mode starts the history afresh', (async, f) {
+      final p = _Pane()..add(1000);
+      f.serve = p.read;
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      p.add(100);
+      f.activity.add(_pane);
+      async.elapse(_ms(200));
+      expect(vm.history, isNotEmpty);
+
+      vm.setWrap(true);
+      async.elapse(_ms(200));
+
+      expect(vm.history, isEmpty);
+      vm.dispose();
+    });
+
+    _scenario('a pane that fits has nothing above it', (async, f) {
+      final p = _Pane()..add(50);
+      f.serve = p.read;
+      final vm = f.vm();
+      async.elapse(_ms(10));
+      p.add(20);
+      f.activity.add(_pane);
+      async.elapse(_ms(200));
+
+      expect(vm.history, isEmpty);
+      expect(vm.text.split('\n'), hasLength(70));
+      expect(vm.top, TerminalTop.none);
+      vm.dispose();
+    });
+  });
+}
+
+/// A pane whose output grows: serves the last `lines` rows the way herdr does
+/// (clamped to 1000 rows, `truncated` when older rows were left out).
+class _Pane {
+  final rows = <String>[];
+
+  void add(int count) {
+    for (var i = 0; i < count; i++) {
+      rows.add('row ${rows.length}');
+    }
+  }
+
+  PaneRead read(ReadSource source, int lines) {
+    final n = lines < 1000 ? lines : 1000;
+    final from = rows.length > n ? rows.length - n : 0;
+    return PaneRead(text: rows.sublist(from).join('\n'), truncated: from > 0);
+  }
 }

@@ -343,28 +343,38 @@ class AppChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(_pill / 2),
           border: Border.all(color: selected ? ds.textTertiary.withValues(alpha: 0.5) : ds.hairline),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 7)],
-            Text(
+        // A label wider than the room it is given ends in an ellipsis. A
+        // scrolling row gives unbounded room, where a Flexible is not allowed
+        // and the label simply takes what it needs.
+        child: LayoutBuilder(
+          builder: (context, box) {
+            final text = Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Type.label.copyWith(
                 color: selected ? ds.text : ds.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
-            ),
-            if (count != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                '$count',
-                style: Type.label.copyWith(
-                  color: ds.textMuted,
-                  fontFeatures: Type.tabular,
-                ),
-              ),
-            ],
-          ],
+            );
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leading != null) ...[leading!, const SizedBox(width: 7)],
+                box.hasBoundedWidth ? Flexible(child: text) : text,
+                if (count != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: Type.label.copyWith(
+                      color: ds.textMuted,
+                      fontFeatures: Type.tabular,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -507,6 +517,8 @@ class LabeledField extends StatelessWidget {
     this.inputFormatters,
     this.enabled = true,
     this.restorationId,
+    this.autofocus = false,
+    this.onSubmitted,
   });
 
   final String label;
@@ -529,6 +541,10 @@ class LabeledField extends StatelessWidget {
   /// secrets: restoration data is not protected storage.
   final String? restorationId;
 
+  /// Takes focus (and the keyboard) as soon as it is shown.
+  final bool autofocus;
+  final ValueChanged<String>? onSubmitted;
+
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
@@ -546,6 +562,8 @@ class LabeledField extends StatelessWidget {
           child: TextFormField(
             controller: controller,
             restorationId: restorationId,
+            autofocus: autofocus,
+            onFieldSubmitted: onSubmitted,
             enabled: enabled,
             obscureText: obscure,
             minLines: obscure ? 1 : minLines,

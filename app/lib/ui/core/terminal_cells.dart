@@ -1,10 +1,14 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 import 'ansi.dart';
 import 'box_drawing.dart';
 import 'cell_width.dart';
+import 'terminal_document.dart';
+import 'terminal_links.dart';
 import 'theme.dart';
 
 /// Row height as a multiple of the font size, before snapping to pixels.
@@ -12,6 +16,15 @@ const terminalLineHeightFactor = 1.3;
 
 /// How far dim (SGR 2) text is blended from the background to its colour.
 const _dimBlend = 0.62;
+
+/// Rows kept prepared (text span, recorded picture) after they have been
+/// built. Many times what fits a screen, so scrolling back a little reuses
+/// them; the oldest are released first.
+const _cachedLines = 512;
+
+/// The colour of links in terminal output: the dark theme's accent text, as a
+/// pane is dark in both themes.
+final terminalLinkColor = Ds.ink.accentText;
 
 /// Geometry of the terminal's cell grid at one font size and pixel density.
 ///
@@ -86,6 +99,24 @@ final class CellMetrics {
     leading: 0,
     forceStrutHeight: true,
   );
+
+  /// Distance from the top of a row to its text baseline, in logical pixels.
+  /// Measured on the row's own style, so an underline lands where the font
+  /// puts it.
+  late final double baseline = () {
+    final painter = TextPainter(
+      text: TextSpan(text: 'M', style: textStyle),
+      strutStyle: strut,
+      textDirection: TextDirection.ltr,
+      textScaler: TextScaler.noScaling,
+    )..layout();
+    final distance = painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+    painter.dispose();
+    return distance;
+  }();
+
+  /// The cell at logical pixel [dx] of a row.
+  int columnAt(double dx) => math.max(0, (dx / advance).floor());
 
   @override
   bool operator ==(Object other) =>
@@ -162,17 +193,112 @@ String blankSprites(String text) {
 ///
 /// Owns a native [ui.Picture]; [dispose] releases it.
 final class TerminalLine {
-  TerminalLine(this.runs, this.metrics);
+  TerminalLine(this.runs, this.metrics, {this.links = const []});
 
   final List<AnsiRun> runs;
   final CellMetrics metrics;
 
+  /// Links on this row (cells of the row), underlined and tappable.
+  final List<RowLink> links;
+
   late final TextSpan span = TextSpan(
-    children: [
-      for (final run in runs)
-        TextSpan(text: blankSprites(run.text), style: runTextStyle(run)),
-    ],
+    children: links.isEmpty
+        ? [
+            for (final run in runs)
+              TextSpan(text: blankSprites(run.text), style: runTextStyle(run)),
+          ]
+        : _linkSpans(),
   );
+
+  /// The link under cell [column], if any.
+  TerminalLink? linkAt(int column) {
+    for (final link in links) {
+      if (column >= link.start && column < link.end) return link.link;
+    }
+    return null;
+  }
+
+  bool _linked(int column) {
+    for (final link in links) {
+      if (column >= link.start && column < link.end) return true;
+    }
+    return false;
+  }
+
+  /// The runs cut at the edges of the links, the linked pieces in
+  /// [terminalLinkColor] unless the run already has a colour of its own.
+  List<TextSpan> _linkSpans() {
+    final spans = <TextSpan>[];
+    var column = 0;
+    for (final run in runs) {
+      final text = run.text;
+      final style = runTextStyle(run);
+      var from = 0;
+      var unit = 0;
+      var linked = _linked(column);
+      void flush(int to) {
+        if (to <= from) return;
+        final piece = blankSprites(text.substring(from, to));
+        spans.add(
+          TextSpan(
+            text: piece,
+            style: linked && run.fg == null
+                ? (style ?? const TextStyle()).copyWith(color: _linkForeground(run))
+                : style,
+          ),
+        );
+        from = to;
+      }
+
+      for (final rune in text.runes) {
+        final width = cellWidth(rune);
+        if (width > 0 && _linked(column) != linked) {
+          flush(unit);
+          linked = !linked;
+        }
+        column += width;
+        unit += rune > 0xffff ? 2 : 1;
+      }
+      flush(text.length);
+    }
+    return spans;
+  }
+
+  /// The colour a link piece of [run] is drawn in: the run's own, else
+  /// [terminalLinkColor] (dimmed like any dim text).
+  Color _linkForeground(AnsiRun run) => run.fg != null
+      ? runForeground(run)
+      : run.dim
+          ? Color.lerp(run.bg ?? TerminalColors.background, terminalLinkColor, _dimBlend)!
+          : terminalLinkColor;
+
+  /// Underlines under the linked cells, in the colour of the text above.
+  void _underlines(_Fills glyphs) {
+    final thickness = math.max(1, (metrics.fontSize * 0.06 * metrics.dpr).round());
+    final top = math.min(
+      metrics.rowPx - thickness,
+      ((metrics.baseline + metrics.fontSize * 0.12) * metrics.dpr).round(),
+    );
+    var column = 0;
+    for (final run in runs) {
+      final end = column + columnsOf(run.text);
+      for (final link in links) {
+        final from = math.max(column, link.start);
+        final to = math.min(end, link.end);
+        if (to <= from) continue;
+        glyphs.add(
+          Rect.fromLTRB(
+            metrics.columnEdge(from).toDouble(),
+            top.toDouble(),
+            metrics.columnEdge(to).toDouble(),
+            (top + thickness).toDouble(),
+          ),
+          _linkForeground(run),
+        );
+      }
+      column = end;
+    }
+  }
 
   ui.Picture? _picture;
   var _recorded = false;
@@ -254,6 +380,7 @@ final class TerminalLine {
         );
       }
     }
+    if (links.isNotEmpty) _underlines(glyphs);
     if (backgrounds.isEmpty && glyphs.isEmpty && strokes.isEmpty) return null;
 
     final recorder = ui.PictureRecorder();
@@ -307,26 +434,33 @@ final class _Fills {
   }
 }
 
-/// [TerminalLine]s by the identity of their parsed runs (see [AnsiParser]), at
-/// one set of [CellMetrics].
+/// [TerminalLine]s by the identity of their runs (a row of a [DocLine] is the
+/// same list while the line is unchanged), at one set of [CellMetrics].
+///
+/// Holds the [_cachedLines] most recently asked for: the rows on screen and a
+/// good way around them, however long the scrollback is. A line released
+/// while still on screen simply prepares itself again when painted.
 final class TerminalLineCache {
   TerminalLineCache(this.metrics);
 
   final CellMetrics metrics;
+
+  /// In order of use, least recent first (a [Map] keeps insertion order).
   final _lines = Map<List<AnsiRun>, TerminalLine>.identity();
 
   int get length => _lines.length;
 
-  TerminalLine lineFor(List<AnsiRun> runs) =>
-      _lines[runs] ??= TerminalLine(runs, metrics);
-
-  /// Drops (and disposes) every line whose runs are not in [live].
-  void retain(Set<List<AnsiRun>> live) {
-    _lines.removeWhere((runs, line) {
-      if (live.contains(runs)) return false;
-      line.dispose();
-      return true;
-    });
+  /// The prepared row for [runs]. [links] gives the links on it and is only
+  /// asked for when the row is not cached yet.
+  TerminalLine lineFor(List<AnsiRun> runs, {List<RowLink> Function()? links}) {
+    var line = _lines.remove(runs);
+    line ??= TerminalLine(runs, metrics, links: links?.call() ?? const []);
+    _lines[runs] = line;
+    if (_lines.length > _cachedLines) {
+      final oldest = _lines.keys.first;
+      _lines.remove(oldest)!.dispose();
+    }
+    return line;
   }
 
   void dispose() {
@@ -358,15 +492,25 @@ final class TerminalLinePainter extends CustomPainter {
 ///
 /// Give it a width and a height of [CellMetrics.lineHeight]. The text layer
 /// renders sprite characters as spaces; see [blankSprites].
+///
+/// With [onLinkTap], a tap on a link of the row is reported. The tap
+/// recogniser only takes part when the finger lands on a link, and it is an
+/// ordinary one, so a drag, a long press or a fling that starts there still
+/// belongs to the list, the selection or the scroll view.
 class TerminalLineView extends StatelessWidget {
-  const TerminalLineView({super.key, required this.line});
+  const TerminalLineView({
+    super.key,
+    required this.line,
+    this.onLinkTap,
+  });
 
   final TerminalLine line;
+  final ValueChanged<TerminalLink>? onLinkTap;
 
   @override
   Widget build(BuildContext context) {
     final metrics = line.metrics;
-    return CustomPaint(
+    final row = CustomPaint(
       painter: TerminalLinePainter(line),
       child: Text.rich(
         line.span,
@@ -378,5 +522,33 @@ class TerminalLineView extends StatelessWidget {
         overflow: TextOverflow.clip,
       ),
     );
+    final onTap = onLinkTap;
+    if (onTap == null || line.links.isEmpty) return row;
+    return RawGestureDetector(
+      gestures: {
+        _LinkTapRecognizer:
+            GestureRecognizerFactoryWithHandlers<_LinkTapRecognizer>(
+          _LinkTapRecognizer.new,
+          (recognizer) {
+            recognizer.allows = (position) =>
+                line.linkAt(metrics.columnAt(position.dx)) != null;
+            recognizer.onTapUp = (details) {
+              final link = line.linkAt(metrics.columnAt(details.localPosition.dx));
+              if (link != null) onTap(link);
+            };
+          },
+        ),
+      },
+      child: row,
+    );
   }
+}
+
+/// A tap that only exists where [allows] says the finger landed on a link.
+class _LinkTapRecognizer extends TapGestureRecognizer {
+  bool Function(Offset localPosition) allows = (_) => false;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) =>
+      allows(event.localPosition) && super.isPointerAllowed(event);
 }

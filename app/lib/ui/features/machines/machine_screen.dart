@@ -11,8 +11,11 @@ import '../../core/controls.dart';
 import '../../core/glyphs.dart';
 import '../../core/rows.dart';
 import '../../core/tokens.dart';
-import '../pane/pane_screen.dart';
 import '../../core/status_panel.dart';
+import '../create/management_sheets.dart';
+import '../create/new_session_screen.dart';
+import '../files/files_navigation.dart';
+import '../pane/pane_screen.dart';
 
 /// Everything running on one machine: workspaces → tabs → panes.
 class MachineScreen extends StatelessWidget {
@@ -101,6 +104,19 @@ class _MachineViewState extends State<_MachineView> {
                 tooltip: 'Back',
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
+              actions: [
+                if (machineSupportsFiles(machine))
+                  CircleButton(
+                    icon: LucideIcons.folderOpen,
+                    tooltip: 'Browse files',
+                    onPressed: () => openFileBrowser(context, machine),
+                  ),
+                CircleButton(
+                  icon: LucideIcons.plus,
+                  tooltip: 'New workspace here',
+                  onPressed: machine.isLive ? () => openNewSession(context, machine: machine) : null,
+                ),
+              ],
             ),
             if (machine.error != null && !machine.isLive)
               SliverToBoxAdapter(
@@ -231,6 +247,18 @@ class _WorkspaceSection extends StatelessWidget {
           expanded: open,
           onTap: onToggle,
           leading: StatusGlyph(status: workspace.status, size: 14, dim: !live),
+          // Nudged right so the dots line up with the chevrons of the rows below;
+          // the hit box moves with them.
+          trailing: Transform.translate(
+            offset: const Offset(10, 0),
+            child: CircleButton(
+              icon: LucideIcons.ellipsis,
+              tooltip: 'Workspace actions',
+              filled: false,
+              size: 36,
+              onPressed: live ? () => showWorkspaceActions(context, machine, workspace) : null,
+            ),
+          ),
         ),
         Collapse(
           open: open,
@@ -301,6 +329,12 @@ class _PaneRow extends StatelessWidget {
       titleMaxLines: 2,
       subtitle: subtitle,
       dim: dim,
+      onLongPress: dim
+          ? null
+          : () {
+              HapticFeedback.mediumImpact();
+              showPaneActions(context, machine, pane, title: title);
+            },
       trailing: Icon(LucideIcons.chevronRight, size: 16, color: ds.textTertiary),
       onTap: () {
         HapticFeedback.selectionClick();

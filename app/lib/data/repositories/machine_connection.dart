@@ -7,6 +7,7 @@ import '../models/machine_profile.dart';
 import '../services/auth_notice.dart';
 import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart';
+import '../services/remote_files.dart';
 import '../services/snapshot_cache.dart';
 
 enum LinkState {
@@ -97,6 +98,9 @@ class MachineConnection extends ChangeNotifier {
   Stream<String> get paneActivity => _activity.stream;
 
   HerdrApi get api => _api;
+
+  /// Browse and read this machine's files (SFTP over the same connection).
+  RemoteFiles get files => _api.files;
   LinkState get state => _state;
   String? get error => _error;
   Snapshot get snapshot => _snapshot;

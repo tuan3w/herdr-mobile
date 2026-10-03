@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+
+import '../models/remote_file.dart';
 
 /// Connection-level failure: unreachable host, auth failure, dropped channel,
 /// missing bridge. Retryable by reconnecting.
@@ -52,6 +55,31 @@ abstract interface class HerdrTransport {
   /// presumed dead. In-flight requests and event streams fail with a
   /// retryable [HerdrTransportException]; the next call reconnects.
   void reset();
+
+  /// Whether [statFile] and friends can work on this transport at all. False
+  /// for transports without a file channel (they throw
+  /// [RemoteFileErrorKind.unsupported]).
+  bool get supportsFiles;
+
+  /// File operations over SFTP (no remote shell, so nothing to inject into).
+  /// Each throws [RemoteFileException] for a file-level problem and
+  /// [HerdrTransportException] when the connection itself fails.
+  ///
+  /// Follows links. Throws notFound / permission.
+  Future<RemoteStat> statFile(String path);
+
+  /// Entries of directory [path] (without `.` and `..`), in server order.
+  /// Throws notFound / permission / notADirectory.
+  Future<List<RemoteEntry>> listDirectory(String path);
+
+  /// Up to [length] bytes from [offset]; fewer at end of file. [length] is
+  /// clamped to [remoteReadCap] here whatever the caller asks for. Throws
+  /// notFound / permission / notAFile.
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap});
+
+  /// Canonical absolute form of [path] (links resolved when it exists). The
+  /// SFTP default directory is the login home, so `realPath('.')` is home.
+  Future<String> realPath(String path);
 
   Future<void> close();
 }

@@ -152,19 +152,23 @@ class Pane {
     required this.title,
     required this.agent,
     required this.status,
+    this.label,
   });
 
   factory Pane.fromJson(Map<String, dynamic> j) {
     final title = (j['terminal_title_stripped'] ?? j['terminal_title']) as String?;
+    final label = (j['label'] as String?)?.trim();
     return Pane(
       id: j['pane_id'] as String,
       workspaceId: j['workspace_id'] as String,
       tabId: j['tab_id'] as String,
       focused: j['focused'] == true,
       cwd: (j['foreground_cwd'] ?? j['cwd']) as String?,
-      title: cleanTerminalTitle(title ?? ''),
+      // A name the person gave the pane wins over whatever the program set.
+      title: label != null && label.isNotEmpty ? label : cleanTerminalTitle(title ?? ''),
       agent: j['agent'] as String?,
       status: AgentStatus.parse(j['agent_status']),
+      label: label != null && label.isNotEmpty ? label : null,
     );
   }
 
@@ -179,6 +183,9 @@ class Pane {
   final String? agent;
   final AgentStatus status;
 
+  /// The name given with `pane.rename`, if any (already what [title] shows).
+  final String? label;
+
   bool get isAgent => agent != null;
 
   Map<String, dynamic> toJson() => {
@@ -190,6 +197,7 @@ class Pane {
         'terminal_title': title,
         'agent': agent,
         'agent_status': status.name,
+        'label': label,
       };
 
   @override
@@ -202,11 +210,12 @@ class Pane {
       other.cwd == cwd &&
       other.title == title &&
       other.agent == agent &&
-      other.status == status;
+      other.status == status &&
+      other.label == label;
 
   @override
   int get hashCode =>
-      Object.hash(id, workspaceId, tabId, focused, cwd, title, agent, status);
+      Object.hash(id, workspaceId, tabId, focused, cwd, title, agent, status, label);
 }
 
 /// One-shot view of a herdr server (`session.snapshot`).

@@ -12,6 +12,7 @@ import '../../core/motion.dart';
 import '../../core/rows.dart';
 import '../../core/status_panel.dart';
 import '../../core/tokens.dart';
+import '../create/new_session_screen.dart';
 import '../machines/machine_form_screen.dart';
 import '../pane/pane_screen.dart';
 import 'agents_grouping.dart';
@@ -59,6 +60,18 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
       };
 
   void _addMachine() => openMachineForm(context);
+
+  void _showAddMenu() => showActionSheet(
+        context,
+        actions: [
+          SheetAction(
+            label: 'New agent session',
+            icon: LucideIcons.sparkles,
+            onTap: () => openNewSession(context),
+          ),
+          SheetAction(label: 'Add machine', icon: LucideIcons.server, onTap: _addMachine),
+        ],
+      );
 
   void _toggleFilter(AgentStatus s) => setState(() => _filter = _filter == s ? null : s);
 
@@ -134,8 +147,8 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
             actions: [
               CircleButton(
                 icon: LucideIcons.plus,
-                tooltip: 'Add machine',
-                onPressed: _addMachine,
+                tooltip: 'New',
+                onPressed: _showAddMenu,
               ),
             ],
             bottom: chips.isEmpty

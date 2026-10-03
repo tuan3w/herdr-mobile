@@ -13,8 +13,11 @@ import '../../core/glyphs.dart';
 import '../../core/motion.dart';
 import '../../core/rows.dart';
 import '../../core/status_panel.dart';
+import '../../core/terminal_links.dart';
 import '../../core/terminal_view.dart';
 import '../../core/theme.dart';
+import '../files/files_navigation.dart';
+import 'link_sheet.dart';
 import 'pane_view_model.dart';
 
 /// Height of the composer with one line.
@@ -115,13 +118,50 @@ class _PaneViewState extends State<_PaneView> {
     _vm.refresh();
   }
 
+  /// A link in the output was tapped: a web address shows its sheet; a path
+  /// opens in the file viewer (or browser, for a directory), found from the
+  /// pane's folder when it is relative.
+  void _openLink(TerminalLink link) {
+    HapticFeedback.selectionClick();
+    final machine = context.read<MachineConnection>();
+    switch (link.kind) {
+      case TerminalLinkKind.url:
+        unawaited(showLinkSheet(context, link.target));
+      case TerminalLinkKind.path:
+        unawaited(
+          openRemoteFile(
+            context,
+            machine,
+            link.target,
+            cwd: _paneIn(machine, widget.paneId)?.cwd,
+            line: link.line,
+          ),
+        );
+    }
+  }
+
+  void _openFiles() {
+    final machine = context.read<MachineConnection>();
+    unawaited(
+      openFileBrowser(
+        context,
+        machine,
+        startDir: _paneIn(machine, widget.paneId)?.cwd,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => _PaneLayout(
         keysOpen: _keysOpen,
         onToggleKeys: () => setState(() => _keysOpen = !_keysOpen),
-        topBar: _TopBar(paneId: widget.paneId, onToggleWrap: _toggleWrap),
+        topBar: _TopBar(
+          paneId: widget.paneId,
+          onToggleWrap: _toggleWrap,
+          onOpenFiles: _openFiles,
+        ),
         banner: _Banner(paneId: widget.paneId, onRetry: _retry),
-        terminal: _TerminalPanel(paneId: widget.paneId),
+        terminal: _TerminalPanel(paneId: widget.paneId, onLinkTap: _openLink),
         keys: _QuickKeys(
           paneId: widget.paneId,
           onKey: (keys) {
@@ -218,13 +258,19 @@ class _PaneLayout extends StatelessWidget {
   }
 }
 
-/// Back, the pane's task title with where it lives, and the wrap toggle. No
-/// bottom border: the terminal panel below is the anchor.
+/// Back, the pane's task title with where it lives, a button for the machine's
+/// files and the wrap toggle. No bottom border: the terminal panel below is
+/// the anchor.
 class _TopBar extends StatefulWidget {
-  const _TopBar({required this.paneId, required this.onToggleWrap});
+  const _TopBar({
+    required this.paneId,
+    required this.onToggleWrap,
+    required this.onOpenFiles,
+  });
 
   final String paneId;
   final VoidCallback onToggleWrap;
+  final VoidCallback onOpenFiles;
 
   @override
   State<_TopBar> createState() => _TopBarState();
@@ -244,6 +290,7 @@ class _TopBarState extends State<_TopBar> {
     final stale = context.select<PaneViewModel, bool>((v) => v.isStale);
     final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
     final machineLabel = context.read<MachineConnection>().profile.label;
+    final files = machineSupportsFiles(context.read<MachineConnection>());
     if (pane != null) _known = pane;
     final shown = pane ?? _known;
 
@@ -308,6 +355,14 @@ class _TopBarState extends State<_TopBar> {
                 ),
               ),
               const SizedBox(width: Gap.md),
+              if (files) ...[
+                CircleButton(
+                  icon: LucideIcons.folderOpen,
+                  tooltip: 'Browse files',
+                  onPressed: widget.onOpenFiles,
+                ),
+                const SizedBox(width: Gap.sm),
+              ],
               CircleButton(
                 icon: LucideIcons.wrapText,
                 tooltip: wrap ? 'Show exact terminal layout' : 'Wrap lines to screen',
@@ -325,9 +380,10 @@ class _TopBarState extends State<_TopBar> {
 /// The terminal in its dark rounded panel. The outline is drawn over the
 /// content, so scrolling rows never paint across it.
 class _TerminalPanel extends StatelessWidget {
-  const _TerminalPanel({required this.paneId});
+  const _TerminalPanel({required this.paneId, required this.onLinkTap});
 
   final String paneId;
+  final ValueChanged<TerminalLink> onLinkTap;
 
   @override
   Widget build(BuildContext context) {
@@ -352,11 +408,24 @@ class _TerminalPanel extends StatelessWidget {
                 (m) => m.isLive && _paneIn(m, paneId) == null,
               );
               final settings = context.read<TerminalSettings>();
+              final vm = context.read<PaneViewModel>();
+              final content = context.select<
+                  PaneViewModel,
+                  ({List<String> history, String text, TerminalTop top})>(
+                (v) => (history: v.history, text: v.text, top: v.top),
+              );
               return Stack(
                 fit: StackFit.expand,
                 children: [
                   TerminalView(
-                    text: context.select<PaneViewModel, String>((v) => v.text),
+                    history: content.history,
+                    text: content.text,
+                    top: content.top,
+                    onLinkTap: onLinkTap,
+                    onScrollChanged: (s) => vm.viewChanged(
+                      nearTop: s.nearTop,
+                      following: s.following,
+                    ),
                     fontSize: fontSize,
                     wrap: wrap,
                     onFontSizeChanged: settings.previewFontSize,

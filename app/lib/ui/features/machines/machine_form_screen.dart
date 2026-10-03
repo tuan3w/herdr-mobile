@@ -10,6 +10,7 @@ import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/rows.dart';
+import '../../core/form_sections.dart';
 import '../../core/status_panel.dart';
 import '../../core/tokens.dart';
 import 'machine_form_view_model.dart';
@@ -269,7 +270,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                             style: Type.body.copyWith(color: ds.textSecondary, fontSize: 14.5),
                           ),
                         ),
-                        _Section(
+                        FormSection(
                           label: 'Machine',
                           children: [
                             LabeledField(
@@ -287,7 +288,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                             ),
                           ],
                         ),
-                        _Section(
+                        FormSection(
                           label: 'Authentication',
                           endsWithField: _auth != SshAuth.none,
                           children: [
@@ -355,14 +356,14 @@ class _FormState extends State<_Form> with RestorationMixin {
                               ),
                           ],
                         ),
-                        _SectionHeader(
+                        FormSectionHeader(
                           label: 'Advanced',
                           expanded: _advanced,
                           onTap: () => setState(() => _advancedR.value = !_advanced),
                         ),
                         Collapse(
                           open: _advanced,
-                          child: _Panel(
+                          child: FormPanel(
                             children: [
                               LabeledField(
                                 key: _sessionKey,
@@ -400,113 +401,6 @@ class _FormState extends State<_Form> with RestorationMixin {
   }
 }
 
-/// A section title over a [_Panel] of fields. Titles are `barTitle` in the text
-/// colour so they read as headers, not as one more field label.
-class _Section extends StatelessWidget {
-  const _Section({required this.label, required this.children, this.endsWithField = true});
-
-  final String label;
-  final List<Widget> children;
-
-  /// The last child is a field, whose reserved message line already gives the
-  /// panel its bottom breathing room.
-  final bool endsWithField;
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SectionHeader(label: label),
-          _Panel(endsWithField: endsWithField, children: children),
-        ],
-      );
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label, this.expanded, this.onTap});
-
-  final String label;
-
-  /// Null = not collapsible (no chevron).
-  final bool? expanded;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return Semantics(
-      header: true,
-      expanded: expanded,
-      child: PressBuilder(
-        onTap: onTap,
-        haptic: true,
-        builder: (context, pressed) => Container(
-          constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.md, Gap.gutter, 0),
-          alignment: Alignment.bottomLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Type.barTitle.copyWith(color: pressed ? ds.textSecondary : ds.text),
-                ),
-              ),
-              if (expanded != null) ...[
-                const SizedBox(width: Gap.sm),
-                AnimatedRotation(
-                  turns: expanded! ? 0.25 : 0,
-                  duration: Motion.reduced(context) ? Duration.zero : Motion.standard,
-                  curve: Motion.easeOut,
-                  child: Icon(LucideIcons.chevronRight, size: 16, color: ds.textSecondary),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Fields grouped on a surface with a hairline: the grouping reads as one unit.
-class _Panel extends StatelessWidget {
-  const _Panel({required this.children, this.endsWithField = true});
-
-  final List<Widget> children;
-  final bool endsWithField;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.sm, Gap.gutter, 0),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: ds.surface,
-          borderRadius: BorderRadius.circular(Radii.panel),
-          border: Border.all(color: ds.hairline),
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(Gap.lg, Gap.lg, Gap.lg, endsWithField ? 0 : Gap.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < children.length; i++) ...[
-                if (i > 0) const SizedBox(height: Gap.sm),
-                children[i],
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Test result and the two actions, pinned under the form so they are never a
 /// scroll away. It sits above the keyboard (the Scaffold body shrinks), and the
 /// form scrolls independently, so a focused field is never covered by it.
@@ -525,7 +419,6 @@ class _ActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ds = context.ds;
     final testing = vm.testState == TestState.testing;
     // Side by side when both labels fit; stacked (primary first) on a narrow
     // phone or with large system text.
@@ -547,48 +440,28 @@ class _ActionBar extends StatelessWidget {
       onPressed: onSave,
     );
 
-    // Buttons are chrome: like the tab bar they stop growing at 1.3x so both
-    // labels stay whole; the form above scales freely.
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: ds.bg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Hairline(),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                Gap.gutter,
-                Gap.md,
-                Gap.gutter,
-                Gap.md + MediaQuery.paddingOf(context).bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _TestResult(vm: vm),
-                  if (sideBySide)
-                    Row(children: [
-                      Expanded(child: test),
-                      const SizedBox(width: Gap.md),
-                      Expanded(child: save),
-                    ])
-                  else ...[
-                    save,
-                    // Stacked and typing: two full-width buttons would leave the
-                    // focused field almost no room. Test returns with the keyboard.
-                    if (MediaQuery.viewInsetsOf(context).bottom == 0) ...[
-                      const SizedBox(height: Gap.sm),
-                      test,
-                    ],
-                  ],
-                ],
-              ),
-            ),
+    return FormActionBar(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TestResult(vm: vm),
+          if (sideBySide)
+            Row(children: [
+              Expanded(child: test),
+              const SizedBox(width: Gap.md),
+              Expanded(child: save),
+            ])
+          else ...[
+            save,
+            // Stacked and typing: two full-width buttons would leave the
+            // focused field almost no room. Test returns with the keyboard.
+            if (MediaQuery.viewInsetsOf(context).bottom == 0) ...[
+              const SizedBox(height: Gap.sm),
+              test,
+            ],
           ],
-        ),
+        ],
       ),
     );
   }

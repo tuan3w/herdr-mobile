@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/isolate_transport.dart';
 
@@ -77,6 +79,66 @@ class _Probe implements HerdrTransport {
 
   @override
   void reset() => resets++;
+
+  @override
+  bool get supportsFiles => true;
+
+  /// Paths pick the behaviour, so one probe covers the ways files can fail.
+  Never _failFor(String path) => switch (path) {
+        '/denied' =>
+          throw RemoteFileException(RemoteFileErrorKind.permission, 'Permission denied', path: path),
+        '/gone' => throw RemoteFileException(RemoteFileErrorKind.notFound, 'No such file', path: path),
+        '/flaky' => throw RemoteFileException(RemoteFileErrorKind.network, 'link dropped', path: path),
+        '/offline' => throw const HerdrTransportException('network down'),
+        '/fatal' => throw const HerdrTransportException('bad key', fatal: true),
+        '/die' => Isolate.exit(),
+        _ => throw StateError('boom'),
+      };
+
+  @override
+  Future<RemoteStat> statFile(String path) async {
+    if (path.startsWith('/ok')) {
+      return RemoteStat(
+        path: path,
+        kind: RemoteEntryKind.file,
+        size: 12345678901,
+        modified: DateTime.utc(2026, 1, 2, 3, 4, 5),
+        mode: 0x81A4,
+      );
+    }
+    _failFor(path);
+  }
+
+  @override
+  Future<List<RemoteEntry>> listDirectory(String path) async {
+    if (path == '/many') {
+      return [
+        for (var i = 0; i < 5000; i++)
+          RemoteEntry(
+            name: 'Tệp $i.txt',
+            path: '/many/Tệp $i.txt',
+            kind: i % 7 == 0 ? RemoteEntryKind.link : RemoteEntryKind.file,
+            resolvedKind: i % 11 == 0 ? null : RemoteEntryKind.file,
+            size: i,
+            modified: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+            linkTarget: i % 7 == 0 ? '../x' : null,
+          ),
+      ];
+    }
+    _failFor(path);
+  }
+
+  @override
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) async {
+    if (path == '/bytes') {
+      // Content depends on the position, so a lost or shifted byte shows.
+      return Uint8List.fromList([for (var i = 0; i < length; i++) (offset + i) % 251]);
+    }
+    _failFor(path);
+  }
+
+  @override
+  Future<String> realPath(String path) async => path == '.' ? '/home/probe' : '/real$path';
 
   @override
   Future<void> close() async => closed = true;
@@ -303,6 +365,130 @@ void main() {
       t = _transport(config: 'throw');
 
       await expectLater(t.events(const [{'type': 'x'}]).first, throwsA(isA<HerdrTransportException>()));
+    });
+  });
+
+  group('files', () {
+    test('stat comes back typed, with size beyond 32 bits and an exact UTC time', () async {
+      t = _transport();
+
+      final s = await t.statFile('/ok');
+
+      expect(s.kind, RemoteEntryKind.file);
+      expect(s.size, 12345678901);
+      expect(s.modified, DateTime.utc(2026, 1, 2, 3, 4, 5));
+      expect(s.modified!.isUtc, isTrue);
+      expect(s.mode, 0x81A4);
+      expect(t.supportsFiles, isTrue);
+    });
+
+    test('a 5,000-entry listing arrives whole with Unicode names and link details', () async {
+      t = _transport();
+
+      final entries = await t.listDirectory('/many');
+
+      expect(entries, hasLength(5000));
+      expect(entries[4999].name, 'Tệp 4999.txt');
+      expect(entries[0].kind, RemoteEntryKind.link);
+      expect(entries[0].linkTarget, '../x');
+      expect(entries[0].isBrokenLink, isTrue, reason: 'a link with no resolved kind');
+      expect(entries[7].kind, RemoteEntryKind.link);
+      expect(entries[7].isBrokenLink, isFalse);
+      expect(entries[7].isFile, isTrue);
+      expect(entries[11].kind, RemoteEntryKind.file);
+      expect(entries[11].resolvedKind, isNull, reason: 'null survives the trip');
+      expect(entries[77].isBrokenLink, isTrue);
+      expect(entries[3].modified, DateTime.utc(2026, 1, 1, 0, 3));
+    });
+
+    test('bytes cross intact: every position holds the right value', () async {
+      t = _transport();
+
+      final bytes = await t.readFile('/bytes', offset: 250, length: 3 * 1024 * 1024);
+
+      expect(bytes, isA<Uint8List>());
+      expect(bytes.length, 3 * 1024 * 1024);
+      for (var i = 0; i < bytes.length; i += 4099) {
+        expect(bytes[i], (250 + i) % 251, reason: 'byte $i');
+      }
+      expect(bytes.last, (250 + bytes.length - 1) % 251);
+    });
+
+    test('a read never asks the worker for more than the cap', () async {
+      t = _transport();
+
+      final bytes = await t.readFile('/bytes', length: 1 << 40);
+
+      expect(bytes.length, remoteReadCap);
+    });
+
+    test('realPath is forwarded', () async {
+      t = _transport();
+      expect(await t.realPath('.'), '/home/probe');
+      expect(await t.realPath('/a'), '/real/a');
+    });
+
+    test('typed file errors keep their kind, message, path and retryability', () async {
+      t = _transport();
+      final cases = {
+        '/denied': (RemoteFileErrorKind.permission, true),
+        '/gone': (RemoteFileErrorKind.notFound, true),
+        '/flaky': (RemoteFileErrorKind.network, false),
+      };
+      for (final MapEntry(key: path, value: (kind, fatal)) in cases.entries) {
+        await expectLater(
+          t.statFile(path),
+          throwsA(isA<RemoteFileException>()
+              .having((e) => e.kind, 'kind', kind)
+              .having((e) => e.fatal, 'fatal', fatal)
+              .having((e) => e.path, 'path', path)),
+          reason: path,
+        );
+      }
+      await expectLater(
+        t.listDirectory('/denied'),
+        throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.permission)),
+      );
+      await expectLater(
+        t.readFile('/gone'),
+        throwsA(isA<RemoteFileException>().having((e) => e.message, 'message', 'No such file')),
+      );
+    });
+
+    test('connection failures stay HerdrTransportExceptions with their fatal flag', () async {
+      t = _transport();
+
+      await expectLater(
+        t.statFile('/offline'),
+        throwsA(isA<HerdrTransportException>().having((e) => e.fatal, 'fatal', isFalse)),
+      );
+      await expectLater(
+        t.listDirectory('/fatal'),
+        throwsA(isA<HerdrTransportException>().having((e) => e.fatal, 'fatal', isTrue)),
+      );
+      await expectLater(t.readFile('/weird'), throwsA(isA<HerdrTransportException>()));
+    });
+
+    test('concurrent file calls are matched to their callers', () async {
+      t = _transport();
+
+      final results = await Future.wait([
+        for (var i = 0; i < 12; i++) t.readFile('/bytes', offset: i * 10, length: 4),
+      ]);
+
+      expect([for (final r in results) r.first], [for (var i = 0; i < 12; i++) (i * 10) % 251]);
+    });
+
+    test('a worker that dies mid-operation fails the call as retryable, and the next call works', () async {
+      t = _transport();
+      await t.statFile('/ok');
+
+      await expectLater(
+        t.readFile('/die'),
+        throwsA(isA<HerdrTransportException>().having((e) => e.fatal, 'fatal', isFalse)),
+      );
+
+      expect((await t.statFile('/ok')).size, 12345678901);
     });
   });
 

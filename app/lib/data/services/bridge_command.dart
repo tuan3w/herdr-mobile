@@ -68,7 +68,13 @@ def serve(line):
         if n<0:
             fail(i,"herdr closed the connection without answering")
         else:
-            out(bytes(b[:n]))
+            r=bytes(b[:n])
+            # herdr cannot correlate a request it fails to parse (an unknown
+            # method) and answers with id "": give it the id it was sent with,
+            # or the client would wait for a reply that is never matched.
+            if i is not None and r.startswith(b'{"id":"",'):
+                r=json.dumps(dict(json.loads(r),id=i)).encode()
+            out(r)
     except Exception as e:
         fail(i,str(e) or e.__class__.__name__)
 out(b"$muxReadyLine")

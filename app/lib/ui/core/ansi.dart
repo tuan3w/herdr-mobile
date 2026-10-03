@@ -63,61 +63,58 @@ final class AnsiDocument {
 /// with `format: ansi`). Never throws: malformed or truncated sequences are
 /// dropped and every other CSI/OSC/DCS/ESC sequence is ignored.
 ///
-/// One-shot; use an [AnsiParser] to parse a stream of similar texts.
-AnsiDocument parseAnsi(String text) => AnsiParser().parse(text);
-
-/// [parseAnsi] for a sequence of related texts (a pane re-read every few
-/// milliseconds, where only a line or two changes between reads).
-///
-/// No escape sequence spans a line feed, so a line parses to the same runs
-/// whenever it starts in the same SGR state. Each line is memoized on
-/// (start state, raw text), and an unchanged line comes back as the very same
-/// `List<AnsiRun>` instance, which lets callers cache work per line by
-/// identity. A line whose start state changed because an earlier line
-/// changed its trailing style is parsed again.
-///
-/// The memo holds only the lines of the latest [parse], so it is bounded by
-/// the size of one document.
-final class AnsiParser {
-  var _memo = <_LineKey, _LineResult>{};
-
-  /// Number of lines remembered from the latest [parse].
-  int get cachedLines => _memo.length;
-
-  AnsiDocument parse(String text) {
-    final used = <_LineKey, _LineResult>{};
-    final lines = <List<AnsiRun>>[];
-    var columns = 0;
-    var state = _SgrState.initial;
-    final n = text.length;
-    var pos = 0;
-    while (true) {
-      final nl = text.indexOf('\n', pos);
-      final last = nl < 0;
-      final end = last ? n : nl;
-      // A trailing line feed does not start another line.
-      if (last && pos == end) break;
-      final line = text.substring(pos, end);
-      final key = _LineKey(state, line);
-      final result = used[key] ?? (_memo[key] ?? _Parser(line, state).parse());
-      used[key] = result;
-      state = result.end;
-      // The text after the final line feed is a line only if it shows something.
-      if (!last || result.hasText) {
-        lines.add(result.runs);
-        if (result.columns > columns) columns = result.columns;
-      }
-      if (last) break;
-      pos = nl + 1;
+/// One-shot. A document that is re-read every few milliseconds is kept by a
+/// `TerminalDocument`, which parses only the lines that changed.
+AnsiDocument parseAnsi(String text) {
+  final lines = <List<AnsiRun>>[];
+  var columns = 0;
+  var state = AnsiState.initial;
+  final n = text.length;
+  var pos = 0;
+  while (true) {
+    final nl = text.indexOf('\n', pos);
+    final last = nl < 0;
+    final end = last ? n : nl;
+    // A trailing line feed does not start another line.
+    if (last && pos == end) break;
+    final result = parseAnsiLine(text.substring(pos, end), state);
+    state = result.end;
+    // The text after the final line feed is a line only if it shows something.
+    if (!last || result.hasText) {
+      lines.add(result.runs);
+      if (result.columns > columns) columns = result.columns;
     }
-    _memo = used;
-    return AnsiDocument(lines, columns);
+    if (last) break;
+    pos = nl + 1;
   }
+  return AnsiDocument(lines, columns);
+}
+
+/// Parses one line (no line feed in [line]) that starts in the SGR state
+/// [start]. No escape sequence spans a line feed, so the result depends on
+/// nothing but these two arguments.
+AnsiLine parseAnsiLine(String line, AnsiState start) =>
+    _Parser(line, start).parse();
+
+/// One parsed line.
+final class AnsiLine {
+  const AnsiLine(this.runs, this.columns, this.hasText, this.end);
+
+  final List<AnsiRun> runs;
+
+  /// Cells the runs occupy.
+  final int columns;
+
+  /// Something was drawn on the line (even if padding trimming emptied it).
+  final bool hasText;
+
+  /// The state the next line starts in.
+  final AnsiState end;
 }
 
 /// The SGR attributes that carry from one line to the next.
-final class _SgrState {
-  const _SgrState({
+final class AnsiState {
+  const AnsiState({
     this.fg,
     this.bg,
     this.bold = false,
@@ -128,7 +125,7 @@ final class _SgrState {
     this.reverse = false,
   });
 
-  static const initial = _SgrState();
+  static const initial = AnsiState();
 
   final Color? fg;
   final Color? bg;
@@ -141,7 +138,7 @@ final class _SgrState {
 
   @override
   bool operator ==(Object other) =>
-      other is _SgrState &&
+      other is AnsiState &&
       fg == other.fg &&
       bg == other.bg &&
       bold == other.bold &&
@@ -156,40 +153,9 @@ final class _SgrState {
       Object.hash(fg, bg, bold, dim, italic, underline, strike, reverse);
 }
 
-/// Memo key: how a raw line is parsed depends on nothing but its text and the
-/// state it starts in.
-final class _LineKey {
-  _LineKey(this.state, this.text) : hashCode = Object.hash(state, text);
-
-  final _SgrState state;
-  final String text;
-
-  @override
-  final int hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _LineKey && state == other.state && text == other.text;
-}
-
-final class _LineResult {
-  const _LineResult(this.runs, this.columns, this.hasText, this.end);
-
-  final List<AnsiRun> runs;
-
-  /// Cells the runs occupy.
-  final int columns;
-
-  /// Something was drawn on the line (even if padding trimming emptied it).
-  final bool hasText;
-
-  /// The state the next line starts in.
-  final _SgrState end;
-}
-
 /// Parses one line (no line feed in [_s]) starting in a given SGR state.
 final class _Parser {
-  _Parser(this._s, _SgrState start)
+  _Parser(this._s, AnsiState start)
       : _fg = start.fg,
         _bg = start.bg,
         _bold = start.bold,
@@ -218,7 +184,7 @@ final class _Parser {
   bool _strike;
   bool _reverse;
 
-  _LineResult parse() {
+  AnsiLine parse() {
     final n = _s.length;
     var i = 0;
     var start = 0;
@@ -249,20 +215,23 @@ final class _Parser {
     for (final run in _line) {
       columns += columnsOf(run.text);
     }
-    return _LineResult(
+    final end = AnsiState(
+      fg: _fg,
+      bg: _bg,
+      bold: _bold,
+      dim: _dim,
+      italic: _italic,
+      underline: _underline,
+      strike: _strike,
+      reverse: _reverse,
+    );
+    // The common state (a reset at the end of the line) is the shared
+    // constant, so callers can compare states by identity first.
+    return AnsiLine(
       _line,
       columns,
       _hasText,
-      _SgrState(
-        fg: _fg,
-        bg: _bg,
-        bold: _bold,
-        dim: _dim,
-        italic: _italic,
-        underline: _underline,
-        strike: _strike,
-        reverse: _reverse,
-      ),
+      end == AnsiState.initial ? AnsiState.initial : end,
     );
   }
 

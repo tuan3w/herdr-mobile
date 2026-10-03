@@ -6,6 +6,7 @@ import 'data/models/machine_profile.dart';
 import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/machine_connection.dart';
 import 'data/repositories/machine_repository.dart';
+import 'data/repositories/new_session_settings.dart';
 import 'data/repositories/terminal_settings.dart';
 import 'data/services/herdr_api.dart';
 import 'data/services/network_monitor.dart';
@@ -22,6 +23,7 @@ class HerdrMobileApp extends StatefulWidget {
     required this.network,
     required this.snapshotCache,
     required this.terminalSettings,
+    required this.newSessionSettings,
     this.connect,
   });
 
@@ -29,6 +31,7 @@ class HerdrMobileApp extends StatefulWidget {
   final NetworkMonitor network;
   final SnapshotCache snapshotCache;
   final TerminalSettings terminalSettings;
+  final NewSessionSettings newSessionSettings;
 
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
@@ -87,6 +90,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           ChangeNotifierProvider.value(value: widget.machines),
           ChangeNotifierProvider.value(value: _fleet),
           ChangeNotifierProvider.value(value: widget.terminalSettings),
+          ChangeNotifierProvider.value(value: widget.newSessionSettings),
           Provider<TransportFactory>.value(value: createSshTransport),
         ],
         child: MaterialApp(

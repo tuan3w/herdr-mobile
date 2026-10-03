@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+
+import 'fake_fs.dart';
 
 /// Builds a `session.snapshot` payload.
 Map<String, dynamic> snapshotJson({
@@ -110,6 +114,29 @@ class FakeTransport implements HerdrTransport {
 
   @override
   void reset() => resets++;
+
+  /// The remote file system this machine "has". Null (the default) means the
+  /// transport has no file channel, like a host without SFTP support in the app.
+  FakeFs? fs;
+
+  @override
+  bool get supportsFiles => fs != null;
+
+  FakeFs get _fs =>
+      fs ?? (throw RemoteFileException(RemoteFileErrorKind.unsupported, 'No files here'));
+
+  @override
+  Future<RemoteStat> statFile(String path) => _fs.stat(path);
+
+  @override
+  Future<List<RemoteEntry>> listDirectory(String path) => _fs.list(path);
+
+  @override
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
+      _fs.read(path, offset, length);
+
+  @override
+  Future<String> realPath(String path) => _fs.realPath(path);
 
   @override
   Future<void> close() async => closed = true;

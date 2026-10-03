@@ -80,7 +80,7 @@ void main() {
   testWidgets('does not move what you are reading when output arrives',
       (tester) async {
     await _pump(tester, _lines(0, 200));
-    await tester.drag(find.byType(ListView), const Offset(0, 600));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
     await tester.pumpAndSettle();
     expect(find.text('line 150'), findsOneWidget);
     final reading = tester.getTopLeft(find.text('line 150')).dy;
@@ -151,7 +151,7 @@ void main() {
 
     testWidgets('while scrolled up, and across repeated updates', (tester) async {
       await _pump(tester, _lines(0, 200));
-      await tester.drag(find.byType(ListView), const Offset(0, 600));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
       await tester.pumpAndSettle();
       final before = probe(tester, 'line 150');
 
@@ -197,7 +197,7 @@ void main() {
     await _pump(tester, _lines(0, 200));
     expect(_jumpButtonFade(tester).opacity, 0);
 
-    await tester.drag(find.byType(ListView), const Offset(0, 600));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
     await tester.pumpAndSettle();
     expect(_jumpButtonFade(tester).opacity, 1);
     expect(find.text('line 199'), findsNothing);
@@ -322,25 +322,31 @@ void main() {
           reason: 'not recorded again');
     });
 
-    test('lines that leave the document are disposed', () {
-      final parser = AnsiParser();
+    test('the cache keeps the rows used most recently and disposes the rest', () {
       final metrics = CellMetrics.measure(11.5, 3);
       final cache = TerminalLineCache(metrics);
-      final doc = parser.parse('\x1b[44m   \x1b[0m\r\n┌─┐\r\nplain');
-      final lines = [for (final l in doc.lines) cache.lineFor(l)];
-      expect(cache.lineFor(doc.lines[0]), same(lines[0]));
-      expect(lines[0].picture, isNotNull);
-      expect(lines[1].picture, isNotNull);
-      expect(lines[2].picture, isNull, reason: 'nothing to draw');
+      final runs = [
+        for (var i = 0; i < 700; i++) parseAnsi('\x1b[44m$i\x1b[0m').lines.single,
+      ];
+      final first = cache.lineFor(runs[0]);
+      expect(first.picture, isNotNull);
+      expect(cache.lineFor(runs[0]), same(first));
 
-      cache.retain(Set<List<AnsiRun>>.identity()..add(doc.lines[0]));
+      for (var i = 1; i < 600; i++) {
+        cache.lineFor(runs[i]);
+        if (i % 100 == 0) cache.lineFor(runs[0]); // still on screen
+      }
 
-      expect(cache.length, 1);
-      expect(lines[0].hasPicture, isTrue);
-      expect(lines[1].hasPicture, isFalse);
+      expect(cache.length, lessThanOrEqualTo(600));
+      expect(cache.length, greaterThan(100), reason: 'a good way around the screen');
+      expect(cache.lineFor(runs[0]), same(first), reason: 'used lately, so kept');
+      expect(first.hasPicture, isTrue);
+
+      final evicted = cache.lineFor(runs[1]);
+      expect(evicted.hasPicture, isFalse, reason: 'a fresh row, not recorded yet');
       cache.dispose();
       expect(cache.length, 0);
-      expect(lines[0].hasPicture, isFalse);
+      expect(first.hasPicture, isFalse);
     });
 
     testWidgets('lines are repainted only when their prepared row changes',

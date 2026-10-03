@@ -253,6 +253,28 @@ esac
       expect((reply['result'] as Map)['blob'], blob);
     });
 
+    test('an error herdr could not correlate (id "") comes back under the id it was sent with',
+        () async {
+      // herdr answers a method it does not know like this (seen on 0.8.2).
+      final herdr = await serve(
+        '$xdg/herdr/herdr.sock',
+        (req) async => req['method'] == 'bogus.method'
+            ? '{"id":"","error":{"code":"invalid_request","message":"invalid request: unknown variant `bogus.method`"}}'
+            : pong(req['id']),
+      );
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'm7', 'method': 'bogus.method', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'm7');
+      expect((reply['error'] as Map)['code'], 'invalid_request');
+    });
     test('a server that closes without replying yields an error with that id',
         () async {
       final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>

@@ -1,14 +1,15 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/repositories/terminal_settings.dart'
     show defaultTerminalFontSize, maxTerminalFontSize, minTerminalFontSize;
-import 'ansi.dart';
 import 'controls.dart';
-import 'line_wrap.dart';
 import 'terminal_cells.dart';
+import 'terminal_document.dart';
+import 'terminal_links.dart';
 import 'theme.dart';
 
 /// Pinching reports sizes in steps of this many logical pixels, so a gesture
@@ -18,17 +19,38 @@ const _pinchStep = 0.25;
 /// Within this many pixels of the newest line the view follows new output.
 const _followSlop = 24.0;
 
-/// Lines compared to work out how far a sliding read window has moved.
-const _anchorLines = 5;
+/// The view counts as near the top of what it has when fewer than this many
+/// viewports of rows lie above the part on screen.
+const _nearTopViewports = 1.5;
 
 const _easeOut = Cubic(0.23, 1, 0.32, 1);
+
+/// What lies above the first row of a [TerminalView].
+enum TerminalTop {
+  /// Nothing: the first row is the pane's first line.
+  none,
+
+  /// More output exists and is being fetched.
+  loading,
+
+  /// herdr keeps only the last rows of a pane and has no more to give.
+  serverLimit,
+
+  /// The phone keeps only so much scrollback and let the oldest rows go.
+  localLimit,
+}
+
+/// Where the user is in the loaded output; see [TerminalView.onScrollChanged].
+typedef TerminalScroll = ({bool nearTop, bool following});
 
 /// Read-only, selectable, colour terminal output.
 ///
 /// Lines have a fixed extent, so only the visible ones are built and laid
 /// out however long the scrollback is. The list is reversed: scroll offset 0
 /// is the newest line, which makes "follow the bottom" free (no jumps, no
-/// extra frame, and it survives the keyboard resizing the viewport).
+/// extra frame, and it survives the keyboard resizing the viewport). For the
+/// same reason rows that appear above (older output) do not move what is on
+/// screen.
 ///
 /// Each row is a grid of cells: a [CustomPaint] under the row's text fills
 /// backgrounds over the full row height and draws box drawing and block
@@ -45,14 +67,26 @@ class TerminalView extends StatefulWidget {
   const TerminalView({
     super.key,
     required this.text,
+    this.history = const [],
+    this.top = TerminalTop.none,
     this.fontSize = defaultTerminalFontSize,
     this.wrap = false,
     this.onFontSizeChanged,
     this.onFontSizeEnd,
+    this.onLinkTap,
+    this.onScrollChanged,
   });
 
   /// Pane output, with SGR escape sequences.
   final String text;
+
+  /// Rows that scrolled off the top of [text], oldest first, shown above it.
+  /// Pass the same list again while it has not changed: an update is cheap
+  /// when only [text] moved.
+  final List<String> history;
+
+  /// What to say above the first row.
+  final TerminalTop top;
 
   /// Font size in logical pixels, before the system text scale is applied.
   final double fontSize;
@@ -71,6 +105,15 @@ class TerminalView extends StatefulWidget {
   /// The fingers of a pinch lifted; this is the size it ended on.
   final ValueChanged<double>? onFontSizeEnd;
 
+  /// A link in the output was tapped. Underlined links only exist when this
+  /// is set.
+  final ValueChanged<TerminalLink>? onLinkTap;
+
+  /// The user scrolled, or the output changed under them: whether they are
+  /// near the oldest row loaded and whether they follow the newest one. Only
+  /// called when one of the two changes.
+  final ValueChanged<TerminalScroll>? onScrollChanged;
+
   @override
   State<TerminalView> createState() => _TerminalViewState();
 }
@@ -78,40 +121,33 @@ class TerminalView extends StatefulWidget {
 class _TerminalViewState extends State<TerminalView> {
   final _scroll = _AnchoringController();
   final _following = ValueNotifier(true);
+  final _list = GlobalKey();
 
-  /// Unchanged lines keep their runs instance between updates (see
-  /// [AnsiParser]), which is what [_cache] and [_wraps] are keyed on.
-  final _parser = AnsiParser();
-  late AnsiDocument _doc = _parser.parse(widget.text);
+  /// Lines of the output, parsed once and kept between updates. Its line ids
+  /// (`base + line`) are what rows are keyed on.
+  final _doc = TerminalDocument();
 
   /// Prepared rows (text span and recorded background/glyph picture), for the
   /// current metrics.
   TerminalLineCache? _cache;
 
-  /// Memoised wrapping of the lines of [_doc].
-  final _wraps = WrapMemo();
-
-  /// What is listed: one entry per terminal row. The lines of [_doc] when
-  /// not wrapping, otherwise the rows each line was cut into.
-  List<List<AnsiRun>> _rows = const [];
-
   /// While wrapping: the first row of each line, plus the row count at the
-  /// end, and the line each row belongs to.
-  List<int> _lineStart = const [0];
-  List<int> _rowLine = const [];
+  /// end. Null when every line is one row.
+  Int32List? _lineStart;
 
-  /// Columns the rows were wrapped to; 0 when they are the document's lines.
+  /// Rows listed: one per line, or the rows the lines were cut into.
+  var _rowCount = 0;
+
+  /// Columns the lines were wrapped to; 0 when they are not.
   var _wrapColumns = 0;
 
   /// Columns that fit the viewport, known once it has been laid out.
   var _viewColumns = 0;
 
-  /// Line ids: line `i` of the document is `_base + i`. The id of a line
-  /// survives appends and lines dropped off the top, so its list item (and
-  /// the laid-out paragraph in it) is kept although its index moves. A row is
-  /// (line id, part): the part counts the rows a wrapped line was cut into.
-  var _base = 0;
   CellMetrics? _metrics;
+
+  /// What [TerminalView.onScrollChanged] last heard.
+  TerminalScroll? _reported;
 
   // Pinch tracking.
   final _touches = <int, Offset>{};
@@ -125,7 +161,10 @@ class _TerminalViewState extends State<TerminalView> {
   @override
   void initState() {
     super.initState();
+    _doc.update(widget.history, widget.text);
     _scroll.addListener(_syncFollowing);
+    _scroll.addListener(_reportScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportScroll());
   }
 
   @override
@@ -157,40 +196,48 @@ class _TerminalViewState extends State<TerminalView> {
   @override
   void didUpdateWidget(TerminalView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final textChanged = widget.text != oldWidget.text;
+    final contentChanged = widget.text != oldWidget.text ||
+        !identical(widget.history, oldWidget.history);
     final wrapChanged = widget.wrap != oldWidget.wrap;
     final sizeChanged = widget.fontSize != oldWidget.fontSize;
-    if (!textChanged && !wrapChanged && !sizeChanged) return;
+    if (!contentChanged && !wrapChanged && !sizeChanged) return;
 
     // Where the user is reading, in terms that survive a new row height or
     // a different split into rows.
     final place = (wrapChanged || sizeChanged) ? _readingPlace() : null;
-    final previousRows = _rows.length;
+    final previousRows = _rowCount;
     final previousLines = _doc.lines.length;
-    int? dropped;
     var droppedRows = 0;
-    if (textChanged) {
-      _doc = _parser.parse(widget.text);
-      dropped = _droppedLines(oldWidget.text, widget.text);
-      droppedRows = _startOfLine(math.min(dropped ?? 0, previousLines));
-      // No overlap with the old text: a new document, none of whose lines
-      // may be mistaken for an old one.
-      _base += dropped ?? previousLines;
+    var prepended = 0;
+    if (contentChanged) {
+      final shift = _doc.update(widget.history, widget.text);
+      // Counted in the layout the rows were last laid out in.
+      droppedRows = _startOfLine(math.min(shift.dropped, previousLines));
+      prepended = shift.prepended;
     }
     if (sizeChanged) _updateMetrics();
     _layoutRows();
+    if (contentChanged) {
+      // A rebuild that only moves ids (rows added above, or rows swapped for
+      // equal ones) updates no child, so Flutter would skip laying the list
+      // out and keep its old extent: the new rows could not be scrolled to.
+      _list.currentContext?.findRenderObject()?.markNeedsLayout();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportScroll());
+    }
     if (!_scroll.hasClients) return;
 
     // Offsets count from the newest row, so appended rows (and rows the read
-    // window dropped from the top) would slide what the user is reading.
-    // While following nothing has to move, but the viewport still has to lay
-    // out against the new extent either way.
+    // window dropped from the top) would slide what the user is reading. Rows
+    // inserted above change no offset. While following nothing has to move,
+    // but the viewport still has to lay out against the new extent either way.
     if (place != null) {
       _restorePlace(place);
     } else {
+      final prependedRows =
+          _startOfLine(math.min(prepended, _doc.lines.length));
       final moved = _following.value
           ? 0
-          : _rows.length - previousRows + (dropped == null ? 0 : droppedRows);
+          : _rowCount - previousRows + droppedRows - prependedRows;
       final position = _scroll.position as _AnchoringPosition;
       position.anchorBy(moved * _metrics!.lineHeight);
     }
@@ -214,47 +261,54 @@ class _TerminalViewState extends State<TerminalView> {
     final columns = widget.wrap ? _viewColumns : 0;
     _wrapColumns = columns;
     if (columns == 0) {
-      _rows = lines;
-      _lineStart = const [0];
-      _rowLine = const [];
-    } else {
-      final rows = <List<AnsiRun>>[];
-      final starts = <int>[];
-      final rowLine = <int>[];
-      for (var line = 0; line < lines.length; line++) {
-        starts.add(rows.length);
-        for (final row in _wraps.wrap(lines[line], columns)) {
-          rows.add(row);
-          rowLine.add(line);
-        }
-      }
-      starts.add(rows.length);
-      _rows = rows;
-      _lineStart = starts;
-      _rowLine = rowLine;
-      _wraps.retain(Set<List<AnsiRun>>.identity()..addAll(lines));
+      _lineStart = null;
+      _rowCount = lines.length;
+      return;
     }
-    _cache?.retain(Set<List<AnsiRun>>.identity()..addAll(_rows));
+    final starts = Int32List(lines.length + 1);
+    var rows = 0;
+    for (var line = 0; line < lines.length; line++) {
+      starts[line] = rows;
+      rows += lines[line].rowCount(columns);
+    }
+    starts[lines.length] = rows;
+    _lineStart = starts;
+    _rowCount = rows;
   }
 
   /// Index of the first row of document line [line] (of the row after the
   /// last line for `line == lines`).
-  int _startOfLine(int line) => _wrapColumns == 0 ? line : _lineStart[line];
+  int _startOfLine(int line) => _lineStart?[line] ?? line;
 
-  int _lineOfRow(int row) => _wrapColumns == 0 ? row : _rowLine[row];
+  /// The line that row [row] belongs to.
+  int _lineOfRow(int row) {
+    final starts = _lineStart;
+    if (starts == null) return row;
+    var lo = 0;
+    var hi = starts.length - 2;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= row) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
 
   /// The row at the bottom edge of the view, as (line id, part, how far into
   /// the row), or null while following or before the first layout.
   ({int id, int part, double fraction})? _readingPlace() {
-    if (!_scroll.hasClients || _metrics == null || _rows.isEmpty) return null;
+    if (!_scroll.hasClients || _metrics == null || _rowCount == 0) return null;
     final pixels = _scroll.position.pixels;
     if (pixels <= _followSlop) return null;
     final fromBottom = pixels / _metrics!.lineHeight;
     final item = fromBottom.floor();
-    final row = math.max(0, _rows.length - 1 - item);
+    final row = math.max(0, _rowCount - 1 - item);
     final line = _lineOfRow(row);
     return (
-      id: _base + line,
+      id: _doc.base + line,
       part: row - _startOfLine(line),
       fraction: fromBottom - item,
     );
@@ -263,12 +317,12 @@ class _TerminalViewState extends State<TerminalView> {
   /// Scrolls to [place] again after the rows or their height changed.
   void _restorePlace(({int id, int part, double fraction})? place) {
     if (place == null || !_scroll.hasClients) return;
-    final line = place.id - _base;
+    final line = place.id - _doc.base;
     if (line < 0 || line >= _doc.lines.length) return;
     final start = _startOfLine(line);
     final parts = _startOfLine(line + 1) - start;
     final row = start + math.min(place.part, parts - 1);
-    final item = _rows.length - 1 - row;
+    final item = _rowCount - 1 - row;
     final target = (item + place.fraction) * _metrics!.lineHeight;
     final position = _scroll.position as _AnchoringPosition;
     position.anchorBy(target - position.pixels);
@@ -279,6 +333,22 @@ class _TerminalViewState extends State<TerminalView> {
     _following.value = _scroll.position.pixels <= _followSlop;
   }
 
+  /// Tells the owner where the user is, when that changed.
+  void _reportScroll() {
+    final report = widget.onScrollChanged;
+    if (report == null || !mounted || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (!position.hasContentDimensions) return;
+    final now = (
+      nearTop: position.maxScrollExtent - position.pixels <
+          _nearTopViewports * position.viewportDimension,
+      following: position.pixels <= _followSlop,
+    );
+    if (now == _reported) return;
+    _reported = now;
+    report(now);
+  }
+
   void _jumpToLatest() {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
@@ -287,11 +357,11 @@ class _TerminalViewState extends State<TerminalView> {
   int? _indexOfKey(Key key) {
     if (key is! ValueKey<(int, int)>) return null;
     final (id, part) = key.value;
-    final line = id - _base;
+    final line = id - _doc.base;
     if (line < 0 || line >= _doc.lines.length) return null;
     final start = _startOfLine(line);
     if (part < 0 || part >= _startOfLine(line + 1) - start) return null;
-    return _rows.length - 1 - (start + part);
+    return _rowCount - 1 - (start + part);
   }
 
   // Pinch to zoom, from raw pointer events: no gesture recognizer, so none
@@ -344,6 +414,7 @@ class _TerminalViewState extends State<TerminalView> {
     final metrics = _metrics!;
     final cache = _cache!;
     final wrap = widget.wrap;
+    final top = widget.top;
     // The side padding is a whole number of device pixels, so the cell grid
     // starts on a pixel edge.
     final pad = (Gap.md * metrics.dpr).roundToDouble() / metrics.dpr;
@@ -368,7 +439,6 @@ class _TerminalViewState extends State<TerminalView> {
                     _viewColumns = columns;
                     if (wrap) _layoutRows();
                   }
-                  final rows = _rows;
                   // Never narrower than the viewport, or the empty strip on
                   // the right would not respond to vertical drags.
                   final width = wrap
@@ -377,7 +447,8 @@ class _TerminalViewState extends State<TerminalView> {
                           (metrics.columnEdge(_doc.columns) + 1) / metrics.dpr,
                           viewWidth,
                         );
-                  final height = rows.length * metrics.lineHeight + 2 * Gap.sm;
+                  final height = _rowCount * metrics.lineHeight + 2 * Gap.sm;
+                  final onLinkTap = widget.onLinkTap;
                   return ValueListenableBuilder<bool>(
                     valueListenable: _pinching,
                     builder: (context, pinching, _) => SingleChildScrollView(
@@ -390,30 +461,52 @@ class _TerminalViewState extends State<TerminalView> {
                         width: width,
                         // Short output hugs the top instead of the
                         // (reversed) list's leading edge at the bottom.
-                        height: math.min(height, box.maxHeight),
-                        child: ListView.builder(
+                        height: top == TerminalTop.none
+                            ? math.min(height, box.maxHeight)
+                            : box.maxHeight,
+                        child: CustomScrollView(
                           reverse: true,
                           controller: _scroll,
                           physics: pinching
                               ? const NeverScrollableScrollPhysics()
                               : null,
-                          padding: const EdgeInsets.symmetric(vertical: Gap.sm),
-                          itemExtent: metrics.lineHeight,
-                          itemCount: rows.length,
-                          addAutomaticKeepAlives: false,
-                          addSemanticIndexes: false,
-                          findChildIndexCallback: _indexOfKey,
-                          itemBuilder: (context, i) {
-                            final row = rows.length - 1 - i;
-                            final line = _lineOfRow(row);
-                            return TerminalLineView(
-                              key: ValueKey((
-                                _base + line,
-                                row - _startOfLine(line),
-                              )),
-                              line: cache.lineFor(rows[row]),
-                            );
-                          },
+                          slivers: [
+                            SliverPadding(
+                              padding: const EdgeInsets.only(bottom: Gap.sm),
+                              sliver: SliverFixedExtentList(
+                                key: _list,
+                                itemExtent: metrics.lineHeight,
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, i) {
+                                    final row = _rowCount - 1 - i;
+                                    final index = _lineOfRow(row);
+                                    final part = row - _startOfLine(index);
+                                    final line = _doc.lines[index];
+                                    final columns = _wrapColumns;
+                                    return TerminalLineView(
+                                      key: ValueKey((_doc.base + index, part)),
+                                      line: cache.lineFor(
+                                        line.rows(columns)[part],
+                                        links: onLinkTap == null
+                                            ? null
+                                            : () => line.linksOnRow(part, columns),
+                                      ),
+                                      onLinkTap: onLinkTap,
+                                    );
+                                  },
+                                  childCount: _rowCount,
+                                  addAutomaticKeepAlives: false,
+                                  addSemanticIndexes: false,
+                                  findChildIndexCallback: _indexOfKey,
+                                ),
+                              ),
+                            ),
+                            SliverToBoxAdapter(
+                              child: top == TerminalTop.none
+                                  ? const SizedBox(height: Gap.sm)
+                                  : _TopRow(top: top, width: viewWidth),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -462,39 +555,52 @@ class _TerminalViewState extends State<TerminalView> {
   }
 }
 
-/// How many lines fell off the top between two reads of a sliding window:
-/// where the start of [next] sits inside [previous]. Null when the first
-/// lines of [next] appear nowhere in [previous].
-int? _droppedLines(String previous, String next) {
-  final head = <String>[];
-  var from = 0;
-  while (head.length < _anchorLines) {
-    final end = next.indexOf('\n', from);
-    if (end < 0) {
-      head.add(next.substring(from));
-      break;
-    }
-    head.add(next.substring(from, end));
-    from = end + 1;
-  }
+/// The quiet note above the oldest row: more is coming, or why there is no
+/// more. As wide as the view, so it stays put in the middle of the screen
+/// whatever the width of the output below.
+class _TopRow extends StatelessWidget {
+  const _TopRow({required this.top, required this.width});
 
-  // Walks the lines of `previous` without splitting it.
-  var start = 0;
-  for (var shift = 0;; shift++) {
-    var at = start;
-    var matched = 0;
-    while (matched < head.length && at <= previous.length) {
-      final line = head[matched];
-      if (!previous.startsWith(line, at)) break;
-      final end = at + line.length;
-      if (end < previous.length && previous.codeUnitAt(end) != 0x0a) break;
-      at = end + 1;
-      matched++;
-    }
-    if (matched == head.length) return shift;
-    final nl = previous.indexOf('\n', start);
-    if (nl < 0) return null;
-    start = nl + 1;
+  final TerminalTop top;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final secondary = Type.secondary.copyWith(color: TerminalColors.dim);
+    final (String title, String? detail) = switch (top) {
+      TerminalTop.loading => ('Loading earlier output…', null),
+      TerminalTop.serverLimit => (
+          'Earlier output is not available.',
+          'herdr serves the last 1000 rows of a pane.',
+        ),
+      TerminalTop.localLimit => (
+          'Earlier output is not kept.',
+          'The phone holds the most recent rows only.',
+        ),
+      TerminalTop.none => ('', null),
+    };
+    // Align, so the box may be narrower than the (possibly wider) content.
+    return SelectionContainer.disabled(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: width,
+          child: Padding(
+            padding: const EdgeInsets.all(Gap.lg),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: title),
+                  if (detail != null) TextSpan(text: '\n$detail'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+              style: secondary,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

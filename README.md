@@ -19,12 +19,17 @@ connection, backoff and reconnect; one machine failing never affects another.
 
 <p>
   <img src="docs/screenshots/agents.png" width="32%" alt="Agents across machines, grouped by what needs you">
+  <img src="docs/screenshots/new-session.png" width="32%" alt="Start an agent session on any machine">
   <img src="docs/screenshots/pane.png" width="32%" alt="A live terminal pane, drawn cell by cell">
-  <img src="docs/screenshots/machines.png" width="32%" alt="Machines">
+</p>
+<p>
+  <img src="docs/screenshots/links.png" width="32%" alt="Links and file paths in agent output are tappable">
+  <img src="docs/screenshots/files.png" width="32%" alt="Remote file viewer with line numbers">
+  <img src="docs/screenshots/image.png" width="32%" alt="Remote image viewer with pinch to zoom">
 </p>
 <p>
   <img src="docs/screenshots/needs-you.png" width="32%" alt="Status shown as shapes, readable without colour">
-  <img src="docs/screenshots/reply.png" width="32%" alt="Quick keys and a composer for answering prompts">
+  <img src="docs/screenshots/machines.png" width="32%" alt="Machines">
   <img src="docs/screenshots/tailscale.png" width="32%" alt="Tailscale SSH sign-in approval">
 </p>
 
@@ -46,6 +51,15 @@ widgets, then frames it; needs Pillow).
   detected (machines show "No network" and reconnect within a second of
   returning), a half-dead connection is noticed in under ~15 s, and the last
   state paints instantly on launch, dimmed until it is fresh.
+- Scrollback: tails 300 rows, loads herdr's maximum of 1000 when you scroll up,
+  and keeps what scrolls past while the pane is open (herdr itself serves at
+  most the last 1000 rows of a pane).
+- Links and files in terminal output are underlined and tappable: URLs open in
+  the browser (or copy), file paths open a remote viewer.
+- Remote file browser and viewer over SFTP: source files with line numbers and a
+  highlighted line, Markdown, JSON, zoomable images, hex preview for binaries.
+- New agent session: pick a machine and folder, choose a shell or an agent,
+  optionally send a first message. Rename and close workspaces and panes.
 - Event-driven updates (`events.subscribe`) with a slow poll as a backstop.
 - Host keys pinned on first use; a changed key is a hard stop.
 - Secrets live in the platform keychain, never in preferences.

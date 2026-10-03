@@ -30,12 +30,17 @@ PAPER = {"bg_top": (251, 251, 250), "bg_bottom": (240, 238, 233), "text": (55, 5
 INK = {"bg_top": (13, 14, 16), "bg_bottom": (22, 23, 34), "text": (236, 237, 239),
        "muted": (141, 144, 152), "glow": (94, 106, 210)}
 
-# slug -> (theme of the slide, headline, sub line)
+# slug -> (theme of the slide, headline, sub line). Dict order is display
+# order; themes alternate so the gallery has a rhythm.
 SLIDES: dict[str, tuple[str, str, str]] = {
     "agents": ("dark", "Every agent.\nOne glance.", "See which one needs you, across all your machines."),
     "needs-you": ("light", "Know the moment\nit needs you.", "Status you can read without colour."),
-    "pane": ("dark", "Answer from\nyour pocket.", "A real terminal, drawn cell by cell."),
+    "new-session": ("dark", "Start an agent\nfrom anywhere.", "Choose a machine, a folder and an agent."),
+    "pane": ("light", "Answer from\nyour pocket.", "A real terminal, drawn cell by cell."),
+    "links": ("dark", "Tap links\nand files.", "URLs and paths in agent output open in one tap."),
     "reply": ("light", "Reply in\none thumb.", "Quick keys for the prompts agents ask."),
+    "files": ("dark", "Browse and read\nfiles remotely.", "Code, Markdown and JSON, right on your phone."),
+    "image": ("light", "See what your\nagents made.", "Open images from the machine and pinch to zoom."),
     "machines": ("dark", "All your\nmachines.", "Over SSH. No relay, no account."),
     "tailscale": ("light", "Tailscale SSH,\nbuilt in.", "Approve a sign-in without leaving the app."),
 }
@@ -43,6 +48,10 @@ SLIDES: dict[str, tuple[str, str, str]] = {
 
 # Slides that reuse another render (slug -> raw name).
 SOURCE = {"needs-you": "agents"}
+
+# The three renders in the hero, left to right: (raw name, tone). The middle
+# phone sits highest.
+HERO_PICKS = [("links", "light"), ("agents", "dark"), ("image", "light")]
 
 
 def font(name: str, size: int) -> ImageFont.FreeTypeFont:
@@ -187,7 +196,7 @@ def slide(slug: str) -> Image.Image | None:
 
 
 def hero() -> Image.Image | None:
-    picks = [("agents", "light"), ("agents", "dark"), ("pane", "dark")]
+    picks = HERO_PICKS
     shots = []
     for slug, tone in picks:
         p = RAW / f"{slug}_{tone}.png"

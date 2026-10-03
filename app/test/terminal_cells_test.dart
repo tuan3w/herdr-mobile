@@ -77,7 +77,6 @@ Future<({_Pixels pixels, CellMetrics metrics})> _render(
     ..physicalSize = const Size(600, 400) * dpr;
   addTearDown(tester.view.reset);
   final metrics = CellMetrics.measure(defaultTerminalFontSize, dpr);
-  final parser = AnsiParser();
   final key = GlobalKey();
   await tester.pumpWidget(
     Directionality(
@@ -97,7 +96,7 @@ Future<({_Pixels pixels, CellMetrics metrics})> _render(
                     height: metrics.lineHeight,
                     child: TerminalLineView(
                       line: TerminalLine(
-                        parser.parse(row).lines.single,
+                        parseAnsi(row).lines.single,
                         metrics,
                       ),
                     ),

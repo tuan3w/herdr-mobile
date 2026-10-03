@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 4002: releases up to 0.2.0 were per-ABI APKs whose codes were
 # 1000 * abi + base (up to 4002), and a lower code is refused as a downgrade.
-version: 0.3.1+5004
+version: 0.4.0+5005
 
 environment:
   sdk: ^3.13.5
@@ -55,6 +55,7 @@ dev_dependencies:
   mocktail: ^1.0.5
   flutter_launcher_icons: ^0.14.4
   fake_async: ^1.3.3
+  url_launcher_platform_interface: ^2.3.2
 flutter:
 
   # Material widgets (TextField, Tooltip, SnackBar, sheets) are used for their

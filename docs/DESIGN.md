@@ -85,6 +85,7 @@ Type (`Type.*`): `largeTitle` 32/700/-0.9, `title` 20/600, `barTitle` 16/600,
 | `controls.dart` | `PressBuilder`, `AppButton`, `CircleButton`, `AppChip`, `Segmented`, `LabeledField`, `BusySpinner`, `kMinTap` |
 | `chrome.dart` | `SliverLargeTitle`, `FloatingTabBar`, `AppRefresh`, `showAppSheet`, `showActionSheet`, `showConfirmSheet` |
 | `status_panel.dart` | `StatusStrip` (one line), `StatusPanel` (multi-line), `StatusTint` |
+| `form_sections.dart` | `FormSection`, `FormPanel`, `FormActionBar` (grouped fields on a surface panel and the sticky action bar used by the machine and new-session forms) |
 | `motion.dart` | easing/duration tokens, `tapFeedback` |
 
 ### Rows

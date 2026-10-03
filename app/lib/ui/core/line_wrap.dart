@@ -53,37 +53,6 @@ AnsiRun _piece(AnsiRun run, int start, int end) => start == 0 && end == run.text
     ? run
     : run.withText(run.text.substring(start, end));
 
-/// [wrapLine] remembered per line, for a document re-read every few
-/// milliseconds where only a line or two changes.
-///
-/// Keyed on the identity of a line's runs (which [AnsiParser] keeps for
-/// unchanged lines) and the column count, so an update re-wraps only the lines
-/// that changed. Rows of an unchanged line are the same lists as before, which
-/// lets callers cache per-row work by identity too.
-final class WrapMemo {
-  var _columns = 0;
-  final _rows = Map<List<AnsiRun>, List<List<AnsiRun>>>.identity();
-
-  /// Lines wrapped (not served from the memo) so far.
-  int computed = 0;
-
-  /// The rows of the line [runs] at [columns].
-  List<List<AnsiRun>> wrap(List<AnsiRun> runs, int columns) {
-    if (columns != _columns) {
-      _rows.clear();
-      _columns = columns;
-    }
-    return _rows[runs] ??= () {
-      computed++;
-      return wrapLine(runs, columns);
-    }();
-  }
-
-  /// Forgets every line that is not in [live].
-  void retain(Set<List<AnsiRun>> live) =>
-      _rows.removeWhere((runs, _) => !live.contains(runs));
-}
-
 extension on String {
   /// The code point starting at code unit [index].
   int runeAt(int index) {

@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
 import '../models/machine_profile.dart';
+import '../models/remote_file.dart';
 import 'auth_notice.dart';
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
 import 'mux_client.dart';
+import 'sftp_files.dart';
 
 /// Thrown (wrapped in [HerdrTransportException]) when a pinned host key no
 /// longer matches.
@@ -228,6 +231,69 @@ class SshTransport implements HerdrTransport {
     }
   }
 
+  /// Files go over SFTP on the same authenticated connection: one cached
+  /// session, reopened by [SftpFiles] when its channel dies.
+  late final SftpFiles _files = SftpFiles(open: _openSftp);
+
+  /// How long a host may take to answer the sftp subsystem request before it
+  /// is reported as not offering SFTP. Some sshd configs never answer.
+  static const _sftpHandshakeTimeout = Duration(seconds: 5);
+
+  /// After a host answered "no SFTP" the verdict stands for this long, so the
+  /// next screen does not wait out the handshake timeout again.
+  static const _noSftpMemory = Duration(minutes: 2);
+  DateTime? _noSftpUntil;
+
+  Future<SftpApi> _openSftp() async {
+    if (_closed) throw const HerdrTransportException('Transport closed');
+    final remembered = _noSftpUntil;
+    if (remembered != null && DateTime.now().isBefore(remembered)) throw _noSftp();
+    final client = await _connected();
+    final SftpClient sftp;
+    try {
+      sftp = await client.sftp();
+    } on SSHChannelOpenError {
+      throw _noSftp();
+    } on Object catch (e) {
+      _drop(client);
+      client.close();
+      throw HerdrTransportException('Cannot open channel: $e');
+    }
+    try {
+      await sftp.handshake.timeout(_sftpHandshakeTimeout);
+    } on Object {
+      unawaited(sftp.close().then((_) {}, onError: (Object _) {}));
+      // The SSH connection itself may be what died, which is not the host's
+      // lack of SFTP.
+      if (client.isClosed) throw const HerdrTransportException('Connection lost');
+      _noSftpUntil = DateTime.now().add(_noSftpMemory);
+      throw _noSftp();
+    }
+    return DartSftp(sftp);
+  }
+
+  static RemoteFileException _noSftp() => RemoteFileException(
+        RemoteFileErrorKind.unsupported,
+        'This host does not allow SFTP, so its files cannot be shown. Enable the '
+        '"sftp" subsystem in its sshd_config to use Files.',
+      );
+
+  @override
+  bool get supportsFiles => true;
+
+  @override
+  Future<RemoteStat> statFile(String path) => _files.stat(path);
+
+  @override
+  Future<List<RemoteEntry>> listDirectory(String path) => _files.list(path);
+
+  @override
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
+      _files.read(path, offset, length);
+
+  @override
+  Future<String> realPath(String path) => _files.realPath(path);
+
   String _frame(String method, Map<String, dynamic> params) =>
       '${jsonEncode({'id': 'm${_nextId++}', 'method': method, 'params': params})}\n';
 
@@ -386,6 +452,8 @@ class SshTransport implements HerdrTransport {
   /// Synchronously invalidates the mux, event streams and SSH client (so
   /// in-flight work fails right away), then closes the client.
   Future<void> _teardown() async {
+    _files.discard();
+    _noSftpUntil = null;
     _epoch++;
     final mux = _mux;
     _mux = null;
