@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'support/terminal_rows.dart';
 
 String _lines(int from, int to) =>
     [for (var i = from; i < to; i++) 'line $i'].join('\r\n');
@@ -45,12 +46,10 @@ Future<void> _pump(
   WidgetTester tester,
   String line,
 ) {
-  final finder = find.text(line);
+  final finder = terminalRow(line);
   return (
     element: finder.evaluate().single,
-    paragraph: tester.renderObject(
-      find.descendant(of: finder, matching: find.byType(RichText)),
-    ),
+    paragraph: tester.renderObject(finder),
     top: tester.getTopLeft(finder).dy,
   );
 }
@@ -104,12 +103,12 @@ void main() {
     testWidgets('and the older rows are there to scroll to', (tester) async {
       await _pump(tester, text: _lines(100, 300));
       await _pump(tester, history: _rows(0, 100), text: _lines(100, 300));
-      expect(find.text('line 0'), findsNothing);
+      expect(terminalRow('line 0'), findsNothing);
 
       await _toTop(tester);
 
-      expect(find.text('line 0'), findsOneWidget);
-      expect(find.text('line 299'), findsNothing);
+      expect(terminalRow('line 0'), findsOneWidget);
+      expect(terminalRow('line 299'), findsNothing);
     });
 
     testWidgets('wrapped rows too: a wrapped line above shifts nothing', (tester) async {
@@ -131,11 +130,11 @@ void main() {
     testWidgets('while following, new history does not detach the view from the bottom',
         (tester) async {
       await _pump(tester, text: _lines(100, 300));
-      final bottom = tester.getBottomLeft(find.text('line 299')).dy;
+      final bottom = tester.getBottomLeft(terminalRow('line 299')).dy;
 
       await _pump(tester, history: _rows(0, 100), text: _lines(100, 300));
 
-      expect(tester.getBottomLeft(find.text('line 299')).dy, closeTo(bottom, 0.01));
+      expect(tester.getBottomLeft(terminalRow('line 299')).dy, closeTo(bottom, 0.01));
     });
 
     testWidgets('a slide that moves rows into the history changes nothing on screen',
@@ -170,7 +169,7 @@ void main() {
         text: _lines(1000, 1003),
       );
 
-      expect(find.text('··· output not captured ···'), findsOneWidget);
+      expect(terminalRow('··· output not captured ···'), findsOneWidget);
     });
   });
 
@@ -183,7 +182,7 @@ void main() {
       await _toTop(tester);
 
       expect(find.textContaining('Loading earlier output'), findsOneWidget);
-      expect(find.text('line 0'), findsOneWidget);
+      expect(terminalRow('line 0'), findsOneWidget);
     });
 
     testWidgets('says why there is no more at herdr\'s limit', (tester) async {

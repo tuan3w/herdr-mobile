@@ -52,10 +52,10 @@ typedef TerminalScroll = ({bool nearTop, bool following});
 /// same reason rows that appear above (older output) do not move what is on
 /// screen.
 ///
-/// Each row is a grid of cells: a [CustomPaint] under the row's text fills
-/// backgrounds over the full row height and draws box drawing and block
-/// characters procedurally (see [TerminalLineView]), with row height and cell
-/// edges snapped to device pixels.
+/// Each row is a grid of cells: one paragraph that first fills backgrounds
+/// over the full row height and draws box drawing and block characters
+/// procedurally, then draws its text (see [TerminalLineView]), with row height
+/// and cell edges snapped to device pixels.
 ///
 /// Pinching with two fingers reports a new font size through
 /// [onFontSizeChanged] (and [onFontSizeEnd] when the fingers lift); the view

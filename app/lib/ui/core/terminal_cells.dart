@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show PaintingContext, RenderParagraph;
 import 'package:flutter/widgets.dart';
 
 import 'ansi.dart';
@@ -143,7 +144,7 @@ Color runForeground(AnsiRun run, TerminalPalette palette) => run.dim
     : (run.fg ?? palette.foreground);
 
 /// Text style of [run]. Backgrounds are not part of it (they are painted by
-/// [TerminalLinePainter] across the whole row height); null for plain text.
+/// [TerminalRowText] across the whole row height); null for plain text.
 TextStyle? runTextStyle(AnsiRun run, TerminalPalette palette) {
   final decoration = switch ((run.underline, run.strike)) {
     (true, true) => TextDecoration.combine(const [
@@ -499,23 +500,6 @@ final class TerminalLineCache {
   }
 }
 
-/// Paints the backgrounds and procedural glyphs of a [TerminalLine].
-final class TerminalLinePainter extends CustomPainter {
-  const TerminalLinePainter(this.line);
-
-  final TerminalLine line;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final picture = line.picture;
-    if (picture != null) canvas.drawPicture(picture);
-  }
-
-  @override
-  bool shouldRepaint(TerminalLinePainter oldDelegate) =>
-      !identical(oldDelegate.line, line);
-}
-
 /// One terminal row: backgrounds and box drawing painted under the text.
 ///
 /// Give it a width and a height of [CellMetrics.lineHeight]. The text layer
@@ -538,17 +522,19 @@ class TerminalLineView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metrics = line.metrics;
-    final row = CustomPaint(
-      painter: TerminalLinePainter(line),
-      child: Text.rich(
-        line.span,
-        style: metrics.textStyle,
-        strutStyle: metrics.strut,
-        textScaler: TextScaler.noScaling,
-        softWrap: false,
-        maxLines: 1,
-        overflow: TextOverflow.clip,
-      ),
+    // What `Text.rich` would have made of the style, minus the machinery
+    // around it (a MouseRegion and a selection container per row).
+    var style = DefaultTextStyle.of(context).style.merge(metrics.textStyle);
+    if (MediaQuery.boldTextOf(context)) {
+      style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+    }
+    final row = TerminalRowText(
+      line: line,
+      text: TextSpan(style: style, children: [line.span]),
+      strutStyle: metrics.strut,
+      selectionRegistrar: SelectionContainer.maybeOf(context),
+      selectionColor: DefaultSelectionStyle.of(context).selectionColor ??
+          DefaultSelectionStyle.defaultColor,
     );
     final onTap = onLinkTap;
     if (onTap == null || line.links.isEmpty) return row;
@@ -569,6 +555,85 @@ class TerminalLineView extends StatelessWidget {
       },
       child: row,
     );
+  }
+}
+
+/// A row's text, which also paints the row's [line] backgrounds and procedural
+/// glyphs under it: one widget and one render object instead of a
+/// `CustomPaint` over a `Text` (which, inside a `SelectionArea`, adds a mouse
+/// region and a selection container of its own).
+class TerminalRowText extends RichText {
+  TerminalRowText({
+    super.key,
+    required this.line,
+    required super.text,
+    required super.strutStyle,
+    required super.selectionRegistrar,
+    required super.selectionColor,
+  }) : super(
+         textScaler: TextScaler.noScaling,
+         softWrap: false,
+         maxLines: 1,
+         overflow: TextOverflow.clip,
+       );
+
+  final TerminalLine line;
+
+  @override
+  RenderParagraph createRenderObject(BuildContext context) => _RowParagraph(
+    line,
+    text,
+    textDirection: Directionality.of(context),
+    locale: Localizations.maybeLocaleOf(context),
+    strutStyle: strutStyle,
+    registrar: selectionRegistrar,
+    selectionColor: selectionColor,
+    devicePixelRatio: line.metrics.dpr,
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, RenderParagraph renderObject) {
+    super.updateRenderObject(context, renderObject);
+    (renderObject as _RowParagraph).line = line;
+  }
+}
+
+class _RowParagraph extends RenderParagraph {
+  _RowParagraph(
+    this._line,
+    super.text, {
+    required super.textDirection,
+    required super.locale,
+    required super.strutStyle,
+    required super.registrar,
+    required super.selectionColor,
+    required super.devicePixelRatio,
+  }) : super(
+         textScaler: TextScaler.noScaling,
+         softWrap: false,
+         maxLines: 1,
+         overflow: TextOverflow.clip,
+       );
+
+  TerminalLine _line;
+
+  set line(TerminalLine value) {
+    if (identical(value, _line)) return;
+    _line = value;
+    markNeedsPaint();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final picture = _line.picture;
+    if (picture != null) {
+      context.canvas
+        ..save()
+        ..translate(offset.dx, offset.dy)
+        ..drawPicture(picture)
+        ..restore();
+    }
+    super.paint(context, offset);
   }
 }
 

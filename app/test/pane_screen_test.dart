@@ -28,6 +28,7 @@ import 'support/fake_network.dart';
 import 'support/fake_transport.dart';
 import 'support/memory_stores.dart';
 import 'support/memory_terminal_settings_store.dart';
+import 'support/terminal_rows.dart';
 
 const _pane = 'w1:p1';
 
@@ -200,7 +201,7 @@ void main() {
     await pumpPane(tester);
 
     expect(transport.sources, ['recent']);
-    expect(find.text('rows as the terminal has them'), findsOneWidget);
+    expect(terminalRow('rows as the terminal has them'), findsOneWidget);
     expect(tester.widget<TerminalView>(find.byType(TerminalView)).wrap, isFalse);
     expect(find.byTooltip('Wrap lines to screen'), findsOneWidget);
     await teardown(tester);
@@ -291,8 +292,8 @@ void main() {
     await _settle(tester);
 
     expect(transport.sources, ['recent', 'recent_unwrapped']);
-    expect(find.text('joined line from herdr'), findsOneWidget);
-    expect(find.text('rows as the terminal has them'), findsNothing);
+    expect(terminalRow('joined line from herdr'), findsOneWidget);
+    expect(terminalRow('rows as the terminal has them'), findsNothing);
     expect(tester.widget<TerminalView>(find.byType(TerminalView)).wrap, isTrue);
     expect(find.byTooltip('Show exact terminal layout'), findsOneWidget);
     expect(settings.wrap, isTrue);
@@ -302,7 +303,7 @@ void main() {
     await _settle(tester);
 
     expect(transport.sources.last, 'recent');
-    expect(find.text('rows as the terminal has them'), findsOneWidget);
+    expect(terminalRow('rows as the terminal has them'), findsOneWidget);
     expect(tester.widget<TerminalView>(find.byType(TerminalView)).wrap, isFalse);
     expect(store.wrap, isFalse);
     await teardown(tester);
@@ -315,7 +316,7 @@ void main() {
     await pumpPane(tester);
 
     expect(transport.sources.first, 'recent_unwrapped');
-    expect(find.text('joined line from herdr'), findsOneWidget);
+    expect(terminalRow('joined line from herdr'), findsOneWidget);
     expect(find.byTooltip('Show exact terminal layout'), findsOneWidget);
     await teardown(tester);
   });
@@ -959,7 +960,7 @@ void main() {
         expect(transport.lines, contains(1000));
         position.jumpTo(position.maxScrollExtent);
         await _settle(tester);
-        expect(find.text('row 1000'), findsOneWidget, reason: 'the oldest row herdr serves');
+        expect(terminalRow('row 1000'), findsOneWidget, reason: 'the oldest row herdr serves');
         expect(find.textContaining('Earlier output is not available'), findsOneWidget);
         await teardown(tester);
       });

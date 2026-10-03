@@ -5,6 +5,7 @@ import 'package:herdr_mobile/ui/core/ansi.dart';
 import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'support/terminal_rows.dart';
 
 String _lines(int from, int to) =>
     [for (var i = from; i < to; i++) 'line $i'].join('\r\n');
@@ -56,25 +57,25 @@ void main() {
   testWidgets('builds only the visible lines of a long pane', (tester) async {
     await _pump(tester, _lines(0, 300));
 
-    expect(find.byType(Text).evaluate().length, inInclusiveRange(15, 70));
-    expect(find.text('line 299'), findsOneWidget);
-    expect(find.text('line 0'), findsNothing);
+    expect(find.byType(TerminalRowText).evaluate().length, inInclusiveRange(15, 70));
+    expect(terminalRow('line 299'), findsOneWidget);
+    expect(terminalRow('line 0'), findsNothing);
   });
 
   testWidgets('short output hugs the top', (tester) async {
     await _pump(tester, 'hi');
 
-    expect(tester.getTopLeft(find.text('hi')).dy, lessThan(20));
+    expect(tester.getTopLeft(terminalRow('hi')).dy, lessThan(20));
   });
 
   testWidgets('follows the newest line while at the bottom', (tester) async {
     await _pump(tester, _lines(0, 100));
-    final bottom = tester.getBottomLeft(find.text('line 99')).dy;
+    final bottom = tester.getBottomLeft(terminalRow('line 99')).dy;
 
     await _pump(tester, _lines(0, 110));
 
-    expect(find.text('line 109'), findsOneWidget);
-    expect(tester.getBottomLeft(find.text('line 109')).dy, closeTo(bottom, 0.01));
+    expect(terminalRow('line 109'), findsOneWidget);
+    expect(tester.getBottomLeft(terminalRow('line 109')).dy, closeTo(bottom, 0.01));
   });
 
   testWidgets('does not move what you are reading when output arrives',
@@ -82,16 +83,16 @@ void main() {
     await _pump(tester, _lines(0, 200));
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
     await tester.pumpAndSettle();
-    expect(find.text('line 150'), findsOneWidget);
-    final reading = tester.getTopLeft(find.text('line 150')).dy;
+    expect(terminalRow('line 150'), findsOneWidget);
+    final reading = tester.getTopLeft(terminalRow('line 150')).dy;
 
     // Lines appended.
     await _pump(tester, _lines(0, 215));
-    expect(tester.getTopLeft(find.text('line 150')).dy, closeTo(reading, 0.01));
+    expect(tester.getTopLeft(terminalRow('line 150')).dy, closeTo(reading, 0.01));
 
     // The read window slid: ten lines left the top, ten arrived at the bottom.
     await _pump(tester, _lines(10, 225));
-    expect(tester.getTopLeft(find.text('line 150')).dy, closeTo(reading, 0.01));
+    expect(tester.getTopLeft(terminalRow('line 150')).dy, closeTo(reading, 0.01));
 
     // Text that shares nothing with the old window cannot be anchored, but
     // must not throw.
@@ -103,16 +104,14 @@ void main() {
     // The widget and render object showing [line], and what they show.
     ({Element element, RenderParagraph paragraph, String shown, InlineSpan span})
         probe(WidgetTester tester, String line) {
-      final finder = find.text(line);
+      final finder = terminalRow(line);
       final element = finder.evaluate().single;
-      final paragraph = tester.renderObject<RenderParagraph>(
-        find.descendant(of: finder, matching: find.byType(RichText)),
-      );
+      final paragraph = tester.renderObject<RenderParagraph>(finder);
       return (
         element: element,
         paragraph: paragraph,
         shown: paragraph.text.toPlainText(),
-        span: (element.widget as Text).textSpan!,
+        span: rowSpan(element.widget),
       );
     }
 
@@ -168,9 +167,9 @@ void main() {
       await _pump(tester, '${_lines(0, 50)}\r\nbuilding 10%');
       await _pump(tester, '${_lines(0, 50)}\r\nbuilding 20%');
 
-      expect(find.text('building 10%'), findsNothing);
-      expect(find.text('building 20%'), findsOneWidget);
-      expect(find.text('line 49'), findsOneWidget);
+      expect(terminalRow('building 10%'), findsNothing);
+      expect(terminalRow('building 20%'), findsOneWidget);
+      expect(terminalRow('line 49'), findsOneWidget);
     });
 
     testWidgets('text sharing nothing with the old is a fresh document',
@@ -179,8 +178,8 @@ void main() {
       await _pump(tester, _lines(500, 600));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('line 599'), findsOneWidget);
-      expect(find.text('line 99'), findsNothing);
+      expect(terminalRow('line 599'), findsOneWidget);
+      expect(terminalRow('line 99'), findsNothing);
       expect(probe(tester, 'line 599').shown, 'line 599');
     });
 
@@ -189,7 +188,7 @@ void main() {
       await _pump(tester, List.filled(45, 'same').join('\r\n'));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('same'), findsWidgets);
+      expect(terminalRow('same'), findsWidgets);
     });
   });
 
@@ -200,12 +199,12 @@ void main() {
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
     await tester.pumpAndSettle();
     expect(_jumpButtonFade(tester).opacity, 1);
-    expect(find.text('line 199'), findsNothing);
+    expect(terminalRow('line 199'), findsNothing);
 
     await tester.tap(find.byTooltip('Jump to latest'));
     await tester.pumpAndSettle();
 
-    expect(find.text('line 199'), findsOneWidget);
+    expect(terminalRow('line 199'), findsOneWidget);
     expect(_jumpButtonFade(tester).opacity, 0);
   });
 
@@ -224,8 +223,9 @@ void main() {
       '\x1b[31mred\x1b[0m plain \x1b[1;4mbold\x1b[0m\r\n',
     );
 
-    final text = tester.widget<Text>(find.textContaining('red'));
-    final runs = (text.textSpan! as TextSpan).children!.cast<TextSpan>();
+    final runs = rowSpan(tester.widget(terminalRowContaining('red')))
+        .children!
+        .cast<TextSpan>();
     expect(runs.map((r) => r.text), ['red', ' plain ', 'bold']);
     expect(runs[0].style!.color, TerminalColors.ansi[1]);
     expect(runs[1].style, isNull);
@@ -236,8 +236,8 @@ void main() {
   testWidgets('dim text stays readable', (tester) async {
     await _pump(tester, '\x1b[2mdim\x1b[0m');
 
-    final text = tester.widget<Text>(find.text('dim'));
-    final color = (text.textSpan! as TextSpan).children!.single.style!.color!;
+    final color =
+        rowSpan(tester.widget(terminalRow('dim'))).children!.single.style!.color!;
     expect(color, isNot(TerminalColors.foreground));
     expect(_contrast(color, TerminalColors.background), greaterThanOrEqualTo(4.5));
   });
@@ -262,8 +262,8 @@ void main() {
       'device pixels', (tester) async {
     Future<double> pitch(double scale) async {
       await _pump(tester, 'line 0\r\nline 1', textScale: scale);
-      return tester.getTopLeft(find.text('line 1')).dy -
-          tester.getTopLeft(find.text('line 0')).dy;
+      return tester.getTopLeft(terminalRow('line 1')).dy -
+          tester.getTopLeft(terminalRow('line 0')).dy;
     }
 
     // The row height is the font size times 1.3, rounded to device pixels.
@@ -278,23 +278,17 @@ void main() {
   });
 
   group('cell grid', () {
-    // The painter of the row showing [line].
-    TerminalLinePainter painterOf(WidgetTester tester, String line) =>
-        tester
-            .widget<CustomPaint>(find.descendant(
-              of: find.ancestor(
-                  of: find.text(line), matching: find.byType(TerminalLineView)),
-              matching: find.byType(CustomPaint),
-            ))
-            .painter! as TerminalLinePainter;
+    // The prepared row showing [line].
+    TerminalLine lineOf(WidgetTester tester, String line) =>
+        tester.widget<TerminalRowText>(terminalRow(line)).line;
 
     testWidgets('box drawing is painted, and shows as spaces in the text layer',
         (tester) async {
       await _pump(tester, '┌──┐ ok\r\n│  │');
 
-      expect(find.text('     ok'), findsOneWidget);
-      expect(find.textContaining('┌'), findsNothing);
-      expect(find.textContaining('─'), findsNothing);
+      expect(terminalRow('     ok'), findsOneWidget);
+      expect(terminalRowContaining('┌'), findsNothing);
+      expect(terminalRowContaining('─'), findsNothing);
       expect(blankSprites('a│b▀c'), 'a b c');
       expect(blankSprites('plain'), 'plain');
     });
@@ -302,23 +296,23 @@ void main() {
     testWidgets('backgrounds are not part of the text style', (tester) async {
       await _pump(tester, '\x1b[44mblue\x1b[0m');
 
-      final text = tester.widget<Text>(find.text('blue'));
-      final run = (text.textSpan! as TextSpan).children!.single as TextSpan;
+      final run =
+          rowSpan(tester.widget(terminalRow('blue'))).children!.single as TextSpan;
       expect(run.style, isNull);
     });
 
     testWidgets('prepared rows are reused for unchanged lines', (tester) async {
       await _pump(tester, '${_lines(0, 50)}\r\n\x1b[44m┌─┐\x1b[0m\r\ntail');
-      final before = painterOf(tester, 'line 45').line;
-      final picture = painterOf(tester, '   ').line;
+      final before = lineOf(tester, 'line 45');
+      final picture = lineOf(tester, '   ');
       expect(picture.picture, isNotNull);
       final recorded = picture.picture;
 
       await _pump(tester, '${_lines(0, 50)}\r\n\x1b[44m┌─┐\x1b[0m\r\ntail\r\nnew');
 
-      expect(painterOf(tester, 'line 45').line, same(before));
-      expect(painterOf(tester, '   ').line, same(picture));
-      expect(painterOf(tester, '   ').line.picture, same(recorded),
+      expect(lineOf(tester, 'line 45'), same(before));
+      expect(lineOf(tester, '   '), same(picture));
+      expect(lineOf(tester, '   ').picture, same(recorded),
           reason: 'not recorded again');
     });
 
@@ -347,18 +341,6 @@ void main() {
       cache.dispose();
       expect(cache.length, 0);
       expect(first.hasPicture, isFalse);
-    });
-
-    testWidgets('lines are repainted only when their prepared row changes',
-        (tester) async {
-      final metrics = CellMetrics.measure(11.5, 3);
-      final runs = parseAnsi('┌').lines.single;
-      final a = TerminalLine(runs, metrics);
-      final b = TerminalLine(runs, metrics);
-      expect(TerminalLinePainter(a).shouldRepaint(TerminalLinePainter(a)),
-          isFalse);
-      expect(TerminalLinePainter(a).shouldRepaint(TerminalLinePainter(b)),
-          isTrue);
     });
 
     testWidgets('rows are as tall as the snapped line height, at any density',

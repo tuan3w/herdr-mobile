@@ -4,6 +4,7 @@ import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'support/terminal_rows.dart';
 
 /// The view is 360 wide with 12 px of padding on each side. How many cells fit
 /// depends on the advance of whatever font `monoFamily` resolves to (Ahem, as
@@ -216,21 +217,21 @@ void main() {
       await tester.pumpAndSettle();
       // The line at the bottom edge of the view.
       String lowest() {
-        final shown = find.textContaining('line ').evaluate().toList()
+        final shown = terminalRowContaining('line ').evaluate().toList()
           ..sort((a, b) => (b.renderObject! as RenderBox)
               .localToGlobal(Offset.zero)
               .dy
               .compareTo((a.renderObject! as RenderBox).localToGlobal(Offset.zero).dy));
-        final span = ((shown.first.widget as Text).textSpan! as TextSpan).toPlainText();
+        final span = (shown.first.widget as TerminalRowText).text.toPlainText();
         return span.substring(0, span.indexOf(' y'));
       }
 
       final reading = lowest();
-      final bottom = tester.getBottomLeft(find.textContaining('$reading ')).dy;
+      final bottom = tester.getBottomLeft(terminalRowContaining('$reading ')).dy;
 
       await _pump(tester, text, wrap: true);
-      expect(find.textContaining('$reading '), findsWidgets);
-      expect(tester.getBottomLeft(find.textContaining('$reading ').first).dy,
+      expect(terminalRowContaining('$reading '), findsWidgets);
+      expect(tester.getBottomLeft(terminalRowContaining('$reading ').first).dy,
           closeTo(bottom, 20));
     });
   });
@@ -347,16 +348,16 @@ void main() {
       await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
       await tester.pumpAndSettle();
       // The line at the bottom edge of the view, and where it is.
-      Element lowest() => (find.textContaining('line ').evaluate().toList()
+      Element lowest() => (terminalRowContaining('line ').evaluate().toList()
             ..sort((a, b) => (b.renderObject! as RenderBox)
                 .localToGlobal(Offset.zero)
                 .dy
                 .compareTo((a.renderObject! as RenderBox).localToGlobal(Offset.zero).dy)))
           .first;
       String textOf(Element e) =>
-          ((e.widget as Text).textSpan! as TextSpan).toPlainText();
+          (e.widget as TerminalRowText).text.toPlainText();
       final reading = textOf(lowest());
-      final bottom = tester.getBottomLeft(find.text(reading)).dy;
+      final bottom = tester.getBottomLeft(terminalRow(reading)).dy;
       final position = _vertical(tester).position.pixels;
 
       final (a, b) = await pinchStart(tester);
@@ -368,9 +369,9 @@ void main() {
       expect(zoom.size.value, greaterThan(defaultTerminalFontSize));
       expect(_vertical(tester).position.pixels, greaterThan(position),
           reason: 'taller rows: the same lines sit further from the bottom');
-      expect(find.text(reading), findsOneWidget);
+      expect(terminalRow(reading), findsOneWidget);
       // Within a row of where it was (the new rows are taller).
-      expect(tester.getBottomLeft(find.text(reading)).dy,
+      expect(tester.getBottomLeft(terminalRow(reading)).dy,
           closeTo(bottom, 15 * 2));
       await a.up();
       await b.up();
