@@ -12,7 +12,7 @@ import '../../core/glyphs.dart';
 import '../../core/rows.dart';
 import '../../core/tokens.dart';
 import '../pane/pane_screen.dart';
-import 'status_panel.dart';
+import '../../core/status_panel.dart';
 
 /// Everything running on one machine: workspaces → tabs → panes.
 class MachineScreen extends StatelessWidget {
@@ -39,6 +39,9 @@ class _MachineViewState extends State<_MachineView> {
   /// list items, because a virtualized list drops off-screen item state.
   final _toggled = <String, bool>{};
 
+  /// Workspaces whose pane list was lifted past the cap.
+  final _showAll = <String>{};
+
   bool _isOpen(MachineConnection machine, Workspace w) =>
       _toggled[w.id] ??
       (machine.snapshot.workspaces.length <= 4 ||
@@ -52,7 +55,6 @@ class _MachineViewState extends State<_MachineView> {
     final snap = machine.snapshot;
     final state = machine.state;
     final approval = machine.approvalUrl;
-    final top = MediaQuery.paddingOf(context).top;
 
     final loud = state == LinkState.attention || state == LinkState.approval;
     final subtitle = Row(
@@ -64,10 +66,10 @@ class _MachineViewState extends State<_MachineView> {
             TextSpan(children: [
               TextSpan(
                 text: state.label,
-                style: TextStyle(color: loud ? state.color(ds) : ds.textSecondary),
+                style: TextStyle(color: loud ? ds.blockedText : ds.textSecondary),
               ),
               if (snap.version.isNotEmpty)
-                TextSpan(text: ' · herdr ${snap.version}', style: TextStyle(color: ds.textTertiary)),
+                TextSpan(text: ' · herdr ${snap.version}', style: TextStyle(color: ds.textMuted)),
             ]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -79,7 +81,7 @@ class _MachineViewState extends State<_MachineView> {
 
     return Scaffold(
       backgroundColor: ds.bg,
-      body: RefreshIndicator(
+      body: AppRefresh(
         onRefresh: () async {
           if (machine.isLive) {
             await machine.refresh();
@@ -87,10 +89,7 @@ class _MachineViewState extends State<_MachineView> {
             machine.retry();
           }
         },
-        color: ds.textSecondary,
-        backgroundColor: ds.surface,
-        elevation: 0,
-        edgeOffset: top + 56,
+        edgeOffset: SliverLargeTitle.extent(context, hasSubtitle: true),
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -154,7 +153,9 @@ class _MachineViewState extends State<_MachineView> {
                     machine: machine,
                     workspace: w,
                     open: open,
+                    showAll: _showAll.contains(w.id),
                     onToggle: () => setState(() => _toggled[w.id] = !open),
+                    onShowAll: () => setState(() => _showAll.add(w.id)),
                   );
                 },
               ),
@@ -168,19 +169,28 @@ class _MachineViewState extends State<_MachineView> {
   }
 }
 
+/// Past this many panes a workspace lists the first ones and offers the rest
+/// behind "Show all": a workspace with a hundred panes would otherwise build a
+/// hundred rows at once (its rows are not in a lazy list).
+const _paneCap = 30;
+
 class _WorkspaceSection extends StatelessWidget {
   const _WorkspaceSection({
     super.key,
     required this.machine,
     required this.workspace,
     required this.open,
+    required this.showAll,
     required this.onToggle,
+    required this.onShowAll,
   });
 
   final MachineConnection machine;
   final Workspace workspace;
   final bool open;
+  final bool showAll;
   final VoidCallback onToggle;
+  final VoidCallback onShowAll;
 
   @override
   Widget build(BuildContext context) {
@@ -190,10 +200,15 @@ class _WorkspaceSection extends StatelessWidget {
     final live = machine.isLive;
 
     // Panes in tab order; a tab label only matters when there is more than one.
+    // These are widget descriptions only: [Collapse] builds nothing for a
+    // workspace that is closed.
     final rows = <Widget>[];
+    var total = 0;
     for (final tab in tabs) {
       final label = tab.label.isEmpty ? 'Tab ${tab.number}' : tab.label;
       for (final pane in snap.panesOf(tab.id)) {
+        total++;
+        if (!showAll && total > _paneCap) continue;
         rows.add(RepaintBoundary(
           key: ValueKey(pane.id),
           child: _PaneRow(
@@ -205,6 +220,7 @@ class _WorkspaceSection extends StatelessWidget {
         ));
       }
     }
+    if (total > rows.length) rows.add(_ShowAllRow(total: total, onTap: onShowAll));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,6 +237,33 @@ class _WorkspaceSection extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
         ),
       ],
+    );
+  }
+}
+
+/// "Show all 120 panes": the quiet row that ends a capped workspace.
+class _ShowAllRow extends StatelessWidget {
+  const _ShowAllRow({required this.total, required this.onTap});
+
+  final int total;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return PressBuilder(
+      onTap: onTap,
+      builder: (context, pressed) => Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        alignment: Alignment.centerLeft,
+        // Aligned with the pane titles above (gutter + leadingExtent 28 + gap).
+        padding: const EdgeInsets.only(left: Gap.gutter + 28 + Gap.md, right: Gap.gutter),
+        color: pressed ? ds.fill : Colors.transparent,
+        child: Text(
+          'Show all $total panes',
+          style: Type.label.copyWith(color: ds.accentText, fontWeight: FontWeight.w600),
+        ),
+      ),
     );
   }
 }
@@ -255,6 +298,7 @@ class _PaneRow extends StatelessWidget {
           : const IconTile(icon: LucideIcons.squareTerminal, size: 28),
       leadingExtent: 28,
       title: title,
+      titleMaxLines: 2,
       subtitle: subtitle,
       dim: dim,
       trailing: Icon(LucideIcons.chevronRight, size: 16, color: ds.textTertiary),

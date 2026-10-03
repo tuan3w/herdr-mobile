@@ -15,6 +15,22 @@ fall back to `herdr remote-api-bridge` (herdr ≥ 0.9), then `socat`/`python3`,
 one channel per request: slower, same behaviour. Each machine has its own
 connection, backoff and reconnect; one machine failing never affects another.
 
+![herdr mobile](docs/screenshots/hero.png)
+
+<p>
+  <img src="docs/screenshots/agents.png" width="32%" alt="Agents across machines, grouped by what needs you">
+  <img src="docs/screenshots/pane.png" width="32%" alt="A live terminal pane, drawn cell by cell">
+  <img src="docs/screenshots/machines.png" width="32%" alt="Machines">
+</p>
+<p>
+  <img src="docs/screenshots/needs-you.png" width="32%" alt="Status shown as shapes, readable without colour">
+  <img src="docs/screenshots/reply.png" width="32%" alt="Quick keys and a composer for answering prompts">
+  <img src="docs/screenshots/tailscale.png" width="32%" alt="Tailscale SSH sign-in approval">
+</p>
+
+Regenerate with `tool/screenshots/run.sh` (renders a demo fleet through the real
+widgets, then frames it; needs Pillow).
+
 ## Features
 
 - Multiple machines; add / edit / disable / remove, with **Test connection**

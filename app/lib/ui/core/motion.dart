@@ -8,9 +8,6 @@ abstract final class Motion {
   /// Entering / responding to input. Starts fast, settles gently.
   static const easeOut = Cubic(0.23, 1, 0.32, 1);
 
-  /// Elements that move or morph while staying on screen.
-  static const easeInOut = Cubic(0.77, 0, 0.175, 1);
-
   /// Press-down feedback: snap in.
   static const press = Duration(milliseconds: 100);
 
@@ -27,47 +24,17 @@ abstract final class Motion {
   /// colour/opacity changes.
   static bool reduced(BuildContext context) =>
       MediaQuery.disableAnimationsOf(context);
-}
 
-/// Confirms the interface heard a touch: the child scales down slightly while
-/// pressed. Interruptible (retargets from the current scale) and transform-only.
-/// Does not take part in the gesture arena, so the child's own tap handling is
-/// untouched.
-class Pressable extends StatefulWidget {
-  const Pressable({super.key, required this.child, this.scale = 0.98});
+  /// Duration for a control's pressed/released colour and scale: snap in,
+  /// ease out.
+  static Duration pressing(bool down) => down ? press : release;
 
-  final Widget child;
+  /// Bottom sheet open / close.
+  static const sheetIn = Duration(milliseconds: 280);
+  static const sheetOut = Duration(milliseconds: 200);
 
-  /// Scale while pressed. Large surfaces (cards) need a gentler value than buttons.
-  final double scale;
-
-  @override
-  State<Pressable> createState() => _PressableState();
-}
-
-class _PressableState extends State<Pressable> {
-  bool _down = false;
-
-  void _set(bool down) {
-    if (_down != down) setState(() => _down = down);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final active = _down && !Motion.reduced(context);
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _set(true),
-      onPointerUp: (_) => _set(false),
-      onPointerCancel: (_) => _set(false),
-      child: AnimatedScale(
-        scale: active ? widget.scale : 1,
-        duration: _down ? Motion.press : Motion.release,
-        curve: Motion.easeOut,
-        child: widget.child,
-      ),
-    );
-  }
+  /// Page push/pop (the Cupertino slide, shortened from the SDK's 500 ms).
+  static const page = Duration(milliseconds: 300);
 }
 
 /// Light tap feedback shared by list rows.

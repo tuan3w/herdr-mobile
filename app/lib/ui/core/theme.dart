@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'motion.dart';
 import 'tokens.dart';
 
 export 'tokens.dart';
@@ -38,6 +39,18 @@ abstract final class TerminalColors {
 /// Bundled monospace face (JetBrains Mono): the same on every phone, with
 /// proper box-drawing and symbol coverage for agent UIs.
 const monoFamily = 'JetBrainsMono';
+
+/// The Cupertino slide (parallax, edge-swipe back) at [Motion.page] instead of
+/// the SDK's 500 ms: opening a pane is the app's most frequent action.
+class _FastCupertinoTransitions extends CupertinoPageTransitionsBuilder {
+  const _FastCupertinoTransitions();
+
+  @override
+  Duration get transitionDuration => Motion.page;
+
+  @override
+  Duration get reverseTransitionDuration => Motion.page;
+}
 
 abstract final class AppTheme {
   static ThemeData dark() => _build(Ds.ink);
@@ -118,7 +131,7 @@ abstract final class AppTheme {
       canvasColor: ds.bg,
       extensions: [ds],
       // No ink ripples or tinted highlights: pressed state is drawn by our own
-      // controls (`Pressable`, `PressTint`).
+      // controls (`PressBuilder`).
       splashFactory: NoSplash.splashFactory,
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,
@@ -129,8 +142,8 @@ abstract final class AppTheme {
       // Slide-with-parallax and edge-swipe back on every platform, instead of
       // Android's zoom/fade.
       pageTransitionsTheme: const PageTransitionsTheme(builders: {
-        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.android: _FastCupertinoTransitions(),
+        TargetPlatform.iOS: _FastCupertinoTransitions(),
       }),
       appBarTheme: AppBarTheme(
         backgroundColor: ds.bg,
@@ -145,10 +158,10 @@ abstract final class AppTheme {
         fillColor: ds.surface,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        hintStyle: Type.body.copyWith(color: ds.textTertiary),
-        errorStyle: Type.caption.copyWith(color: ds.danger),
-        border: border(ds.hairline),
-        enabledBorder: border(ds.hairline),
+        hintStyle: Type.body.copyWith(color: ds.textMuted),
+        errorStyle: Type.caption.copyWith(color: ds.dangerText),
+        border: border(ds.border),
+        enabledBorder: border(ds.border),
         focusedBorder: border(ds.accent, 1.5),
         errorBorder: border(ds.danger),
         focusedErrorBorder: border(ds.danger, 1.5),
@@ -163,19 +176,20 @@ abstract final class AppTheme {
         backgroundColor: ds.isDark ? ds.fillPressed : const Color(0xFF2B2A27),
         contentTextStyle: Type.body.copyWith(color: const Color(0xFFF1F1EF)),
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control + 3)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.snack)),
         insetPadding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, 96),
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
           color: ds.isDark ? ds.fillPressed : const Color(0xFF2B2A27),
-          borderRadius: BorderRadius.circular(Radii.control - 2),
+          borderRadius: BorderRadius.circular(Radii.tooltip),
         ),
         textStyle: Type.caption.copyWith(color: const Color(0xFFF1F1EF)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: ds.surface,
         modalBackgroundColor: ds.surface,
+        modalBarrierColor: ds.scrim,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         showDragHandle: false,

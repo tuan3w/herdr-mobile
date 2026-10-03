@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
@@ -29,6 +31,9 @@ class _PaneTransport extends FakeTransport {
   /// Fails every `pane.read` with this while set.
   Object? readFailure;
 
+  /// While set, `pane.send_input` waits for it before succeeding.
+  Completer<void>? sendGate;
+
   /// `source` of every `pane.read`.
   List<String> get sources => [
         for (final (method, params) in calls)
@@ -52,6 +57,10 @@ class _PaneTransport extends FakeTransport {
     if (method == 'pane.send_input' && sendFailure != null) {
       calls.add((method, params));
       return Future.error(sendFailure!);
+    }
+    if (method == 'pane.send_input' && sendGate != null) {
+      calls.add((method, params));
+      return sendGate!.future.then((_) => {'type': 'ok'});
     }
     if (method != 'pane.read') return super.request(method, params);
     calls.add((method, params));
@@ -123,6 +132,8 @@ void main() {
     await _settle(tester);
   }
 
+  /// The strip's message is rich text (title, then quieter detail).
+  Finder banner(String text) => find.textContaining(text, findRichText: true);
   Finder send() => find.bySemanticsLabel('Send');
   Finder composer() => find.byType(TextField);
 
@@ -136,13 +147,35 @@ void main() {
     await teardown(tester);
   });
 
-  testWidgets('names the pane, where it lives and what it is doing',
+  testWidgets('names the pane by its task, with the agent and where it lives',
       (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pumpPane(tester);
+
+    // The fake snapshot gives every pane the title "title <id>".
+    expect(find.text('title $_pane'), findsOneWidget);
+    expect(find.text('claude · box'), findsOneWidget);
+    expect(find.text(' · $_pane'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.text('title $_pane')),
+      matchesSemantics(label: 'title $_pane', isHeader: true),
+    );
+    expect(find.bySemanticsLabel('Working'), findsOneWidget,
+        reason: 'the status is named once, by the glyph');
+    semantics.dispose();
+    await teardown(tester);
+  });
+
+  testWidgets('a pane without a task title is named by its agent',
+      (tester) async {
+    final panes = transport.snapshot['panes']! as List;
+    (panes.single as Map<String, dynamic>)['terminal_title_stripped'] = '';
+
     await pumpPane(tester);
 
     expect(find.text('claude'), findsOneWidget);
-    expect(find.text('Working · box'), findsOneWidget);
-    expect(find.text(' · $_pane'), findsOneWidget);
+    expect(find.text('box'), findsOneWidget,
+        reason: 'the agent is not repeated on the subtitle line');
     await teardown(tester);
   });
 
@@ -334,7 +367,7 @@ void main() {
 
       expect(tester.widget<TextField>(composer()).controller!.text,
           'important command');
-      expect(find.text('write failed'), findsOneWidget);
+      expect(banner('write failed'), findsOneWidget);
       semantics.dispose();
       await teardown(tester);
     });
@@ -407,7 +440,7 @@ void main() {
       await pumpPane(tester);
       await goOffline(tester);
 
-      expect(find.text('network down'), findsOneWidget);
+      expect(banner('network down'), findsOneWidget);
       final reads = transport.sources.length;
 
       await tester.tap(find.text('Retry'));
@@ -428,13 +461,224 @@ void main() {
         'data': {'pane': {'pane_id': _pane}},
       });
       await _settle(tester);
-      expect(find.text('read failed'), findsOneWidget);
+      expect(banner('read failed'), findsOneWidget);
 
       transport.readFailure = null;
       await tester.tap(find.text('Retry'));
       await _settle(tester);
 
-      expect(find.text('read failed'), findsNothing);
+      expect(banner('read failed'), findsNothing);
+      await teardown(tester);
+    });
+  });
+
+  group('the keyboard send key', () {
+    testWidgets('sends and keeps the keyboard open', (tester) async {
+      await pumpPane(tester);
+
+      await tester.showKeyboard(composer());
+      await tester.enterText(composer(), 'ls');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+
+      expect(transport.sent, ['line:ls']);
+      expect(tester.state<EditableTextState>(find.byType(EditableText)).widget.focusNode.hasFocus,
+          isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      await teardown(tester);
+    });
+
+    testWidgets('does not send twice while a send is in flight', (tester) async {
+      transport.sendGate = Completer<void>();
+      await pumpPane(tester);
+
+      await tester.showKeyboard(composer());
+      await tester.enterText(composer(), 'ls');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+
+      expect(transport.sent, ['line:ls']);
+      transport.sendGate!.complete();
+      await _settle(tester);
+      await teardown(tester);
+    });
+
+    testWidgets('leaving the pane mid-send does not touch the composer',
+        (tester) async {
+      transport.sendGate = Completer<void>();
+      await pumpPane(tester);
+
+      await tester.enterText(composer(), 'ls');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      transport.sendGate!.complete();
+      await _settle(tester);
+
+      expect(tester.takeException(), isNull);
+      machine.dispose();
+    });
+  });
+
+  group('when the pane is closed', () {
+    Future<void> closePane(WidgetTester tester) async {
+      (transport.snapshot['panes']! as List).clear();
+      await tester.runAsync(machine.refresh);
+      await _settle(tester);
+    }
+
+    testWidgets('says so, disables the composer and the keys, and keeps its name',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+      expect(banner('This pane was closed'), findsNothing);
+
+      await closePane(tester);
+
+      expect(banner('This pane was closed'), findsOneWidget);
+      expect(find.text('Pane closed'), findsOneWidget);
+      expect(tester.widget<TextField>(composer()).enabled, isFalse);
+      expect(find.text('title $_pane'), findsOneWidget,
+          reason: 'still says which task this was');
+      expect(find.text('Retry'), findsNothing, reason: 'there is nothing to retry');
+
+      await tester.tap(find.text('esc'));
+      await tester.tap(find.bySemanticsLabel('Enter'));
+      await tester.pump();
+      expect(transport.sent, isEmpty);
+      semantics.dispose();
+      await teardown(tester);
+    });
+  });
+
+  group('the banner', () {
+    testWidgets('closes with its content instead of emptying first',
+        (tester) async {
+      await pumpPane(tester);
+      await goOffline(tester);
+      expect(banner('network down'), findsOneWidget);
+
+      transport.failure = null;
+      machine.retry();
+      await tester.runAsync(() => eventually(() => machine.isLive, reason: 'online'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      expect(banner('network down'), findsOneWidget,
+          reason: 'mid-animation the message is still there, fading with the strip');
+      await _settle(tester);
+      expect(banner('network down'), findsNothing);
+      await teardown(tester);
+    });
+  });
+
+  group('layout', () {
+    testWidgets('the five most used keys are on screen at 412dp', (tester) async {
+      tester.view.physicalSize = const Size(412, 892);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpPane(tester);
+
+      Rect rectOf(Finder f) => tester.getRect(f);
+      Finder key(IconData icon) =>
+          find.descendant(of: find.byType(ListView), matching: find.byIcon(icon));
+      expect(rectOf(find.text('esc')).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.arrowUp)).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.arrowDown)).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.cornerDownLeft)).right, lessThan(412));
+      expect(rectOf(find.text('tab')).right, lessThan(412));
+      await teardown(tester);
+    });
+
+    testWidgets('the send button and the keys have 44dp touch targets',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      expect(tester.getSize(find.bySemanticsLabel('Send')).height, greaterThanOrEqualTo(44));
+      expect(tester.getSize(find.bySemanticsLabel('Up')).height, greaterThanOrEqualTo(44));
+      expect(tester.getSize(find.bySemanticsLabel('esc')).height, greaterThanOrEqualTo(44));
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('quick keys are each read once', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      expect(find.bySemanticsLabel('esc'), findsOneWidget);
+      expect(find.bySemanticsLabel('Up'), findsOneWidget);
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('landscape with the keyboard up keeps six lines of terminal and '
+        'folds the keys behind a toggle', (tester) async {
+      tester.view.physicalSize = const Size(740, 360);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      addTearDown(tester.view.reset);
+      await pumpPane(tester);
+
+      expect(find.byTooltip('Back'), findsNothing);
+      expect(find.text('esc'), findsNothing);
+      // Six rows of the terminal at its default size (about 14dp each) plus
+      // its own 16dp of padding.
+      expect(tester.getSize(find.byType(TerminalView)).height, greaterThanOrEqualTo(100));
+
+      await tester.tap(find.byTooltip('Show keys'));
+      await tester.pump();
+      expect(find.text('esc'), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pump();
+      expect(find.byTooltip('Back'), findsOneWidget);
+      expect(find.byTooltip('Show keys'), findsNothing);
+      await teardown(tester);
+    });
+  });
+
+  group('rebuild scope', () {
+    testWidgets('a notify about another pane rebuilds none of this pane',
+        (tester) async {
+      List<({String id, String ws, String? agent, String status})> panes(String other) => [
+            (id: _pane, ws: 'w1', agent: 'claude', status: 'working'),
+            (id: 'w1:p2', ws: 'w1', agent: 'omp', status: other),
+          ];
+      transport.snapshot = snapshotJson(panes: panes('idle'));
+      await pumpPane(tester);
+
+      final rebuilt = <String>[];
+      debugOnRebuildDirtyWidget = (element, builtOnce) =>
+          rebuilt.add(element.widget.runtimeType.toString());
+      addTearDown(() => debugOnRebuildDirtyWidget = null);
+
+      var notified = 0;
+      void count() => notified++;
+      machine.addListener(count);
+      transport.snapshot = snapshotJson(panes: panes('blocked'));
+      await tester.runAsync(machine.refresh);
+      await tester.pump();
+      machine.removeListener(count);
+
+      expect(notified, greaterThan(0), reason: 'the machine did notify');
+      expect(
+        rebuilt.where({'_TopBar', '_Banner', '_QuickKeys', '_Composer', '_TerminalPanel', '_PaneView'}.contains),
+        isEmpty,
+      );
+
+      // The hook sees rebuilds at all, and this pane's own change reaches
+      // only the part that shows it.
+      transport.snapshot = snapshotJson(panes: [
+        (id: _pane, ws: 'w1', agent: 'claude', status: 'idle'),
+        (id: 'w1:p2', ws: 'w1', agent: 'omp', status: 'blocked'),
+      ]);
+      await tester.runAsync(machine.refresh);
+      await tester.pump();
+      expect(rebuilt, contains('_TopBar'));
+      expect(rebuilt.where({'_QuickKeys', '_Composer', '_Banner'}.contains), isEmpty);
       await teardown(tester);
     });
   });

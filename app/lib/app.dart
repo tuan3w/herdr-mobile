@@ -12,6 +12,7 @@ import 'data/services/network_monitor.dart';
 import 'data/services/snapshot_cache.dart';
 import 'data/services/transport_factory.dart';
 import 'ui/core/theme.dart';
+import 'ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'ui/shell/home_shell.dart';
 
 class HerdrMobileApp extends StatefulWidget {
@@ -86,6 +87,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           ChangeNotifierProvider.value(value: widget.machines),
           ChangeNotifierProvider.value(value: _fleet),
           ChangeNotifierProvider.value(value: widget.terminalSettings),
+          Provider<TransportFactory>.value(value: createSshTransport),
         ],
         child: MaterialApp(
           title: 'herdr',
@@ -93,11 +95,17 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: ThemeMode.system,
+          // Lets the navigator and screens that opt in (non-secret form text,
+          // the selected tab) survive Android reclaiming the process.
+          restorationScopeId: 'herdr',
           // One region for every screen, including ones without an AppBar
           // (the empty state), so the bars never fall back to OEM defaults.
           builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
                 value: AppTheme.systemBars(Theme.of(context).brightness),
-                child: child!,
+                // Edge to edge draws under the bars; screens handle top and
+                // bottom themselves, but nothing else clears the side insets
+                // (landscape 3-button bar, camera cutout).
+                child: SafeArea(top: false, bottom: false, child: child!),
               ),
           home: const HomeShell(),
         ),

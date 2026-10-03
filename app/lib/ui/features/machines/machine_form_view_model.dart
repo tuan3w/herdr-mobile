@@ -5,7 +5,6 @@ import '../../../data/repositories/machine_repository.dart';
 import '../../../data/services/herdr_api.dart';
 import '../../../data/services/auth_notice.dart';
 import '../../../data/services/herdr_transport.dart';
-import '../../../data/services/transport_factory.dart';
 
 /// Raw, trimmed-or-empty field values from the form.
 class MachineFormValues {
@@ -47,7 +46,7 @@ class MachineFormViewModel extends ChangeNotifier {
   MachineFormViewModel({
     required this._repo,
     this.existing,
-    this._transportFactory = createSshTransport,
+    required this._transportFactory,
   });
 
   final MachineRepository _repo;

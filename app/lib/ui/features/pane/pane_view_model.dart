@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../../data/models/herdr_models.dart';
+import '../../../data/repositories/machine_connection.dart';
 import '../../../data/services/herdr_api.dart' show ReadSource;
 import '../../../data/services/herdr_transport.dart';
+
+/// Scrollback lines requested per read.
+const _readLines = 300;
 
 /// Reads a pane's text from the given herdr source.
 typedef PaneReader = Future<PaneRead> Function(ReadSource source);
@@ -34,6 +38,27 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _activity = activity.listen(_onActivity, onError: (Object _) {});
     _schedule();
   }
+
+  /// The pane [paneId] of [machine]. This is the one place the pane screen
+  /// reaches the machine's API: the widget tree only sees the view model.
+  factory PaneViewModel.forMachine(
+    MachineConnection machine,
+    String paneId, {
+    required bool wrap,
+  }) =>
+      PaneViewModel(
+        activity: machine.paneActivity,
+        paneId: paneId,
+        read: (source) => machine.api.readPane(
+          paneId,
+          source: source,
+          lines: _readLines,
+          ansi: true,
+        ),
+        sendLine: (text) => machine.api.sendLine(paneId, text),
+        sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
+        wrap: wrap,
+      );
 
   final String paneId;
   final PaneReader _read;

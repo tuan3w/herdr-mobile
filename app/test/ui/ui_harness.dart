@@ -3,15 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 
 import '../support/fake_network.dart';
 import '../support/fake_transport.dart';
 import '../support/memory_stores.dart';
+import '../support/memory_terminal_settings_store.dart';
 
 typedef Pane = ({String id, String ws, String? agent, String status});
 
@@ -38,6 +41,9 @@ class UiTransport extends FakeTransport {
 /// A fleet of fake machines wired like the app wires real ones.
 class UiHarness {
   UiHarness._(this.machines, this.fleet, this.network, this.transports);
+
+  /// Terminal font/wrap settings the pane screen reads, kept in memory.
+  final terminalSettings = TerminalSettings(MemoryTerminalSettingsStore());
 
   final MachineRepository machines;
   final FleetRepository fleet;
@@ -91,6 +97,11 @@ Future<void> pumpUi(
       providers: [
         ChangeNotifierProvider.value(value: h.machines),
         ChangeNotifierProvider.value(value: h.fleet),
+        ChangeNotifierProvider.value(value: h.terminalSettings),
+        // "Test connection" talks to a fake that answers with an empty fleet.
+        Provider<TransportFactory>.value(
+          value: (profile, secrets, onPin, onNotice) => UiTransport(snapshotWith(const [])),
+        ),
       ],
       child: MaterialApp(
         theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),

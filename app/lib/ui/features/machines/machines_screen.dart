@@ -1,9 +1,9 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
-import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/machine_repository.dart';
@@ -14,14 +14,9 @@ import '../../core/glyphs.dart';
 import '../../core/motion.dart';
 import '../../core/rows.dart';
 import '../../core/tokens.dart';
+import '../../core/status_panel.dart';
 import 'machine_form_screen.dart';
 import 'machine_screen.dart';
-import 'status_panel.dart';
-
-void openMachineForm(BuildContext context, {MachineProfile? existing}) =>
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => MachineFormScreen(existing: existing)),
-    );
 
 String _plural(int n, String one, [String? many]) => '$n ${n == 1 ? one : (many ?? '${one}s')}';
 
@@ -31,66 +26,69 @@ class MachinesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final fleet = context.watch<FleetRepository>();
-    final connections = fleet.connections;
-    final count = connections.length;
-
-    return Scaffold(
-      backgroundColor: ds.bg,
-      body: RefreshIndicator(
-        onRefresh: fleet.retryAll,
-        color: ds.textSecondary,
-        backgroundColor: ds.surface,
-        elevation: 0,
-        edgeOffset: MediaQuery.paddingOf(context).top + 56,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverLargeTitle(
-              title: 'Machines',
-              subtitle: Text(
-                count == 0 ? 'None yet' : _plural(count, 'machine'),
-                style: Type.secondary.copyWith(color: ds.textSecondary),
-              ),
-              actions: [
-                CircleButton(
-                  icon: LucideIcons.plus,
-                  tooltip: 'Add machine',
-                  onPressed: () => openMachineForm(context),
-                ),
-              ],
-            ),
-            if (count == 0)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: FloatingTabBar.clearance(context)),
-                  child: EmptyState(
-                    icon: LucideIcons.server,
-                    title: 'No machines yet',
-                    message: 'Add a machine that runs herdr. You can connect as many as '
-                        'you like and see them all together.',
-                    action: AppButton(
-                      label: 'Add machine',
+    // Only *which* machines exist decides this list. Connection updates (an
+    // agent's status changing on one machine) are heard by that machine's own
+    // row, so a busy fleet never rebuilds the rest of the screen.
+    return Selector<FleetRepository, List<MachineConnection>>(
+      selector: (_, fleet) => fleet.connections,
+      shouldRebuild: (a, b) => !listEquals(a, b),
+      builder: (context, connections, _) {
+        final count = connections.length;
+        return Scaffold(
+          backgroundColor: ds.bg,
+          body: AppRefresh(
+            onRefresh: context.read<FleetRepository>().retryAll,
+            edgeOffset: SliverLargeTitle.extent(context, hasSubtitle: true),
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverLargeTitle(
+                  title: 'Machines',
+                  subtitle: Text(
+                    count == 0 ? 'None yet' : _plural(count, 'machine'),
+                    style: Type.secondary.copyWith(color: ds.textSecondary),
+                  ),
+                  actions: [
+                    CircleButton(
                       icon: LucideIcons.plus,
+                      tooltip: 'Add machine',
                       onPressed: () => openMachineForm(context),
                     ),
+                  ],
+                ),
+                if (count == 0)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: FloatingTabBar.clearance(context)),
+                      child: EmptyState(
+                        icon: LucideIcons.server,
+                        title: 'No machines yet',
+                        message: 'Add a machine that runs herdr. You can connect as many as '
+                            'you like and see them all together.',
+                        action: AppButton(
+                          label: 'Add machine',
+                          icon: LucideIcons.plus,
+                          onPressed: () => openMachineForm(context),
+                        ),
+                      ),
+                    ),
+                  )
+                else ...[
+                  SliverList.builder(
+                    itemCount: count,
+                    itemBuilder: (_, i) => _MachineRow(
+                      key: ValueKey(connections[i].profile.id),
+                      machine: connections[i],
+                    ),
                   ),
-                ),
-              )
-            else ...[
-              SliverList.builder(
-                itemCount: count,
-                itemBuilder: (_, i) => _MachineRow(
-                  key: ValueKey(connections[i].profile.id),
-                  machine: connections[i],
-                ),
-              ),
-              SliverToBoxAdapter(child: SizedBox(height: FloatingTabBar.clearance(context))),
-            ],
-          ],
-        ),
-      ),
+                  SliverToBoxAdapter(child: SizedBox(height: FloatingTabBar.clearance(context))),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -151,7 +149,10 @@ class _MachineRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: machine, builder: (context, _) => _content(context));
+
+  Widget _content(BuildContext context) {
     final ds = context.ds;
     final p = machine.profile;
     final snap = machine.snapshot;
@@ -167,93 +168,115 @@ class _MachineRow extends StatelessWidget {
       if (needYou > 0) '$needYou need you',
     ].join(', ');
 
-    return RepaintBoundary(
-      child: Opacity(
-        opacity: p.enabled ? 1 : 0.65,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PressBuilder(
-              onTap: p.enabled ? () => _open(context) : null,
-              onLongPress: () => _menu(context),
-              semanticLabel: semantic,
-              builder: (context, pressed) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: _inset),
-                child: AnimatedContainer(
-                  duration: pressed ? Motion.press : Motion.release,
-                  curve: Motion.easeOut,
-                  decoration: BoxDecoration(
-                    color: pressed ? ds.fill : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(Gap.gutter - _inset, 12, Gap.gutter - _inset - 8, 12),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: _tile, child: Center(child: IconTile(icon: LucideIcons.server))),
-                      const SizedBox(width: _gap),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              p.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Type.row.copyWith(color: ds.text),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                '${p.username}@${p.host}${p.port == 22 ? '' : ':${p.port}'}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Type.secondary.copyWith(color: ds.textSecondary),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: _StatusLine(machine: machine),
-                            ),
-                          ],
+    // "Enable" sits beside the text when there is room, under it on a narrow
+    // phone or with large system text (it would squeeze the name to nothing).
+    final roomy = MediaQuery.sizeOf(context).width >= 340 &&
+        MediaQuery.textScalerOf(context).scale(14) <= 18;
+    final enable = AppButton(
+      label: 'Enable',
+      kind: AppButtonKind.secondary,
+      compact: true,
+      onPressed: () => context.read<MachineRepository>().save(p.copyWith(enabled: true)),
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PressBuilder(
+          // A disabled machine has nothing to open: the tap offers the menu,
+          // where Enable is.
+          onTap: p.enabled ? () => _open(context) : () => _menu(context),
+          onLongPress: () => _menu(context),
+          semanticLabel: semantic,
+          builder: (context, pressed) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: _inset),
+            child: AnimatedContainer(
+              duration: pressed ? Motion.press : Motion.release,
+              curve: Motion.easeOut,
+              decoration: BoxDecoration(
+                color: pressed ? ds.fill : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.fromLTRB(Gap.gutter - _inset, 12, Gap.gutter - _inset - 8, 12),
+              child: Row(
+                children: [
+                  const SizedBox(width: _tile, child: Center(child: IconTile(icon: LucideIcons.server))),
+                  const SizedBox(width: _gap),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          p.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          // A machine that is switched off is quiet, not broken:
+                          // a softer title, no warning colour, no dimming.
+                          style: Type.row.copyWith(color: p.enabled ? ds.text : ds.textSecondary),
                         ),
-                      ),
-                      if (needYou > 0) ...[const SizedBox(width: Gap.sm), _NeedsChip(count: needYou)],
-                      const SizedBox(width: Gap.xs),
-                      _MoreButton(onPressed: () => _menu(context)),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${p.username}@${p.host}${p.port == 22 ? '' : ':${p.port}'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Type.secondary.copyWith(color: ds.textSecondary),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: _StatusLine(machine: machine),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  if (needYou > 0) ...[const SizedBox(width: Gap.sm), _NeedsChip(count: needYou)],
+                  if (!p.enabled && roomy) ...[const SizedBox(width: Gap.sm), enable],
+                  const SizedBox(width: Gap.xs),
+                  CircleButton(
+                    icon: LucideIcons.ellipsis,
+                    tooltip: 'More',
+                    filled: false,
+                    size: 36,
+                    onPressed: () => _menu(context),
+                  ),
+                ],
               ),
             ),
-            if (problem && machine.error != null)
-              Padding(
-                padding: EdgeInsets.fromLTRB(indent, 0, Gap.gutter, 12),
-                child: StatusPanel(
-                  color: state.color(ds),
-                  message: machine.error,
-                  messageMaxLines: 3,
-                  trailing: AppButton(
-                    label: 'Retry',
-                    kind: AppButtonKind.secondary,
-                    compact: true,
-                    onPressed: machine.retry,
-                  ),
-                ),
-              ),
-            if (approval != null)
-              Padding(
-                padding: EdgeInsets.fromLTRB(indent, 0, Gap.gutter, 12),
-                child: StatusPanel(
-                  color: ds.blocked,
-                  message: 'Tailscale needs you to approve this sign-in.',
-                  footer: Align(alignment: Alignment.centerLeft, child: ApprovalButton(url: approval)),
-                ),
-              ),
-            Hairline(indent: indent),
-          ],
+          ),
         ),
-      ),
+        if (!p.enabled && !roomy)
+          Padding(
+            padding: EdgeInsets.fromLTRB(indent, 0, Gap.gutter, 12),
+            child: Align(alignment: Alignment.centerLeft, child: enable),
+          ),
+        if (problem && machine.error != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(indent, 0, Gap.gutter, 12),
+            child: StatusPanel(
+              color: state.color(ds),
+              message: machine.error,
+              messageMaxLines: 3,
+              trailing: AppButton(
+                label: 'Retry',
+                kind: AppButtonKind.secondary,
+                compact: true,
+                onPressed: machine.retry,
+              ),
+            ),
+          ),
+        if (approval != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(indent, 0, Gap.gutter, 12),
+            child: StatusPanel(
+              color: ds.blocked,
+              message: 'Tailscale needs you to approve this sign-in.',
+              footer: Align(alignment: Alignment.centerLeft, child: ApprovalButton(url: approval)),
+            ),
+          ),
+        Hairline(indent: indent),
+      ],
     );
   }
 }
@@ -275,12 +298,12 @@ class _StatusLine extends StatelessWidget {
         ? 'No workspaces'
         : '${_plural(workspaces, 'workspace')} · ${_plural(snap.agentPanes.length, 'agent')}';
 
-    final style = Type.secondary.copyWith(color: ds.textTertiary);
-    // Amber text on paper is too faint to read, so only the states that need
-    // the person are tinted; the dot carries the rest.
+    final style = Type.secondary.copyWith(color: ds.textMuted);
+    // Only the states that need the person are tinted (with the AA text tone,
+    // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;
     final stateStyle = style.copyWith(
-      color: loud ? state.color(ds) : ds.textSecondary,
+      color: loud ? ds.blockedText : ds.textSecondary,
       fontWeight: loud ? FontWeight.w500 : null,
     );
 
@@ -350,7 +373,7 @@ class _NeedsChip extends StatelessWidget {
           Text(
             '$count',
             style: Type.caption.copyWith(
-              color: ds.blocked,
+              color: ds.blockedText,
               fontWeight: FontWeight.w600,
               fontFeatures: Type.tabular,
             ),
@@ -359,31 +382,4 @@ class _NeedsChip extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The ellipsis button: drawn 36 but with a 44 touch target.
-class _MoreButton extends StatelessWidget {
-  const _MoreButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTap: onPressed,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: CircleButton(
-              icon: LucideIcons.ellipsis,
-              tooltip: 'More',
-              filled: false,
-              size: 36,
-              onPressed: onPressed,
-            ),
-          ),
-        ),
-      );
 }

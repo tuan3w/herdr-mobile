@@ -6,13 +6,19 @@ import '../../data/models/herdr_models.dart';
 import '../../data/repositories/machine_connection.dart';
 import 'tokens.dart';
 
-/// Colour per agent status.
+/// Colour per agent status. [color] is for shapes (>= 3:1); [textColor] is for
+/// words ("Needs you", counts) and reaches 4.5:1.
 extension AgentStatusColor on AgentStatus {
   Color color(Ds ds) => switch (this) {
         AgentStatus.blocked => ds.blocked,
         AgentStatus.working => ds.working,
         AgentStatus.done => ds.done,
         AgentStatus.idle || AgentStatus.unknown => ds.textTertiary,
+      };
+
+  Color textColor(Ds ds) => switch (this) {
+        AgentStatus.blocked => ds.blockedText,
+        _ => ds.textSecondary,
       };
 
   String get label => switch (this) {
@@ -24,13 +30,19 @@ extension AgentStatusColor on AgentStatus {
       };
 }
 
-/// Colour per connection state.
+/// Colour per connection state. [color] is for the dot; [textColor] is for the
+/// status line (only states that need the person are tinted).
 extension LinkStateColor on LinkState {
   Color color(Ds ds) => switch (this) {
         LinkState.online => ds.done,
         LinkState.connecting || LinkState.reconnecting => ds.working,
         LinkState.attention || LinkState.approval => ds.blocked,
         LinkState.disabled || LinkState.offline => ds.textTertiary,
+      };
+
+  Color textColor(Ds ds) => switch (this) {
+        LinkState.attention || LinkState.approval => ds.blockedText,
+        _ => ds.textSecondary,
       };
 
   String get label => switch (this) {
@@ -60,25 +72,24 @@ class StatusGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    return Semantics(
-      label: status.label,
-      excludeSemantics: true,
-      child: Opacity(
-        opacity: dim ? 0.45 : 1,
-        child: CustomPaint(
-          size: Size.square(size),
-          painter: _GlyphPainter(status, status.color(ds)),
-        ),
-      ),
+    Widget glyph = CustomPaint(
+      size: Size.square(size),
+      painter: _GlyphPainter(status, status.color(ds), ds.onStatus),
     );
+    // No Opacity layer for the (usual) undimmed glyph.
+    if (dim) glyph = Opacity(opacity: 0.45, child: glyph);
+    return Semantics(label: status.label, excludeSemantics: true, child: glyph);
   }
 }
 
 class _GlyphPainter extends CustomPainter {
-  const _GlyphPainter(this.status, this.color);
+  const _GlyphPainter(this.status, this.color, this.markColor);
 
   final AgentStatus status;
   final Color color;
+
+  /// Check / "!" drawn on the filled shapes.
+  final Color markColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -99,7 +110,7 @@ class _GlyphPainter extends CustomPainter {
       ..strokeWidth = stroke * 1.1
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = Colors.white;
+      ..color = markColor;
 
     switch (status) {
       case AgentStatus.idle:
@@ -124,12 +135,13 @@ class _GlyphPainter extends CustomPainter {
       case AgentStatus.blocked:
         canvas.drawCircle(c, r + stroke / 2, fill);
         canvas.drawLine(Offset(c.dx, c.dy - r * 0.46), Offset(c.dx, c.dy + r * 0.1), mark);
-        canvas.drawCircle(Offset(c.dx, c.dy + r * 0.46), stroke * 0.62, Paint()..color = Colors.white);
+        canvas.drawCircle(Offset(c.dx, c.dy + r * 0.46), stroke * 0.62, Paint()..color = markColor);
     }
   }
 
   @override
-  bool shouldRepaint(_GlyphPainter old) => old.status != status || old.color != color;
+  bool shouldRepaint(_GlyphPainter old) =>
+      old.status != status || old.color != color || old.markColor != markColor;
 }
 
 /// Small solid dot for connection state.

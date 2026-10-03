@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'controls.dart';
@@ -12,6 +10,10 @@ import 'tokens.dart';
 /// separator. As the list scrolls the big title slides under a compact bar,
 /// the compact title fades in, and a hairline appears: a scroll-edge effect
 /// instead of a permanent divider. [leading] and [actions] stay put.
+///
+/// Only the title and subtitle fade. [bottom] (filter chips, a segmented
+/// control) slides under the opaque bar at full opacity, and cannot be tapped
+/// once it is fully hidden. Both titles are announced as headings.
 class SliverLargeTitle extends StatelessWidget {
   const SliverLargeTitle({
     super.key,
@@ -34,7 +36,26 @@ class SliverLargeTitle extends StatelessWidget {
 
   /// Scrolls away with the title (filter chips, a segmented control).
   final Widget? bottom;
+
+  /// Height reserved for [bottom]; [AppChip.height] (44) for a chip row.
   final double bottomHeight;
+
+  static const _barHeight = 56.0;
+  static const _titleBlock = 50.0;
+  static const _subtitleBlock = 22.0;
+  static const _gap = 8.0;
+
+  /// Height of the part that scrolls away.
+  static double _large(bool hasSubtitle, double bottomHeight) =>
+      _titleBlock + (hasSubtitle ? _subtitleBlock : 0) + bottomHeight + _gap;
+
+  /// The pinned header's full (unscrolled) height: where the list content
+  /// starts. Use it as the `edgeOffset` of a pull-to-refresh indicator.
+  static double extent(
+    BuildContext context, {
+    bool hasSubtitle = false,
+    double bottomHeight = 0,
+  }) => MediaQuery.paddingOf(context).top + _barHeight + _large(hasSubtitle, bottomHeight);
 
   @override
   Widget build(BuildContext context) => SliverPersistentHeader(
@@ -66,10 +87,6 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
     required this.reduced,
   });
 
-  static const barHeight = 56.0;
-  static const titleBlock = 50.0;
-  static const subtitleBlock = 22.0;
-
   final double topInset;
   final String title;
   final Widget? subtitle;
@@ -80,14 +97,17 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
   final Ds ds;
   final bool reduced;
 
-  double get _large =>
-      titleBlock + (subtitle != null ? subtitleBlock : 0) + bottomHeight + 8;
+  static const _bar = SliverLargeTitle._barHeight;
+  static const _titleBlock = SliverLargeTitle._titleBlock;
+  static const _subtitleBlock = SliverLargeTitle._subtitleBlock;
+
+  double get _large => SliverLargeTitle._large(subtitle != null, bottomHeight);
 
   @override
-  double get minExtent => topInset + barHeight;
+  double get minExtent => topInset + _bar;
 
   @override
-  double get maxExtent => topInset + barHeight + _large;
+  double get maxExtent => topInset + _bar + _large;
 
   @override
   Widget build(
@@ -99,6 +119,33 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
     final compact = ((t - 0.55) / 0.45).clamp(0.0, 1.0);
     final big = (1 - t * 1.25).clamp(0.0, 1.0);
     final collapsed = shrinkOffset >= _large - 1;
+
+    Widget titles = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: _titleBlock,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Semantics(
+              header: true,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Type.largeTitle.copyWith(color: ds.text),
+              ),
+            ),
+          ),
+        ),
+        if (subtitle != null) SizedBox(height: _subtitleBlock, child: subtitle),
+      ],
+    );
+    // No layer at rest (opacity 1); the title is simply absent once it is gone.
+    if (big < 1) titles = Opacity(opacity: big, child: titles);
+    if (big == 0) {
+      titles = SizedBox(height: _titleBlock + (subtitle != null ? _subtitleBlock : 0));
+    }
 
     // Bars clamp text scale like iOS navigation bars: their blocks are fixed
     // height, so unbounded system scaling would clip the title.
@@ -113,36 +160,26 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
               Positioned(
                 left: Gap.gutter,
                 right: Gap.gutter,
-                top: topInset + barHeight - shrinkOffset.clamp(0.0, _large),
-                child: Opacity(
-                  opacity: big,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                top: topInset + _bar - shrinkOffset.clamp(0.0, _large),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titles,
+                    if (bottom != null)
                       SizedBox(
-                        height: titleBlock,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Type.largeTitle.copyWith(color: ds.text),
+                        height: bottomHeight + SliverLargeTitle._gap,
+                        child: ExcludeSemantics(
+                          excluding: collapsed,
+                          child: IgnorePointer(
+                            ignoring: collapsed,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: SliverLargeTitle._gap),
+                              child: bottom,
+                            ),
                           ),
                         ),
                       ),
-                      if (subtitle != null)
-                        SizedBox(height: subtitleBlock, child: subtitle),
-                      if (bottom != null)
-                        SizedBox(
-                          height: bottomHeight + 8,
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: bottom,
-                          ),
-                        ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
               // Top bar.
@@ -150,35 +187,41 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
                 left: 0,
                 right: 0,
                 top: 0,
-                height: topInset + barHeight,
+                height: topInset + _bar,
                 child: Container(
                   color: ds.bg,
                   padding: EdgeInsets.only(top: topInset),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Opacity(
-                        opacity: compact,
-                        child: Padding(
+                      if (compact > 0)
+                        Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 64),
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Type.barTitle.copyWith(color: ds.text),
+                          child: Semantics(
+                            header: true,
+                            child: _fade(
+                              compact,
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Type.barTitle.copyWith(color: ds.text),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      // Round buttons paint 40 inside a 44 touch box, so the
+                      // painted edge still sits 16 from the screen edge.
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: Gap.gutter - 4,
+                          horizontal: Gap.gutter - 6,
                         ),
                         child: Row(
                           children: [
                             ?leading,
                             const Spacer(),
                             for (final (i, a) in actions.indexed) ...[
-                              if (i > 0) const SizedBox(width: 8),
+                              if (i > 0) const SizedBox(width: 4),
                               a,
                             ],
                           ],
@@ -210,6 +253,9 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
     );
   }
 
+  static Widget _fade(double opacity, Widget child) =>
+      opacity >= 1 ? child : Opacity(opacity: opacity, child: child);
+
   @override
   bool shouldRebuild(_LargeTitleDelegate old) =>
       old.title != title ||
@@ -223,13 +269,21 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
 }
 
 class TabSpec {
-  const TabSpec({required this.icon, required this.label, this.badge = 0});
+  const TabSpec({
+    required this.icon,
+    required this.label,
+    this.badge = 0,
+    this.badgeLabel = 'need you',
+  });
 
   final IconData icon;
   final String label;
 
   /// Count shown as a small dot with number; 0 hides it.
   final int badge;
+
+  /// What the count means, for screen readers: "Agents, 2 need you".
+  final String badgeLabel;
 }
 
 /// Floating pill tab bar. Content scrolls under it, so lists must reserve
@@ -316,14 +370,15 @@ class _TabItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final color = selected ? ds.text : ds.textTertiary;
+    final badge = tab.badge;
     return PressBuilder(
       onTap: onTap,
       haptic: !selected,
       scale: 0.95,
-      semanticLabel: tab.label,
+      selected: selected,
+      semanticLabel: badge > 0 ? '${tab.label}, $badge ${tab.badgeLabel}' : tab.label,
       builder: (context, pressed) => AnimatedContainer(
-        duration: Motion.standard,
+        duration: Motion.pressing(pressed),
         curve: Motion.easeOut,
         constraints: const BoxConstraints(minWidth: 104),
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -332,59 +387,96 @@ class _TabItem extends StatelessWidget {
           color: selected ? ds.fill : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(tab.icon, size: 20, color: color),
-                if (tab.badge > 0)
-                  Positioned(
-                    right: -6,
-                    top: -5,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 14),
-                      height: 14,
-                      padding: const EdgeInsets.symmetric(horizontal: 3.5),
-                      decoration: BoxDecoration(
-                        color: ds.blocked,
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: ds.surface, width: 1.5),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${math.min(tab.badge, 99)}',
-                        style: const TextStyle(
-                          fontFamily: Type.family,
-                          fontSize: 9,
-                          height: 1,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+        child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(end: selected ? ds.text : ds.textSecondary),
+          duration: Motion.standard,
+          builder: (context, color, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(tab.icon, size: 20, color: color),
+                  if (badge > 0)
+                    Positioned(
+                      left: 11,
+                      top: -8,
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 17),
+                        height: 17,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: ds.blocked,
+                          borderRadius: BorderRadius.circular(8.5),
+                          border: Border.all(color: ds.surface, width: 1.5),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          badge > 99 ? '99+' : '$badge',
+                          style: TextStyle(
+                            fontFamily: Type.family,
+                            fontSize: 11,
+                            height: 1,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: Type.tabular,
+                            color: ds.onStatus,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 8),
-            Text(
-              tab.label,
-              style: Type.label.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-                fontSize: 13.5,
+                ],
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Text(
+                tab.label,
+                style: Type.label.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// Pull-to-refresh in the app's style: no disc, just a thin 2 px ring over the
+/// page background. Give [edgeOffset] the pinned header's height
+/// (`SliverLargeTitle.extent(context, ...)`) so the ring appears below it, not
+/// on top of the first row.
+class AppRefresh extends StatelessWidget {
+  const AppRefresh({
+    super.key,
+    required this.onRefresh,
+    required this.edgeOffset,
+    required this.child,
+  });
+
+  final Future<void> Function() onRefresh;
+  final double edgeOffset;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: onRefresh,
+    edgeOffset: edgeOffset,
+    color: context.ds.textSecondary,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    strokeWidth: 2,
+    child: child,
+  );
+}
+
 /// Modal bottom sheet in the app's style: rounded top, grabber, safe-area aware.
+///
+/// Colours come from the theme (`bottomSheetTheme`, `modalBarrierColor`), so a
+/// light/dark switch while a sheet is open restyles it. The body scrolls when
+/// it does not fit (large text, landscape).
 Future<T?> showAppSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -393,13 +485,11 @@ Future<T?> showAppSheet<T>(
   context: context,
   isScrollControlled: true,
   isDismissible: dismissible,
-  backgroundColor: context.ds.surface,
-  barrierColor: context.ds.scrim,
   sheetAnimationStyle: const AnimationStyle(
     curve: Motion.easeOut,
     reverseCurve: Motion.easeOut,
-    duration: Duration(milliseconds: 280),
-    reverseDuration: Duration(milliseconds: 200),
+    duration: Motion.sheetIn,
+    reverseDuration: Motion.sheetOut,
   ),
   builder: (ctx) => SafeArea(
     top: false,
@@ -411,11 +501,11 @@ Future<T?> showAppSheet<T>(
           width: 36,
           height: 4,
           decoration: BoxDecoration(
-            color: ctx.ds.hairline,
+            color: ctx.ds.textTertiary.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        builder(ctx),
+        Flexible(child: SingleChildScrollView(child: builder(ctx))),
       ],
     ),
   ),
@@ -444,8 +534,9 @@ Future<void> showActionSheet(
   context,
   builder: (ctx) {
     final ds = ctx.ds;
+    // Outer inset 4 + row padding 16: icons and titles sit on the 20 gutter.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,9 +544,12 @@ Future<void> showActionSheet(
           if (title != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                title,
-                style: Type.label.copyWith(color: ds.textSecondary),
+              child: Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: Type.label.copyWith(color: ds.textSecondary),
+                ),
               ),
             ),
           for (final a in actions)
@@ -464,27 +558,31 @@ Future<void> showActionSheet(
                 Navigator.of(ctx).pop();
                 a.onTap();
               },
-              semanticLabel: a.label,
               builder: (context, pressed) => AnimatedContainer(
-                duration: pressed ? Motion.press : Motion.release,
+                duration: Motion.pressing(pressed),
+                curve: Motion.easeOut,
                 height: 52,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
                   color: pressed ? ds.fill : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(Radii.row),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       a.icon,
                       size: 20,
-                      color: a.destructive ? ds.danger : ds.textSecondary,
+                      color: a.destructive ? ds.dangerText : ds.textSecondary,
                     ),
-                    const SizedBox(width: 14),
-                    Text(
-                      a.label,
-                      style: Type.row.copyWith(
-                        color: a.destructive ? ds.danger : ds.text,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        a.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Type.row.copyWith(
+                          color: a.destructive ? ds.dangerText : ds.text,
+                        ),
                       ),
                     ),
                   ],
@@ -518,7 +616,10 @@ Future<bool> showConfirmSheet(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Type.title.copyWith(color: ctx.ds.text)),
+          Semantics(
+            header: true,
+            child: Text(title, style: Type.title.copyWith(color: ctx.ds.text)),
+          ),
           const SizedBox(height: Gap.sm),
           Text(
             message,
@@ -537,7 +638,7 @@ Future<bool> showConfirmSheet(
           const SizedBox(height: Gap.sm),
           AppButton(
             label: 'Cancel',
-            kind: AppButtonKind.ghost,
+            kind: AppButtonKind.secondary,
             expand: true,
             onPressed: () => Navigator.of(ctx).pop(false),
           ),

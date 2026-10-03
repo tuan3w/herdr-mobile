@@ -17,7 +17,9 @@ class Ds extends ThemeExtension<Ds> {
     required this.hairline,
     required this.text,
     required this.textSecondary,
+    required this.textMuted,
     required this.textTertiary,
+    required this.border,
     required this.accent,
     required this.onAccent,
     required this.accentText,
@@ -26,6 +28,8 @@ class Ds extends ThemeExtension<Ds> {
     required this.working,
     required this.done,
     required this.danger,
+    required this.blockedText,
+    required this.dangerText,
   });
 
   final Brightness brightness;
@@ -44,8 +48,20 @@ class Ds extends ThemeExtension<Ds> {
   final Color hairline;
 
   final Color text;
+
+  /// Three text tiers (ratios in `docs/DESIGN.md`): [text] primary,
+  /// [textSecondary] supporting copy and unselected navigation,
+  /// [textMuted] meta lines, counts, helper text and placeholders. All three
+  /// reach 4.5:1 on [bg], [surface] and [fill].
   final Color textSecondary;
+  final Color textMuted;
+
+  /// Icons, status rings, chevrons and decoration only (>= 3:1 on [bg]). Never
+  /// text: it does not reach 4.5:1.
   final Color textTertiary;
+
+  /// Input outline (~1.5:1): stronger than [hairline], which is a divider.
+  final Color border;
 
   /// The one accent. Fills (primary button) use [accent] with [onAccent] text;
   /// accent-coloured text and icons use [accentText] for contrast.
@@ -55,11 +71,20 @@ class Ds extends ThemeExtension<Ds> {
 
   final Color scrim;
 
-  /// Agent / link status colours.
+  /// Agent / link status colours: fills, rings and icons (>= 3:1 on [bg]).
   final Color blocked;
   final Color working;
   final Color done;
   final Color danger;
+
+  /// Status colours as TEXT: >= 4.5:1 on [bg], [surface] and on their own
+  /// 12% tints. Use for "Needs attention", error messages, destructive labels.
+  final Color blockedText;
+  final Color dangerText;
+
+  /// Colour of the mark (check, "!") drawn on a filled status glyph or badge:
+  /// dark on the bright ink fills, white on the deeper paper fills.
+  Color get onStatus => isDark ? bg : const Color(0xFFFFFFFF);
 
   bool get isDark => brightness == Brightness.dark;
 
@@ -72,16 +97,20 @@ class Ds extends ThemeExtension<Ds> {
     fillPressed: Color(0xFFE8E7E4),
     hairline: Color(0xFFEAE9E6),
     text: Color(0xFF37352F),
-    textSecondary: Color(0xFF787774),
-    textTertiary: Color(0xFFABA9A4),
+    textSecondary: Color(0xFF5F5E5A),
+    textMuted: Color(0xFF6E6D69),
+    textTertiary: Color(0xFF8F8E8A),
+    border: Color(0xFFD3D1CC),
     accent: Color(0xFF5E6AD2),
     onAccent: Color(0xFFFFFFFF),
     accentText: Color(0xFF4B57BE),
     scrim: Color(0x66000000),
-    blocked: Color(0xFFE5732A),
-    working: Color(0xFFD29A00),
-    done: Color(0xFF2E9F63),
+    blocked: Color(0xFFCC5A1E),
+    working: Color(0xFFB07F00),
+    done: Color(0xFF258A53),
     danger: Color(0xFFD44C47),
+    blockedText: Color(0xFFAD4C14),
+    dangerText: Color(0xFFB5342F),
   );
 
   /// Ink: cool near-black with a surface ladder.
@@ -94,7 +123,9 @@ class Ds extends ThemeExtension<Ds> {
     hairline: Color(0xFF24262A),
     text: Color(0xFFECEDEF),
     textSecondary: Color(0xFF8D9098),
-    textTertiary: Color(0xFF5C5F67),
+    textMuted: Color(0xFF868993),
+    textTertiary: Color(0xFF6A6D75),
+    border: Color(0xFF3A3D44),
     accent: Color(0xFF5E6AD2),
     onAccent: Color(0xFFFFFFFF),
     accentText: Color(0xFF9AA3F2),
@@ -103,6 +134,8 @@ class Ds extends ThemeExtension<Ds> {
     working: Color(0xFFF2C94C),
     done: Color(0xFF4CB782),
     danger: Color(0xFFEB5757),
+    blockedText: Color(0xFFF2994A),
+    dangerText: Color(0xFFF26B6B),
   );
 
   @override
@@ -115,7 +148,9 @@ class Ds extends ThemeExtension<Ds> {
         hairline: hairline,
         text: text,
         textSecondary: textSecondary,
+        textMuted: textMuted,
         textTertiary: textTertiary,
+        border: border,
         accent: accent,
         onAccent: onAccent,
         accentText: accentText,
@@ -124,6 +159,8 @@ class Ds extends ThemeExtension<Ds> {
         working: working,
         done: done,
         danger: danger,
+        blockedText: blockedText,
+        dangerText: dangerText,
       );
 
   @override
@@ -139,7 +176,9 @@ class Ds extends ThemeExtension<Ds> {
       hairline: l(hairline, other.hairline),
       text: l(text, other.text),
       textSecondary: l(textSecondary, other.textSecondary),
+      textMuted: l(textMuted, other.textMuted),
       textTertiary: l(textTertiary, other.textTertiary),
+      border: l(border, other.border),
       accent: l(accent, other.accent),
       onAccent: l(onAccent, other.onAccent),
       accentText: l(accentText, other.accentText),
@@ -148,6 +187,8 @@ class Ds extends ThemeExtension<Ds> {
       working: l(working, other.working),
       done: l(done, other.done),
       danger: l(danger, other.danger),
+      blockedText: l(blockedText, other.blockedText),
+      dangerText: l(dangerText, other.dangerText),
     );
   }
 }
@@ -172,6 +213,21 @@ abstract final class Gap {
 abstract final class Radii {
   /// Icon tiles.
   static const tile = 7.0;
+
+  /// Pressed highlight of a list row or sheet action.
+  static const row = 10.0;
+
+  /// Segmented track (its thumb is [control]).
+  static const segmented = 11.0;
+
+  /// Empty-state icon tile.
+  static const emptyTile = 14.0;
+
+  /// Snackbars.
+  static const snack = 12.0;
+
+  /// Tooltips.
+  static const tooltip = 7.0;
 
   /// Buttons, inputs, segmented control.
   static const control = 9.0;

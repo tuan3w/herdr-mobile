@@ -11,7 +11,10 @@ import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/core/controls.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/core/glyphs.dart';
+import 'package:herdr_mobile/ui/core/rows.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_screen.dart';
+import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'package:herdr_mobile/ui/features/machines/machine_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machines_screen.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +22,15 @@ import 'package:provider/provider.dart';
 import '../support/fake_transport.dart';
 import '../support/memory_stores.dart';
 import 'ui_harness.dart';
+
+
+HerdrTransport _noTransport(
+  MachineProfile profile,
+  MachineSecrets secrets,
+  void Function(String) onPin,
+  void Function(String) onNotice,
+) =>
+    throw StateError('this test never opens a connection');
 
 const _fatal = HerdrTransportException('Permission denied (publickey).', fatal: true);
 const _longLabel = 'build-server-eu-west-2-production-primary-gpu-cluster-0042';
@@ -67,6 +79,7 @@ Future<void> _pump(
   await tester.pumpWidget(
     MultiProvider(
       providers: [
+        Provider<TransportFactory>.value(value: _noTransport),
         if (fleet != null) ...[
           ChangeNotifierProvider.value(value: fleet.machines),
           ChangeNotifierProvider.value(value: fleet.fleet),
@@ -74,6 +87,7 @@ Future<void> _pump(
           ChangeNotifierProvider.value(value: repo!),
       ],
       child: MaterialApp(
+        restorationScopeId: 'test',
         theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
@@ -194,7 +208,7 @@ void main() {
       await _tearDown(tester, h);
     });
 
-    testWidgets('tapping a machine opens it; a disabled machine stays shut', (tester) async {
+    testWidgets('tapping a machine opens it; a disabled machine offers its menu instead', (tester) async {
       final h = await UiHarness.create([
         (profile: _m('a', 'solo'), snapshot: snapshotWith(_agents(1))),
         (profile: _m('b', 'sleepy', enabled: false), snapshot: snapshotWith(const [])),
@@ -204,10 +218,51 @@ void main() {
       await tester.tap(find.text('sleepy'));
       await _flush(tester);
       expect(find.byType(MachineScreen), findsNothing);
+      expect(find.text('Enable'), findsWidgets, reason: 'the menu leads with the way back');
+      await tester.tapAt(const Offset(10, 10)); // the scrim
+      await _flush(tester);
 
       await tester.tap(find.text('solo'));
       await _flush(tester);
       expect(find.byType(MachineScreen), findsOneWidget);
+      await _tearDown(tester, h);
+    });
+
+    testWidgets('a disabled machine is a quiet state with a one-tap Enable, not an error', (tester) async {
+      final h = await UiHarness.create([
+        (profile: _m('b', 'sleepy', enabled: false), snapshot: snapshotWith(_agents(1))),
+      ]);
+      await _pump(tester, const MachinesScreen(), fleet: h);
+
+      expect(find.text('Retry'), findsNothing);
+      expect(find.text('Needs attention'), findsNothing);
+      await tester.tap(find.widgetWithText(AppButton, 'Enable'));
+      await _flush(tester);
+
+      expect(h.machines.machines.single.enabled, isTrue);
+      expect(find.widgetWithText(AppButton, 'Enable'), findsNothing);
+      await _tearDown(tester, h);
+    });
+
+    testWidgets('a change on one machine rebuilds only that machine\'s row', (tester) async {
+      final h = await UiHarness.create([
+        for (final id in ['a', 'b', 'c']) (profile: _m(id, 'box $id'), snapshot: snapshotWith(_agents(1))),
+      ]);
+      await _pump(tester, const MachinesScreen(), fleet: h);
+      expect(find.byType(LinkDot), findsNWidgets(3));
+
+      var dotsRebuilt = 0;
+      debugOnRebuildDirtyWidget = (element, _) {
+        if (element.widget is LinkDot) dotsRebuilt++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = null);
+
+      h.transports['b']!.snapshot = snapshotWith(_agents(2));
+      await h.fleet.connection('b')!.refresh();
+      await tester.pump();
+
+      expect(find.textContaining('1 workspace · 2 agents'), findsOneWidget, reason: 'the row did update');
+      expect(dotsRebuilt, 1, reason: 'only the machine that changed');
       await _tearDown(tester, h);
     });
 
@@ -229,7 +284,7 @@ void main() {
       // Long-press opens the same sheet; cancelling keeps the machine.
       await tester.longPress(find.text('solo'));
       await _flush(tester);
-      expect(find.text('Enable'), findsOneWidget);
+      expect(find.text('Enable'), findsNWidgets(2), reason: 'the row button and the menu action');
       await tester.tap(find.text('Remove'));
       await _flush(tester);
       expect(find.text('Remove solo?'), findsOneWidget);
@@ -291,10 +346,57 @@ void main() {
           await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
           await tester.pump(const Duration(milliseconds: 50));
         }
+        expect(find.text('title w1:p39'), findsNothing, reason: 'past the cap the rest sits behind "Show all"');
+        await _tapVisible(tester, find.text('Show all 40 panes'));
+        for (var i = 0; i < 12; i++) {
+          await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
         expect(find.text('title w1:p39'), findsOneWidget, reason: 'the last pane is reachable');
         await _tearDown(tester, h);
       });
     }
+
+    testWidgets('a workspace with 120 panes builds a screenful, not all of them', (tester) async {
+      final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: manyPanes(120))]);
+      await _pump(tester, MachineScreen(machine: h.fleet.connection('a')!), fleet: h, height: 3000);
+
+      expect(find.byType(ListRow).evaluate().length, lessThanOrEqualTo(30));
+      expect(find.text('120'), findsOneWidget, reason: 'the workspace still says how many there are');
+      await _tearDown(tester, h);
+    });
+
+    testWidgets('folding a workspace keeps its rows on screen while it animates shut', (tester) async {
+      final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: manyPanes(3))]);
+      await _pump(tester, MachineScreen(machine: h.fleet.connection('a')!), fleet: h);
+      expect(find.text('title w1:p0'), findsOneWidget);
+
+      await tester.tap(find.textContaining('payments-api-gateway'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.text('title w1:p0'), findsOneWidget, reason: 'rows do not vanish on the first frame');
+
+      await _flush(tester);
+      expect(find.text('title w1:p0'), findsNothing, reason: 'and are gone once it is shut');
+      await _tearDown(tester, h);
+    });
+
+    testWidgets('a pane row and a machine row are each read out once', (tester) async {
+      final handle = tester.ensureSemantics();
+      final h = await UiHarness.create([(profile: _m('a', 'solo'), snapshot: manyPanes(2))]);
+      await _pump(tester, MachineScreen(machine: h.fleet.connection('a')!), fleet: h);
+
+      final pane = tester.getSemantics(find.text('title w1:p0'));
+      expect('title w1:p0'.allMatches(pane.label).length, 1, reason: pane.label);
+      await _tearDown(tester, h);
+
+      final h2 = await UiHarness.create([(profile: _m('a', 'solo'), snapshot: snapshotWith(_agents(1)))]);
+      await _pump(tester, const MachinesScreen(), fleet: h2);
+      final machine = tester.getSemantics(find.text('solo'));
+      expect('solo'.allMatches(machine.label).length, 1, reason: machine.label);
+      await _tearDown(tester, h2);
+      handle.dispose();
+    });
 
     testWidgets('tapping a workspace folds it away and back, and the choice survives scrolling', (tester) async {
       final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: manyPanes(3))]);
@@ -608,6 +710,70 @@ void main() {
       await _flush(tester);
       expect(find.text('Approve this sign-in'), findsNothing);
       expect(find.textContaining('Connected'), findsOneWidget);
+      await _tearDown(tester);
+    });
+
+    testWidgets('the actions stay pinned while the form scrolls and ride above the keyboard', (tester) async {
+      final repo = await repoWith();
+      await _pump(tester, const MachineFormScreen(), repo: repo, height: 700);
+      final add = find.widgetWithText(AppButton, 'Add machine');
+      final resting = tester.getRect(add);
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+      await _flush(tester);
+      expect(tester.getRect(add), resting, reason: 'not part of the scrolling content');
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 600); // 300dp keyboard at 2x
+      await tester.tap(field(3));
+      await _flush(tester);
+      expect(tester.getRect(add).bottom, lessThanOrEqualTo(700 - 300), reason: 'above the keyboard');
+      expect(tester.getRect(field(3)).bottom, lessThanOrEqualTo(tester.getRect(add).top),
+          reason: 'the focused field is not hidden behind the bar');
+      await _tearDown(tester);
+    });
+
+    testWidgets('validation messages do not move the fields below them', (tester) async {
+      final repo = await repoWith();
+      await _pump(tester, const MachineFormScreen(), repo: repo, height: 900);
+      final before = [for (final i in [1, 2, 3, 4]) tester.getTopLeft(field(i))];
+
+      await tapButton(tester, 'Add machine');
+      expect(find.text('Required'), findsNWidgets(2));
+
+      expect([for (final i in [1, 2, 3, 4]) tester.getTopLeft(field(i))], before);
+      await _tearDown(tester);
+    });
+
+    testWidgets('plain fields come back after the process is reclaimed; secrets do not', (tester) async {
+      final repo = await repoWith();
+      await _pump(
+        tester,
+        Builder(
+          builder: (context) => Center(
+            child: AppButton(label: 'Open form', onPressed: () => openMachineForm(context)),
+          ),
+        ),
+        repo: repo,
+      );
+      await tester.tap(find.text('Open form'));
+      await _flush(tester);
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.enterText(field(0), 'Build box');
+      await tester.enterText(field(1), 'box.local');
+      await tester.enterText(field(4), 'SECRET-KEY-MATERIAL');
+      await _tapVisible(tester, find.text('Tailscale'));
+
+      await tester.restartAndRestore();
+      await _flush(tester);
+
+      expect(find.byType(MachineFormScreen), findsOneWidget);
+      expect(find.text('Build box'), findsOneWidget);
+      expect(find.text('box.local'), findsOneWidget);
+      expect(find.textContaining('Nothing is stored'), findsOneWidget, reason: 'the auth choice came back');
+
+      await _tapVisible(tester, find.text('Private key'));
+      expect(find.text('SECRET-KEY-MATERIAL'), findsNothing, reason: 'secrets are never written to restoration state');
       await _tearDown(tester);
     });
 

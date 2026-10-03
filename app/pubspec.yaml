@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 4002: releases up to 0.2.0 were per-ABI APKs whose codes were
 # 1000 * abi + base (up to 4002), and a lower code is refused as a downgrade.
-version: 0.3.0+5003
+version: 0.3.1+5004
 
 environment:
   sdk: ^3.13.5
@@ -35,9 +35,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
   dartssh2: ^4.1.0
   flutter_secure_storage: ^11.2.0
   shared_preferences: ^2.5.5
@@ -60,9 +57,10 @@ dev_dependencies:
   fake_async: ^1.3.3
 flutter:
 
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
+  # Material widgets (TextField, Tooltip, SnackBar, sheets) are used for their
+  # behaviour, but never the Material icon font: icons are Lucide. Kept on
+  # because some framework widgets reference MaterialIcons internally; release
+  # builds tree-shake the font to the glyphs actually used.
   uses-material-design: true
 
   fonts:

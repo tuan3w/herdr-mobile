@@ -64,6 +64,7 @@ Future<void> shoot(
   Future<void> Function(WidgetTester tester)? pump,
   List<NavigatorObserver> observers = const [],
   Widget Function(Widget app)? wrap,
+  double imageScale = 1.5,
 }) async {
   tester.view.physicalSize = phone * phoneDpr;
   tester.view.devicePixelRatio = phoneDpr;
@@ -94,7 +95,7 @@ Future<void> shoot(
 
   final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
   await tester.runAsync(() async {
-    final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
+    final ui.Image image = await boundary.toImage(pixelRatio: imageScale);
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     await File(path).writeAsBytes(data!.buffer.asUint8List());
   });
