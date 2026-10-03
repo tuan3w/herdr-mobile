@@ -5,9 +5,13 @@ import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 
-/// The view is 360 wide with 12 px of padding on each side, and the test font
-/// (Ahem) is as wide as it is high: 11.5 px per cell.
-const _fullColumns = 29; // floor((360 - 24) / 11.5)
+/// The view is 360 wide with 12 px of padding on each side. How many cells fit
+/// depends on the advance of whatever font `monoFamily` resolves to (Ahem, as
+/// wide as it is high, unless the test loads the bundled fonts), so measure it.
+double _advance(double fontSize) =>
+    CellMetrics.measure(fontSize, 1).advance;
+
+int _columns(double fontSize) => ((360 - 24) / _advance(fontSize)).floor();
 
 String _lines(int from, int to, {String pad = ''}) =>
     [for (var i = from; i < to; i++) 'line $i$pad'].join('\r\n');
@@ -73,13 +77,10 @@ void main() {
   group('wrap to screen', () {
     testWidgets('cuts long lines into rows of the viewport width',
         (tester) async {
-      await _pump(tester, 'x' * 70, wrap: true);
+      final columns = _columns(defaultTerminalFontSize);
+      await _pump(tester, 'x' * (2 * columns + 5), wrap: true);
 
-      expect(_rowTexts(tester), [
-        'x' * _fullColumns,
-        'x' * _fullColumns,
-        'x' * (70 - 2 * _fullColumns),
-      ]);
+      expect(_rowTexts(tester), ['x' * columns, 'x' * columns, 'x' * 5]);
     });
 
     testWidgets('short lines stay one row, empty lines keep their row',
@@ -111,7 +112,9 @@ void main() {
 
     testWidgets('a coloured run keeps its colour on every row it spans',
         (tester) async {
-      await _pump(tester, '\x1b[31m${'r' * 40}\x1b[0m tail', wrap: true);
+      final columns = _columns(defaultTerminalFontSize);
+      final length = columns + 11;
+      await _pump(tester, '\x1b[31m${'r' * length}\x1b[0m tail', wrap: true);
 
       final rows = find.byType(TerminalLineView).evaluate().toList();
       expect(rows, hasLength(2));
@@ -120,8 +123,8 @@ void main() {
       ]..sort((a, b) => b.runs.first.text.length.compareTo(a.runs.first.text.length));
       expect(lines[0].runs.first.fg, TerminalColors.ansi[1]);
       expect(lines[1].runs.first.fg, TerminalColors.ansi[1]);
-      expect(lines[0].runs.first.text.length, _fullColumns);
-      expect(lines[1].runs.first.text.length, 40 - _fullColumns);
+      expect(lines[0].runs.first.text.length, columns);
+      expect(lines[1].runs.first.text.length, length - columns);
     });
 
     testWidgets('rows keep the fixed height, and a long pane still virtualizes',
@@ -149,7 +152,7 @@ void main() {
           body: Align(
             alignment: Alignment.topLeft,
             child: SizedBox(
-              width: 24 + 4 * 11.5,
+              width: 24 + 4 * _advance(defaultTerminalFontSize) + 0.5,
               height: 400,
               child: const TerminalView(text: 'abcdefghij', wrap: true),
             ),
@@ -163,9 +166,10 @@ void main() {
         '(so only that line is wrapped again)', (tester) async {
       // Twelve lines of three rows each; the change is among the visible ones
       // and past the first lines the anchoring compares.
+      final long = 2 * _columns(defaultTerminalFontSize) + 10; // three rows
       String doc(String changed) => [
             for (var i = 0; i < 12; i++)
-              i == 9 ? changed * 70 : String.fromCharCode(97 + i) * 70,
+              i == 9 ? changed * long : String.fromCharCode(97 + i) * long,
           ].join('\r\n');
       await _pump(tester, doc('x'), wrap: true);
       final before = _visible(tester);
@@ -322,7 +326,7 @@ void main() {
 
     testWidgets('re-flows wrapped lines to the new cell size', (tester) async {
       final zoom = await pumpZoom(tester, 'x' * 70, wrap: true);
-      expect(_rowTexts(tester), hasLength(3));
+      expect(_rowTexts(tester), hasLength((70 / _columns(defaultTerminalFontSize)).ceil()));
 
       final (a, b) = await pinchStart(tester);
       await a.moveTo(const Offset(80, 200));
@@ -330,7 +334,8 @@ void main() {
       await tester.pump();
 
       expect(zoom.size.value, 22);
-      final columns = (336 / 22).floor();
+      final columns = _columns(22);
+      expect(columns, lessThan(_columns(defaultTerminalFontSize)));
       expect(_rowTexts(tester).first, 'x' * columns);
       expect(_rowTexts(tester), hasLength((70 / columns).ceil()));
       await a.up();

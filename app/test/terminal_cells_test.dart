@@ -516,6 +516,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.dark(),
           home: RepaintBoundary(
             key: key,
             child: ColoredBox(

@@ -15,6 +15,26 @@ import '../support/memory_stores.dart';
 
 typedef Pane = ({String id, String ws, String? agent, String status});
 
+/// A fake machine that also answers `pane.read`, with [paneText] for every pane.
+class UiTransport extends FakeTransport {
+  UiTransport(super.snapshot);
+
+  String paneText = '';
+
+  @override
+  Future<Map<String, dynamic>> request(
+    String method, [
+    Map<String, dynamic> params = const {},
+  ]) {
+    if (method != 'pane.read') return super.request(method, params);
+    calls.add((method, params));
+    return Future.value({
+      'type': 'pane_read',
+      'read': {'text': paneText, 'truncated': false},
+    });
+  }
+}
+
 /// A fleet of fake machines wired like the app wires real ones.
 class UiHarness {
   UiHarness._(this.machines, this.fleet, this.network, this.transports);
@@ -22,7 +42,7 @@ class UiHarness {
   final MachineRepository machines;
   final FleetRepository fleet;
   final FakeNetwork network;
-  final Map<String, FakeTransport> transports;
+  final Map<String, UiTransport> transports;
 
   static Future<UiHarness> create(
     List<({MachineProfile profile, Map<String, dynamic> snapshot})> spec,
@@ -32,7 +52,7 @@ class UiHarness {
     await machines.load();
     final network = FakeNetwork();
     final transports = {
-      for (final s in spec) s.profile.id: FakeTransport(s.snapshot),
+      for (final s in spec) s.profile.id: UiTransport(s.snapshot),
     };
     final fleet = FleetRepository(
       machines: machines,

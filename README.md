@@ -97,6 +97,14 @@ What caused it, in order of impact:
 5. **A looping animation** (the working-agent pulse) kept the GPU busy
    continuously, so it was removed.
 
+## Design
+
+Not Material. Notion-style paper in light, Linear-style ink in dark: flat rows
+instead of cards, large bold titles that collapse into a compact bar, status as
+a shape (`StatusGlyph`) as well as a colour, one accent, hairlines instead of
+elevation, a floating tab bar, Inter + JetBrains Mono, Lucide icons. The system
+lives in `app/lib/ui/core/` and is written up in [`docs/DESIGN.md`](docs/DESIGN.md).
+
 ## Layout
 
 ```

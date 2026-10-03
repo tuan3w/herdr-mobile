@@ -76,6 +76,14 @@ check which one loads before relying on it.
   with the release key so they install over the shipped app.
 - Android builds opt out of Impeller (`AndroidManifest.xml`) because it measured
   slower than Skia on a Mali-G72 phone. Do not remove that without re-measuring.
+- **Design system, not Material.** UI is built from `ui/core/` (`tokens`,
+  `controls`, `rows`, `glyphs`, `chrome`; see `docs/DESIGN.md`). Do not use
+  `Card`, `ListTile`, `ExpansionTile`, `NavigationBar`, FAB, Material buttons,
+  `SegmentedButton`, `AlertDialog`, `PopupMenuButton`, `AppBar`, `InkWell` or
+  `Icons.*` in `lib/ui`; colours come from `context.ds`, text from `Type.*`,
+  icons from Lucide. Check a screen by rendering it with
+  `test/support/shot.dart` in light and dark, with worst-case data (long names,
+  one item, zero items, Vietnamese diacritics), and look at the PNG.
 - **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`
   wraps every route in one `AnnotatedRegion` using `AppTheme.systemBars`. Do not
   use Flutter's stock `SystemUiOverlayStyle.light/dark` (no status bar colour:

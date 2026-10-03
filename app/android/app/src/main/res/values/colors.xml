@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0F1318</color>
+    <!-- Ds.paper.bg: the app's page colour, so launch shows no white flash. -->
+    <color name="herdr_bg">#FBFBFA</color>
 </resources>

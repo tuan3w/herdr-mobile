@@ -1,28 +1,17 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Spacing scale (4pt grid).
-abstract final class Gap {
-  static const xs = 4.0;
-  static const sm = 8.0;
-  static const md = 12.0;
-  static const lg = 16.0;
-  static const xl = 24.0;
-  static const xxl = 32.0;
-}
+import 'tokens.dart';
 
-abstract final class Radii {
-  static const card = 20.0;
-  static const chip = 12.0;
-  static const field = 14.0;
-}
+export 'tokens.dart';
 
 /// Terminal surface colours, shared by both themes: a pane is always dark.
 abstract final class TerminalColors {
-  static const background = Color(0xFF0B0E13);
+  static const background = Color(0xFF0A0B0D);
   static const foreground = Color(0xFFD7DCE3);
   static const dim = Color(0xFF7C8591);
-  static const border = Color(0xFF1E252E);
+  static const border = Color(0xFF1E2127);
 
   /// The 16 ANSI colours (0-7 normal, 8-15 bright), tuned for [background]:
   /// black and bright black stay legible, and nothing outshines [foreground].
@@ -46,45 +35,13 @@ abstract final class TerminalColors {
   ];
 }
 
-const _accent = Color(0xFF5EEAD4);
-
-const monoFamily = 'monospace';
+/// Bundled monospace face (JetBrains Mono): the same on every phone, with
+/// proper box-drawing and symbol coverage for agent UIs.
+const monoFamily = 'JetBrainsMono';
 
 abstract final class AppTheme {
-  static ThemeData dark() {
-    const surface = Color(0xFF0F1318);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: _accent,
-      brightness: Brightness.dark,
-      surface: surface,
-    ).copyWith(
-      primary: _accent,
-      onPrimary: const Color(0xFF00201C),
-      surfaceContainerLowest: const Color(0xFF0B0E12),
-      surfaceContainerLow: const Color(0xFF141A21),
-      surfaceContainer: const Color(0xFF181F27),
-      surfaceContainerHigh: const Color(0xFF1E2630),
-      surfaceContainerHighest: const Color(0xFF252E3A),
-      outlineVariant: const Color(0xFF28313C),
-    );
-    return _build(scheme, systemBars(Brightness.dark));
-  }
-
-  static ThemeData light() {
-    const surface = Color(0xFFF5F7FA);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF0F766E),
-      brightness: Brightness.light,
-      surface: surface,
-    ).copyWith(
-      surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: Colors.white,
-      surfaceContainer: const Color(0xFFEEF1F5),
-      surfaceContainerHigh: const Color(0xFFE6EAF0),
-      outlineVariant: const Color(0xFFDDE2E9),
-    );
-    return _build(scheme, systemBars(Brightness.light));
-  }
+  static ThemeData dark() => _build(Ds.ink);
+  static ThemeData light() => _build(Ds.paper);
 
   /// Status and navigation bars drawn transparent over the app (edge to edge),
   /// with icons that contrast with [brightness] of the app surface behind them.
@@ -106,110 +63,127 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData _build(ColorScheme scheme, SystemUiOverlayStyle overlay) {
-    final base = ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.surface,
-      splashFactory: InkSparkle.splashFactory,
+  static ThemeData _build(Ds ds) {
+    final scheme = ColorScheme(
+      brightness: ds.brightness,
+      primary: ds.accent,
+      onPrimary: ds.onAccent,
+      secondary: ds.accentText,
+      onSecondary: ds.onAccent,
+      error: ds.danger,
+      onError: Colors.white,
+      surface: ds.bg,
+      onSurface: ds.text,
+      onSurfaceVariant: ds.textSecondary,
+      outline: ds.hairline,
+      outlineVariant: ds.hairline,
+      surfaceContainerLowest: ds.surface,
+      surfaceContainerLow: ds.surface,
+      surfaceContainer: ds.fill,
+      surfaceContainerHigh: ds.fill,
+      surfaceContainerHighest: ds.fillPressed,
     );
-    final text = base.textTheme;
-    return base.copyWith(
-      textTheme: text.copyWith(
-        headlineMedium: text.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.5,
-        ),
-        titleLarge: text.titleLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.3,
-        ),
-        titleMedium: text.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.1,
-        ),
-        labelLarge: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-      ),
+
+    TextStyle t(TextStyle s, [Color? c]) => s.copyWith(color: c ?? ds.text);
+    final textTheme = TextTheme(
+      displayLarge: t(Type.largeTitle),
+      displayMedium: t(Type.largeTitle),
+      displaySmall: t(Type.title),
+      headlineLarge: t(Type.largeTitle),
+      headlineMedium: t(Type.title),
+      headlineSmall: t(Type.title),
+      titleLarge: t(Type.title),
+      titleMedium: t(Type.row),
+      titleSmall: t(Type.barTitle),
+      bodyLarge: t(Type.body),
+      bodyMedium: t(Type.body),
+      bodySmall: t(Type.secondary, ds.textSecondary),
+      labelLarge: t(Type.button),
+      labelMedium: t(Type.label, ds.textSecondary),
+      labelSmall: t(Type.caption, ds.textSecondary),
+    );
+
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(Radii.control),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: ds.brightness,
+      colorScheme: scheme,
+      fontFamily: Type.family,
+      textTheme: textTheme,
+      scaffoldBackgroundColor: ds.bg,
+      canvasColor: ds.bg,
+      extensions: [ds],
+      // No ink ripples or tinted highlights: pressed state is drawn by our own
+      // controls (`Pressable`, `PressTint`).
+      splashFactory: NoSplash.splashFactory,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      hoverColor: Colors.transparent,
+      focusColor: Colors.transparent,
+      dividerColor: ds.hairline,
+      dividerTheme: DividerThemeData(color: ds.hairline, thickness: 1, space: 1),
+      // Slide-with-parallax and edge-swipe back on every platform, instead of
+      // Android's zoom/fade.
+      pageTransitionsTheme: const PageTransitionsTheme(builders: {
+        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      }),
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.surface,
+        backgroundColor: ds.bg,
+        foregroundColor: ds.text,
         surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        systemOverlayStyle: overlay,
-      ),
-      cardTheme: CardThemeData(
         elevation: 0,
-        margin: EdgeInsets.zero,
-        color: scheme.surfaceContainerLow,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Radii.card),
-          side: BorderSide(color: scheme.outlineVariant),
-        ),
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: scheme.surfaceContainerLow,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: scheme.primary.withValues(alpha: 0.16),
-        height: 68,
-        labelTextStyle: WidgetStatePropertyAll(
-          text.labelMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: systemBars(ds.brightness),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainer,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.md),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
-          borderSide: BorderSide(color: scheme.primary, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
-          borderSide: BorderSide(color: scheme.error),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
-          borderSide: BorderSide(color: scheme.error, width: 1.5),
-        ),
+        fillColor: ds.surface,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        hintStyle: Type.body.copyWith(color: ds.textTertiary),
+        errorStyle: Type.caption.copyWith(color: ds.danger),
+        border: border(ds.hairline),
+        enabledBorder: border(ds.hairline),
+        focusedBorder: border(ds.accent, 1.5),
+        errorBorder: border(ds.danger),
+        focusedErrorBorder: border(ds.danger, 1.5),
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Radii.field),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.1,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          side: BorderSide(color: scheme.outlineVariant),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Radii.field),
-          ),
-        ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: ds.accent,
+        selectionColor: ds.accent.withValues(alpha: 0.28),
+        selectionHandleColor: ds.accent,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Radii.field),
+        backgroundColor: ds.isDark ? ds.fillPressed : const Color(0xFF2B2A27),
+        contentTextStyle: Type.body.copyWith(color: const Color(0xFFF1F1EF)),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control + 3)),
+        insetPadding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, 96),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: ds.isDark ? ds.fillPressed : const Color(0xFF2B2A27),
+          borderRadius: BorderRadius.circular(Radii.control - 2),
+        ),
+        textStyle: Type.caption.copyWith(color: const Color(0xFFF1F1EF)),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: ds.surface,
+        modalBackgroundColor: ds.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        showDragHandle: false,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.sheet)),
         ),
       ),
-      dividerTheme: DividerThemeData(color: scheme.outlineVariant, space: 1),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: ds.textSecondary),
     );
   }
 }

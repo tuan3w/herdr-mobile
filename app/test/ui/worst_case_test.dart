@@ -3,8 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/ui/features/agents/agents_screen.dart';
+import 'package:herdr_mobile/ui/core/rows.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../support/shot.dart' show loadAppFonts;
 import 'ui_harness.dart';
 
 MachineProfile _machine(String id, String label, {String host = 'h.example'}) =>
@@ -73,14 +75,16 @@ Future<UiHarness> _worstCase({int agents = 14}) => UiHarness.create([
     ]);
 
 void main() {
+  setUpAll(loadAppFonts);
+
   for (final (width, scale) in [(360.0, 1.0), (320.0, 1.0), (320.0, 2.0)]) {
     group('${width.toInt()}dp at ${scale}x text', () {
       testWidgets('agents board survives worst-case data', (tester) async {
         final h = await _worstCase();
         await pumpUi(tester, h, width: width, textScale: scale);
 
-        expect(find.byType(AgentCard), findsWidgets);
-        // Walk the whole list so every card is built and laid out.
+        expect(find.byType(ListRow), findsWidgets);
+        // Walk the whole list so every row is built and laid out.
         final list = find.byType(CustomScrollView).first;
         for (var i = 0; i < 12; i++) {
           await tester.drag(list, const Offset(0, -400));
@@ -94,7 +98,7 @@ void main() {
         final h = await _worstCase();
         await pumpUi(tester, h, width: width, textScale: scale);
 
-        await tester.tap(find.byIcon(Icons.dns_outlined));
+        await tester.tap(find.byIcon(LucideIcons.server));
         await settle(tester);
         expect(find.textContaining('build-server-eu-west-2'), findsOneWidget);
         expect(find.text('x'), findsWidgets);
@@ -117,7 +121,7 @@ void main() {
 
     // A phone shows a handful. Building all 120 up front is the stutter
     // break-ui warns about for unpaginated lists.
-    expect(find.byType(AgentCard).evaluate().length, lessThan(30));
+    expect(find.byType(ListRow).evaluate().length, lessThan(30));
     await teardownUi(tester, h);
   });
 
@@ -150,19 +154,22 @@ void main() {
         ),
       ]);
       await pumpUi(tester, h);
-      expect(find.text('offline'), findsNothing);
+      expect(find.textContaining('No network'), findsNothing);
+      expect(
+          tester.widgetList<ListRow>(find.byType(ListRow)).any((r) => r.dim), isFalse);
 
       h.network.goOffline();
       await settle(tester);
 
       expect(find.textContaining('No network'), findsWidgets);
-      expect(find.text('offline'), findsWidgets,
-          reason: 'cards keep their data but are marked stale');
+      expect(
+          tester.widgetList<ListRow>(find.byType(ListRow)).every((r) => r.dim), isTrue,
+          reason: 'rows keep their data but are marked stale');
       await teardownUi(tester, h);
     });
   });
 
-  testWidgets('every agent card tells screen readers its status', (tester) async {
+  testWidgets('every agent row tells screen readers its status', (tester) async {
     final h = await UiHarness.create([
       (
         profile: _machine('a', 'solo'),
@@ -174,8 +181,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     await pumpUi(tester, h);
 
-    expect(tester.getSemantics(find.byType(AgentCard).first).value,
-        contains('Needs you'));
+    expect(tester.getSemantics(find.byType(ListRow).first).label, contains('Needs you'));
     semantics.dispose();
     await teardownUi(tester, h);
   });

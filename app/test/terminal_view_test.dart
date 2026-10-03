@@ -202,7 +202,7 @@ void main() {
     expect(_jumpButtonFade(tester).opacity, 1);
     expect(find.text('line 199'), findsNothing);
 
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.byTooltip('Jump to latest'));
     await tester.pumpAndSettle();
 
     expect(find.text('line 199'), findsOneWidget);

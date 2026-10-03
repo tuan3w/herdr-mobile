@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/repositories/terminal_settings.dart'
     show defaultTerminalFontSize, maxTerminalFontSize, minTerminalFontSize;
 import 'ansi.dart';
+import 'controls.dart';
 import 'line_wrap.dart';
 import 'terminal_cells.dart';
 import 'theme.dart';
@@ -440,13 +442,11 @@ class _TerminalViewState extends State<TerminalView> {
                           scale: following ? 0.8 : 1,
                           duration: duration,
                           curve: _easeOut,
-                          child: FloatingActionButton.small(
-                            heroTag: null,
+                          child: CircleButton(
+                            icon: LucideIcons.chevronsDown,
                             tooltip: 'Jump to latest',
+                            size: 36,
                             onPressed: _jumpToLatest,
-                            child: const Icon(
-                              Icons.keyboard_double_arrow_down_rounded,
-                            ),
                           ),
                         ),
                       ),

@@ -27,14 +27,6 @@ abstract final class Motion {
   /// colour/opacity changes.
   static bool reduced(BuildContext context) =>
       MediaQuery.disableAnimationsOf(context);
-
-  /// Animation style for `ExpansionTile`, whose default is ease-in.
-  static const expansion = AnimationStyle(
-    curve: easeOut,
-    reverseCurve: easeOut,
-    duration: expand,
-    reverseDuration: expand,
-  );
 }
 
 /// Confirms the interface heard a touch: the child scales down slightly while
