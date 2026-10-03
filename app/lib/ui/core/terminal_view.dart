@@ -514,16 +514,17 @@ class _TerminalViewState extends State<TerminalView> {
                                     final part = row - _startOfLine(index);
                                     final line = _doc.lines[index];
                                     final columns = _wrapColumns;
-                                    return TerminalLineView(
-                                      key: ValueKey((_doc.base + index, part)),
-                                      line: cache.lineFor(
-                                        line.rows(columns)[part],
-                                        links: onLinkTap == null
-                                            ? null
-                                            : () => line.linksOnRow(part, columns),
-                                      ),
-                                      onLinkTap: onLinkTap,
-                                    );
+                                    return cache
+                                        .lineFor(
+                                          line.rows(columns)[part],
+                                          links: onLinkTap == null
+                                              ? null
+                                              : () => line.linksOnRow(part, columns),
+                                        )
+                                        .view(
+                                          ValueKey((_doc.base + index, part)),
+                                          onLinkTap,
+                                        );
                                   },
                                   childCount: _rowCount,
                                   addAutomaticKeepAlives: false,

@@ -312,6 +312,25 @@ final class TerminalLine {
   ui.Picture? _picture;
   var _recorded = false;
 
+  Widget? _view;
+  Key? _viewKey;
+  ValueChanged<TerminalLink>? _viewTap;
+
+  /// The widget that shows this row under [key]. The same instance comes back
+  /// while [key] and [onLinkTap] are unchanged, so an update that moved a row
+  /// without changing it makes Flutter skip rebuilding it.
+  Widget view(Key key, ValueChanged<TerminalLink>? onLinkTap) {
+    final cached = _view;
+    if (cached != null &&
+        _viewKey == key &&
+        identical(_viewTap, onLinkTap)) {
+      return cached;
+    }
+    _viewKey = key;
+    _viewTap = onLinkTap;
+    return _view = TerminalLineView(key: key, line: this, onLinkTap: onLinkTap);
+  }
+
   /// Whether a recorded picture (native memory) is currently held.
   bool get hasPicture => _picture != null;
 
