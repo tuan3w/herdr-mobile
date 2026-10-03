@@ -209,6 +209,17 @@ class _TerminalViewState extends State<TerminalView> {
     return true;
   }
 
+  /// What the rows share (see [TerminalRowEnv]): the same instance until
+  /// something in it changes, so rows keep their cached widgets.
+  TerminalRowEnv? _env;
+
+  TerminalRowEnv _rowEnv(BuildContext context, CellMetrics metrics) {
+    final fresh = TerminalRowEnv.of(context, metrics);
+    final old = _env;
+    if (old != null && old.sameAs(fresh)) return old;
+    return _env = fresh;
+  }
+
   void _reportSideways(bool sideways) {
     if (sideways == _sideways) return;
     _sideways = sideways;
@@ -480,6 +491,7 @@ class _TerminalViewState extends State<TerminalView> {
                         );
                   final height = _rowCount * metrics.lineHeight + 2 * Gap.sm;
                   final onLinkTap = widget.onLinkTap;
+                  final env = _rowEnv(context, metrics);
                   return ValueListenableBuilder<bool>(
                     valueListenable: _pinching,
                     builder: (context, pinching, _) => SingleChildScrollView(
@@ -523,6 +535,7 @@ class _TerminalViewState extends State<TerminalView> {
                                         )
                                         .view(
                                           ValueKey((_doc.base + index, part)),
+                                          env,
                                           onLinkTap,
                                         );
                                   },

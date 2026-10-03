@@ -222,7 +222,7 @@ void main() {
               .localToGlobal(Offset.zero)
               .dy
               .compareTo((a.renderObject! as RenderBox).localToGlobal(Offset.zero).dy));
-        final span = (shown.first.widget as TerminalRowText).text.toPlainText();
+        final span = (shown.first.widget as TerminalLineView).text.toPlainText();
         return span.substring(0, span.indexOf(' y'));
       }
 
@@ -355,7 +355,7 @@ void main() {
                 .compareTo((a.renderObject! as RenderBox).localToGlobal(Offset.zero).dy)))
           .first;
       String textOf(Element e) =>
-          (e.widget as TerminalRowText).text.toPlainText();
+          (e.widget as TerminalLineView).text.toPlainText();
       final reading = textOf(lowest());
       final bottom = tester.getBottomLeft(terminalRow(reading)).dy;
       final position = _vertical(tester).position.pixels;

@@ -94,10 +94,13 @@ Future<({_Pixels pixels, CellMetrics metrics})> _render(
                   SizedBox(
                     width: (metrics.columnEdge(columns)) / dpr,
                     height: metrics.lineHeight,
-                    child: TerminalLineView(
-                      line: TerminalLine(
-                        parseAnsi(row).lines.single,
-                        metrics,
+                    child: Builder(
+                      builder: (context) => TerminalLineView(
+                        line: TerminalLine(
+                          parseAnsi(row).lines.single,
+                          metrics,
+                        ),
+                        env: TerminalRowEnv.of(context, metrics),
                       ),
                     ),
                   ),

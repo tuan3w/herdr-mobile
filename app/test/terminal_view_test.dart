@@ -57,7 +57,7 @@ void main() {
   testWidgets('builds only the visible lines of a long pane', (tester) async {
     await _pump(tester, _lines(0, 300));
 
-    expect(find.byType(TerminalRowText).evaluate().length, inInclusiveRange(15, 70));
+    expect(find.byType(TerminalLineView).evaluate().length, inInclusiveRange(15, 70));
     expect(terminalRow('line 299'), findsOneWidget);
     expect(terminalRow('line 0'), findsNothing);
   });
@@ -280,7 +280,7 @@ void main() {
   group('cell grid', () {
     // The prepared row showing [line].
     TerminalLine lineOf(WidgetTester tester, String line) =>
-        tester.widget<TerminalRowText>(terminalRow(line)).line;
+        tester.widget<TerminalLineView>(terminalRow(line)).line;
 
     testWidgets('box drawing is painted, and shows as spaces in the text layer',
         (tester) async {

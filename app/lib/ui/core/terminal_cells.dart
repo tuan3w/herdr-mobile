@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart' show PaintingContext, RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show PaintingContext, RenderParagraph, SelectionRegistrar;
 import 'package:flutter/widgets.dart';
 
 import 'ansi.dart';
@@ -144,7 +145,7 @@ Color runForeground(AnsiRun run, TerminalPalette palette) => run.dim
     : (run.fg ?? palette.foreground);
 
 /// Text style of [run]. Backgrounds are not part of it (they are painted by
-/// [TerminalRowText] across the whole row height); null for plain text.
+/// [TerminalLineView] across the whole row height); null for plain text.
 TextStyle? runTextStyle(AnsiRun run, TerminalPalette palette) {
   final decoration = switch ((run.underline, run.strike)) {
     (true, true) => TextDecoration.combine(const [
@@ -315,21 +316,35 @@ final class TerminalLine {
 
   Widget? _view;
   Key? _viewKey;
+  TerminalRowEnv? _viewEnv;
   ValueChanged<TerminalLink>? _viewTap;
 
   /// The widget that shows this row under [key]. The same instance comes back
-  /// while [key] and [onLinkTap] are unchanged, so an update that moved a row
-  /// without changing it makes Flutter skip rebuilding it.
-  Widget view(Key key, ValueChanged<TerminalLink>? onLinkTap) {
+  /// while [key], [env] and [onLinkTap] are unchanged, so an update that moved
+  /// a row without changing it makes Flutter skip rebuilding it. With
+  /// [onLinkTap], a tap on a link of the row is reported.
+  Widget view(
+    Key key,
+    TerminalRowEnv env,
+    ValueChanged<TerminalLink>? onLinkTap,
+  ) {
     final cached = _view;
     if (cached != null &&
         _viewKey == key &&
+        identical(_viewEnv, env) &&
         identical(_viewTap, onLinkTap)) {
       return cached;
     }
     _viewKey = key;
+    _viewEnv = env;
     _viewTap = onLinkTap;
-    return _view = TerminalLineView(key: key, line: this, onLinkTap: onLinkTap);
+    if (onLinkTap == null || links.isEmpty) {
+      return _view = TerminalLineView(key: key, line: this, env: env);
+    }
+    return _view = KeyedSubtree(
+      key: key,
+      child: _linkable(TerminalLineView(line: this, env: env), onLinkTap),
+    );
   }
 
   /// Whether a recorded picture (native memory) is currently held.
@@ -500,102 +515,128 @@ final class TerminalLineCache {
   }
 }
 
-/// One terminal row: backgrounds and box drawing painted under the text.
-///
-/// Give it a width and a height of [CellMetrics.lineHeight]. The text layer
-/// renders sprite characters as spaces; see [blankSprites].
-///
-/// With [onLinkTap], a tap on a link of the row is reported. The tap
-/// recogniser only takes part when the finger lands on a link, and it is an
-/// ordinary one, so a drag, a long press or a fling that starts there still
-/// belongs to the list, the selection or the scroll view.
-class TerminalLineView extends StatelessWidget {
-  const TerminalLineView({
-    super.key,
-    required this.line,
-    this.onLinkTap,
+/// What every row of one [TerminalView] layout shares and a row would
+/// otherwise look up in the tree on each build: the text style, selection
+/// hookup, locale and direction. Made once per layout pass; the view keeps the
+/// same instance for as long as nothing in it changed, which is what lets a
+/// row's cached widget be reused.
+final class TerminalRowEnv {
+  TerminalRowEnv._({
+    required this.metrics,
+    required this.style,
+    required this.registrar,
+    required this.selectionColor,
+    required this.locale,
+    required this.textDirection,
   });
 
-  final TerminalLine line;
-  final ValueChanged<TerminalLink>? onLinkTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final metrics = line.metrics;
+  /// The environment [metrics]-sized rows have at [context].
+  factory TerminalRowEnv.of(BuildContext context, CellMetrics metrics) {
     // What `Text.rich` would have made of the style, minus the machinery
     // around it (a MouseRegion and a selection container per row).
     var style = DefaultTextStyle.of(context).style.merge(metrics.textStyle);
     if (MediaQuery.boldTextOf(context)) {
       style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
     }
-    final row = TerminalRowText(
-      line: line,
-      text: TextSpan(style: style, children: [line.span]),
-      strutStyle: metrics.strut,
-      selectionRegistrar: SelectionContainer.maybeOf(context),
+    return TerminalRowEnv._(
+      metrics: metrics,
+      style: style,
+      registrar: SelectionContainer.maybeOf(context),
       selectionColor: DefaultSelectionStyle.of(context).selectionColor ??
           DefaultSelectionStyle.defaultColor,
-    );
-    final onTap = onLinkTap;
-    if (onTap == null || line.links.isEmpty) return row;
-    return RawGestureDetector(
-      gestures: {
-        _LinkTapRecognizer:
-            GestureRecognizerFactoryWithHandlers<_LinkTapRecognizer>(
-          _LinkTapRecognizer.new,
-          (recognizer) {
-            recognizer.allows = (position) =>
-                line.linkAt(metrics.columnAt(position.dx)) != null;
-            recognizer.onTapUp = (details) {
-              final link = line.linkAt(metrics.columnAt(details.localPosition.dx));
-              if (link != null) onTap(link);
-            };
-          },
-        ),
-      },
-      child: row,
+      locale: Localizations.maybeLocaleOf(context),
+      textDirection: Directionality.of(context),
     );
   }
+
+  final CellMetrics metrics;
+  final TextStyle style;
+  final SelectionRegistrar? registrar;
+  final Color selectionColor;
+  final Locale? locale;
+  final TextDirection textDirection;
+
+  /// Whether rows made with [other] would look and behave the same.
+  bool sameAs(TerminalRowEnv other) =>
+      identical(metrics, other.metrics) &&
+      style == other.style &&
+      identical(registrar, other.registrar) &&
+      selectionColor == other.selectionColor &&
+      locale == other.locale &&
+      textDirection == other.textDirection;
 }
 
-/// A row's text, which also paints the row's [line] backgrounds and procedural
-/// glyphs under it: one widget and one render object instead of a
-/// `CustomPaint` over a `Text` (which, inside a `SelectionArea`, adds a mouse
-/// region and a selection container of its own).
-class TerminalRowText extends RichText {
-  TerminalRowText({
-    super.key,
-    required this.line,
-    required super.text,
-    required super.strutStyle,
-    required super.selectionRegistrar,
-    required super.selectionColor,
-  }) : super(
-         textScaler: TextScaler.noScaling,
-         softWrap: false,
-         maxLines: 1,
-         overflow: TextOverflow.clip,
-       );
+/// One terminal row: backgrounds and box drawing painted under the text, in
+/// one render object (a paragraph that first paints the row's picture). A
+/// `CustomPaint` over a `Text` would add, inside a `SelectionArea`, a mouse
+/// region and a selection container per row, and a stateless widget between
+/// them and the list would look the environment up again on every build.
+///
+/// Give it a width and a height of [CellMetrics.lineHeight]. The text layer
+/// renders sprite characters as spaces; see [blankSprites].
+class TerminalLineView extends LeafRenderObjectWidget {
+  TerminalLineView({super.key, required this.line, required this.env})
+    : text = TextSpan(style: env.style, children: [line.span]);
 
   final TerminalLine line;
+  final TerminalRowEnv env;
+
+  /// The row's runs under the environment's style.
+  final TextSpan text;
 
   @override
   RenderParagraph createRenderObject(BuildContext context) => _RowParagraph(
     line,
     text,
-    textDirection: Directionality.of(context),
-    locale: Localizations.maybeLocaleOf(context),
-    strutStyle: strutStyle,
-    registrar: selectionRegistrar,
-    selectionColor: selectionColor,
-    devicePixelRatio: line.metrics.dpr,
+    textDirection: env.textDirection,
+    locale: env.locale,
+    strutStyle: env.metrics.strut,
+    registrar: env.registrar,
+    selectionColor: env.selectionColor,
+    devicePixelRatio: env.metrics.dpr,
   );
 
   @override
   void updateRenderObject(BuildContext context, RenderParagraph renderObject) {
-    super.updateRenderObject(context, renderObject);
-    (renderObject as _RowParagraph).line = line;
+    (renderObject as _RowParagraph)
+      ..line = line
+      ..text = text
+      ..textDirection = env.textDirection
+      ..locale = env.locale
+      ..strutStyle = env.metrics.strut
+      ..registrar = env.registrar
+      ..selectionColor = env.selectionColor
+      ..devicePixelRatio = env.metrics.dpr;
   }
+}
+
+/// [TerminalLineView] with a tap on a link of the row reported to [onLinkTap].
+/// The tap recogniser only takes part when the finger lands on a link, and it
+/// is an ordinary one, so a drag, a long press or a fling that starts there
+/// still belongs to the list, the selection or the scroll view.
+Widget _linkable(
+  TerminalLineView row,
+  ValueChanged<TerminalLink> onTap,
+) {
+  final line = row.line;
+  final metrics = line.metrics;
+  return RawGestureDetector(
+    gestures: {
+      _LinkTapRecognizer:
+          GestureRecognizerFactoryWithHandlers<_LinkTapRecognizer>(
+        _LinkTapRecognizer.new,
+        (recognizer) {
+          recognizer.allows = (position) =>
+              line.linkAt(metrics.columnAt(position.dx)) != null;
+          recognizer.onTapUp = (details) {
+            final link = line.linkAt(metrics.columnAt(details.localPosition.dx));
+            if (link != null) onTap(link);
+          };
+        },
+      ),
+    },
+    child: row,
+  );
 }
 
 class _RowParagraph extends RenderParagraph {
