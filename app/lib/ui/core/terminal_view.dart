@@ -446,12 +446,23 @@ class _TerminalViewState extends State<TerminalView> {
   double _pinchDistance() =>
       (_touches[_pinchA]! - _touches[_pinchB]!).distance;
 
+  /// What the last pass of the [LayoutBuilder] below built, and what it was
+  /// built for. The keyboard changes the viewport's HEIGHT every frame of its
+  /// animation, which re-runs the builder; nothing in the list depends on the
+  /// height (the viewport fills what it is given), so handing back the same
+  /// widget lets Flutter skip the whole subtree and only lay it out again.
+  Widget? _body;
+  double _bodyWidth = 0;
+  TerminalRowEnv? _bodyEnv;
+
   @override
   Widget build(BuildContext context) {
     final metrics = _metrics!;
     final cache = _cache!;
     final wrap = widget.wrap;
     final top = widget.top;
+    // Anything this widget builds from may have changed.
+    _body = null;
     // The side padding is a whole number of device pixels, so the cell grid
     // starts on a pixel edge.
     final pad = (Gap.md * metrics.dpr).roundToDouble() / metrics.dpr;
@@ -469,6 +480,13 @@ class _TerminalViewState extends State<TerminalView> {
             SelectionArea(
               child: LayoutBuilder(
                 builder: (context, box) {
+                  final env = _rowEnv(context, metrics);
+                  final cached = _body;
+                  if (cached != null &&
+                      _bodyWidth == box.maxWidth &&
+                      identical(_bodyEnv, env)) {
+                    return cached;
+                  }
                   final viewWidth = math.max(0.0, box.maxWidth - 2 * pad);
                   final columns =
                       math.max(1, (viewWidth / metrics.advance).floor());
@@ -491,8 +509,7 @@ class _TerminalViewState extends State<TerminalView> {
                         );
                   final height = _rowCount * metrics.lineHeight + 2 * Gap.sm;
                   final onLinkTap = widget.onLinkTap;
-                  final env = _rowEnv(context, metrics);
-                  return ValueListenableBuilder<bool>(
+                  final body = ValueListenableBuilder<bool>(
                     valueListenable: _pinching,
                     builder: (context, pinching, _) => SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -504,9 +521,10 @@ class _TerminalViewState extends State<TerminalView> {
                         width: width,
                         // Short output hugs the top instead of the
                         // (reversed) list's leading edge at the bottom.
-                        height: top == TerminalTop.none
-                            ? math.min(height, box.maxHeight)
-                            : box.maxHeight,
+                        // Otherwise it asks for infinity, which the incoming
+                        // constraints cut down to the viewport's height: this
+                        // must not read the box's height (see [_body]).
+                        height: top == TerminalTop.none ? height : double.infinity,
                         child: CustomScrollView(
                           reverse: true,
                           controller: _scroll,
@@ -556,6 +574,10 @@ class _TerminalViewState extends State<TerminalView> {
                       ),
                     ),
                   );
+                  _body = body;
+                  _bodyWidth = box.maxWidth;
+                  _bodyEnv = env;
+                  return body;
                 },
               ),
             ),
