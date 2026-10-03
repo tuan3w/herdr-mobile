@@ -1,0 +1,9 @@
+# Reference clones (read-only, see README "Reference clones"); re-clone, don't commit.
+/third_party/
+
+# Release signing material must never be committed.
+*.jks
+*.keystore
+key.properties
+
+.DS_Store
