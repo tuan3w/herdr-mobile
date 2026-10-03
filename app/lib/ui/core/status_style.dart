@@ -34,7 +34,7 @@ extension LinkStateStyle on LinkState {
   Color get color => switch (this) {
         LinkState.online => const Color(0xFF22C55E),
         LinkState.connecting || LinkState.reconnecting => const Color(0xFF3B82F6),
-        LinkState.attention => const Color(0xFFF59E0B),
+        LinkState.attention || LinkState.approval => const Color(0xFFF59E0B),
         LinkState.disabled || LinkState.offline => const Color(0xFF9CA3AF),
       };
 
@@ -45,6 +45,7 @@ extension LinkStateStyle on LinkState {
         LinkState.attention => 'Needs attention',
         LinkState.disabled => 'Disabled',
         LinkState.offline => 'No network',
+        LinkState.approval => 'Waiting for approval',
       };
 }
 

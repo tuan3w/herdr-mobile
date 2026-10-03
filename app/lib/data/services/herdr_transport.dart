@@ -60,16 +60,10 @@ abstract interface class HerdrTransport {
 Stream<String> jsonLines(Stream<List<int>> bytes) =>
     utf8.decoder.bind(bytes).transform(const LineSplitter());
 
-/// Parses one response line and returns its `result`, or throws.
-Map<String, dynamic> unwrapResponse(String line) {
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(line);
-  } on FormatException {
-    throw HerdrTransportException('Malformed response from herdr: $line');
-  }
+/// Returns the `result` of an already-decoded response, or throws.
+Map<String, dynamic> unwrapDecoded(Object? decoded) {
   if (decoded is! Map<String, dynamic>) {
-    throw HerdrTransportException('Unexpected response from herdr: $line');
+    throw const HerdrTransportException('Unexpected response from herdr');
   }
   final error = decoded['error'];
   if (error is Map) {
@@ -80,7 +74,19 @@ Map<String, dynamic> unwrapResponse(String line) {
   }
   final result = decoded['result'];
   if (result is! Map<String, dynamic>) {
-    throw HerdrTransportException('Response has no result: $line');
+    throw const HerdrTransportException('Response has no result');
   }
   return result;
+}
+
+/// Parses one response line and returns its `result`, or throws.
+Map<String, dynamic> unwrapResponse(String line) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(line);
+  } on FormatException {
+    final shown = line.length > 200 ? '${line.substring(0, 200)}…' : line;
+    throw HerdrTransportException('Malformed response from herdr: $shown');
+  }
+  return unwrapDecoded(decoded);
 }

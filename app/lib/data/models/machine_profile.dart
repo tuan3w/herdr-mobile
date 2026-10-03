@@ -1,4 +1,8 @@
-enum SshAuth { key, password }
+/// How to prove who we are to the machine.
+///
+/// [none] stores no credentials: Tailscale SSH already knows the phone's
+/// identity from the tailnet and, in check mode, asks for a browser approval.
+enum SshAuth { key, password, none }
 
 /// A saved remote herdr machine. Secrets (private key, passphrase, password)
 /// are never stored here; see `SecretStore`.

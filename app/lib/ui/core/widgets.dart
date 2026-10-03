@@ -1,93 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models/herdr_models.dart';
-import 'motion.dart';
 import 'status_style.dart';
 import 'theme.dart';
-
-/// A status dot that breathes while an agent is working.
-class PulsingDot extends StatefulWidget {
-  const PulsingDot({super.key, required this.color, this.size = 10, this.pulse = true});
-
-  final Color color;
-  final double size;
-  final bool pulse;
-
-  @override
-  State<PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<PulsingDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  );
-
-  bool get _wantsPulse => widget.pulse && !Motion.reduced(context);
-
-  /// Reduced motion keeps the dot, drops the breathing.
-  void _sync() {
-    if (_wantsPulse) {
-      if (!_c.isAnimating) _c.repeat(reverse: true);
-    } else if (_c.isAnimating || _c.value != 0) {
-      _c.stop();
-      _c.value = 0;
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _sync();
-  }
-
-  @override
-  void didUpdateWidget(PulsingDot old) {
-    super.didUpdateWidget(old);
-    _sync();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => SizedBox.square(
-        dimension: widget.size * 2,
-        child: AnimatedBuilder(
-          animation: _c,
-          builder: (_, _) => CustomPaint(
-            painter: _DotPainter(widget.color, widget.size / 2, _c.value),
-          ),
-        ),
-      );
-}
-
-class _DotPainter extends CustomPainter {
-  _DotPainter(this.color, this.radius, this.t);
-
-  final Color color;
-  final double radius;
-  final double t;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    if (t > 0) {
-      canvas.drawCircle(
-        c,
-        radius + (size.width / 2 - radius) * t,
-        Paint()..color = color.withValues(alpha: 0.35 * (1 - t)),
-      );
-    }
-    canvas.drawCircle(c, radius, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_DotPainter old) => old.t != t || old.color != color;
-}
 
 /// Compact tinted pill: dot + label.
 class StatusPill extends StatelessWidget {
@@ -108,11 +23,7 @@ class StatusPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          PulsingDot(
-            color: color,
-            size: 7,
-            pulse: status == AgentStatus.working && !dim,
-          ),
+          StatusDot(color: color.withValues(alpha: dim ? 0.5 : 1), size: 7),
           const SizedBox(width: 2),
           Text(
             status.label,

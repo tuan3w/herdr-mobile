@@ -3,8 +3,9 @@ import 'package:flutter/foundation.dart';
 import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/machine_repository.dart';
 import '../../../data/services/herdr_api.dart';
+import '../../../data/services/auth_notice.dart';
 import '../../../data/services/herdr_transport.dart';
-import '../../../data/services/ssh_transport.dart';
+import '../../../data/services/transport_factory.dart';
 
 /// Raw, trimmed-or-empty field values from the form.
 class MachineFormValues {
@@ -39,20 +40,14 @@ typedef TransportFactory = HerdrTransport Function(
   MachineProfile profile,
   MachineSecrets secrets,
   void Function(String fingerprint) onPinHostKey,
+  void Function(String banner) onNotice,
 );
-
-HerdrTransport sshTransportFactory(
-  MachineProfile profile,
-  MachineSecrets secrets,
-  void Function(String) onPin,
-) =>
-    SshTransport(profile: profile, secrets: secrets, onPinHostKey: onPin);
 
 class MachineFormViewModel extends ChangeNotifier {
   MachineFormViewModel({
     required this._repo,
     this.existing,
-    this._transportFactory = sshTransportFactory,
+    this._transportFactory = createSshTransport,
   });
 
   final MachineRepository _repo;
@@ -65,6 +60,7 @@ class MachineFormViewModel extends ChangeNotifier {
   String? _version;
   int _workspaces = 0;
   bool _saving = false;
+  String? _approvalUrl;
 
   TestState get testState => _testState;
 
@@ -76,6 +72,10 @@ class MachineFormViewModel extends ChangeNotifier {
   String? get version => _version;
   int get workspaceCount => _workspaces;
   bool get saving => _saving;
+
+  /// While a test waits for the person to approve a sign-in (Tailscale SSH
+  /// check mode): the `https` link to approve it at.
+  String? get approvalUrl => _approvalUrl;
   bool get isEdit => existing != null;
 
   /// Any edit invalidates a previous test result.
@@ -115,21 +115,34 @@ class MachineFormViewModel extends ChangeNotifier {
         : await _repo.secretsFor(existing!.id);
     String? pick(String fresh, String? stored) =>
         fresh.isNotEmpty ? fresh : stored;
-    return v.auth == SshAuth.key
-        ? MachineSecrets(
-            privateKeyPem: pick(v.privateKey, old.privateKeyPem),
-            passphrase: pick(v.passphrase, old.passphrase),
-          )
-        : MachineSecrets(password: pick(v.password, old.password));
+    return switch (v.auth) {
+      SshAuth.key => MachineSecrets(
+          privateKeyPem: pick(v.privateKey, old.privateKeyPem),
+          passphrase: pick(v.passphrase, old.passphrase),
+        ),
+      SshAuth.password => MachineSecrets(password: pick(v.password, old.password)),
+      SshAuth.none => const MachineSecrets(),
+    };
   }
 
   Future<void> test(MachineFormValues v) async {
     _testState = TestState.testing;
     _message = null;
+    _approvalUrl = null;
     notifyListeners();
     String? seen;
     final profile = _profile(v, fingerprint: _pinFor(v));
-    final transport = _transportFactory(profile, await _secrets(v), (f) => seen = f);
+    final transport = _transportFactory(
+      profile,
+      await _secrets(v),
+      (f) => seen = f,
+      (banner) {
+        final url = approvalUrlFrom(banner);
+        if (url == null || url == _approvalUrl) return;
+        _approvalUrl = url;
+        notifyListeners();
+      },
+    );
     try {
       final api = HerdrApi(transport);
       _version = await api.ping();

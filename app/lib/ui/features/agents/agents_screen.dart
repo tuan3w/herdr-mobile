@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../core/approval_button.dart';
 import '../../core/motion.dart';
 import '../../core/status_style.dart';
 import '../../core/theme.dart';
@@ -203,7 +204,8 @@ class _ConnectionNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final needsAction = machine.state == LinkState.attention;
+    final needsAction = machine.state == LinkState.attention ||
+        machine.state == LinkState.approval;
     final color = needsAction ? const Color(0xFFF59E0B) : machine.state.color;
     return Container(
       padding: const EdgeInsets.all(Gap.md),
@@ -239,7 +241,10 @@ class _ConnectionNotice extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(onPressed: machine.retry, child: const Text('Retry')),
+          if (machine.approvalUrl case final url?)
+            ApprovalButton(url: url)
+          else
+            TextButton(onPressed: machine.retry, child: const Text('Retry')),
         ],
       ),
     );
@@ -310,8 +315,10 @@ class AgentCard extends StatelessWidget {
                               ),
                             ),
                             if (status == AgentStatus.working)
-                              PulsingDot(
-                                  color: status.color, size: 8, pulse: !stale),
+                              StatusDot(
+                                  color: status.color
+                                      .withValues(alpha: stale ? 0.4 : 1),
+                                  size: 8),
                           ],
                         ),
                         if (pane.title.isNotEmpty) ...[

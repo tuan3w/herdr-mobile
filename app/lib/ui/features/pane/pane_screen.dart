@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/terminal_settings.dart';
 import '../../core/terminal_view.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -24,13 +27,18 @@ class PaneScreen extends StatelessWidget {
         providers: [
           ChangeNotifierProvider.value(value: machine),
           ChangeNotifierProvider(
-            create: (_) => PaneViewModel(
+            create: (context) => PaneViewModel(
               activity: machine.paneActivity,
               paneId: paneId,
-              read: () =>
-                  machine.api.readPane(paneId, lines: _readLines, ansi: true),
+              read: (source) => machine.api.readPane(
+                paneId,
+                source: source,
+                lines: _readLines,
+                ansi: true,
+              ),
               sendLine: (text) => machine.api.sendLine(paneId, text),
               sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
+              wrap: context.read<TerminalSettings>().wrap,
             ),
           ),
         ],
@@ -87,6 +95,7 @@ class _PaneViewState extends State<_PaneView> {
         context.select<PaneViewModel, (bool, String?, bool)>(
       (v) => (v.sending, v.error, v.isStale),
     );
+    final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
     final machine = context.watch<MachineConnection>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -98,6 +107,7 @@ class _PaneViewState extends State<_PaneView> {
     final hint = switch (machine.state) {
       LinkState.online => 'Message ${pane?.agent ?? 'pane'}…',
       LinkState.connecting => 'Connecting…',
+      LinkState.approval => 'Waiting for sign-in approval',
       LinkState.reconnecting || LinkState.offline => 'Offline — reconnecting',
       LinkState.attention => 'Needs attention — see above',
       LinkState.disabled => 'Machine disabled',
@@ -120,6 +130,17 @@ class _PaneViewState extends State<_PaneView> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: wrap ? 'Show exact terminal layout' : 'Wrap lines to screen',
+            isSelected: wrap,
+            icon: const Icon(Icons.wrap_text_rounded),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              final next = !wrap;
+              vm.setWrap(next);
+              unawaited(context.read<TerminalSettings>().setWrap(next));
+            },
+          ),
           if (pane != null)
             Padding(
               padding: const EdgeInsets.only(right: Gap.lg),
@@ -152,9 +173,24 @@ class _PaneViewState extends State<_PaneView> {
                     border: Border.all(color: TerminalColors.border),
                     borderRadius: BorderRadius.circular(Radii.card - 4),
                   ),
-                  child: Selector<PaneViewModel, String>(
-                    selector: (_, v) => v.text,
-                    builder: (_, text, _) => TerminalView(text: text),
+                  child: Builder(
+                    builder: (context) {
+                      final (fontSize, wrap) =
+                          context.select<TerminalSettings, (double, bool)>(
+                        (s) => (s.fontSize, s.wrap),
+                      );
+                      final settings = context.read<TerminalSettings>();
+                      return TerminalView(
+                        text: context.select<PaneViewModel, String>(
+                          (v) => v.text,
+                        ),
+                        fontSize: fontSize,
+                        wrap: wrap,
+                        onFontSizeChanged: settings.previewFontSize,
+                        onFontSizeEnd: (size) =>
+                            unawaited(settings.setFontSize(size)),
+                      );
+                    },
                   ),
                 ),
               ),

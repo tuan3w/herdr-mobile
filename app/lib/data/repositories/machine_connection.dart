@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/herdr_models.dart';
 import '../models/machine_profile.dart';
+import '../services/auth_notice.dart';
 import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart';
 import '../services/snapshot_cache.dart';
@@ -25,6 +26,10 @@ enum LinkState {
 
   /// The device has no network. Not retrying until it returns.
   offline,
+
+  /// The server wants a person to approve this sign-in at a link (Tailscale
+  /// SSH check mode). The connection is waiting, not failing.
+  approval,
 }
 
 Duration defaultBackoff(int attempt) =>
@@ -66,6 +71,7 @@ class MachineConnection extends ChangeNotifier {
   final Duration cacheWriteInterval;
 
   LinkState _state = LinkState.connecting;
+  String? _approvalUrl;
   String? _error;
   Snapshot _snapshot = Snapshot.empty;
   DateTime? _lastSync;
@@ -96,6 +102,10 @@ class MachineConnection extends ChangeNotifier {
   Snapshot get snapshot => _snapshot;
   DateTime? get lastSync => _lastSync;
   bool get isLive => _state == LinkState.online;
+
+  /// The `https` link to approve a sign-in at, while [state] is
+  /// [LinkState.approval]; null otherwise.
+  String? get approvalUrl => _state == LinkState.approval ? _approvalUrl : null;
 
   void start() {
     if (_disposed) return;
@@ -358,9 +368,26 @@ class MachineConnection extends ChangeNotifier {
 
   void _set(LinkState s, {String? error}) {
     if (_disposed || (_state == s && _error == error)) return;
+    if (s != LinkState.approval) _approvalUrl = null;
     _state = s;
     _error = error;
     notifyListeners();
+  }
+
+  /// The server showed a login banner while connecting. If it carries a
+  /// sign-in link (Tailscale SSH check mode), the connection waits for a person:
+  /// surface the link so the UI can send them to approve it.
+  void onAuthNotice(String banner) {
+    if (_disposed) return;
+    final url = approvalUrlFrom(banner);
+    if (url == null) return;
+    final changed = url != _approvalUrl;
+    _approvalUrl = url;
+    if (_state == LinkState.approval) {
+      if (changed) notifyListeners();
+      return;
+    }
+    _set(LinkState.approval);
   }
 
   @override

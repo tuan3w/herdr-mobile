@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
 import '../models/machine_profile.dart';
+import 'auth_notice.dart';
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
 import 'mux_client.dart';
@@ -13,6 +14,31 @@ import 'mux_client.dart';
 const hostKeyChangedMessage =
     'Host key changed since it was first trusted. Re-add the machine if the '
     'change is expected.';
+
+/// Cipher and MAC preference for the SSH connection.
+///
+/// dartssh2 encrypts in pure Dart on the isolate it runs on, and its default
+/// order picks AES-GCM first. Measured through the library (8 MB over
+/// loopback): AES-GCM 1.0 MB/s, AES-128-CTR + HMAC-SHA256-ETM 29 MB/s,
+/// ChaCha20-Poly1305 40 MB/s. On a phone the GCM default meant ~4.5 ms per KB,
+/// freezing the UI for ~600 ms per pane refresh. GCM stays as a last resort
+/// for servers that offer nothing else.
+const sshAlgorithms = SSHAlgorithms(
+  cipher: [
+    SSHCipherType.chacha20poly1305,
+    SSHCipherType.aes128ctr,
+    SSHCipherType.aes256ctr,
+    SSHCipherType.aes128gcm,
+    SSHCipherType.aes256gcm,
+  ],
+  mac: [
+    SSHMacType.hmacSha256Etm,
+    SSHMacType.hmacSha512Etm,
+    SSHMacType.hmacSha256,
+    SSHMacType.hmacSha512,
+    SSHMacType.hmacSha1,
+  ],
+);
 
 /// [HerdrTransport] over SSH: one authenticated [SSHClient] per machine.
 /// Requests share one persistent multiplexed channel ([MuxClient]); hosts
@@ -25,6 +51,8 @@ class SshTransport implements HerdrTransport {
     required this.onPinHostKey,
     this.connectTimeout = const Duration(seconds: 15),
     this.requestTimeout = const Duration(seconds: 20),
+    this.approvalTimeout = const Duration(minutes: 5),
+    this.onNotice,
   })  : _command = buildBridgeCommand(
           session: profile.session,
           socketPath: profile.socketPath,
@@ -42,6 +70,12 @@ class SshTransport implements HerdrTransport {
   final void Function(String fingerprint) onPinHostKey;
   final Duration connectTimeout;
   final Duration requestTimeout;
+
+  /// How long to wait for a person to approve a sign-in link the server shows.
+  final Duration approvalTimeout;
+
+  /// Called with every login banner the server sends before authentication.
+  final void Function(String banner)? onNotice;
 
   final String _command;
   final String _muxCommand;
@@ -70,6 +104,18 @@ class SshTransport implements HerdrTransport {
   Future<SSHClient> _connect() async {
     var hostKeyMismatch = false;
     SSHClient? client;
+    final authenticated = Completer<void>();
+    Timer? deadline;
+    // Authentication normally takes a moment. When the server shows a login
+    // link instead (Tailscale check mode) it is waiting for a person, so the
+    // deadline moves out while the link is pending.
+    void expectAuthWithin(Duration limit, Object error) {
+      deadline?.cancel();
+      deadline = Timer(limit, () {
+        if (!authenticated.isCompleted) authenticated.completeError(error);
+      });
+    }
+
     try {
       final socket = await SSHSocket.connect(
         profile.host,
@@ -93,12 +139,28 @@ class SshTransport implements HerdrTransport {
       } else {
         identities = null;
       }
+      expectAuthWithin(connectTimeout, TimeoutException('SSH login timed out'));
       client = SSHClient(
         socket,
         username: profile.username,
         identities: identities,
+        algorithms: sshAlgorithms,
+        // With neither a key nor a password only the `none` method is tried,
+        // which is what Tailscale SSH expects: it already knows who we are.
         onPasswordRequest:
             profile.auth == SshAuth.password ? () => secrets.password : null,
+        onUserauthBanner: (banner) {
+          onNotice?.call(banner);
+          if (approvalUrlFrom(banner) != null) {
+            expectAuthWithin(
+              approvalTimeout,
+              const HerdrTransportException(
+                'Sign-in was not approved in time. Retry to get a new link.',
+                fatal: true,
+              ),
+            );
+          }
+        },
         onVerifyHostKey: (type, fingerprint) {
           final seen = utf8.decode(fingerprint);
           final pinned = _pinned;
@@ -111,7 +173,15 @@ class SshTransport implements HerdrTransport {
           return !hostKeyMismatch;
         },
       );
-      await client.authenticated.timeout(connectTimeout);
+      client.authenticated.then(
+        (_) {
+          if (!authenticated.isCompleted) authenticated.complete();
+        },
+        onError: (Object e, StackTrace s) {
+          if (!authenticated.isCompleted) authenticated.completeError(e, s);
+        },
+      );
+      await authenticated.future;
       client.done.then((_) => _drop(client!), onError: (_) => _drop(client!));
       return client;
     } on HerdrTransportException {
@@ -119,15 +189,23 @@ class SshTransport implements HerdrTransport {
       rethrow;
     } on SSHAuthFailError {
       client?.close();
-      throw const HerdrTransportException(
-          'SSH authentication failed (check username and key/password).',
-          fatal: true);
+      throw HerdrTransportException(
+        switch (profile.auth) {
+          SshAuth.none => 'Tailscale SSH did not accept this sign-in. Check that '
+              'Tailscale is connected on this phone and that your tailnet policy '
+              'lets you SSH to this machine as "${profile.username}".',
+          _ => 'SSH authentication failed (check username and key/password).',
+        },
+        fatal: true,
+      );
     } on Object catch (e) {
       client?.close();
       if (hostKeyMismatch) {
         throw const HerdrTransportException(hostKeyChangedMessage, fatal: true);
       }
       throw HerdrTransportException('Cannot connect: $e');
+    } finally {
+      deadline?.cancel();
     }
   }
 

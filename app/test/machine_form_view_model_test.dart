@@ -46,16 +46,72 @@ void main() {
     String fingerprint = 'SHA256:seen',
     Object? failure,
     List<({MachineProfile profile, MachineSecrets secrets})>? attempts,
+    List<String> banners = const [],
   }) =>
       MachineFormViewModel(
         repo: repo,
         existing: existing,
-        transportFactory: (profile, s, onPin) {
+        transportFactory: (profile, s, onPin, onNotice) {
           attempts?.add((profile: profile, secrets: s));
           if (profile.hostKeyFingerprint == null) onPin(fingerprint);
+          banners.forEach(onNotice);
           return FakeTransport()..failure = failure;
         },
       );
+
+  group('tailscale (no credentials)', () {
+    test('stores no secrets even if other fields were filled in', () async {
+      final vm = form();
+      final values = _values(
+        auth: SshAuth.none,
+        privateKey: 'LEFTOVER KEY',
+        password: 'leftover',
+      );
+      await vm.test(values);
+      await vm.save(values);
+
+      final saved = repo.machines.single;
+      expect(saved.auth, SshAuth.none);
+      final s = await repo.secretsFor(saved.id);
+      expect(s.privateKeyPem, isNull);
+      expect(s.password, isNull);
+    });
+
+    test('a sign-in banner during the test exposes the approval link', () async {
+      final seen = <String?>[];
+      final vm = form(banners: const [
+        '# Tailscale SSH requires an additional check.\n'
+            '# To authenticate, visit: https://login.tailscale.com/a/abc123',
+      ]);
+      vm.addListener(() => seen.add(vm.approvalUrl));
+
+      await vm.test(_values(auth: SshAuth.none));
+
+      expect(seen, contains('https://login.tailscale.com/a/abc123'));
+    });
+
+    test('a banner without a web link, or with a non-https one, is ignored', () async {
+      final vm = form(banners: const [
+        'Welcome!',
+        'javascript:alert(1)',
+        'http://login.tailscale.com/a/abc',
+      ]);
+
+      await vm.test(_values(auth: SshAuth.none));
+
+      expect(vm.approvalUrl, isNull);
+    });
+
+    test('a new test clears the previous link', () async {
+      final vm = form(banners: const ['visit https://login.tailscale.com/a/one']);
+      await vm.test(_values(auth: SshAuth.none));
+      expect(vm.approvalUrl, 'https://login.tailscale.com/a/one');
+
+      final clean = form();
+      await clean.test(_values(auth: SshAuth.none));
+      expect(clean.approvalUrl, isNull);
+    });
+  });
 
   group('add', () {
     test('a successful test reports version and pins the seen host key on save',

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'data/models/machine_profile.dart';
 import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/machine_connection.dart';
 import 'data/repositories/machine_repository.dart';
+import 'data/repositories/terminal_settings.dart';
 import 'data/services/herdr_api.dart';
 import 'data/services/network_monitor.dart';
 import 'data/services/snapshot_cache.dart';
-import 'data/services/ssh_transport.dart';
+import 'data/services/transport_factory.dart';
 import 'ui/core/theme.dart';
 import 'ui/shell/home_shell.dart';
 
@@ -18,12 +20,14 @@ class HerdrMobileApp extends StatefulWidget {
     required this.machines,
     required this.network,
     required this.snapshotCache,
+    required this.terminalSettings,
     this.connect,
   });
 
   final MachineRepository machines;
   final NetworkMonitor network;
   final SnapshotCache snapshotCache;
+  final TerminalSettings terminalSettings;
 
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
@@ -40,18 +44,24 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     network: widget.network,
   );
 
-  MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) =>
-      MachineConnection(
-        profile: profile,
-        cache: widget.snapshotCache,
-        api: HerdrApi(
-          SshTransport(
-            profile: profile,
-            secrets: secrets,
-            onPinHostKey: (fp) => widget.machines.pinHostKey(profile.id, fp),
-          ),
+  MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) {
+    // The transport reports login banners; they belong to the connection it
+    // serves, which only exists once the transport has been built.
+    late final MachineConnection connection;
+    connection = MachineConnection(
+      profile: profile,
+      cache: widget.snapshotCache,
+      api: HerdrApi(
+        createSshTransport(
+          profile,
+          secrets,
+          (fp) => widget.machines.pinHostKey(profile.id, fp),
+          (banner) => connection.onAuthNotice(banner),
         ),
-      );
+      ),
+    );
+    return connection;
+  }
 
   @override
   void initState() {
@@ -75,6 +85,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
         providers: [
           ChangeNotifierProvider.value(value: widget.machines),
           ChangeNotifierProvider.value(value: _fleet),
+          ChangeNotifierProvider.value(value: widget.terminalSettings),
         ],
         child: MaterialApp(
           title: 'herdr',
@@ -82,6 +93,12 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: ThemeMode.system,
+          // One region for every screen, including ones without an AppBar
+          // (the empty state), so the bars never fall back to OEM defaults.
+          builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+                value: AppTheme.systemBars(Theme.of(context).brightness),
+                child: child!,
+              ),
           home: const HomeShell(),
         ),
       );

@@ -63,6 +63,30 @@ check which one loads before relying on it.
   is the Android versionCode: it must only increase and stay above 4002 (the
   highest code the old per-ABI APKs used), or Android refuses the update as a
   downgrade ("App not installed").
+- **UI-thread budget.** The pane must stay smooth while an agent streams ~140 KB
+  per refresh. Network, crypto and JSON decoding belong in the transport
+  isolate (`IsolateTransport`, created only through `createSshTransport`);
+  never construct `SshTransport` on the main isolate. Keep cipher preference in
+  `sshAlgorithms` (GCM is ~30x slower in dartssh2); `ssh_algorithms_test.dart`
+  guards it. Never add a looping animation (they keep the GPU busy forever).
+- **Measure on a phone, not a desktop.** Frame stalls only showed up on a real
+  device: profile build (`flutter build apk --profile`), real touch input
+  (`adb shell input swipe`), and a controllable load, e.g. a herdr pane running
+  a script that streams coloured output. `build.gradle.kts` signs profile builds
+  with the release key so they install over the shipped app.
+- Android builds opt out of Impeller (`AndroidManifest.xml`) because it measured
+  slower than Skia on a Mali-G72 phone. Do not remove that without re-measuring.
+- **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`
+  wraps every route in one `AnnotatedRegion` using `AppTheme.systemBars`. Do not
+  use Flutter's stock `SystemUiOverlayStyle.light/dark` (no status bar colour:
+  OEM grey shows through; forces a black navigation bar). Lists with an explicit
+  `padding:` on pushed screens must add `MediaQuery.paddingOf(context).bottom`
+  themselves (only default-padded lists get the inset automatically).
+- **Pane width is not ours to set.** herdr's socket API cannot resize a pane's
+  terminal (`pane.resize` only moves split ratios; real size follows the last
+  attached TUI client, over an internal versioned protocol). Phone width is
+  handled client-side: pinch zoom, and a wrap mode that re-flows
+  `recent_unwrapped` reads.
 - Reference clients in `third_party/` (herdr-remote, herdrup) and herdr source
   (`third_party/herdr`) are read-only references, not build inputs.
 - Protocol facts: `docs/herdr-api.schema.json` (`herdr api schema`).

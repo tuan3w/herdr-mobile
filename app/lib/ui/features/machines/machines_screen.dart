@@ -6,6 +6,7 @@ import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/machine_repository.dart';
+import '../../core/approval_button.dart';
 import '../../core/motion.dart';
 import '../../core/status_style.dart';
 import '../../core/theme.dart';
@@ -160,12 +161,7 @@ class _MachineCard extends StatelessWidget {
                             color: scheme.surfaceContainerLow,
                             shape: BoxShape.circle,
                           ),
-                          child: PulsingDot(
-                            color: state.color,
-                            size: 9,
-                            pulse: state == LinkState.connecting ||
-                                state == LinkState.reconnecting,
-                          ),
+                          child: StatusDot(color: state.color, size: 9),
                         ),
                       ),
                     ],
@@ -272,6 +268,15 @@ class _MachineCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              ],
+              if (machine.approvalUrl case final url?) ...[
+                const SizedBox(height: Gap.md),
+                Text(
+                  'Tailscale needs you to approve this sign-in.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: Gap.sm),
+                ApprovalButton(url: url),
               ],
               if (!p.enabled)
                 Padding(

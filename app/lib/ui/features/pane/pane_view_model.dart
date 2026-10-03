@@ -3,13 +3,21 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../../data/models/herdr_models.dart';
+import '../../../data/services/herdr_api.dart' show ReadSource;
 import '../../../data/services/herdr_transport.dart';
+
+/// Reads a pane's text from the given herdr source.
+typedef PaneReader = Future<PaneRead> Function(ReadSource source);
 
 /// Live tail of one pane plus the ability to type into it.
 ///
 /// Reads are driven by herdr's `pane.updated` events, throttled (busy agents
 /// emit continuously, so a debounce would never fire), with a slow poll as a
 /// backstop for lost events. Nothing runs while the app is not resumed.
+///
+/// In [wrap] mode the pane is read as `recent_unwrapped` (herdr joins the rows
+/// the terminal soft-wrapped, leaving one logical line per line, for the view
+/// to re-flow to the screen); otherwise as `recent`, the terminal's own rows.
 class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   PaneViewModel({
     required Stream<String> activity,
@@ -19,6 +27,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     required this._sendKeys,
     this.minReadInterval = const Duration(milliseconds: 120),
     this.fallbackInterval = const Duration(seconds: 4),
+    this._wrap = false,
   }) {
     WidgetsBinding.instance.addObserver(this);
     // The fallback poll covers a failed activity stream.
@@ -27,7 +36,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   final String paneId;
-  final Future<PaneRead> Function() _read;
+  final PaneReader _read;
   final Future<void> Function(String text) _sendLine;
   final Future<void> Function(List<String> keys) _sendKeys;
 
@@ -48,6 +57,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   bool _active = true;
   bool _fatal = false;
   bool _disposed = false;
+  bool _wrap;
 
   String _text = '';
   String? _error;
@@ -65,6 +75,25 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   void refresh() {
     _fatal = false;
     _schedule();
+  }
+
+  /// Whether the pane is read unwrapped, for the view to wrap to the screen.
+  bool get wrap => _wrap;
+
+  /// Switches between the terminal's own rows and unwrapped lines, and reads
+  /// from the new source right away (not after the throttle interval).
+  void setWrap(bool value) {
+    if (value == _wrap) return;
+    _wrap = value;
+    _cooldown?.cancel();
+    _cooldown = null;
+    _fatal = false;
+    if (_inFlight) {
+      _pending = true;
+    } else {
+      _schedule();
+    }
+    notifyListeners();
   }
 
   void _onActivity(String id) {
@@ -86,14 +115,19 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _fallback?.cancel();
     _fallback = null;
     _cooldown = Timer(minReadInterval, _cooledDown);
+    final wrap = _wrap;
     try {
-      final read = await _read();
-      _apply(text: read.text, error: null, stale: false);
+      final read = await _read(wrap ? ReadSource.recentUnwrapped : ReadSource.recent);
+      // The mode changed while reading: this is the other source's text, and
+      // setWrap already queued a read of the right one.
+      if (wrap == _wrap) _apply(text: read.text, error: null, stale: false);
     } on HerdrApiException catch (e) {
-      _apply(error: e.toString(), stale: true);
+      if (wrap == _wrap) _apply(error: e.toString(), stale: true);
     } on HerdrTransportException catch (e) {
-      _fatal = e.fatal;
-      _apply(error: e.message, stale: true);
+      if (wrap == _wrap) {
+        _fatal = e.fatal;
+        _apply(error: e.message, stale: true);
+      }
     } finally {
       _inFlight = false;
       if (!_disposed && _active && !_fatal) {

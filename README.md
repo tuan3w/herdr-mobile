@@ -8,8 +8,8 @@ phone ──SSH──▶ machine A ── one multiplexed channel ──▶ herd
       ──SSH──▶ machine B ── …
 ```
 
-No relay, no public ports, no account. The app authenticates over SSH (key or
-password) and keeps **one persistent channel per machine** that carries every
+No relay, no public ports, no account. The app authenticates over SSH (key,
+password, or Tailscale SSH) and keeps **one persistent channel per machine** that carries every
 request (a tiny relay script on the host; needs `python3`). Hosts without it
 fall back to `herdr remote-api-bridge` (herdr ≥ 0.9), then `socat`/`python3`,
 one channel per request: slower, same behaviour. Each machine has its own
@@ -33,6 +33,15 @@ connection, backoff and reconnect; one machine failing never affects another.
 - Event-driven updates (`events.subscribe`) with a slow poll as a backstop.
 - Host keys pinned on first use; a changed key is a hard stop.
 - Secrets live in the platform keychain, never in preferences.
+- **Tailscale SSH** (`Tailscale` auth option): nothing to paste, no key stored.
+  Needs the Tailscale app signed in on the phone. If your tailnet policy uses
+  check mode, the machine shows "Waiting for approval" with an **Open sign-in
+  page** button; approve in the browser and the connection continues by itself.
+  Only `https` links from the login banner are ever opened.
+- Terminal drawn cell by cell: seamless coloured blocks and pixel-exact box
+  drawing (`┌─┐│└┘`, blocks, shades) instead of font glyphs, pinch to zoom the
+  font, and a **wrap** toggle that re-flows wide desktop panes to the phone's
+  width (herdr cannot resize a pane over its socket API).
 
 ## Install (Android)
 
@@ -57,6 +66,37 @@ Two things did most of the work: one multiplexed channel instead of a shell
 plus two process spawns per request, and recognising that a `pane_updated`
 event carries the whole pane, so spinner churn needs no refetch at all.
 
+### Smooth scrolling on a phone
+
+Request latency is not what makes a terminal feel bad on a phone; **frozen
+frames** are. Profiled on a mid-range phone (Galaxy A51, profile build) against
+a pane streaming ~140 KB per refresh, with real touch swipes:
+
+| | before | after |
+| --- | --- | --- |
+| Main-thread freezes per swipe | 2–3, up to 687 ms | 0 |
+| Frames over 40 ms per swipe | 5–18 | 0–2 |
+| Freezes while typing into a streaming pane | yes | 0 |
+
+What caused it, in order of impact:
+
+1. **The SSH cipher.** dartssh2 encrypts in pure Dart and its default order
+   picks AES-GCM, which runs at ~1 MB/s through the library (ChaCha20-Poly1305
+   and AES-CTR: 30–40 MB/s). A pane refresh therefore blocked the UI for ~600 ms.
+   The app prefers ChaCha20-Poly1305, then AES-CTR.
+2. **Work on the UI thread.** All network, decryption and JSON decoding now
+   runs in a background isolate per machine (`IsolateTransport`).
+3. **Renderer.** On this phone Impeller runs its OpenGL ES backend (a forced
+   Vulkan request still lands on OpenGL ES), and in the same four swipes it
+   produced 51 frames over 40 ms against Skia's 5, so Android builds opt out of
+   Impeller. See the note in `AndroidManifest.xml`; re-measure after Flutter
+   upgrades and on other phones.
+4. **Redundant work per update:** responses were decoded twice, all 300 lines
+   re-parsed, and every visible line re-laid-out when one line was appended.
+   Parsing is now incremental and lines keep a stable identity.
+5. **A looping animation** (the working-agent pulse) kept the GPU busy
+   continuously, so it was removed.
+
 ## Layout
 
 ```
@@ -70,9 +110,13 @@ app/lib/
     repositories/   machine_repository.dart   saved machines + secrets
                     machine_connection.dart   one machine: snapshot + reconnect
                     fleet_repository.dart     all machines, merged agent list
+                    terminal_settings.dart    pane font size + wrap mode, saved
   ui/
     core/           theme, motion tokens, shared widgets, ansi parser,
-                    terminal view
+                    terminal view: a cell grid (backgrounds and box drawing
+                    painted per row, snapped to device pixels; see
+                    terminal_cells.dart, box_drawing.dart), line wrapping
+                    to the phone's width (line_wrap.dart), pinch to zoom
     features/       agents/, machines/, pane/   (views + view models)
     shell/          bottom navigation
 docs/herdr-api.schema.json   protocol schema, from `herdr api schema` (0.8.2)

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show Color;
 
+import 'cell_width.dart';
 import 'theme.dart';
 
 /// A stretch of text in one style. Reverse video is already resolved: [fg] and
@@ -26,7 +27,8 @@ final class AnsiRun {
   final bool underline;
   final bool strike;
 
-  AnsiRun _withText(String text) => AnsiRun(
+  /// This run's style on other [text].
+  AnsiRun withText(String text) => AnsiRun(
         text,
         fg: fg,
         bg: bg,
@@ -60,34 +62,163 @@ final class AnsiDocument {
 /// Parses text containing SGR escape sequences (as returned by `pane.read`
 /// with `format: ansi`). Never throws: malformed or truncated sequences are
 /// dropped and every other CSI/OSC/DCS/ESC sequence is ignored.
-AnsiDocument parseAnsi(String text) => _Parser(text).parse();
+///
+/// One-shot; use an [AnsiParser] to parse a stream of similar texts.
+AnsiDocument parseAnsi(String text) => AnsiParser().parse(text);
 
+/// [parseAnsi] for a sequence of related texts (a pane re-read every few
+/// milliseconds, where only a line or two changes between reads).
+///
+/// No escape sequence spans a line feed, so a line parses to the same runs
+/// whenever it starts in the same SGR state. Each line is memoized on
+/// (start state, raw text), and an unchanged line comes back as the very same
+/// `List<AnsiRun>` instance, which lets callers cache work per line by
+/// identity. A line whose start state changed because an earlier line
+/// changed its trailing style is parsed again.
+///
+/// The memo holds only the lines of the latest [parse], so it is bounded by
+/// the size of one document.
+final class AnsiParser {
+  var _memo = <_LineKey, _LineResult>{};
+
+  /// Number of lines remembered from the latest [parse].
+  int get cachedLines => _memo.length;
+
+  AnsiDocument parse(String text) {
+    final used = <_LineKey, _LineResult>{};
+    final lines = <List<AnsiRun>>[];
+    var columns = 0;
+    var state = _SgrState.initial;
+    final n = text.length;
+    var pos = 0;
+    while (true) {
+      final nl = text.indexOf('\n', pos);
+      final last = nl < 0;
+      final end = last ? n : nl;
+      // A trailing line feed does not start another line.
+      if (last && pos == end) break;
+      final line = text.substring(pos, end);
+      final key = _LineKey(state, line);
+      final result = used[key] ?? (_memo[key] ?? _Parser(line, state).parse());
+      used[key] = result;
+      state = result.end;
+      // The text after the final line feed is a line only if it shows something.
+      if (!last || result.hasText) {
+        lines.add(result.runs);
+        if (result.columns > columns) columns = result.columns;
+      }
+      if (last) break;
+      pos = nl + 1;
+    }
+    _memo = used;
+    return AnsiDocument(lines, columns);
+  }
+}
+
+/// The SGR attributes that carry from one line to the next.
+final class _SgrState {
+  const _SgrState({
+    this.fg,
+    this.bg,
+    this.bold = false,
+    this.dim = false,
+    this.italic = false,
+    this.underline = false,
+    this.strike = false,
+    this.reverse = false,
+  });
+
+  static const initial = _SgrState();
+
+  final Color? fg;
+  final Color? bg;
+  final bool bold;
+  final bool dim;
+  final bool italic;
+  final bool underline;
+  final bool strike;
+  final bool reverse;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _SgrState &&
+      fg == other.fg &&
+      bg == other.bg &&
+      bold == other.bold &&
+      dim == other.dim &&
+      italic == other.italic &&
+      underline == other.underline &&
+      strike == other.strike &&
+      reverse == other.reverse;
+
+  @override
+  int get hashCode =>
+      Object.hash(fg, bg, bold, dim, italic, underline, strike, reverse);
+}
+
+/// Memo key: how a raw line is parsed depends on nothing but its text and the
+/// state it starts in.
+final class _LineKey {
+  _LineKey(this.state, this.text) : hashCode = Object.hash(state, text);
+
+  final _SgrState state;
+  final String text;
+
+  @override
+  final int hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _LineKey && state == other.state && text == other.text;
+}
+
+final class _LineResult {
+  const _LineResult(this.runs, this.columns, this.hasText, this.end);
+
+  final List<AnsiRun> runs;
+
+  /// Cells the runs occupy.
+  final int columns;
+
+  /// Something was drawn on the line (even if padding trimming emptied it).
+  final bool hasText;
+
+  /// The state the next line starts in.
+  final _SgrState end;
+}
+
+/// Parses one line (no line feed in [_s]) starting in a given SGR state.
 final class _Parser {
-  _Parser(this._s);
+  _Parser(this._s, _SgrState start)
+      : _fg = start.fg,
+        _bg = start.bg,
+        _bold = start.bold,
+        _dim = start.dim,
+        _italic = start.italic,
+        _underline = start.underline,
+        _strike = start.strike,
+        _reverse = start.reverse;
 
   final String _s;
-  final _lines = <List<AnsiRun>>[];
-  var _line = <AnsiRun>[];
-  var _columns = 0;
+  final _line = <AnsiRun>[];
 
-  /// No visible character since the last line break, so reaching the end of
-  /// the input here must not emit one more empty line.
-  var _lineStart = true;
+  /// Visible text was added since the line began.
+  var _hasText = false;
 
   /// A lone CR was seen: the next visible text replaces the line so far
-  /// (progress meters redraw this way) unless a line feed follows first.
+  /// (progress meters redraw this way).
   var _carriageReturn = false;
 
   Color? _fg;
   Color? _bg;
-  var _bold = false;
-  var _dim = false;
-  var _italic = false;
-  var _underline = false;
-  var _strike = false;
-  var _reverse = false;
+  bool _bold;
+  bool _dim;
+  bool _italic;
+  bool _underline;
+  bool _strike;
+  bool _reverse;
 
-  AnsiDocument parse() {
+  _LineResult parse() {
     final n = _s.length;
     var i = 0;
     var start = 0;
@@ -101,9 +232,6 @@ final class _Parser {
       switch (c) {
         case 0x1b:
           i = _escape(i + 1);
-        case 0x0a:
-          _endLine();
-          i++;
         case 0x0d:
           _carriageReturn = true;
           i++;
@@ -116,8 +244,26 @@ final class _Parser {
       start = i;
     }
     _text(start, n);
-    if (!_lineStart) _endLine();
-    return AnsiDocument(_lines, _columns);
+    _trimPadding();
+    var columns = 0;
+    for (final run in _line) {
+      columns += columnsOf(run.text);
+    }
+    return _LineResult(
+      _line,
+      columns,
+      _hasText,
+      _SgrState(
+        fg: _fg,
+        bg: _bg,
+        bold: _bold,
+        dim: _dim,
+        italic: _italic,
+        underline: _underline,
+        strike: _strike,
+        reverse: _reverse,
+      ),
+    );
   }
 
   void _text(int start, int end) {
@@ -126,10 +272,10 @@ final class _Parser {
 
   void _add(String text) {
     if (_carriageReturn) {
-      _line = [];
+      _line.clear();
       _carriageReturn = false;
     }
-    _lineStart = false;
+    _hasText = true;
     var fg = _fg;
     var bg = _bg;
     if (_reverse) {
@@ -148,23 +294,10 @@ final class _Parser {
       strike: _strike,
     );
     if (_line.isNotEmpty && _line.last._sameStyle(run)) {
-      _line[_line.length - 1] = _line.last._withText(_line.last.text + text);
+      _line[_line.length - 1] = _line.last.withText(_line.last.text + text);
     } else {
       _line.add(run);
     }
-  }
-
-  void _endLine() {
-    _trimPadding();
-    var columns = 0;
-    for (final run in _line) {
-      columns += _columnsOf(run.text);
-    }
-    if (columns > _columns) _columns = columns;
-    _lines.add(_line);
-    _line = [];
-    _carriageReturn = false;
-    _lineStart = true;
   }
 
   /// herdr pads lines to the pane width. Padding is only invisible on the
@@ -181,7 +314,7 @@ final class _Parser {
       if (end == 0) {
         _line.removeLast();
       } else {
-        _line[_line.length - 1] = run._withText(run.text.substring(0, end));
+        _line[_line.length - 1] = run.withText(run.text.substring(0, end));
         return;
       }
     }
@@ -390,33 +523,3 @@ Color _xterm256(int n) {
 }
 
 int _cube(int level) => level == 0 ? 0 : 55 + level * 40;
-
-int _columnsOf(String s) {
-  var columns = 0;
-  for (final r in s.runes) {
-    columns += r < 0x300 ? 1 : _cellWidth(r);
-  }
-  return columns;
-}
-
-int _cellWidth(int r) {
-  if ((r >= 0x300 && r <= 0x36f) ||
-      (r >= 0x200b && r <= 0x200f) ||
-      (r >= 0x20d0 && r <= 0x20ff) ||
-      (r >= 0xfe00 && r <= 0xfe0f)) {
-    return 0;
-  }
-  if ((r >= 0x1100 && r <= 0x115f) ||
-      (r >= 0x2e80 && r <= 0xa4cf) ||
-      (r >= 0xac00 && r <= 0xd7a3) ||
-      (r >= 0xf900 && r <= 0xfaff) ||
-      (r >= 0xfe30 && r <= 0xfe6f) ||
-      (r >= 0xff00 && r <= 0xff60) ||
-      (r >= 0xffe0 && r <= 0xffe6) ||
-      (r >= 0x1f300 && r <= 0x1f64f) ||
-      (r >= 0x1f900 && r <= 0x1f9ff) ||
-      (r >= 0x20000 && r <= 0x3fffd)) {
-    return 2;
-  }
-  return 1;
-}

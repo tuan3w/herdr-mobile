@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/machine_repository.dart';
+import '../../core/approval_button.dart';
 import '../../core/motion.dart';
 import '../../core/theme.dart';
 import 'machine_form_view_model.dart';
@@ -111,7 +112,8 @@ class _FormState extends State<_Form> {
         key: _formKey,
         onChanged: vm.invalidateTest,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.sm, Gap.lg, Gap.xxl),
+          padding: EdgeInsets.fromLTRB(
+              Gap.lg, Gap.sm, Gap.lg, Gap.xxl + MediaQuery.paddingOf(context).bottom),
           children: [
             Text(
               'herdr is reached over SSH. Nothing is exposed publicly and no '
@@ -187,6 +189,11 @@ class _FormState extends State<_Form> {
                     icon: Icon(Icons.password_rounded),
                     label: Text('Password'),
                   ),
+                  ButtonSegment(
+                    value: SshAuth.none,
+                    icon: Icon(Icons.vpn_lock_rounded),
+                    label: Text('Tailscale'),
+                  ),
                 ],
                 selected: {_auth},
                 onSelectionChanged: (s) {
@@ -196,6 +203,16 @@ class _FormState extends State<_Form> {
               ),
             ),
             const SizedBox(height: Gap.md),
+            if (_auth == SshAuth.none) ...[
+              Text(
+                'Nothing is stored. Tailscale already knows this phone, so no key '
+                'or password is needed. If your tailnet asks for an extra check, '
+                'the app shows a link to approve the sign-in.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             if (_auth == SshAuth.key) ...[
               TextFormField(
                 controller: _key,
@@ -242,7 +259,7 @@ class _FormState extends State<_Form> {
                   ),
                 ),
               ),
-            ] else
+            ] else if (_auth == SshAuth.password)
               TextFormField(
                 controller: _password,
                 obscureText: _obscure,
@@ -368,23 +385,32 @@ class _TestResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final approval = vm.testState == TestState.testing ? vm.approvalUrl : null;
     final (Color color, IconData icon, String title, String? detail)? view =
-        switch (vm.testState) {
-      TestState.ok => (
-          const Color(0xFF22C55E),
-          Icons.check_circle_rounded,
-          'Connected · herdr ${vm.version}',
-          '${vm.workspaceCount} workspace${vm.workspaceCount == 1 ? '' : 's'}'
-              '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
-        ),
-      TestState.failed => (
-          const Color(0xFFEF4444),
-          Icons.error_rounded,
-          'Could not connect',
-          vm.message,
-        ),
-      _ => null,
-    };
+        approval != null
+            ? (
+                const Color(0xFFF59E0B),
+                Icons.verified_user_rounded,
+                'Approve this sign-in',
+                'Tailscale needs you to confirm this connection in a browser. '
+                    'Open the page, approve it, then come back: the test continues by itself.',
+              )
+            : switch (vm.testState) {
+                TestState.ok => (
+                    const Color(0xFF22C55E),
+                    Icons.check_circle_rounded,
+                    'Connected · herdr ${vm.version}',
+                    '${vm.workspaceCount} workspace${vm.workspaceCount == 1 ? '' : 's'}'
+                        '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
+                  ),
+                TestState.failed => (
+                    const Color(0xFFEF4444),
+                    Icons.error_rounded,
+                    'Could not connect',
+                    vm.message,
+                  ),
+                _ => null,
+              };
     return AnimatedSize(
       duration: Motion.expand,
       curve: Motion.easeOut,
@@ -421,6 +447,11 @@ class _TestResult extends StatelessWidget {
                                     : null,
                               ),
                             ),
+                          ),
+                        if (approval != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: Gap.md),
+                            child: ApprovalButton(url: approval),
                           ),
                       ],
                     ),

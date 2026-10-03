@@ -57,12 +57,7 @@ class _MachineView extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        PulsingDot(
-                          color: state.color,
-                          size: 8,
-                          pulse: state == LinkState.connecting ||
-                              state == LinkState.reconnecting,
-                        ),
+                        StatusDot(color: state.color, size: 8),
                         const SizedBox(width: Gap.xs),
                         Flexible(
                           child: Text(state.label,
@@ -111,7 +106,8 @@ class _MachineView extends StatelessWidget {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.xxl),
+                padding: EdgeInsets.fromLTRB(
+                    Gap.lg, 0, Gap.lg, Gap.xxl + MediaQuery.paddingOf(context).bottom),
                 sliver: SliverList.separated(
                   itemCount: snap.workspaces.length,
                   separatorBuilder: (_, _) => const SizedBox(height: Gap.md),

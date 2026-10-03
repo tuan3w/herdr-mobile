@@ -55,6 +55,12 @@ android {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
         }
+        // On-device profiling has to install over the shipped (release-signed)
+        // app, or Android refuses it as a signature mismatch.
+        getByName("profile") {
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+        }
     }
 }
 

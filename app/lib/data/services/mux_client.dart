@@ -90,7 +90,7 @@ class MuxClient {
   final Duration heartbeatInterval;
   final Duration heartbeatTimeout;
 
-  final _pending = <String, Completer<String>>{};
+  final _pending = <String, Completer<Object?>>{};
   final _dead = Completer<MuxDeath>();
   StreamSubscription<String>? _sub;
   Timer? _heartbeat;
@@ -144,6 +144,8 @@ class MuxClient {
   }
 
   void _route(String line) {
+    // The one and only decode of this response: requests receive the decoded
+    // object (re-decoding a 140 KB pane read cost ~14 ms on a mid-range phone).
     final Object? decoded;
     try {
       decoded = jsonDecode(line);
@@ -151,20 +153,20 @@ class MuxClient {
       return;
     }
     final id = decoded is Map<String, dynamic> ? decoded['id'] : null;
-    if (id is String) _pending.remove(id)?.complete(line);
+    if (id is String) _pending.remove(id)?.complete(decoded);
   }
 
-  /// Sends one request and returns the raw response line. Throws
+  /// Sends one request and returns the decoded response. Throws
   /// [TimeoutException] on no answer within [timeout], or
   /// [HerdrTransportException] if the client is or becomes dead.
-  Future<String> _exchange(
+  Future<Object?> _exchange(
     String id,
     String method,
     Map<String, dynamic> params,
     Duration timeout,
   ) async {
     if (!_alive) throw const HerdrTransportException('herdr connection lost');
-    final reply = _pending[id] = Completer<String>();
+    final reply = _pending[id] = Completer<Object?>();
     try {
       _channel.send(jsonEncode({'id': id, 'method': method, 'params': params}));
     } on Object catch (e) {
@@ -186,13 +188,13 @@ class MuxClient {
     String method, [
     Map<String, dynamic> params = const {},
   ]) async {
-    final String line;
+    final Object? decoded;
     try {
-      line = await _exchange('m${_nextId++}', method, params, requestTimeout);
+      decoded = await _exchange('m${_nextId++}', method, params, requestTimeout);
     } on TimeoutException {
       throw HerdrTransportException('herdr did not answer $method in time');
     }
-    return unwrapResponse(line);
+    return unwrapDecoded(decoded);
   }
 
   Future<void> _beat() async {

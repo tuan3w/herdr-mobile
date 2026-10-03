@@ -67,7 +67,7 @@ abstract final class AppTheme {
       surfaceContainerHighest: const Color(0xFF252E3A),
       outlineVariant: const Color(0xFF28313C),
     );
-    return _build(scheme, SystemUiOverlayStyle.light);
+    return _build(scheme, systemBars(Brightness.dark));
   }
 
   static ThemeData light() {
@@ -83,7 +83,27 @@ abstract final class AppTheme {
       surfaceContainerHigh: const Color(0xFFE6EAF0),
       outlineVariant: const Color(0xFFDDE2E9),
     );
-    return _build(scheme, SystemUiOverlayStyle.dark);
+    return _build(scheme, systemBars(Brightness.light));
+  }
+
+  /// Status and navigation bars drawn transparent over the app (edge to edge),
+  /// with icons that contrast with [brightness] of the app surface behind them.
+  ///
+  /// Flutter's stock `SystemUiOverlayStyle.light/dark` presets never set a
+  /// status bar colour, so the OEM default (a flat grey on Samsung) showed
+  /// through, and they force a solid black navigation bar.
+  static SystemUiOverlayStyle systemBars(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    final icons = dark ? Brightness.light : Brightness.dark;
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: icons,
+      statusBarBrightness: brightness, // iOS: brightness of what is behind
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: icons,
+      systemNavigationBarContrastEnforced: false,
+    );
   }
 
   static ThemeData _build(ColorScheme scheme, SystemUiOverlayStyle overlay) {

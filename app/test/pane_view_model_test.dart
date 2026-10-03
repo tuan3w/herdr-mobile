@@ -5,6 +5,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
+import 'package:herdr_mobile/data/services/herdr_api.dart' show ReadSource;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_view_model.dart';
 
@@ -21,25 +22,33 @@ class _Fake {
   final activity = StreamController<String>.broadcast();
 
   String text = 'one';
+  String unwrappedText = 'one, unwrapped';
   Duration latency = Duration.zero;
   Object? readFailure;
   Object? sendFailure;
 
   /// Elapsed time at the start of each read.
   final reads = <Duration>[];
+
+  /// Source asked for by each read.
+  final sources = <ReadSource>[];
   final sent = <String>[];
   var running = 0;
   var maxRunning = 0;
 
-  Future<PaneRead> read() async {
+  Future<PaneRead> read(ReadSource source) async {
     reads.add(async.elapsed);
+    sources.add(source);
     running++;
     maxRunning = max(maxRunning, running);
     try {
       if (latency > Duration.zero) await Future<void>.delayed(latency);
       final failure = readFailure;
       if (failure != null) throw failure;
-      return PaneRead(text: text, truncated: false);
+      return PaneRead(
+        text: source == ReadSource.recentUnwrapped ? unwrappedText : text,
+        truncated: false,
+      );
     } finally {
       running--;
     }
@@ -54,6 +63,7 @@ class _Fake {
   PaneViewModel vm({
     Duration minReadInterval = const Duration(milliseconds: 120),
     Duration fallbackInterval = const Duration(seconds: 4),
+    bool wrap = false,
   }) =>
       PaneViewModel(
         activity: activity.stream,
@@ -63,6 +73,7 @@ class _Fake {
         sendKeys: (keys) => _send(keys.join('+')),
         minReadInterval: minReadInterval,
         fallbackInterval: fallbackInterval,
+        wrap: wrap,
       );
 
   /// Emits [count] events for the pane, one every [every].
@@ -551,6 +562,115 @@ void main() {
 
       expect(f.reads, hasLength(1));
       expect(async.pendingTimers, isEmpty);
+    });
+  });
+
+  group('wrap mode', () {
+    _scenario('reads the terminal rows by default and unwrapped lines in wrap '
+        'mode', (async, f) {
+      final plain = f.vm();
+      async.flushMicrotasks();
+      expect(f.sources, [ReadSource.recent]);
+      expect(plain.wrap, isFalse);
+      expect(plain.text, 'one');
+      plain.dispose();
+
+      final wrapped = f.vm(wrap: true);
+      async.flushMicrotasks();
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(wrapped.wrap, isTrue);
+      expect(wrapped.text, 'one, unwrapped');
+      wrapped.dispose();
+    });
+
+    _scenario('switching reads from the other source at once, not after the '
+        'throttle interval', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(10)); // inside the 120 ms cooldown of the first read
+
+      vm.setWrap(true);
+      async.flushMicrotasks();
+
+      expect(f.reads, [Duration.zero, _ms(10)]);
+      expect(f.sources, [ReadSource.recent, ReadSource.recentUnwrapped]);
+      expect(vm.text, 'one, unwrapped');
+
+      async.elapse(_ms(10));
+      vm.setWrap(false);
+      async.flushMicrotasks();
+
+      expect(f.sources.last, ReadSource.recent);
+      expect(f.reads.last, _ms(20));
+      expect(vm.text, 'one');
+      vm.dispose();
+    });
+
+    _scenario('switching tells listeners, setting the same mode does not read',
+        (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(500));
+      var notified = 0;
+      vm.addListener(() => notified++);
+
+      vm.setWrap(false);
+      async.flushMicrotasks();
+      expect(notified, 0);
+      expect(f.reads, hasLength(1));
+
+      vm.setWrap(true);
+      async.flushMicrotasks();
+      expect(notified, greaterThanOrEqualTo(1));
+      expect(f.reads, hasLength(2));
+      vm.dispose();
+    });
+
+    _scenario('a read of the old source that is still running is dropped',
+        (async, f) {
+      f.latency = _ms(300);
+      final vm = f.vm();
+      async.elapse(_ms(100)); // first read in flight
+
+      vm.setWrap(true);
+      async.elapse(_ms(250)); // the old read finishes at 300
+      expect(vm.text, '', reason: 'recent text must not show in wrap mode');
+
+      async.elapse(_ms(300)); // the read of the new source finishes
+      expect(f.sources, [ReadSource.recent, ReadSource.recentUnwrapped]);
+      expect(f.reads[1], _ms(300), reason: 'started the moment the old ended');
+      expect(vm.text, 'one, unwrapped');
+      vm.dispose();
+    });
+
+    _scenario('a failure of the old source does not mark the new one stale',
+        (async, f) {
+      f.latency = _ms(300);
+      f.readFailure = const HerdrTransportException('connection lost');
+      final vm = f.vm();
+      async.elapse(_ms(100));
+
+      f.readFailure = null;
+      vm.setWrap(true);
+      async.elapse(const Duration(seconds: 1));
+
+      expect(vm.isStale, isFalse);
+      expect(vm.error, isNull);
+      expect(vm.text, 'one, unwrapped');
+      vm.dispose();
+    });
+
+    _scenario('activity keeps reading the current source', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(200));
+      vm.setWrap(true);
+      async.elapse(_ms(200));
+      f.unwrappedText = 'changed';
+
+      f.activity.add(_pane);
+      async.flushMicrotasks();
+
+      expect(f.sources.last, ReadSource.recentUnwrapped);
+      expect(vm.text, 'changed');
+      vm.dispose();
     });
   });
 }
