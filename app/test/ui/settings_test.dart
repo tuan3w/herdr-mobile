@@ -9,6 +9,8 @@ import 'package:herdr_mobile/data/app_info.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/repositories/open_tabs.dart';
+import 'package:herdr_mobile/ui/features/pane/pane_host_screen.dart';
 import 'package:herdr_mobile/data/repositories/new_session_settings.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/ui/core/chrome.dart';
@@ -32,6 +34,18 @@ import '../support/memory_terminal_settings_store.dart';
 import '../support/shot.dart' show loadAppFonts;
 import 'ui_harness.dart';
 
+
+class _TabsStore implements OpenTabsStore {
+  _TabsStore(this.saved);
+
+  SavedTabs? saved;
+
+  @override
+  Future<SavedTabs?> read() async => saved;
+
+  @override
+  Future<void> write(SavedTabs tabs) async => saved = tabs;
+}
 class _Launcher extends UrlLauncherPlatform {
   final opened = <String>[];
 
@@ -49,8 +63,9 @@ class _Launcher extends UrlLauncherPlatform {
 Future<void> pumpApp(
   WidgetTester tester,
   AppSettings app,
-  TerminalSettings terminal,
-) async {
+  TerminalSettings terminal, {
+  OpenTabs? openTabs,
+}) async {
   final machines = MachineRepository(profiles: MemoryProfileStore(), secrets: MemorySecretStore());
   await machines.load();
   await tester.pumpWidget(HerdrMobileApp(
@@ -60,6 +75,7 @@ Future<void> pumpApp(
     terminalSettings: terminal,
     newSessionSettings: NewSessionSettings(MemoryNewSessionStore()),
     appSettings: app,
+    openTabs: openTabs ?? OpenTabs(),
   ));
   await tester.pump(const Duration(milliseconds: 100));
 }
@@ -207,6 +223,7 @@ void main() {
         terminalSettings: TerminalSettings(MemoryTerminalSettingsStore()),
         newSessionSettings: NewSessionSettings(MemoryNewSessionStore()),
         appSettings: app,
+        openTabs: OpenTabs(),
       ));
       expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
       await disposeApp(tester);
@@ -307,7 +324,7 @@ void main() {
       final terminal = TerminalSettings(store);
       final handle = tester.ensureSemantics();
       await pumpScreen(tester, app: AppSettings(MemoryAppSettingsStore()), terminal: terminal);
-      Finder row() => find.byType(SwitchRow);
+      Finder row() => find.widgetWithText(SwitchRow, 'Wrap long lines');
       expect(tester.getSemantics(row()).flagsCollection.isToggled, Tristate.isFalse);
 
       await tester.tap(find.text('Wrap long lines'));
@@ -330,7 +347,7 @@ void main() {
         app: AppSettings(MemoryAppSettingsStore()),
         terminal: TerminalSettings(MemoryTerminalSettingsStore()),
       );
-      final node = tester.getSemantics(find.byType(SwitchRow));
+      final node = tester.getSemantics(find.widgetWithText(SwitchRow, 'Wrap long lines'));
       expect(node.label, contains('Wrap long lines'));
       expect(node.flagsCollection.isButton, isFalse);
       expect(node.flagsCollection.isToggled, isNot(Tristate.none));
@@ -389,7 +406,8 @@ void main() {
         for (final target in [
           find.byWidgetPredicate((w) => w is PressBuilder && w.semanticLabel == 'Increase font size'),
           find.byWidgetPredicate((w) => w is PressBuilder && w.semanticLabel == 'Decrease font size'),
-          find.byType(SwitchRow),
+          find.widgetWithText(SwitchRow, 'Wrap long lines'),
+          find.widgetWithText(SwitchRow, 'Dark terminal'),
           find.byType(Segmented<ThemeChoice>),
         ]) {
           final size = tester.getSize(target);
@@ -549,6 +567,96 @@ void main() {
       await settle(tester);
       expect(h.appSettings.theme, ThemeChoice.dark);
       await teardownUi(tester, h);
+    });
+  });
+
+  group('the app remembers where it was', () {
+    testWidgets('it opens on the tab it was left on, and remembers a switch', (tester) async {
+      final store = MemoryAppSettingsStore()..homeTab = 1;
+      final app = AppSettings(store);
+      await app.load();
+      await pumpApp(tester, app, TerminalSettings(MemoryTerminalSettingsStore()));
+      expect(find.byType(MachinesScreen).hitTestable(), findsOneWidget);
+
+      await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(app.homeTab, 2);
+      expect(store.homeTab, 2);
+      await disposeApp(tester);
+    });
+
+    testWidgets('a theme change does not put the shell back on its first tab', (tester) async {
+      final app = AppSettings(MemoryAppSettingsStore()..homeTab = 2);
+      await app.load();
+      await pumpApp(tester, app, TerminalSettings(MemoryTerminalSettingsStore()));
+      await app.setTheme(ThemeChoice.dark);
+      await tester.pump();
+      expect(find.byType(SettingsScreen).hitTestable(), findsOneWidget);
+      await disposeApp(tester);
+    });
+
+    testWidgets('the tab screen that was open comes back, once, with its tabs', (tester) async {
+      final store = _TabsStore(const SavedTabs(
+        tabs: [TabRef('gone-machine', 'w1:p1'), TabRef('gone-machine', 'w1:p2')],
+        active: 'gone-machine|w1:p2',
+        hostOpen: true,
+      ));
+      final tabs = OpenTabs(store: store);
+      await tabs.load();
+      final app = AppSettings(MemoryAppSettingsStore());
+      await app.load();
+      await pumpApp(tester, app, TerminalSettings(MemoryTerminalSettingsStore()), openTabs: tabs);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(PaneHostScreen), findsOneWidget);
+      expect(tabs.active, const TabRef('gone-machine', 'w1:p2'));
+      expect(tabs.length, 2);
+      await disposeApp(tester);
+    });
+
+    testWidgets('without a saved open screen the board shows', (tester) async {
+      final store = _TabsStore(const SavedTabs(tabs: [TabRef('m', 'p')]));
+      final tabs = OpenTabs(store: store);
+      await tabs.load();
+      final app = AppSettings(MemoryAppSettingsStore());
+      await app.load();
+      await pumpApp(tester, app, TerminalSettings(MemoryTerminalSettingsStore()), openTabs: tabs);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(PaneHostScreen), findsNothing);
+      await disposeApp(tester);
+    });
+  });
+
+  group('the terminal palette follows the theme', () {
+    TerminalPalette paletteUnder(WidgetTester tester) =>
+        tester.element(find.byType(Scaffold).first).terminal;
+
+    testWidgets('light on paper, dark on ink, dark on paper when asked', (tester) async {
+      final app = AppSettings(MemoryAppSettingsStore());
+      await app.load();
+      await pumpApp(tester, app, TerminalSettings(MemoryTerminalSettingsStore()));
+      expect(paletteUnder(tester), same(TerminalPalette.light));
+
+      await app.setTheme(ThemeChoice.dark);
+      await tester.pump();
+      expect(paletteUnder(tester), same(TerminalPalette.dark));
+
+      await app.setTheme(ThemeChoice.light);
+      await app.setDarkTerminal(true);
+      await tester.pump();
+      expect(paletteUnder(tester), same(TerminalPalette.dark));
+
+      await app.setDarkTerminal(false);
+      await tester.pump();
+      expect(paletteUnder(tester), same(TerminalPalette.light));
+      await disposeApp(tester);
+    });
+
+    testWidgets('the Dark terminal switch in Settings sets it', (tester) async {
+      final app = AppSettings(MemoryAppSettingsStore());
+      await pumpScreen(tester, app: app, terminal: TerminalSettings(MemoryTerminalSettingsStore()));
+      await tester.tap(find.text('Dark terminal'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(app.darkTerminal, isTrue);
     });
   });
 }

@@ -71,13 +71,12 @@ check which one loads before relying on it.
   isolate (`IsolateTransport`, created only through `createSshTransport`);
   never construct `SshTransport` on the main isolate. Keep cipher preference in
   `sshAlgorithms` (GCM is ~30x slower in dartssh2); `ssh_algorithms_test.dart`
-  guards it. Never add a looping animation (they keep the GPU busy forever); the
-  exceptions are `BusySpinner` (`ui/core/controls.dart`) for work the user is
-  actively waiting on (a saving/testing button, a send in flight; it must stop
-  when the work does) and the working agent's `StatusGlyph` arc, which steps at
-  <= 4 Hz from ONE shared clock (`step_clock.dart`) that runs only while a
-  working glyph is visible, stops in the background and under reduced motion,
-  and repaints only each glyph's own `RepaintBoundary`. Avoid `Opacity`/`AnimatedOpacity`/`FadeTransition` at
+  guards it. Never add a looping animation (they keep the GPU busy forever and
+  cost battery); the only exception is `BusySpinner` (`ui/core/controls.dart`)
+  for work the user is actively waiting on (a saving/testing button, a send in
+  flight; it must stop when the work does). A working agent's `StatusGlyph` is
+  a still half ring; `step_clock.dart` only drives the minute labels. Avoid
+  `Opacity`/`AnimatedOpacity`/`FadeTransition` at
   opacity 1: each is a composited layer (wrap only when actually dimmed).
 - **Measure on a phone, not a desktop.** Frame stalls only showed up on a real
   device: profile build (`flutter build apk --profile`), real touch input
@@ -112,11 +111,29 @@ check which one loads before relying on it.
   back). Flutter 3.47 routes the system back gesture through the framework, and
   our Cupertino page transition is driven by it. Not verified on a device; if
   back swipes misbehave, remove it first.
-- **Pane width is not ours to set.** herdr's socket API cannot resize a pane's
-  terminal (`pane.resize` only moves split ratios; real size follows the last
-  attached TUI client, over an internal versioned protocol). Phone width is
-  handled client-side: pinch zoom, and a wrap mode that re-flows
-  `recent_unwrapped` reads.
+- **Pane width is not ours to set.** herdr's socket API has no size parameter
+  (`pane.resize` only moves split ratios). Geometry belongs to the *clients*:
+  the server sizes a tab to the client that views or claims it
+  (`tab_geometry_controllers` in `third_party/herdr/src/server/headless/
+  client_views.rs`, otherwise the foreground client's terminal size), and a
+  client announces its size in the endpoint handshake (`surface_size`,
+  `src/protocol/endpoint.rs`, a JSON "client-owned shell" contract, generation 1,
+  documented as stable for Local/SSH/Cloud). Attaching as such a client would
+  re-lay the tab out for the phone's width, and would resize it for a desktop
+  viewer of the same tab; it means speaking the shell surface protocol, a
+  different architecture from the socket + `pane.read` one used here. Phone
+  width is handled client-side: pinch zoom, and a wrap mode that re-flows
+  `recent_unwrapped` reads but leaves table and box rows whole
+  (`table_lines.dart`; the view then scrolls sideways for them).
+- **A pane is drawn in the theme's colours.** The ANSI parser always yields
+  `TerminalColors` (dark) values; `TerminalPalette.recolor` maps them to the
+  palette of the theme (`context.terminal`, light on paper unless Settings >
+  Dark terminal) when a row is prepared, so the dark palette costs nothing.
+- **State that survives a launch**: theme and last root tab (`AppSettings`),
+  terminal font and wrap (`TerminalSettings`), open pane tabs, their order,
+  the active one and whether the tab screen was open (`OpenTabs` with
+  `PrefsOpenTabsStore`, loaded in `main()`; the app puts the tab screen back
+  in front once). Load such state before `runApp`.
 - **Scrollback is capped by herdr, not by us.** `pane.read` clamps `lines` to
   1000 rows server-side (measured on 0.8.2; `lines.min(1000)` in source) even
   when the pane holds thousands, and the read runs on herdr's main loop (~5 ms,

@@ -176,6 +176,8 @@ class _TerminalSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.read<TerminalSettings>();
     final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
+    final app = context.read<AppSettings>();
+    final darkTerminal = context.select<AppSettings, bool>((s) => s.darkTerminal);
     return FormSection(
       label: 'Terminal',
       endsWithField: false,
@@ -186,6 +188,12 @@ class _TerminalSection extends StatelessWidget {
           subtitle: 'Fit lines to the screen instead of scrolling sideways.',
           value: wrap,
           onChanged: (next) => unawaited(settings.setWrap(next)),
+        ),
+        SwitchRow(
+          title: 'Dark terminal',
+          subtitle: 'Keep the terminal dark when the app is light.',
+          value: darkTerminal,
+          onChanged: (next) => unawaited(app.setDarkTerminal(next)),
         ),
       ],
     );

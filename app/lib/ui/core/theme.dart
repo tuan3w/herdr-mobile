@@ -1,13 +1,18 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'ansi.dart' show AnsiRun;
 import 'motion.dart';
 import 'tokens.dart';
 
 export 'tokens.dart';
 
-/// Terminal surface colours, shared by both themes: a pane is always dark.
+/// The dark terminal colours. The ANSI parser resolves colour codes to these,
+/// whatever theme is showing; [TerminalPalette.light] maps them to its own
+/// when a pane is drawn on paper (see [TerminalPalette.recolor]).
 abstract final class TerminalColors {
   static const background = Color(0xFF0A0B0D);
   static const foreground = Color(0xFFD7DCE3);
@@ -36,6 +41,142 @@ abstract final class TerminalColors {
   ];
 }
 
+/// The colours a pane is drawn in: its page, its default text, the 16 ANSI
+/// colours. The theme carries one (`context.terminal`): [dark] on ink, [light]
+/// on paper, or [dark] on both when the person wants a dark terminal.
+///
+/// The parser always produces [TerminalColors] values. [recolor] turns them
+/// into this palette's at the moment a row is prepared, so the dark palette
+/// costs nothing and a theme switch only needs the prepared rows dropped.
+@immutable
+class TerminalPalette extends ThemeExtension<TerminalPalette> {
+  TerminalPalette._({
+    required this.isDark,
+    required this.background,
+    required this.foreground,
+    required this.dim,
+    required this.border,
+    required this.link,
+    required this.ansi,
+  });
+
+  final bool isDark;
+  final Color background;
+  final Color foreground;
+
+  /// Placeholders and stale text.
+  final Color dim;
+  final Color border;
+
+  /// Links in output.
+  final Color link;
+
+  /// The 16 ANSI colours, each legible (>= 4.5:1) on [background].
+  final List<Color> ansi;
+
+  static final dark = TerminalPalette._(
+    isDark: true,
+    background: TerminalColors.background,
+    foreground: TerminalColors.foreground,
+    dim: TerminalColors.dim,
+    border: TerminalColors.border,
+    link: Ds.ink.accentText,
+    ansi: TerminalColors.ansi,
+  );
+
+  /// Paper: white page, the paper text colour, darker hues.
+  static final light = TerminalPalette._(
+    isDark: false,
+    background: Ds.paper.surface,
+    foreground: Ds.paper.text,
+    dim: Ds.paper.textMuted,
+    border: Ds.paper.hairline,
+    link: Ds.paper.accentText,
+    ansi: const [
+      Color(0xFF4B5160),
+      Color(0xFFB3261E),
+      Color(0xFF2E7D32),
+      Color(0xFF8A5F00),
+      Color(0xFF1F5FBF),
+      Color(0xFF8E3FB0),
+      Color(0xFF0B7285),
+      Color(0xFF5F6672),
+      Color(0xFF687080),
+      Color(0xFFC62E25),
+      Color(0xFF2B7A35),
+      Color(0xFF8F6200),
+      Color(0xFF2A63D6),
+      Color(0xFF9A38BD),
+      Color(0xFF0A7488),
+      Color(0xFF1F2430),
+    ],
+  );
+
+  /// Text on a background must reach this contrast on paper, or it is pulled
+  /// towards black: a TUI that picked pale greys for a dark screen stays
+  /// readable.
+  static const minContrast = 3.5;
+
+  late final Map<Color, Color> _fromDark = {
+    TerminalColors.foreground: foreground,
+    TerminalColors.background: background,
+    for (var i = 0; i < 16; i++) TerminalColors.ansi[i]: ansi[i],
+  };
+
+  /// [run] as this palette draws it. The parser's [TerminalColors] become
+  /// this palette's; text that has a background of its own and no colour takes
+  /// whichever default reads on it; any text below [minContrast] against its
+  /// background is darkened. The dark palette returns [run] itself.
+  AnsiRun recolor(AnsiRun run) {
+    if (isDark) return run;
+    final bg = run.bg == null ? null : (_fromDark[run.bg] ?? run.bg);
+    var fg = run.fg == null ? null : (_fromDark[run.fg] ?? run.fg);
+    if (bg != null && fg == null) {
+      fg = bg.computeLuminance() < 0.35 ? TerminalColors.foreground : foreground;
+    }
+    if (fg != null) fg = _readable(fg, bg ?? background);
+    if (fg == run.fg && bg == run.bg) return run;
+    return AnsiRun(
+      run.text,
+      fg: fg,
+      bg: bg,
+      bold: run.bold,
+      dim: run.dim,
+      italic: run.italic,
+      underline: run.underline,
+      strike: run.strike,
+    );
+  }
+
+  static double _contrast(Color a, Color b) {
+    final la = a.computeLuminance();
+    final lb = b.computeLuminance();
+    return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+  }
+
+  static Color _readable(Color fg, Color on) {
+    if (_contrast(fg, on) >= minContrast) return fg;
+    final target = on.computeLuminance() > 0.5 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+    for (var t = 0.1; t < 1; t += 0.1) {
+      final c = Color.lerp(fg, target, t)!;
+      if (_contrast(c, on) >= minContrast) return c;
+    }
+    return target;
+  }
+
+  @override
+  TerminalPalette copyWith() => this;
+
+  @override
+  TerminalPalette lerp(TerminalPalette? other, double t) => t < 0.5 ? this : (other ?? this);
+}
+
+extension TerminalPaletteContext on BuildContext {
+  /// The palette panes are drawn in under this theme. A tree without one (a
+  /// bare test) gets the dark palette.
+  TerminalPalette get terminal => Theme.of(this).extension<TerminalPalette>() ?? TerminalPalette.dark;
+}
+
 /// Bundled monospace face (JetBrains Mono): the same on every phone, with
 /// proper box-drawing and symbol coverage for agent UIs.
 const monoFamily = 'JetBrainsMono';
@@ -53,8 +194,9 @@ class _FastCupertinoTransitions extends CupertinoPageTransitionsBuilder {
 }
 
 abstract final class AppTheme {
-  static ThemeData dark() => _build(Ds.ink);
-  static ThemeData light() => _build(Ds.paper);
+  /// [terminal] overrides the pane palette (a dark terminal on paper).
+  static ThemeData dark({TerminalPalette? terminal}) => _build(Ds.ink, terminal ?? TerminalPalette.dark);
+  static ThemeData light({TerminalPalette? terminal}) => _build(Ds.paper, terminal ?? TerminalPalette.light);
 
   /// Status and navigation bars drawn transparent over the app (edge to edge),
   /// with icons that contrast with [brightness] of the app surface behind them.
@@ -76,7 +218,7 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData _build(Ds ds) {
+  static ThemeData _build(Ds ds, TerminalPalette terminal) {
     final scheme = ColorScheme(
       brightness: ds.brightness,
       primary: ds.accent,
@@ -129,7 +271,7 @@ abstract final class AppTheme {
       textTheme: textTheme,
       scaffoldBackgroundColor: ds.bg,
       canvasColor: ds.bg,
-      extensions: [ds],
+      extensions: [ds, terminal],
       // No ink ripples or tinted highlights: pressed state is drawn by our own
       // controls (`PressBuilder`).
       splashFactory: NoSplash.splashFactory,

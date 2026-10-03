@@ -75,6 +75,7 @@ class TerminalView extends StatefulWidget {
     this.onFontSizeEnd,
     this.onLinkTap,
     this.onScrollChanged,
+    this.onSidewaysChanged,
   });
 
   /// Pane output, with SGR escape sequences.
@@ -114,6 +115,10 @@ class TerminalView extends StatefulWidget {
   /// called when one of the two changes.
   final ValueChanged<TerminalScroll>? onScrollChanged;
 
+  /// While wrapping, whether a table or box row is wider than the view so the
+  /// view scrolls sideways. Called when that changes (after the frame).
+  final ValueChanged<bool>? onSidewaysChanged;
+
   @override
   State<TerminalView> createState() => _TerminalViewState();
 }
@@ -148,6 +153,9 @@ class _TerminalViewState extends State<TerminalView> {
 
   /// What [TerminalView.onScrollChanged] last heard.
   TerminalScroll? _reported;
+
+  /// What [TerminalView.onSidewaysChanged] last heard.
+  var _sideways = false;
 
   // Pinch tracking.
   final _touches = <int, Offset>{};
@@ -184,13 +192,31 @@ class _TerminalViewState extends State<TerminalView> {
     final fontSize =
         math.min(math.max(scaled, widget.fontSize), widget.fontSize * 1.6);
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    // The theme's palette: a theme switch lands here through
+    // didChangeDependencies and prepares every row again in the new colours.
+    final palette = context.terminal;
     final old = _metrics;
-    if (old != null && old.fontSize == fontSize && old.dpr == dpr) return false;
-    final metrics = CellMetrics.measure(fontSize, dpr);
+    if (old != null &&
+        old.fontSize == fontSize &&
+        old.dpr == dpr &&
+        identical(old.palette, palette)) {
+      return false;
+    }
+    final metrics = CellMetrics.measure(fontSize, dpr, palette: palette);
     _cache?.dispose();
     _cache = TerminalLineCache(metrics);
     _metrics = metrics;
     return true;
+  }
+
+  void _reportSideways(bool sideways) {
+    if (sideways == _sideways) return;
+    _sideways = sideways;
+    final report = widget.onSidewaysChanged;
+    if (report == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _sideways == sideways) report(sideways);
+    });
   }
 
   @override
@@ -441,10 +467,15 @@ class _TerminalViewState extends State<TerminalView> {
                   }
                   // Never narrower than the viewport, or the empty strip on
                   // the right would not respond to vertical drags.
-                  final width = wrap
+                  // Wrapping leaves table and box rows whole; when one is
+                  // wider than the view, the view scrolls sideways for it.
+                  final sideways = wrap && _doc.tableColumns > columns;
+                  _reportSideways(sideways);
+                  final width = wrap && !sideways
                       ? viewWidth
                       : math.max(
-                          (metrics.columnEdge(_doc.columns) + 1) / metrics.dpr,
+                          (metrics.columnEdge(wrap ? _doc.tableColumns : _doc.columns) + 1) /
+                              metrics.dpr,
                           viewWidth,
                         );
                   final height = _rowCount * metrics.lineHeight + 2 * Gap.sm;
@@ -453,7 +484,7 @@ class _TerminalViewState extends State<TerminalView> {
                     valueListenable: _pinching,
                     builder: (context, pinching, _) => SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      physics: wrap || pinching
+                      physics: (wrap && !sideways) || pinching
                           ? const NeverScrollableScrollPhysics()
                           : null,
                       padding: EdgeInsets.symmetric(horizontal: pad),
@@ -566,7 +597,7 @@ class _TopRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final secondary = Type.secondary.copyWith(color: TerminalColors.dim);
+    final secondary = Type.secondary.copyWith(color: context.terminal.dim);
     final (String title, String? detail) = switch (top) {
       TerminalTop.loading => ('Loading earlier output…', null),
       TerminalTop.serverLimit => (

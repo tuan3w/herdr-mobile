@@ -48,7 +48,7 @@ class PanePreviews {
     this.safetyPoll = const Duration(seconds: 20),
     this.startGap = const Duration(milliseconds: 40),
     this.maxConcurrentReads = 2,
-    this.readLines = 20,
+    this.readLines = 24,
     this.keepRows = 8,
     this.maxLineLength = 160,
     this.retainReleased = 24,
@@ -392,7 +392,7 @@ class _PaneWatch {
   }
 
   void _apply(String text) {
-    rows = previewRows(text, maxLength: _owner.maxLineLength);
+    rows = previewRows(text, maxLength: _owner.maxLineLength, keep: _owner.readLines);
     hasRows = true;
     if (_publish()) {
       unchangedStreak = 0;
@@ -421,9 +421,12 @@ class _PaneWatch {
   /// Rebuilds the preview from [rows] and [status]; false if nothing
   /// visible changed.
   bool _publish() {
-    final shown = rows.length > _owner.keepRows
-        ? rows.sublist(rows.length - _owner.keepRows)
-        : rows;
+    // The card shows what the agent has been doing, not its own input box and
+    // status bar; the prompt is still read from every row.
+    final content = withoutAgentChrome(rows, blocked: status == AgentStatus.blocked);
+    final shown = content.length > _owner.keepRows
+        ? content.sublist(content.length - _owner.keepRows)
+        : content;
     final next = PanePreview(
       lines: [for (final r in shown) PreviewLine(r)],
       prompt: status == AgentStatus.blocked ? detectPrompt(rows) : null,
@@ -493,6 +496,49 @@ List<String> previewRows(String text, {int maxLength = 160, int keep = 12}) {
     out.add(cleaned.length > maxLength ? _cut(cleaned, maxLength) : cleaned);
   }
   return out.length > keep ? out.sublist(out.length - keep) : out;
+}
+
+/// Most rows [withoutAgentChrome] takes off the bottom: an input box with
+/// its borders, a status bar, a hint line.
+const _maxChromeRows = 8;
+
+// An empty prompt: `>`, `❯`, `›`, `$`.
+final _bareInput = RegExp(r'^\s*[>❯›»$%#]\s*$');
+
+// A prompt with the text the person is typing, or the box's placeholder
+// (`> Try "fix lint errors"`). A numbered row is a menu, not an input.
+final _draftInput = RegExp(r'^\s*[>❯›»]\s+\S');
+final _numberedRow = RegExp(r'^\s*[>❯›▶▸➤→]?\s*\d{1,2}[.)]\s');
+
+// The status bars and hints the agent CLIs draw under their input box.
+final _statusChrome = RegExp(
+  r'(\besc(?:ape)? to\b|\benter to\b|\? for shortcuts|\bctrl\+\w|shift\+tab|\btab to\b|'
+  r'bypass permissions|accept edits|plan mode|auto-?compact|\bcontext (?:left|window)\b|'
+  r'\b\d+(?:\.\d+)?%\s+(?:context|left|used|full)|\b\d+(?:\.\d+)?[kKmM]?\s+tokens\b|'
+  r'📁|⎇|\b(?:Opus|Sonnet|Haiku|GPT-?\d|gpt-?\d|Gemini)\b.*[>·|│]|'
+  r'^\s*[·•]?\s*\d+[smh]\b.*[>·|│])',
+  caseSensitive: false,
+);
+
+/// [rows] without the agent's own chrome at the bottom: the input box, the
+/// status bar and hint lines that every agent CLI keeps drawing under its
+/// output, so a preview ends with what the agent said or did. A draft or
+/// placeholder in the input is dropped too, except for a [blocked] agent,
+/// whose last rows may be the menu it waits on. Rows are only taken off the
+/// end; when nothing else is left they are all kept.
+@visibleForTesting
+List<String> withoutAgentChrome(List<String> rows, {required bool blocked}) {
+  var end = rows.length;
+  while (end > 0 && rows.length - end < _maxChromeRows) {
+    final row = rows[end - 1];
+    final chrome =
+        _bareInput.hasMatch(row) ||
+        _statusChrome.hasMatch(row) ||
+        (!blocked && _draftInput.hasMatch(row) && !_numberedRow.hasMatch(row));
+    if (!chrome) break;
+    end--;
+  }
+  return end == 0 ? rows : rows.sublist(0, end);
 }
 
 /// [s] cut to [max] UTF-16 units without leaving half a surrogate pair.

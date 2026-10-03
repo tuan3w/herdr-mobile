@@ -8,6 +8,9 @@ import 'package:herdr_mobile/ui/core/terminal_links.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 
+/// The pane is drawn in the dark palette here (the harness theme is dark).
+final terminalLinkColor = TerminalPalette.dark.link;
+
 /// Taps seen by the view under test.
 final _taps = <TerminalLink>[];
 

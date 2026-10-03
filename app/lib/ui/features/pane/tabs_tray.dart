@@ -298,7 +298,7 @@ class _TabCardState extends State<_TabCard> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: ColoredBox(
-                        color: TerminalColors.background,
+                        color: context.terminal.background,
                         child: SizedBox.expand(
                           child: _handle == null
                               ? const _PreviewRows(rows: [], stale: true)
@@ -332,7 +332,7 @@ class _TabCardState extends State<_TabCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Type.caption.copyWith(
-                      color: status?.textColor(ds) ?? ds.textMuted,
+                      color: stale ? ds.textMuted : (status?.textColor(ds) ?? ds.textMuted),
                     ),
                   ),
                 ],
@@ -370,7 +370,8 @@ class _PreviewRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = stale ? TerminalColors.dim : TerminalColors.foreground;
+    final palette = context.terminal;
+    final color = stale ? palette.dim : palette.foreground;
     final style = TextStyle(
       fontFamily: monoFamily,
       fontSize: 10.5,
@@ -384,7 +385,7 @@ class _PreviewRows extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (rows.isEmpty)
-            Text('…', style: style.copyWith(color: TerminalColors.dim))
+            Text('…', style: style.copyWith(color: palette.dim))
           else
             for (final row in rows)
               Text(

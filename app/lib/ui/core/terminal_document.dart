@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'ansi.dart';
 import 'cell_width.dart';
 import 'line_wrap.dart';
+import 'table_lines.dart';
 import 'terminal_links.dart';
 
 /// Lines compared to work out how far a sliding window has moved.
@@ -50,13 +51,20 @@ final class DocLine {
   int _wrapColumns = 0;
   List<List<AnsiRun>> _wrapped = const [];
 
-  List<TerminalLink> _findLinks() {
+  /// The line's visible text.
+  late final String plain = () {
     final text = StringBuffer();
     for (final run in runs) {
       text.write(run.text);
     }
-    return detectLinks(text.toString());
-  }
+    return text.toString();
+  }();
+
+  /// A row of a table or a box: laid out for a fixed width, so it is never
+  /// re-flowed (see [isTableRow]).
+  late final bool tabular = isTableRow(plain);
+
+  List<TerminalLink> _findLinks() => detectLinks(plain);
 
   /// How many rows the line takes at [columns] (0: not wrapping), without
   /// cutting it: a line of one-cell characters is cut every [columns] cells,
@@ -64,7 +72,7 @@ final class DocLine {
   /// be wrapped to know. So laying out thousands of lines at a new width costs
   /// no allocation, and the rows are cut when one is first built.
   int rowCount(int columns) {
-    if (columns <= 0 || this.columns <= columns) return 1;
+    if (columns <= 0 || this.columns <= columns || tabular) return 1;
     if (_oneCellChars) return (this.columns + columns - 1) ~/ columns;
     return rows(columns).length;
   }
@@ -82,7 +90,7 @@ final class DocLine {
   /// every time, so work cached per row survives. A line that fits is one row
   /// that is [runs] itself.
   List<List<AnsiRun>> rows(int columns) {
-    if (columns <= 0 || this.columns <= columns) return _fits;
+    if (columns <= 0 || this.columns <= columns || tabular) return _fits;
     if (_wrapColumns != columns) {
       _wrapped = wrapLine(runs, columns);
       _wrapColumns = columns;
@@ -141,12 +149,16 @@ typedef DocShift = ({int dropped, int prepended});
 final class TerminalDocument {
   var _lines = const <DocLine>[];
   var _columns = 0;
+  var _tableColumns = 0;
   var _base = 0;
 
   List<DocLine> get lines => _lines;
 
   /// Width of the widest line in cells.
   int get columns => _columns;
+
+  /// Width of the widest table or box row in cells: what wrapping leaves whole.
+  int get tableColumns => _tableColumns;
 
   /// Id of the first line.
   int get base => _base;
@@ -193,11 +205,14 @@ final class TerminalDocument {
     }
 
     var columns = 0;
+    var tableColumns = 0;
     for (final line in lines) {
       if (line.columns > columns) columns = line.columns;
+      if (line.columns > tableColumns && line.tabular) tableColumns = line.columns;
     }
     _lines = lines;
     _columns = columns;
+    _tableColumns = tableColumns;
     if (shift == null) {
       _base += old.length;
       return (dropped: 0, prepended: 0);

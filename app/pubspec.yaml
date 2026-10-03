@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 4002: releases up to 0.2.0 were per-ABI APKs whose codes were
 # 1000 * abi + base (up to 4002), and a lower code is refused as a downgrade.
-version: 0.4.1+5006
+version: 0.4.2+5007
 
 environment:
   sdk: ^3.13.5

@@ -13,6 +13,18 @@ class _BrokenStore implements AppSettingsStore {
 
   @override
   Future<void> writeTheme(ThemeChoice theme) async {}
+
+  @override
+  Future<bool?> readDarkTerminal() async => throw StateError('disk gone');
+
+  @override
+  Future<void> writeDarkTerminal(bool dark) async {}
+
+  @override
+  Future<int?> readHomeTab() async => throw StateError('disk gone');
+
+  @override
+  Future<void> writeHomeTab(int tab) async {}
 }
 
 void main() {
@@ -53,6 +65,57 @@ void main() {
       expect(store.writes, ['theme dark']);
       await settings.setTheme(ThemeChoice.dark);
       expect(notified, 1, reason: 'same value: no rebuild');
+    });
+
+    test('the terminal follows the theme until told to stay dark', () async {
+      final store = MemoryAppSettingsStore();
+      final settings = AppSettings(store);
+      await settings.load();
+      expect(settings.darkTerminal, isFalse);
+      var notified = 0;
+      settings.addListener(() => notified++);
+      await settings.setDarkTerminal(true);
+      expect(settings.darkTerminal, isTrue);
+      expect(notified, 1);
+      expect(store.writes, ['darkTerminal true']);
+
+      final reopened = AppSettings(store);
+      await reopened.load();
+      expect(reopened.darkTerminal, isTrue);
+    });
+
+    test('the tab the app was left on is remembered, quietly', () async {
+      final store = MemoryAppSettingsStore();
+      final settings = AppSettings(store);
+      await settings.load();
+      expect(settings.homeTab, 0);
+      var notified = 0;
+      settings.addListener(() => notified++);
+      await settings.setHomeTab(2);
+      await settings.setHomeTab(2);
+      expect(notified, 0, reason: 'the shell already shows it');
+      expect(store.writes, ['homeTab 2']);
+
+      final reopened = AppSettings(store);
+      await reopened.load();
+      expect(reopened.homeTab, 2);
+    });
+
+    test('a tab that does not exist falls back to Agents', () async {
+      for (final bad in [-1, 3, 99]) {
+        final settings = AppSettings(MemoryAppSettingsStore()..homeTab = bad);
+        await settings.load();
+        expect(settings.homeTab, 0, reason: '$bad');
+      }
+      final settings = AppSettings(MemoryAppSettingsStore());
+      await settings.setHomeTab(7);
+      expect(settings.homeTab, 0);
+    });
+
+    test('an unreadable store gives the defaults for all of it', () async {
+      final settings = AppSettings(_BrokenStore());
+      await settings.load();
+      expect((settings.theme, settings.darkTerminal, settings.homeTab), (ThemeChoice.light, false, 0));
     });
   });
 

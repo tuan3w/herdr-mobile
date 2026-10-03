@@ -128,7 +128,10 @@ Future<void> _show(WidgetTester tester, int i) async {
 
 String? _active(UiHarness h) => h.openTabs.active?.paneId;
 
-/// `pane.read`s of one pane by the live tail (300 rows) and by previews (20).
+/// Rows a preview asks `pane.read` for.
+const _previewLines = 24;
+
+/// `pane.read`s of one pane by the live tail (300 rows) and by previews.
 int _reads(UiHarness h, int i, {int lines = 300}) => h
     .transports[_machine]!
     .calls
@@ -765,23 +768,23 @@ void main() {
       final context = tester.element(find.byType(PaneHostScreen));
       await openPaneTab(context, h.fleet.connection(_machine)!, _id(2));
       await settle(tester);
-      expect(_reads(h, 1, lines: 20) + _reads(h, 2, lines: 20), 0);
+      expect(_reads(h, 1, lines: _previewLines) + _reads(h, 2, lines: _previewLines), 0);
 
       await tester.tap(find.byType(TabCountButton));
       await settle(tester);
       await tester.pump(const Duration(seconds: 2));
-      expect(_reads(h, 1, lines: 20), greaterThan(0));
-      expect(_reads(h, 2, lines: 20), greaterThan(0));
+      expect(_reads(h, 1, lines: _previewLines), greaterThan(0));
+      expect(_reads(h, 2, lines: _previewLines), greaterThan(0));
 
       await tester.tapAt(const Offset(200, 800)); // the scrim
       await settle(tester);
       expect(find.byType(TabsTray), findsNothing);
-      final reads = _reads(h, 1, lines: 20) + _reads(h, 2, lines: 20);
+      final reads = _reads(h, 1, lines: _previewLines) + _reads(h, 2, lines: _previewLines);
 
       await tester.pump(const Duration(seconds: 60));
 
       expect(
-        _reads(h, 1, lines: 20) + _reads(h, 2, lines: 20),
+        _reads(h, 1, lines: _previewLines) + _reads(h, 2, lines: _previewLines),
         reads,
         reason: 'closing the tray released every watcher',
       );

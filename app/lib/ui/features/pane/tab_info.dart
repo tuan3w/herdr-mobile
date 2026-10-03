@@ -79,10 +79,14 @@ class TabInfo {
       [if (agent != null && agent != title) agent!, machineLabel].join(' · ');
 
   /// `working 12m`: the state and how long it has lasted, as far as it is
-  /// known. Null for a pane that is gone.
+  /// known. Null for a pane that is gone. A machine that is not online cannot
+  /// say what the pane is doing now (the snapshot is from the last time it
+  /// did), so the tab says `offline` instead of passing an old state off as
+  /// current.
   String? stateText(DateTime now) {
     final status = this.status;
     if (status == null) return null;
+    if (!live) return 'offline';
     final word = switch (status) {
       AgentStatus.blocked => 'needs you',
       AgentStatus.working => 'working',

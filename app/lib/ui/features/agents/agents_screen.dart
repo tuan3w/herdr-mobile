@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/fleet_repository.dart';
+import '../../../data/repositories/open_tabs.dart';
 import '../../core/approval_button.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
@@ -13,6 +14,8 @@ import '../../core/status_panel.dart';
 import '../../core/tokens.dart';
 import '../create/new_session_screen.dart';
 import '../machines/machine_form_screen.dart';
+import '../pane/pane_navigation.dart' show showPaneTabs;
+import '../pane/tab_strip.dart' show TabCountButton;
 import 'agent_card.dart';
 import 'agents_grouping.dart';
 import 'reply_sheet.dart';
@@ -159,6 +162,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             actions: [
+              const _OpenTabsAction(),
               CircleButton(
                 icon: cards ? LucideIcons.list : LucideIcons.layoutGrid,
                 tooltip: cards ? 'Compact list' : 'Cards with preview',
@@ -309,6 +313,30 @@ class _ConnectionStrip extends StatelessWidget {
             onPressed: t.machine.retry,
           ),
       },
+    );
+  }
+}
+
+/// The way back to the tabs left open: the browser's tab switcher, with the
+/// number of open tabs and a dot when a background one changed. Absent while
+/// no tab is open. Opening it shows the tab screen as it was left; no tab is
+/// opened, closed or re-ordered.
+class _OpenTabsAction extends StatelessWidget {
+  const _OpenTabsAction();
+
+  @override
+  Widget build(BuildContext context) {
+    final (count, attention) = context.select<OpenTabs, (int, bool)>(
+      (t) => (t.length, t.attentionCount > 0),
+    );
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: Gap.xs),
+      child: TabCountButton(
+        count: count,
+        attention: attention,
+        onTap: () => showPaneTabs(context),
+      ),
     );
   }
 }

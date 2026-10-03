@@ -158,14 +158,15 @@ class _Sample extends StatelessWidget {
   Widget build(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
     final tallest = _scaled(scaler, maxTerminalFontSize) * _lineHeight;
+    final palette = context.terminal;
     return ExcludeSemantics(
       child: SizedBox(
         height: tallest + 2 * Gap.md,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: TerminalColors.background,
+            color: palette.background,
             borderRadius: BorderRadius.circular(Radii.control),
-            border: Border.all(color: TerminalColors.border),
+            border: Border.all(color: palette.border),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: Gap.md),
@@ -182,7 +183,7 @@ class _Sample extends StatelessWidget {
                     fontFamily: monoFamily,
                     fontSize: _scaled(scaler, fontSize),
                     height: _lineHeight,
-                    color: TerminalColors.foreground,
+                    color: palette.foreground,
                     fontFeatures: const [FontFeature.disable('liga'), FontFeature.disable('calt')],
                   ),
                 ),

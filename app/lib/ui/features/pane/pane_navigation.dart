@@ -29,3 +29,27 @@ Future<void> openPaneTab(
     await navigator.push(route);
   }
 }
+
+/// Shows the tab screen with the tabs as they were left (the active one
+/// selected), from the board's tab button. Does nothing if it is already up or
+/// no tab is open.
+void showPaneTabs(BuildContext context) {
+  final tabs = context.read<OpenTabs>();
+  if (tabs.hostAttached || tabs.isEmpty) return;
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => const PaneHostScreen()),
+  );
+}
+
+/// Puts the tab screen back in front when the app starts where it was left,
+/// without the slide-in: it is meant to look like the app never closed.
+void resumePaneTabs(NavigatorState navigator) {
+  navigator.push(_InstantRoute(builder: (_) => const PaneHostScreen()));
+}
+
+class _InstantRoute extends MaterialPageRoute<void> {
+  _InstantRoute({required super.builder});
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+}

@@ -124,9 +124,13 @@ class _PaneViewState extends State<_PaneView> {
   late final PaneViewModel _vm = context.read<PaneViewModel>();
   bool _keysOpen = false;
 
+  /// A table wider than the view makes the terminal scroll sideways.
+  final _sideways = ValueNotifier(false);
+
   @override
   void dispose() {
     _input.dispose();
+    _sideways.dispose();
     super.dispose();
   }
 
@@ -181,11 +185,22 @@ class _PaneViewState extends State<_PaneView> {
         onToggleKeys: () => setState(() => _keysOpen = !_keysOpen),
         banner: _Banner(paneId: widget.paneId, onRetry: _retry),
         terminal: Builder(
-          builder: (context) => TabSwipeDetector(
-            enabled: widget.onSwipe != null &&
-                context.select<TerminalSettings, bool>((s) => s.wrap),
-            onSwipe: (delta) => widget.onSwipe?.call(delta),
-            child: _TerminalPanel(paneId: widget.paneId, onLinkTap: _openLink),
+          builder: (context) => ValueListenableBuilder<bool>(
+            valueListenable: _sideways,
+            // A table wider than the view scrolls it sideways: that swipe is
+            // the table's, not a step to the next tab.
+            builder: (context, sideways, child) => TabSwipeDetector(
+              enabled: widget.onSwipe != null &&
+                  !sideways &&
+                  context.select<TerminalSettings, bool>((s) => s.wrap),
+              onSwipe: (delta) => widget.onSwipe?.call(delta),
+              child: child!,
+            ),
+            child: _TerminalPanel(
+              paneId: widget.paneId,
+              onLinkTap: _openLink,
+              onSidewaysChanged: (value) => _sideways.value = value,
+            ),
           ),
         ),
         keys: _QuickKeys(
@@ -282,24 +297,30 @@ class _PaneLayout extends StatelessWidget {
 /// The terminal in its dark rounded panel. The outline is drawn over the
 /// content, so scrolling rows never paint across it.
 class _TerminalPanel extends StatelessWidget {
-  const _TerminalPanel({required this.paneId, required this.onLinkTap});
+  const _TerminalPanel({
+    required this.paneId,
+    required this.onLinkTap,
+    required this.onSidewaysChanged,
+  });
 
   final String paneId;
   final ValueChanged<TerminalLink> onLinkTap;
+  final ValueChanged<bool> onSidewaysChanged;
 
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(Radii.panel);
+    final palette = context.terminal;
     return DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(
         borderRadius: radius,
-        border: Border.all(color: TerminalColors.border),
+        border: Border.all(color: palette.border),
       ),
       child: ClipRRect(
         borderRadius: radius,
         child: ColoredBox(
-          color: TerminalColors.background,
+          color: palette.background,
           child: Builder(
             builder: (context) {
               final (fontSize, wrap) = context.select<TerminalSettings, (double, bool)>(
@@ -324,6 +345,7 @@ class _TerminalPanel extends StatelessWidget {
                     text: content.text,
                     top: content.top,
                     onLinkTap: onLinkTap,
+                    onSidewaysChanged: onSidewaysChanged,
                     onScrollChanged: (s) => vm.viewChanged(
                       nearTop: s.nearTop,
                       following: s.following,
@@ -336,7 +358,7 @@ class _TerminalPanel extends StatelessWidget {
                   if (closed)
                     IgnorePointer(
                       child: ColoredBox(
-                        color: TerminalColors.background.withValues(alpha: 0.6),
+                        color: palette.background.withValues(alpha: 0.6),
                       ),
                     ),
                 ],

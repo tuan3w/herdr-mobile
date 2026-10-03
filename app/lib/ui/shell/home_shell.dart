@@ -12,7 +12,14 @@ import '../features/settings/settings_screen.dart';
 /// The three root tabs with a floating tab bar over them. The tab bar gives its
 /// own selection haptic.
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.initialTab = 0, this.onTabChanged});
+
+  /// The tab shown at first, unless the OS restores another (0 Agents,
+  /// 1 Machines, 2 Settings): the one the app was left on.
+  final int initialTab;
+
+  /// Called with the tab the person switched to, to be remembered.
+  final ValueChanged<int>? onTabChanged;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -24,7 +31,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
   static const _settings = 2;
 
   // The tab survives the process being reclaimed.
-  final _tab = RestorableInt(_agents);
+  late final _tab = RestorableInt(widget.initialTab);
 
   // Settings is the quietest tab: built on first visit, then kept (with its
   // scroll position) like the others.
@@ -44,7 +51,10 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
     super.dispose();
   }
 
-  void _select(int i) => setState(() => _tab.value = i);
+  void _select(int i) {
+    setState(() => _tab.value = i);
+    widget.onTabChanged?.call(i);
+  }
 
   @override
   Widget build(BuildContext context) {

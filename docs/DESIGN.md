@@ -22,8 +22,8 @@ hairlines, status as shape, one accent used sparingly).
 6. **Press, don't ripple.** Feedback starts on pointer-down (after the scroll
    intent delay) and is a soft tint or a 0.92–0.98 scale. No ink splashes.
 7. **Motion is quiet.** Under 300 ms, `Motion.easeOut`, transform/opacity only,
-   interruptible, reduced-motion respected. Never a looping animation, with two
-   exceptions: `BusySpinner` and the working agent's stepped arc (below).
+   interruptible, reduced-motion respected. Never a looping animation, with one
+   exception: `BusySpinner` (below).
 8. **Icons are Lucide** (thin line, 1.5 px), not Material icons.
 9. **Everything is reachable.** Touch targets are at least 44 x 44 even where the
    painted shape is smaller; every control has one accessible name.
@@ -118,14 +118,14 @@ send. It is allowed only for work the user is actively waiting on (a button that
 is saving or testing, a send in flight) and must disappear when that work
 ends. It is never decoration and never part of a resting screen.
 
-### Working agent arc (the other one)
+### Working agent glyph (still)
 
-A working agent's `StatusGlyph` has an arc that hops 8 positions at 4 steps per
-second. It exists because "is it alive?" is the most useful thing on a board of
-many agents. It is cheap by construction: one shared `StepClock` that runs only
-while a working glyph is mounted and visible, stops when the app is
-backgrounded or animations are disabled, and repaints each glyph's own
-`RepaintBoundary` and nothing else. Every other status is static.
+A working agent's `StatusGlyph` is a half-filled ring: it says "working" by
+shape, like every other status. It used to turn in 8 steps at 4 a second; with
+a board of agents that was constant noise to look at and a timer plus a
+repaint per glyph to pay for in battery, so nothing animates now. `StepClock`
+remains only for the elapsed-time labels ("working 12m"), twice a minute, while
+they are visible.
 
 ## Touch targets
 
@@ -196,6 +196,32 @@ the first dark frame.
 `FloatingTabBar` shows the label of the selected tab only; the others are 48 x
 48 icon-only targets (their names stay in semantics), so three tabs fit 320 dp
 at 2x text. Tests find a tab with `FloatingTabBar.tabKey(label)`.
+
+### The terminal follows the theme
+
+A pane is drawn on paper in the light theme and on ink in the dark one
+(`TerminalPalette.light/dark`, `context.terminal`); Settings > Terminal > Dark
+terminal keeps it dark on paper. The ANSI parser always yields the dark
+`TerminalColors`; `TerminalPalette.recolor` turns a row's runs into the
+palette's when the row is prepared (the dark palette returns the run itself, so
+it costs nothing). On paper, the 16 ANSI colours are darker hues that reach
+4.5:1 on white, text with a background of its own and no colour picks the
+default that reads on it, and any text below 3.5:1 against its background is
+pulled toward black, so a TUI that chose pale greys for a dark screen stays
+readable.
+
+### Wrap keeps tables whole
+
+Wrap re-flows prose to the phone's width. A row of a table or a box (line
+characters, a markdown or ASCII table: `table_lines.dart`) is never cut, since
+cut in pieces it means nothing; when one is wider than the view, the view
+scrolls sideways for it and the tab swipe stands aside.
+
+### What survives a launch
+
+The theme and the root tab the app was left on, the terminal font and wrap,
+and the open pane tabs (their order, the active one, and whether the tab screen
+was in front: it is put back in front once, without the slide).
 
 ## Checking a screen
 

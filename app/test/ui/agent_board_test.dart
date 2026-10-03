@@ -84,20 +84,20 @@ void main() {
       await teardownBoard(tester, h);
     });
 
-    testWidgets('a done card keeps 2 rows, a working card 3', (tester) async {
+    testWidgets('a done card keeps 3 rows, a working card 5', (tester) async {
       final h = await BoardHarness.create([
         _machine('a', [_pane(1, 'working'), _pane(2, 'done')]),
       ]);
-      final lines = ['l1', 'l2', 'l3', 'l4', 'l5'];
+      final lines = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7'];
       h.previews.set('a/w1:p1', lines);
       h.previews.set('a/w1:p2', lines);
       await pumpBoard(tester, h, height: _tall);
 
-      int shown(String title) => ['l1', 'l2', 'l3', 'l4', 'l5']
+      int shown(String title) => lines
           .where((l) => find.descendant(of: _card(title), matching: find.text(l)).evaluate().isNotEmpty)
           .length;
-      expect(shown('task 1'), 3);
-      expect(shown('task 2'), 2);
+      expect(shown('task 1'), 5);
+      expect(shown('task 2'), 3);
       await teardownBoard(tester, h);
     });
 
@@ -464,7 +464,12 @@ void main() {
       await tester.drag(scroll, const Offset(0, -900));
       await tester.pump(const Duration(milliseconds: 400));
       final offset = tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels;
-      final visible = tester.widget<AgentCard>(find.byType(AgentCard).first).agent.title;
+      // A card clearly on screen (the first built one may be in the cache above).
+      final visible = tester
+          .widgetList<AgentCard>(find.byType(AgentCard))
+          .firstWhere((w) => tester.getRect(find.byWidget(w)).top >= 160)
+          .agent
+          .title;
       final card = tester.element(_card(visible));
 
       await h.changeStatuses(tester, 'a',
@@ -642,33 +647,29 @@ void main() {
   });
 
   group('the clock', () {
-    testWidgets('working agents tick only while the Agents tab is showing', (tester) async {
+    testWidgets('working agents do not animate; labels tick only while the Agents tab shows',
+        (tester) async {
       final h = await BoardHarness.create([_machine('a', [_pane(1, 'working'), _pane(2, 'working')])]);
       await pumpBoard(tester, h, height: _tall);
-      expect(StepClock.glyph.leases, greaterThanOrEqualTo(2));
-      expect(StepClock.glyph.running, isTrue);
+      // Only the minute labels hold the clock: no glyph does.
+      expect(StepClock.minute.leases, lessThanOrEqualTo(2));
 
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
       await settle(tester);
-      expect(StepClock.glyph.running, isFalse, reason: 'a hidden tab must not animate');
-      expect(StepClock.minute.running, isFalse);
+      expect(StepClock.minute.running, isFalse, reason: 'a hidden tab must not tick');
 
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Agents')));
       await settle(tester);
-      expect(StepClock.glyph.running, isTrue);
       await teardownBoard(tester, h);
-      expect(StepClock.glyph.leases, 0);
+      expect(StepClock.minute.leases, 0);
     });
 
-    testWidgets('a pane on top of the board stops it too', (tester) async {
+    testWidgets('a pane on top of the board stops the labels too', (tester) async {
       final h = await BoardHarness.create([_machine('a', [_pane(1, 'working')])]);
       await pumpBoard(tester, h, height: _tall);
       await tester.tap(find.text('task 1'));
       await settle(tester);
-      expect(StepClock.glyph.running, isTrue, reason: 'the pane tab shows its own working glyph');
-      await h.changeStatuses(tester, 'a', [_pane(1, 'idle')], title: _title);
-      await settle(tester);
-      expect(StepClock.glyph.running, isFalse, reason: 'nothing visible is working');
+      expect(StepClock.minute.running, isFalse, reason: 'the board is covered');
       await teardownBoard(tester, h);
     });
 
@@ -677,7 +678,6 @@ void main() {
       final h = await BoardHarness.create([_machine('a', [_pane(1, 'working')])]);
       h.previews.set('a/w1:p1', ['still readable']);
       await pumpBoard(tester, h, height: _tall, reduceMotion: true);
-      expect(StepClock.glyph.running, isFalse);
       expect(find.text('still readable'), findsOneWidget);
       await teardownBoard(tester, h);
     });

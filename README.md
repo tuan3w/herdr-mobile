@@ -47,7 +47,8 @@ widgets, then frames it; needs Pillow).
   rows, the time it has been in its state, and, when it is blocked on a prompt,
   one-tap answers taken from the prompt itself (`1. Yes`, `2. No`...). A
   "N need you" pill steps through the blocked agents; answer from a sheet
-  without leaving the board. Working agents have a slowly stepping arc.
+  without leaving the board. Previews end with what the agent said, not with
+  its input box and status bar. Nothing on the board animates.
 - **Browser-style tabs** in the pane screen: a strip of open agents, a dot on a
   background tab that needs you, and a tray with a preview card per tab. Each
   tab keeps its scroll and history; only the visible one reads.

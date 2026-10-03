@@ -109,7 +109,15 @@ class _PaneHostScreenState extends State<PaneHostScreen>
 
   @override
   void dispose() {
-    _tabs.hostAttached = false;
+    // Leaving in the foreground is the person going back; disposing while the
+    // app is paused or detaching is the app ending, and the next launch should
+    // find the tab screen open again.
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _tabs.detachHost(
+      leaving: lifecycle == null ||
+          lifecycle == AppLifecycleState.resumed ||
+          lifecycle == AppLifecycleState.inactive,
+    );
     _tabs.removeListener(_onTabs);
     _fleet.removeListener(_onFleet);
     _tray.dispose();

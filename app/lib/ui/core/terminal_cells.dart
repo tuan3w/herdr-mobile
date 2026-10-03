@@ -22,10 +22,6 @@ const _dimBlend = 0.62;
 /// them; the oldest are released first.
 const _cachedLines = 512;
 
-/// The colour of links in terminal output: the dark theme's accent text, as a
-/// pane is dark in both themes.
-final terminalLinkColor = Ds.ink.accentText;
-
 /// Geometry of the terminal's cell grid at one font size and pixel density.
 ///
 /// A cell is [advance] logical pixels wide (the measured monospace advance) and
@@ -37,11 +33,13 @@ final class CellMetrics {
     required this.fontSize,
     required this.advance,
     required this.dpr,
-  }) : rowPx = (fontSize * terminalLineHeightFactor * dpr).round();
+    TerminalPalette? palette,
+  }) : palette = palette ?? TerminalPalette.dark,
+       rowPx = (fontSize * terminalLineHeightFactor * dpr).round();
 
   /// Measures the monospace advance at [fontSize]. Does text layout, so keep
   /// the result around instead of measuring per frame.
-  factory CellMetrics.measure(double fontSize, double dpr) {
+  factory CellMetrics.measure(double fontSize, double dpr, {TerminalPalette? palette}) {
     const sample = 'MMMMMMMMMMMMMMMM';
     final painter = TextPainter(
       text: TextSpan(
@@ -57,10 +55,13 @@ final class CellMetrics {
     )..layout();
     final advance = painter.width / sample.length;
     painter.dispose();
-    return CellMetrics(fontSize: fontSize, advance: advance, dpr: dpr);
+    return CellMetrics(fontSize: fontSize, advance: advance, dpr: dpr, palette: palette);
   }
 
   final double fontSize;
+
+  /// The colours rows are drawn in (the theme's; see [TerminalPalette.recolor]).
+  final TerminalPalette palette;
 
   /// Logical pixels per column.
   final double advance;
@@ -89,7 +90,7 @@ final class CellMetrics {
     fontFamily: monoFamily,
     fontSize: fontSize,
     height: lineHeight / fontSize,
-    color: TerminalColors.foreground,
+    color: palette.foreground,
   );
 
   late final StrutStyle strut = StrutStyle(
@@ -123,25 +124,27 @@ final class CellMetrics {
       other is CellMetrics &&
       other.fontSize == fontSize &&
       other.advance == advance &&
-      other.dpr == dpr;
+      other.dpr == dpr &&
+      identical(other.palette, palette);
 
   @override
-  int get hashCode => Object.hash(fontSize, advance, dpr);
+  int get hashCode => Object.hash(fontSize, advance, dpr, palette);
 }
 
 /// The colour glyphs of [run] are drawn in: dim text is blended towards the
-/// background, otherwise the foreground (default when unset).
-Color runForeground(AnsiRun run) => run.dim
+/// background, otherwise the foreground (default when unset). [run] is already
+/// in [palette]'s colours.
+Color runForeground(AnsiRun run, TerminalPalette palette) => run.dim
     ? Color.lerp(
-        run.bg ?? TerminalColors.background,
-        run.fg ?? TerminalColors.foreground,
+        run.bg ?? palette.background,
+        run.fg ?? palette.foreground,
         _dimBlend,
       )!
-    : (run.fg ?? TerminalColors.foreground);
+    : (run.fg ?? palette.foreground);
 
 /// Text style of [run]. Backgrounds are not part of it (they are painted by
 /// [TerminalLinePainter] across the whole row height); null for plain text.
-TextStyle? runTextStyle(AnsiRun run) {
+TextStyle? runTextStyle(AnsiRun run, TerminalPalette palette) {
   final decoration = switch ((run.underline, run.strike)) {
     (true, true) => TextDecoration.combine(const [
         TextDecoration.underline,
@@ -159,7 +162,7 @@ TextStyle? runTextStyle(AnsiRun run) {
     return null;
   }
   return TextStyle(
-    color: run.dim ? runForeground(run) : run.fg,
+    color: run.dim ? runForeground(run, palette) : run.fg,
     fontWeight: run.bold ? FontWeight.w700 : null,
     fontStyle: run.italic ? FontStyle.italic : null,
     decoration: decoration,
@@ -193,8 +196,12 @@ String blankSprites(String text) {
 ///
 /// Owns a native [ui.Picture]; [dispose] releases it.
 final class TerminalLine {
-  TerminalLine(this.runs, this.metrics, {this.links = const []});
+  TerminalLine(List<AnsiRun> runs, this.metrics, {this.links = const []})
+    : runs = metrics.palette.isDark
+          ? runs
+          : [for (final run in runs) metrics.palette.recolor(run)];
 
+  /// The row's runs in the colours of [CellMetrics.palette].
   final List<AnsiRun> runs;
   final CellMetrics metrics;
 
@@ -205,7 +212,7 @@ final class TerminalLine {
     children: links.isEmpty
         ? [
             for (final run in runs)
-              TextSpan(text: blankSprites(run.text), style: runTextStyle(run)),
+              TextSpan(text: blankSprites(run.text), style: runTextStyle(run, metrics.palette)),
           ]
         : _linkSpans(),
   );
@@ -226,13 +233,13 @@ final class TerminalLine {
   }
 
   /// The runs cut at the edges of the links, the linked pieces in
-  /// [terminalLinkColor] unless the run already has a colour of its own.
+  /// the palette's link colour unless the run already has a colour of its own.
   List<TextSpan> _linkSpans() {
     final spans = <TextSpan>[];
     var column = 0;
     for (final run in runs) {
       final text = run.text;
-      final style = runTextStyle(run);
+      final style = runTextStyle(run, metrics.palette);
       var from = 0;
       var unit = 0;
       var linked = _linked(column);
@@ -265,12 +272,14 @@ final class TerminalLine {
   }
 
   /// The colour a link piece of [run] is drawn in: the run's own, else
-  /// [terminalLinkColor] (dimmed like any dim text).
-  Color _linkForeground(AnsiRun run) => run.fg != null
-      ? runForeground(run)
-      : run.dim
-          ? Color.lerp(run.bg ?? TerminalColors.background, terminalLinkColor, _dimBlend)!
-          : terminalLinkColor;
+  /// the palette's link colour (dimmed like any dim text).
+  Color _linkForeground(AnsiRun run) {
+    final palette = metrics.palette;
+    if (run.fg != null) return runForeground(run, palette);
+    return run.dim
+        ? Color.lerp(run.bg ?? palette.background, palette.link, _dimBlend)!
+        : palette.link;
+  }
 
   /// Underlines under the linked cells, in the colour of the text above.
   void _underlines(_Fills glyphs) {
@@ -342,7 +351,7 @@ final class TerminalLine {
       if (!sprites) {
         column += columnsOf(text);
       } else {
-        final color = runForeground(run);
+        final color = runForeground(run, metrics.palette);
         for (final rune in text.runes) {
           final width = cellWidth(rune);
           if (isBoxGlyph(rune)) {

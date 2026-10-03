@@ -6,21 +6,14 @@ import 'package:flutter/widgets.dart';
 /// only runs while at least one widget holds a lease, and it stops while the
 /// app is in the background.
 ///
-/// Two instances exist, both deliberately slow:
-/// - [glyph]: 4 steps per second, the turn of a working agent's arc. Discrete
-///   steps instead of a 60 fps animation: the painted area is a 20 px glyph in
-///   its own repaint boundary, so a step re-records a handful of draw calls and
-///   re-rasterises that glyph only.
-/// - [minute]: twice a minute, for "working 12m" labels.
+/// One instance is used, deliberately slow: [minute], twice a minute, for
+/// "working 12m" labels. (A faster one used to turn the working agent's arc;
+/// nothing animates any more.)
 ///
 /// Leases are taken with [StepClockLease] (a widget state mixin) so a widget
-/// only runs the clock while it is mounted, on screen and (for motion) not
-/// under reduced motion.
+/// only runs the clock while it is mounted and on screen.
 class StepClock {
   StepClock(this.period);
-
-  /// The arc of a working status glyph: at most 4 steps a second.
-  static final glyph = StepClock(const Duration(milliseconds: 250));
 
   /// Elapsed-time labels: minute resolution, polled twice a minute.
   static final minute = StepClock(const Duration(seconds: 30));

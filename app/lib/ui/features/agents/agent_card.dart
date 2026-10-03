@@ -23,8 +23,8 @@ import 'reply_sheet.dart';
 /// agent gets the most (the stream is the signal), a finished one shows how it
 /// ended, an idle one shows nothing: a prompt box and a status bar are noise.
 int previewRowCount(AgentStatus status) => switch (status) {
-      AgentStatus.working || AgentStatus.blocked => 3,
-      AgentStatus.done => 2,
+      AgentStatus.working || AgentStatus.blocked => 5,
+      AgentStatus.done => 3,
       AgentStatus.idle || AgentStatus.unknown => 0,
     };
 
@@ -263,7 +263,7 @@ class _Header extends StatelessWidget {
         SizedBox(
           width: 22,
           height: math.max(titleLine, 22),
-          child: Center(child: StatusGlyph(status: agent.status, size: 22, animate: !agent.stale)),
+          child: Center(child: StatusGlyph(status: agent.status, size: 22)),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -495,7 +495,7 @@ class AgentCompactRow extends StatelessWidget {
     final ds = context.ds;
     return ListRow(
       // Staleness dims the whole row once; the glyph is not dimmed again.
-      leading: StatusGlyph(status: agent.status, size: 20, animate: !agent.stale),
+      leading: StatusGlyph(status: agent.status, size: 20),
       title: agent.title,
       subtitle: agent.subtitle,
       titleMaxLines: 2,

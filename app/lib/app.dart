@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +19,7 @@ import 'data/services/snapshot_cache.dart';
 import 'data/services/transport_factory.dart';
 import 'ui/core/theme.dart';
 import 'ui/features/machines/machine_form_view_model.dart' show TransportFactory;
+import 'ui/features/pane/pane_navigation.dart' show resumePaneTabs;
 import 'ui/shell/home_shell.dart';
 
 class HerdrMobileApp extends StatefulWidget {
@@ -28,6 +31,7 @@ class HerdrMobileApp extends StatefulWidget {
     required this.terminalSettings,
     required this.newSessionSettings,
     required this.appSettings,
+    required this.openTabs,
     this.connect,
   });
 
@@ -39,6 +43,10 @@ class HerdrMobileApp extends StatefulWidget {
 
   /// Already loaded, so the first frame is in the chosen theme.
   final AppSettings appSettings;
+
+  /// The agents opened as tabs in the pane screen; already loaded, so the tabs
+  /// of the last launch are back.
+  final OpenTabs openTabs;
 
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
@@ -59,8 +67,16 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
   late final PanePreviews _previews =
       PanePreviews(changes: _fleet, connection: _fleet.connection);
 
-  /// The agents opened as tabs in the pane screen.
-  final OpenTabs _openTabs = OpenTabs();
+  /// Built once: the shell remembers its own tab, and a theme change must not
+  /// hand it a new widget. It puts the tab screen back in front when the app
+  /// was left there (see [_ResumeTabs]).
+  late final Widget _home = _ResumeTabs(
+    openTabs: widget.openTabs,
+    child: HomeShell(
+      initialTab: widget.appSettings.homeTab,
+      onTabChanged: (tab) => unawaited(widget.appSettings.setHomeTab(tab)),
+    ),
+  );
 
   MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) {
     // The transport reports login banners; they belong to the connection it
@@ -97,7 +113,6 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _previews.dispose();
-    _openTabs.dispose();
     _fleet.dispose();
     super.dispose();
   }
@@ -110,7 +125,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           ChangeNotifierProvider.value(value: widget.terminalSettings),
           ChangeNotifierProvider.value(value: widget.newSessionSettings),
           ChangeNotifierProvider.value(value: widget.appSettings),
-          ChangeNotifierProvider.value(value: _openTabs),
+          ChangeNotifierProvider.value(value: widget.openTabs),
           Provider<PanePreviews>.value(value: _previews),
           Provider<TransportFactory>.value(value: createSshTransport),
         ],
@@ -119,7 +134,9 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           builder: (context, _) => MaterialApp(
             title: 'herdr',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.light(),
+            theme: AppTheme.light(
+              terminal: widget.appSettings.darkTerminal ? TerminalPalette.dark : null,
+            ),
             darkTheme: AppTheme.dark(),
             themeMode: themeModeOf(widget.appSettings.theme),
             // A switch is instant: a cross-fade would lerp ThemeData on every
@@ -139,7 +156,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
                   // (landscape 3-button bar, camera cutout).
                   child: SafeArea(top: false, bottom: false, child: child!),
                 ),
-            home: const HomeShell(),
+            home: _home,
           ),
         ),
       );
@@ -151,3 +168,33 @@ ThemeMode themeModeOf(ThemeChoice choice) => switch (choice) {
       ThemeChoice.dark => ThemeMode.dark,
       ThemeChoice.system => ThemeMode.system,
     };
+
+/// Puts the tab screen back in front, once, when the app was left on it. It
+/// lives inside the home route because the navigator does not exist on the
+/// first frame (state restoration holds the app's children back until the
+/// platform answers), so a callback registered by the app itself finds no
+/// navigator to push onto.
+class _ResumeTabs extends StatefulWidget {
+  const _ResumeTabs({required this.openTabs, required this.child});
+
+  final OpenTabs openTabs;
+  final Widget child;
+
+  @override
+  State<_ResumeTabs> createState() => _ResumeTabsState();
+}
+
+class _ResumeTabsState extends State<_ResumeTabs> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openTabs.takeResume()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) resumePaneTabs(Navigator.of(context));
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}

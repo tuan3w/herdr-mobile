@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/herdr_models.dart';
 
@@ -25,8 +29,77 @@ class TabRef {
   String toString() => 'TabRef($key)';
 }
 
+/// What is kept of the open tabs between launches: which panes, in which
+/// order, which one was showing, and whether the tab screen was in front.
+@immutable
+class SavedTabs {
+  const SavedTabs({required this.tabs, this.active, this.hostOpen = false});
+
+  final List<TabRef> tabs;
+  final String? active;
+  final bool hostOpen;
+
+  String encode() => jsonEncode({
+    'v': 1,
+    'tabs': [
+      for (final t in tabs) [t.machineId, t.paneId],
+    ],
+    'active': active,
+    'host': hostOpen,
+  });
+
+  /// Null for anything that is not what [encode] writes.
+  static SavedTabs? decode(String? source) {
+    if (source == null) return null;
+    try {
+      final json = jsonDecode(source);
+      if (json is! Map || json['v'] != 1) return null;
+      final tabs = <TabRef>[];
+      for (final entry in json['tabs'] as List) {
+        if (entry is! List || entry.length != 2) continue;
+        final machine = entry[0];
+        final pane = entry[1];
+        if (machine is String && pane is String && machine.isNotEmpty && pane.isNotEmpty) {
+          tabs.add(TabRef(machine, pane));
+        }
+      }
+      final active = json['active'];
+      return SavedTabs(
+        tabs: tabs,
+        active: active is String ? active : null,
+        hostOpen: json['host'] == true,
+      );
+    } on Object {
+      return null;
+    }
+  }
+}
+
+/// Where [OpenTabs] are kept between launches.
+abstract interface class OpenTabsStore {
+  Future<SavedTabs?> read();
+
+  Future<void> write(SavedTabs tabs);
+}
+
+class PrefsOpenTabsStore implements OpenTabsStore {
+  static const _key = 'openTabs.v1';
+
+  @override
+  Future<SavedTabs?> read() async =>
+      SavedTabs.decode((await SharedPreferences.getInstance()).getString(_key));
+
+  @override
+  Future<void> write(SavedTabs tabs) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, tabs.encode());
+  }
+}
+
 /// The agents the user has open as browser-style tabs: one list, one active
-/// tab, in memory only.
+/// tab. With a store they are kept between launches (the panes, their order,
+/// the active one and whether the tab screen was open); [load] brings them
+/// back before the app starts.
 ///
 /// The order is stable while the tab screen is in front: a new tab goes right
 /// after the active one and switching never re-sorts. It is sorted by recency
@@ -35,7 +108,11 @@ class TabRef {
 ///
 /// Closing a tab forgets it here; it never touches the agent.
 class OpenTabs extends ChangeNotifier {
-  OpenTabs({this.maxTabs = 12});
+  OpenTabs({this.maxTabs = 12, this._store});
+
+  final OpenTabsStore? _store;
+  bool _loaded = false;
+  String? _saved;
 
   /// Open tabs beyond this evict the least recently used one (never the
   /// active tab).
@@ -53,8 +130,95 @@ class OpenTabs extends ChangeNotifier {
   final Set<String> _attention = {};
 
   /// A tab screen is on the navigator: opening another tab only switches.
-  /// Set by the screen itself; not a notification.
-  bool hostAttached = false;
+  /// Set by the screen itself; not a notification, but it is saved.
+  bool get hostAttached => _hostAttached;
+  bool _hostAttached = false;
+  set hostAttached(bool value) {
+    if (_hostAttached == value) return;
+    _hostAttached = value;
+    _persist();
+  }
+
+  /// The tab screen went away. With [leaving] the person left it, and the
+  /// tabs are saved as "not open"; without, the app itself is being torn down
+  /// (swiped away, process ending), and what is saved stays "it was open", so
+  /// the next launch puts it back.
+  void detachHost({required bool leaving}) {
+    if (!_hostAttached) return;
+    _hostAttached = false;
+    if (leaving) _persist();
+  }
+
+  /// The tab screen was open when the app was last left: the app puts it back
+  /// in front once. Set by [load]; [takeResume] reads and clears it.
+  bool _resume = false;
+
+  bool takeResume() {
+    final resume = _resume;
+    _resume = false;
+    return resume;
+  }
+
+  /// Brings back the saved tabs. Call once, before the first frame. A store
+  /// that cannot be read, or holds something else, leaves no tabs.
+  Future<void> load() async {
+    final store = _store;
+    if (store == null || _loaded) return;
+    SavedTabs? saved;
+    try {
+      saved = await store.read();
+    } on Object {
+      saved = null;
+    }
+    _loaded = true;
+    if (saved == null) return;
+    for (final ref in saved.tabs) {
+      if (_tabs.length < maxTabs && !contains(ref.key)) _tabs.add(ref);
+    }
+    // Recency follows the saved order, so the first screen entry (which sorts
+    // by recency) keeps it.
+    for (var i = 0; i < _tabs.length; i++) {
+      _used[_tabs[i].key] = _tabs.length - i;
+    }
+    _clock = _tabs.length;
+    final active = saved.active;
+    if (active != null && contains(active)) {
+      _activeKey = active;
+    } else if (_tabs.isNotEmpty) {
+      _activeKey = _tabs.first.key;
+    }
+    _resume = saved.hostOpen && _tabs.isNotEmpty;
+    _saved = _snapshot().encode();
+  }
+
+  SavedTabs _snapshot() =>
+      SavedTabs(tabs: List.of(_tabs), active: _activeKey, hostOpen: _hostAttached);
+
+  void _persist() {
+    final store = _store;
+    if (store == null || !_loaded) return;
+    final snapshot = _snapshot();
+    final encoded = snapshot.encode();
+    if (encoded == _saved) return;
+    _saved = encoded;
+    unawaited(_write(store, snapshot));
+  }
+
+  // A phone that cannot write its preferences still shows its tabs.
+  Future<void> _write(OpenTabsStore store, SavedTabs snapshot) async {
+    try {
+      await store.write(snapshot);
+    } on Object {
+      // Kept in memory; the next change tries again.
+      _saved = null;
+    }
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    _persist();
+  }
 
   List<TabRef> get tabs => List.unmodifiable(_tabs);
   int get length => _tabs.length;
