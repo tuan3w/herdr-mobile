@@ -147,7 +147,10 @@ typedef DocShift = ({int dropped, int prepended});
 /// list keyed by id keeps the row (and the paragraph laid out in it) while its
 /// index moves.
 final class TerminalDocument {
-  var _lines = const <DocLine>[];
+  // Mutated in place by [update]: a pane that has been open for a while holds
+  // thousands of lines, and a fresh list per read (plus a copy of the source)
+  // was most of what an update cost at that depth.
+  final _lines = <DocLine>[];
   var _columns = 0;
   var _tableColumns = 0;
   var _base = 0;
@@ -179,30 +182,52 @@ final class TerminalDocument {
     // The text after the last line feed is a line only if it shows something.
     final unterminated = window.isNotEmpty && !text.endsWith('\n');
     final windowStart = history.length;
-    final source = <String>[...history, ...window];
-    final old = _lines;
-    final shift = _shiftOf(old, source);
+    final total = windowStart + window.length;
+    String at(int i) => i < windowStart ? history[i] : window[i - windowStart];
+
+    final oldLength = _lines.length;
+    final shift = _shiftOf(_lines, at, total);
     final offset = shift ?? 0;
 
-    final lines = <DocLine>[];
+    // Line a of the old content is candidate [a - offset] for the new line
+    // of the same index once the list is moved by [offset]: rows that left
+    // the top are cut off, rows inserted above are made room for (placeholders
+    // that are always replaced).
+    final lines = _lines;
+    var inserted = 0;
+    if (offset > 0) {
+      lines.removeRange(0, offset);
+    } else if (offset < 0 && lines.isNotEmpty) {
+      inserted = -offset;
+      lines.insertAll(0, List<DocLine>.filled(inserted, lines.first));
+    }
+
     var state = AnsiState.initial;
-    for (var i = 0; i < source.length; i++) {
-      final raw = source[i];
+    var end = total;
+    for (var i = 0; i < total; i++) {
+      final raw = at(i);
       final start = (i == 0 || i == windowStart) ? AnsiState.initial : state;
-      final o = i + offset;
-      DocLine? line;
-      if (o >= 0 && o < old.length) {
-        final candidate = old[o];
-        if ((identical(candidate.src, raw) || candidate.src == raw) &&
-            (identical(candidate.start, start) || candidate.start == start)) {
-          line = candidate;
+      final candidate = i >= inserted && i < lines.length ? lines[i] : null;
+      DocLine line;
+      if (candidate != null &&
+          (identical(candidate.src, raw) || candidate.src == raw) &&
+          (identical(candidate.start, start) || candidate.start == start)) {
+        line = candidate;
+      } else {
+        line = DocLine._(raw, start, parseAnsiLine(raw, start));
+        if (i < lines.length) {
+          lines[i] = line;
+        } else {
+          lines.add(line);
         }
       }
-      line ??= DocLine._(raw, start, parseAnsiLine(raw, start));
       state = line.end;
-      if (unterminated && i == source.length - 1 && !line.hasText) break;
-      lines.add(line);
+      if (unterminated && i == total - 1 && !line.hasText) {
+        end = i;
+        break;
+      }
     }
+    if (lines.length > end) lines.removeRange(end, lines.length);
 
     var columns = 0;
     var tableColumns = 0;
@@ -210,33 +235,33 @@ final class TerminalDocument {
       if (line.columns > columns) columns = line.columns;
       if (line.columns > tableColumns && line.tabular) tableColumns = line.columns;
     }
-    _lines = lines;
     _columns = columns;
     _tableColumns = tableColumns;
     if (shift == null) {
-      _base += old.length;
+      _base += oldLength;
       return (dropped: 0, prepended: 0);
     }
     _base += shift;
     return (dropped: math.max(shift, 0), prepended: math.max(-shift, 0));
   }
 
-  /// Where the start of [source] sits in [old]: how many lines left the top
-  /// (a positive number), or minus how many were inserted above (negative).
-  /// Null when the first lines of one do not appear in the other.
-  static int? _shiftOf(List<DocLine> old, List<String> source) {
-    if (old.isEmpty || source.isEmpty) return null;
-    final m = math.min(_anchorLines, math.min(old.length, source.length));
+  /// Where the start of the new content (lines `at(0)` … `at(total - 1)`) sits
+  /// in [old]: how many lines left the top (a positive number), or minus how
+  /// many were inserted above (negative). Null when the first lines of one do
+  /// not appear in the other.
+  static int? _shiftOf(List<DocLine> old, String Function(int) at, int total) {
+    if (old.isEmpty || total == 0) return null;
+    final m = math.min(_anchorLines, math.min(old.length, total));
     for (var k = 0; k + m <= old.length; k++) {
       var j = 0;
-      while (j < m && old[k + j].src == source[j]) {
+      while (j < m && old[k + j].src == at(j)) {
         j++;
       }
       if (j == m) return k;
     }
-    for (var p = 1; p + m <= source.length; p++) {
+    for (var p = 1; p + m <= total; p++) {
       var j = 0;
-      while (j < m && source[p + j] == old[j].src) {
+      while (j < m && at(p + j) == old[j].src) {
         j++;
       }
       if (j == m) return -p;
