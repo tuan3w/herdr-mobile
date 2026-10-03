@@ -63,6 +63,9 @@ check which one loads before relying on it.
   is the Android versionCode: it must only increase and stay above 4002 (the
   highest code the old per-ABI APKs used), or Android refuses the update as a
   downgrade ("App not installed").
+- **Version line is fixed at 0.4.x.** Ship changes as patch bumps only
+  (0.4.1, 0.4.2, ...): never bump the minor or major (no 0.5.0, 1.0.0)
+  unless the owner says so. Each release still increments `+N` by one.
 - **UI-thread budget.** The pane must stay smooth while an agent streams ~140 KB
   per refresh. Network, crypto and JSON decoding belong in the transport
   isolate (`IsolateTransport`, created only through `createSshTransport`);
