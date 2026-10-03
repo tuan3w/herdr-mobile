@@ -36,9 +36,9 @@ connection, backoff and reconnect; one machine failing never affects another.
 
 ## Install (Android)
 
-Download the APK for your device from the repo's *Releases* page
-(`arm64-v8a` for almost every modern phone), allow installs from unknown
-sources, and open it. Verify the download against `SHA256SUMS`.
+Download `herdr-mobile-<version>.apk` from the repo's *Releases* page, allow
+installs from unknown sources, and open it. One file covers every Android 7.0+
+phone (32-bit and 64-bit ARM). Verify the download against `SHA256SUMS`.
 
 ## Performance
 
@@ -116,7 +116,7 @@ git clone https://github.com/emilkowalski/skills
 ```bash
 export ANDROID_HOME=/path/to/android-sdk   # platforms;android-36, build-tools;36.0.0
 cd app
-flutter build apk --release --split-per-abi
+flutter build apk --release --target-platform android-arm,android-arm64
 ```
 
 Release signing reads `app/android/key.properties` (git-ignored):

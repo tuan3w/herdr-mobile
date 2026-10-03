@@ -55,6 +55,14 @@ check which one loads before relying on it.
   quoted; there are tests for injection.
 - Event handling is a **throttle**, not a debounce — busy agents emit events
   continuously (see `machine_connection_test.dart`).
+- Every `events.subscribe` entry must be valid without parameters: herdr
+  rejects the WHOLE subscription if one is invalid (`pane.agent_status_changed`
+  needs a `pane_id`), which makes the connection flap. `herdr_api_test.dart`
+  checks the list against the schema.
+- Releases ship ONE universal ARM APK. The `+N` build number in `pubspec.yaml`
+  is the Android versionCode: it must only increase and stay above 4002 (the
+  highest code the old per-ABI APKs used), or Android refuses the update as a
+  downgrade ("App not installed").
 - Reference clients in `third_party/` (herdr-remote, herdrup) and herdr source
   (`third_party/herdr`) are read-only references, not build inputs.
 - Protocol facts: `docs/herdr-api.schema.json` (`herdr api schema`).

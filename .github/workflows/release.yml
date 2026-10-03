@@ -80,13 +80,13 @@ jobs:
       - name: Build APKs
         if: steps.sign.outputs.enabled == 'true'
         working-directory: app
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --target-platform android-arm,android-arm64
 
       - name: Verify signature is not the debug key
         if: steps.sign.outputs.enabled == 'true'
         run: |
           apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
-          "$apksigner" verify --print-certs app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+          "$apksigner" verify --print-certs app/build/app/outputs/flutter-apk/app-release.apk \
             | tee /tmp/cert.txt
           ! grep -qi "Android Debug" /tmp/cert.txt
 
@@ -95,9 +95,7 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           mkdir dist
-          for abi in arm64-v8a armeabi-v7a x86_64; do
-            cp "app/build/app/outputs/flutter-apk/app-$abi-release.apk" "dist/herdr-mobile-$v-$abi.apk"
-          done
+          cp app/build/app/outputs/flutter-apk/app-release.apk "dist/herdr-mobile-$v.apk"
           (cd dist && sha256sum *.apk > SHA256SUMS)
 
       - name: Publish release
