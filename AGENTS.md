@@ -134,6 +134,17 @@ check which one loads before relying on it.
   the active one and whether the tab screen was open (`OpenTabs` with
   `PrefsOpenTabsStore`, loaded in `main()`; the app puts the tab screen back
   in front once). Load such state before `runApp`.
+- **Keyboard animation = one relayout per frame, no rebuilds.** The host
+  `Scaffold` resizes the pane every frame of the IME animation. Nothing under
+  it may rebuild for a height change: `TerminalView` hands its `LayoutBuilder`
+  the same cached body unless the width or row env changed (test in
+  `terminal_view_test.dart`). Never read `box.maxHeight` in that builder, and
+  never make the pane depend on `viewInsets` (`CompactScope` is the one
+  exception and only notifies when its answer flips). `chat_bottom_container`
+  was evaluated and not adopted: it swaps the keyboard with a custom panel
+  (fixed placeholder height, remembered IME height); its Android half is a
+  closed, obfuscated jitpack AAR that only reports the final IME height. It does
+  nothing for plain keyboard open/close, which is what costs us.
 - **Scrollback is capped by herdr, not by us.** `pane.read` clamps `lines` to
   1000 rows server-side (measured on 0.8.2; `lines.min(1000)` in source) even
   when the pane holds thousands, and the read runs on herdr's main loop (~5 ms,
