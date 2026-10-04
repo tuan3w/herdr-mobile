@@ -300,7 +300,9 @@ Future<void> _deepScenario(
   // Jump a long way in one go (a scrollbar-style drag to the far end and
   // back): the frame that lands somewhere never seen.
   final jumps = <double>[];
-  for (var j = 0; j < 4; j++) {
+  // Enough jumps for a median that is not decided by a few frames (a run of
+  // four was swayed by when the JIT happened to tier up).
+  for (var j = 0; j < 24; j++) {
     final gesture = await tester.startGesture(const Offset(200, 300));
     // Many pointer moves, then one frame: the scroll position has already
     // moved when the frame lays out, as when the finger outruns the display.
