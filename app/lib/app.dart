@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'data/models/machine_profile.dart';
 import 'data/repositories/app_settings.dart';
 import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/machine_connection.dart';
@@ -21,31 +22,6 @@ import 'ui/features/machines/machine_form_view_model.dart' show TransportFactory
 import 'ui/features/pane/pane_navigation.dart' show resumePaneTabs;
 import 'ui/shell/home_shell.dart';
 
-/// How the app opens a connection to a saved machine: over SSH, with the
-/// credentials read from the keychain only when the transport starts.
-ConnectionFactory sshConnectionFactory({
-  required MachineRepository machines,
-  required SnapshotCache snapshotCache,
-}) =>
-    (profile, secrets) {
-      // The transport reports login banners; they belong to the connection it
-      // serves, which only exists once the transport has been built.
-      late final MachineConnection connection;
-      connection = MachineConnection(
-        profile: profile,
-        cache: snapshotCache,
-        api: HerdrApi(
-          createSshTransportLater(
-            profile,
-            secrets,
-            (fp) => machines.pinHostKey(profile.id, fp),
-            (banner) => connection.onAuthNotice(banner),
-          ),
-        ),
-      );
-      return connection;
-    };
-
 class HerdrMobileApp extends StatefulWidget {
   const HerdrMobileApp({
     super.key,
@@ -57,7 +33,6 @@ class HerdrMobileApp extends StatefulWidget {
     required this.appSettings,
     required this.openTabs,
     this.connect,
-    this.fleet,
   });
 
   final MachineRepository machines;
@@ -76,27 +51,17 @@ class HerdrMobileApp extends StatefulWidget {
   /// Overrides how connections are built (tests); defaults to SSH.
   final ConnectionFactory? connect;
 
-  /// A fleet that was built earlier (see `bootApp`), so its connections were
-  /// already on their way before the first frame. The app takes it over and
-  /// disposes it; built here, from [machines] and [network], when null.
-  final FleetRepository? fleet;
-
   @override
   State<HerdrMobileApp> createState() => _HerdrMobileAppState();
 }
 
 class _HerdrMobileAppState extends State<HerdrMobileApp>
     with WidgetsBindingObserver {
-  late final FleetRepository _fleet = widget.fleet ??
-      FleetRepository(
-        machines: widget.machines,
-        connect: widget.connect ??
-            sshConnectionFactory(
-              machines: widget.machines,
-              snapshotCache: widget.snapshotCache,
-            ),
-        network: widget.network,
-      );
+  late final FleetRepository _fleet = FleetRepository(
+    machines: widget.machines,
+    connect: widget.connect ?? _sshConnection,
+    network: widget.network,
+  );
 
   /// Live terminal previews for the agent cards and pane tabs on screen.
   late final PanePreviews _previews =
@@ -112,6 +77,28 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
       onTabChanged: (tab) => unawaited(widget.appSettings.setHomeTab(tab)),
     ),
   );
+
+  MachineConnection _sshConnection(
+    MachineProfile profile,
+    Future<MachineSecrets> Function() secrets,
+  ) {
+    // The transport reports login banners; they belong to the connection it
+    // serves, which only exists once the transport has been built.
+    late final MachineConnection connection;
+    connection = MachineConnection(
+      profile: profile,
+      cache: widget.snapshotCache,
+      api: HerdrApi(
+        createSshTransportLater(
+          profile,
+          secrets,
+          (fp) => widget.machines.pinHostKey(profile.id, fp),
+          (banner) => connection.onAuthNotice(banner),
+        ),
+      ),
+    );
+    return connection;
+  }
 
   @override
   void initState() {

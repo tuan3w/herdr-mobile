@@ -1,6 +1,6 @@
 import 'app.dart';
 import 'data/repositories/app_settings.dart';
-import 'data/repositories/fleet_repository.dart';
+import 'data/repositories/fleet_repository.dart' show ConnectionFactory;
 import 'data/repositories/machine_repository.dart';
 import 'data/repositories/new_session_settings.dart';
 import 'data/repositories/open_tabs.dart';
@@ -35,21 +35,10 @@ Future<HerdrMobileApp> bootApp({
   // The tabs of the last launch, before the first frame.
   final openTabs = OpenTabs(store: PrefsOpenTabsStore());
   await openTabs.load();
-  final monitor = network ?? ConnectivityNetworkMonitor();
-  final cache = snapshotCache ?? PrefsSnapshotCache();
-  // The connections are made now, not when the first frame builds the app:
-  // each one starts reading its cached snapshot and its transport starts
-  // (worker isolate, SSH handshake) while that frame is being built.
-  final fleet = FleetRepository(
-    machines: machines,
-    connect: connect ?? sshConnectionFactory(machines: machines, snapshotCache: cache),
-    network: monitor,
-  );
   return HerdrMobileApp(
-    fleet: fleet,
     machines: machines,
-    network: monitor,
-    snapshotCache: cache,
+    network: network ?? ConnectivityNetworkMonitor(),
+    snapshotCache: snapshotCache ?? PrefsSnapshotCache(),
     terminalSettings: terminalSettings,
     newSessionSettings: newSessionSettings,
     appSettings: appSettings,
