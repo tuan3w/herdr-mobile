@@ -152,7 +152,10 @@ final class TerminalDocument {
   // was most of what an update cost at that depth.
   final _lines = <DocLine>[];
   var _columns = 0;
+  // Computed on first use after an update: only wrapping reads it, and
+  // working it out asks every line whether it is a table row.
   var _tableColumns = 0;
+  var _tableColumnsStale = false;
   var _base = 0;
 
   List<DocLine> get lines => _lines;
@@ -161,7 +164,17 @@ final class TerminalDocument {
   int get columns => _columns;
 
   /// Width of the widest table or box row in cells: what wrapping leaves whole.
-  int get tableColumns => _tableColumns;
+  int get tableColumns {
+    if (_tableColumnsStale) {
+      var widest = 0;
+      for (final line in _lines) {
+        if (line.columns > widest && line.tabular) widest = line.columns;
+      }
+      _tableColumns = widest;
+      _tableColumnsStale = false;
+    }
+    return _tableColumns;
+  }
 
   /// Id of the first line.
   int get base => _base;
@@ -230,13 +243,11 @@ final class TerminalDocument {
     if (lines.length > end) lines.removeRange(end, lines.length);
 
     var columns = 0;
-    var tableColumns = 0;
     for (final line in lines) {
       if (line.columns > columns) columns = line.columns;
-      if (line.columns > tableColumns && line.tabular) tableColumns = line.columns;
     }
     _columns = columns;
-    _tableColumns = tableColumns;
+    _tableColumnsStale = true;
     if (shift == null) {
       _base += oldLength;
       return (dropped: 0, prepended: 0);

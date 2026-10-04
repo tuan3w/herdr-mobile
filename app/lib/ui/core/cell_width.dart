@@ -17,8 +17,23 @@ int cellWidth(int rune) {
 /// Cells taken by [text] (wide glyphs count as two, combining marks as none).
 int columnsOf(String text) {
   var columns = 0;
-  for (final r in text.runes) {
-    columns += r < 0x300 ? 1 : cellWidth(r);
+  final n = text.length;
+  for (var i = 0; i < n; i++) {
+    var unit = text.codeUnitAt(i);
+    if (unit < 0x300) {
+      columns++;
+      continue;
+    }
+    // A surrogate pair is one code point; a lone surrogate counts as itself,
+    // as `String.runes` does.
+    if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < n) {
+      final next = text.codeUnitAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        unit = 0x10000 + ((unit - 0xd800) << 10) + (next - 0xdc00);
+        i++;
+      }
+    }
+    columns += cellWidth(unit);
   }
   return columns;
 }

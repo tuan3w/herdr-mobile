@@ -352,10 +352,14 @@ final class _Parser {
     return n;
   }
 
+  // Reused by every SGR sequence of the line (a coloured line has dozens).
+  final _values = <int>[];
+  // Whether _values[i] was separated from _values[i - 1] by ':' (sub-parameter).
+  final _isSub = <bool>[];
+
   void _sgr(int from, int to) {
-    final values = <int>[];
-    // Whether values[i] was separated from values[i - 1] by ':' (sub-parameter).
-    final isSub = <bool>[];
+    final values = _values..clear();
+    final isSub = _isSub..clear();
     var value = -1;
     var sub = false;
     for (var i = from; i < to; i++) {

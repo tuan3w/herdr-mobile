@@ -14,7 +14,12 @@ bool isTableRow(String text) {
   var bars = 0;
   var corner = false;
   var rule = false;
-  for (final rune in t.runes) {
+  // Every character that counts lives in the box-drawing block (U+2500 to
+  // U+2570, all one UTF-16 unit), so anything else is skipped without a set
+  // lookup: most lines of ordinary output contain none.
+  for (var i = 0; i < t.length; i++) {
+    final rune = t.codeUnitAt(i);
+    if (rune < 0x2500 || rune > 0x2570) continue;
     if (rune == 0x2502 || rune == 0x2503 || rune == 0x2551) {
       bars++;
     } else if (rune == 0x2500 || rune == 0x2501 || rune == 0x2550) {
