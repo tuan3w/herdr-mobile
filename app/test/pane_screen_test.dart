@@ -20,6 +20,7 @@ import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_host_screen.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_navigation.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
+import 'package:herdr_mobile/ui/features/pane/quick_keys.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
@@ -463,16 +464,74 @@ void main() {
     });
   });
 
+  group('slash palette', () {
+    testWidgets('a slash lists the agent commands, and a tap fills the composer', (tester) async {
+      await pumpPane(tester);
+
+      await tester.enterText(composer(), '/co');
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('/compact'), findsOneWidget);
+      expect(find.text('/context'), findsOneWidget);
+      expect(find.text('/exit'), findsNothing, reason: 'does not match "co"');
+
+      await tester.tap(find.text('/compact'));
+      await tester.pump();
+
+      final field = tester.widget<TextField>(composer()).controller!;
+      expect(field.text, '/compact ');
+      expect(field.selection, const TextSelection.collapsed(offset: 9));
+      expect(find.text('/context'), findsNothing, reason: 'chosen: the palette goes');
+      expect(transport.sent, isEmpty, reason: 'filling is not sending');
+      await teardown(tester);
+    });
+
+    testWidgets('plain text and a slash after the first word show nothing', (tester) async {
+      await pumpPane(tester);
+
+      await tester.enterText(composer(), 'hello');
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('/compact'), findsNothing);
+
+      await tester.enterText(composer(), 'explain /co');
+      await tester.pump();
+      expect(find.text('/compact'), findsNothing);
+      await teardown(tester);
+    });
+
+    testWidgets('the slash key brings the palette up', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      await tester.scrollUntilVisible(
+        find.text('/'),
+        100,
+        scrollable: find.descendant(of: find.byType(QuickKeys), matching: find.byType(Scrollable)),
+      );
+      await tester.tap(find.text('/'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('/compact'), findsOneWidget);
+      semantics.dispose();
+      await teardown(tester);
+    });
+  });
+
   group('quick keys', () {
     testWidgets('press the keys they are labelled with', (tester) async {
+      // Wide enough for the whole row: the keys past the first six scroll.
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final semantics = tester.ensureSemantics();
       await pumpPane(tester);
 
       await tester.tap(find.text('esc'));
       await tester.tap(find.bySemanticsLabel('Up'));
       await tester.tap(find.byIcon(LucideIcons.cornerDownLeft));
-      await tester.ensureVisible(find.text('ctrl+c'));
-      await tester.pump();
       await tester.tap(find.text('ctrl+c'));
       await tester.pump();
 
@@ -741,7 +800,7 @@ void main() {
   });
 
   group('layout', () {
-    testWidgets('the prompt, cursor and new line keys are on screen at 412dp', (tester) async {
+    testWidgets('the prompt, new line and slash keys are on screen at 412dp', (tester) async {
       tester.view.physicalSize = const Size(412, 892);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -754,9 +813,8 @@ void main() {
       expect(rectOf(key(LucideIcons.arrowUp)).right, lessThan(412));
       expect(rectOf(key(LucideIcons.arrowDown)).right, lessThan(412));
       expect(rectOf(key(LucideIcons.cornerDownLeft)).right, lessThan(412));
-      expect(rectOf(key(LucideIcons.arrowLeft)).right, lessThan(412));
-      expect(rectOf(key(LucideIcons.arrowRight)).right, lessThan(412));
       expect(rectOf(key(LucideIcons.pilcrow)).right, lessThan(412));
+      expect(rectOf(find.text('/')).right, lessThan(412));
       await teardown(tester);
     });
 

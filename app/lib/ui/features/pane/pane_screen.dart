@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/models/slash_command.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/slash_catalog.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../core/controls.dart';
 import '../../core/glyphs.dart';
@@ -20,6 +22,8 @@ import 'key_modifiers.dart';
 import 'link_sheet.dart';
 import 'pane_view_model.dart';
 import 'quick_keys.dart';
+import 'slash_palette.dart';
+import 'slash_view_model.dart';
 import 'tab_swipe.dart';
 
 /// Height of the composer with one line.
@@ -113,18 +117,48 @@ class _PaneViewState extends State<_PaneView> {
   final _mods = StickyModifiers();
   late final PaneViewModel _vm = context.read<PaneViewModel>();
   late final _typing = ModifierTypingFormatter(_mods, _pressChord);
+  late final _slash = _newSlash(context.read<MachineConnection>());
   bool _keysOpen = false;
 
   /// A table wider than the view makes the terminal scroll sideways.
   final _sideways = ValueNotifier(false);
 
+  SlashViewModel _newSlash(MachineConnection machine) => SlashViewModel(
+        agent: () => machine.paneById(widget.paneId)?.agent,
+        cwd: () => machine.paneById(widget.paneId)?.cwd,
+        catalog: SlashCatalog(machine.files),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _input.addListener(_onInput);
+  }
+
   @override
   void dispose() {
+    _input.removeListener(_onInput);
     _input.dispose();
     _focus.dispose();
     _mods.dispose();
+    _slash.dispose();
     _sideways.dispose();
     super.dispose();
+  }
+
+  /// A slash at the start of the composer is the cue to learn the commands.
+  void _onInput() {
+    if (_input.text.startsWith('/')) _slash.ensureLoaded();
+  }
+
+  /// Puts the chosen command into the composer, ready for its arguments.
+  void _pickSlash(SlashCommand command) {
+    final text = '${command.text} ';
+    _input.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _focus.requestFocus();
   }
 
   /// A key row key, with Ctrl/Alt in front when one is armed.
@@ -221,6 +255,7 @@ class _PaneViewState extends State<_PaneView> {
             ),
           ),
         ),
+        palette: SlashPalette(input: _input, model: _slash, onPick: _pickSlash),
         keys: QuickKeys(
           paneId: widget.paneId,
           modifiers: _mods,
@@ -249,6 +284,7 @@ class _PaneLayout extends StatelessWidget {
   const _PaneLayout({
     required this.banner,
     required this.terminal,
+    required this.palette,
     required this.keys,
     required this.composer,
     required this.keysOpen,
@@ -257,6 +293,7 @@ class _PaneLayout extends StatelessWidget {
 
   final Widget banner;
   final Widget terminal;
+  final Widget palette;
   final Widget keys;
   final Widget composer;
   final bool keysOpen;
@@ -280,6 +317,7 @@ class _PaneLayout extends StatelessWidget {
               child: terminal,
             ),
           ),
+          if (!compact) palette,
           if (!compact || keysOpen) keys,
           SafeArea(
             top: false,

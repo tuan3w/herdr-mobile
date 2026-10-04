@@ -57,7 +57,10 @@ widgets, then frames it; needs Pillow).
   new-line key makes it multi-line; autocorrect is off in a shell pane) or press
   keys: a key row that follows what the pane runs, sticky Ctrl/Alt that turn the
   next key you type into a chord (arm Ctrl, type `r` = `ctrl+r`), arrows that
-  repeat while held. Updates arrive on activity,
+  repeat while held. A lone `/word` in the composer of an agent pane opens a
+  command palette: the agent's built-ins plus the commands and skills in its
+  project and user folders on the machine (Claude Code, opencode), read over
+  SFTP. Updates arrive on activity,
   not by polling, and stop while the app is in the background.
 - Built for phone networks: switching Wi-Fi/cellular or losing signal is
   detected (machines show "No network" and reconnect within a second of

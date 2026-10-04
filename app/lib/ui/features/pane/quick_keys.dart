@@ -55,23 +55,24 @@ const _down = _Send('', ['down'], icon: LucideIcons.arrowDown, semantic: 'Down',
 const _left = _Send('', ['left'], icon: LucideIcons.arrowLeft, semantic: 'Left', repeat: true);
 const _right = _Send('', ['right'], icon: LucideIcons.arrowRight, semantic: 'Right', repeat: true);
 
-// Cursor and prompt keys come first (esc, up, down, enter, left, right), so
-// they and the new line key fit a 412dp phone without scrolling.
+// Prompt keys come first (esc, up, down, enter), then the two that write
+// (new line, slash: it opens the command palette), so all six fit a 412dp
+// phone without scrolling.
 const _agentKeys = <_Key>[
   _Send('esc', ['esc']),
   _up,
   _down,
   _Send('', ['enter'], icon: LucideIcons.cornerDownLeft, semantic: 'Enter'),
+  _Insert('', '\n', icon: LucideIcons.pilcrow, semantic: 'New line'),
+  _Insert('/', '/'),
   _left,
   _right,
-  _Insert('', '\n', icon: LucideIcons.pilcrow, semantic: 'New line'),
+  _Insert('@', '@'),
   _Modifier('ctrl', ctrl: true),
   _Modifier('alt', ctrl: false),
   _Send('tab', ['tab']),
   _Send('shift+tab', ['shift+tab']),
   _Send('ctrl+c', ['ctrl+c']),
-  _Insert('/', '/'),
-  _Insert('@', '@'),
 ];
 
 // A shell has no newline key (a pasted line would run) but needs the symbols a

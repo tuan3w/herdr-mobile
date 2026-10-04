@@ -118,6 +118,14 @@ check which one loads before relying on it.
   no home/end/pgup/pgdn/delete (`parse_key_combo`); `pane.send_text` is the raw
   route for those. `pane.send_input` brackets text when the pane asks, so a
   newline in the composer does not submit.
+- **Slash palette** (`SlashCatalog`, `SlashViewModel`, `SlashPalette`). Shown
+  only for a lone `/word` in an agent pane's composer, loaded on the first
+  slash (not at pane open) and re-read after 2 minutes. Discovery is SFTP,
+  best effort, never throws. The built-in tables are hand-written per herdr
+  agent label and WILL drift from the agents: they only fill the composer, the
+  agent decides on send. Add agents to `builtInSlashCommands` and to
+  `SlashCatalog._project/_user` (folders) only after checking the agent's own
+  docs. The palette is hidden in the compact (landscape + keyboard) layout.
 - **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`
   wraps every route in one `AnnotatedRegion` using `AppTheme.systemBars`. Do not
   use Flutter's stock `SystemUiOverlayStyle.light/dark` (no status bar colour:
