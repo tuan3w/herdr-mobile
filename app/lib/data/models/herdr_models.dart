@@ -218,6 +218,47 @@ class Pane {
       Object.hash(id, workspaceId, tabId, focused, cwd, title, agent, status, label);
 }
 
+/// What of a `session.snapshot` the models above read, as a projection for the
+/// mux (`MuxClient` sends it with the request and the remote script drops the
+/// rest before anything crosses the wire): per-pane session paths, scroll
+/// state, the layouts and the duplicate `agents` list are most of herdr's
+/// answer and nothing here uses them. A field a `fromJson` starts reading MUST
+/// be added here; `herdr_models_test.dart` fails when one is missing.
+const snapshotWireFields = <String, Object>{
+  'version': true,
+  'workspaces': <String, Object>{
+    'workspace_id': true,
+    'number': true,
+    'label': true,
+    'focused': true,
+    'pane_count': true,
+    'tab_count': true,
+    'agent_status': true,
+  },
+  'tabs': <String, Object>{
+    'tab_id': true,
+    'workspace_id': true,
+    'number': true,
+    'label': true,
+    'focused': true,
+    'pane_count': true,
+    'agent_status': true,
+  },
+  'panes': <String, Object>{
+    'pane_id': true,
+    'workspace_id': true,
+    'tab_id': true,
+    'focused': true,
+    'foreground_cwd': true,
+    'cwd': true,
+    'terminal_title_stripped': true,
+    'terminal_title': true,
+    'label': true,
+    'agent': true,
+    'agent_status': true,
+  },
+};
+
 /// One-shot view of a herdr server (`session.snapshot`).
 class Snapshot {
   const Snapshot({

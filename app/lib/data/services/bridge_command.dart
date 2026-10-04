@@ -81,12 +81,22 @@ def diff(O,N):
     while x<len(O)-b-k and x<len(N)-k and N[-1-x]==O[-1-x]:
         x+=1
     return b,k,x
-def shrink(q,r,have):
-    d=json.loads(r)
-    rd=d["result"]["read"]
+def prune(v,s):
+    if s is True:
+        return v
+    if isinstance(v,list):
+        return [prune(x,s) for x in v]
+    if isinstance(v,dict):
+        return {k:prune(v[k],t) for k,t in s.items() if k in v}
+    return v
+def delta(q,d,have):
+    res=d.get("result")
+    rd=res.get("read") if isinstance(res,dict) else None
+    if not isinstance(rd,dict) or not isinstance(rd.get("text"),str):
+        return
     text=rd["text"]
     if len(text)<$muxDeltaMin:
-        return r
+        return
     key=json.dumps(q.get("params"),sort_keys=True)
     seq=next(SQ)
     rows=text.split("\\n")
@@ -95,6 +105,7 @@ def shrink(q,r,have):
         H[key]=(seq,rows)
         while len(H)>$muxDeltaKeep:
             del H[next(iter(H))]
+    d["seq"]=seq
     if old is not None and old[0]==have:
         p=diff(old[1],rows)
         if p:
@@ -103,18 +114,23 @@ def shrink(q,r,have):
             if sum(len(l) for l in lit)*2<len(text):
                 del rd["text"]
                 rd["delta"]={"base":have,"s":b,"k":k,"x":x,"t":lit}
-                d["seq"]=seq
-                return json.dumps(d,ensure_ascii=False,separators=(",",":")).encode()
-    return b'{"seq":%d,'%seq+r[1:]
+def post(q,r,have,keep):
+    d=json.loads(r)
+    if keep:
+        d=prune(d,keep)
+    if q.get("method")=="pane.read":
+        delta(q,d,have)
+    return json.dumps(d,ensure_ascii=False,separators=(",",":")).encode()
 def serve(line):
     i=None
     try:
         q=json.loads(line)
-        have=False
+        have=keep=None
         if isinstance(q,dict):
             i=q.get("id")
             have=q.pop("mux_have",None)
-            if have is not None:
+            keep=q.pop("mux_keep",None)
+            if have is not None or keep is not None:
                 line=json.dumps(q).encode()
         s=socket.socket(socket.AF_UNIX)
         try:
@@ -139,9 +155,9 @@ def serve(line):
             # or the client would wait for a reply that is never matched.
             if i is not None and r.startswith(b'{"id":"",'):
                 r=json.dumps(dict(json.loads(r),id=i)).encode()
-            if have is not False and q.get("method")=="pane.read" and r.startswith(b'{"id"'):
+            if isinstance(q,dict) and (keep or q.get("method")=="pane.read") and r.startswith(b'{"id"'):
                 try:
-                    r=shrink(q,r,have)
+                    r=post(q,r,have,keep)
                 except Exception:
                     pass
             if len(r)>$muxCompressMin:

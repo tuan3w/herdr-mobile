@@ -288,6 +288,73 @@ esac
       expect(lines['small'], pong('small'));
     });
 
+    test('mux_keep keeps only the listed fields, spares errors, and never reaches herdr',
+        () async {
+      final seen = <Map<String, dynamic>>[];
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
+        seen.add(req);
+        if (req['id'] == 'bad') {
+          return '{"id":"bad","error":{"code":"pane_not_found","message":"gone","extra":1}}';
+        }
+        return jsonEncode({
+          'id': req['id'],
+          'result': {
+            'type': 'session_snapshot',
+            'snapshot': {
+              'version': '1',
+              'protocol': 22,
+              'panes': [
+                {'pane_id': 'p1', 'agent': 'omp', 'scroll': {'a': 1}, 'revision': 4},
+                {'pane_id': 'p2'},
+              ],
+              'layouts': [{'x': 1}],
+            },
+          },
+        });
+      });
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+      const keep = {
+        'id': true,
+        'error': true,
+        'result': {
+          'snapshot': {
+            'version': true,
+            'panes': {'pane_id': true, 'agent': true},
+          },
+        },
+      };
+
+      mux.send({'id': 'a', 'method': 'session.snapshot', 'params': {}, 'mux_keep': keep});
+      mux.send({'id': 'bad', 'method': 'session.snapshot', 'params': {}, 'mux_keep': keep});
+      final replies = {
+        for (final r in [await mux.nextJson(), await mux.nextJson()]) r['id']: r,
+      };
+
+      expect(replies['a'], {
+        'id': 'a',
+        'result': {
+          'snapshot': {
+            'version': '1',
+            'panes': [
+              {'pane_id': 'p1', 'agent': 'omp'},
+              {'pane_id': 'p2'},
+            ],
+          },
+        },
+      });
+      expect(replies['bad'], {
+        'id': 'bad',
+        'error': {'code': 'pane_not_found', 'message': 'gone', 'extra': 1},
+      });
+      expect(seen.length, 2);
+      expect(seen.every((r) => !r.containsKey('mux_keep')), isTrue);
+    });
+
     test('an error herdr could not correlate (id "") comes back under the id it was sent with',
         () async {
       // herdr answers a method it does not know like this (seen on 0.8.2).
