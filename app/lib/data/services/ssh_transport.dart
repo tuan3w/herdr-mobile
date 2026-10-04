@@ -317,10 +317,12 @@ class SshTransport implements HerdrTransport {
   /// (requests then use one bridge channel each, see [_muxRetryAt]).
   Future<MuxClient?> _muxClient() async {
     if (_closed) throw const HerdrTransportException('Transport closed');
-    final retryAt = _muxRetryAt;
-    if (retryAt != null && DateTime.now().isBefore(retryAt)) return null;
+    // A mux that is up is used whatever the timer says: the timer is set by a
+    // failed start, and also by an event script that found no socket.
     final live = _mux;
     if (live != null && live.isAlive) return live;
+    final retryAt = _muxRetryAt;
+    if (retryAt != null && DateTime.now().isBefore(retryAt)) return null;
     try {
       return await (_muxStart ??= _startMux().whenComplete(() => _muxStart = null));
     } on MuxUnavailable catch (e) {
