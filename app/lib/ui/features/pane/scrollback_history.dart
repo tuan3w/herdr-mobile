@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../core/rows_snapshot.dart';
+
 /// Keeps the rows that scrolled off the top of a sliding `pane.read` window.
 ///
 /// The server only ever returns the last N rows of a pane, and the window
@@ -36,7 +38,12 @@ class ScrollbackHistory {
 
   /// Mutable so the common case (a few rows scrolled off) is an `addAll`
   /// instead of a copy of up to [maxRows] rows.
-  final List<String> _history = [];
+  ///
+  /// A [RowsSnapshot] of it may be out ([_exposed]); those stay valid because
+  /// appending leaves the rows they cover alone. Every other change goes
+  /// through [_detach] first.
+  List<String> _history = [];
+  bool _exposed = false;
   List<String> _snapshot = const [];
   bool _snapshotStale = false;
 
@@ -58,13 +65,27 @@ class ScrollbackHistory {
   ///
   /// An immutable snapshot, rebuilt lazily and only after the history changed,
   /// so the same instance is returned until then and callers can use
-  /// `identical()` for change detection.
+  /// `identical()` for change detection. Taking one is O(1): it is a view over
+  /// the rows already held (see [RowsSnapshot]).
   List<String> get rows {
     if (_snapshotStale) {
-      _snapshot = _history.isEmpty ? const [] : List.unmodifiable(_history);
+      if (_history.isEmpty) {
+        _snapshot = const [];
+      } else {
+        _snapshot = RowsSnapshot(_history, _history.length);
+        _exposed = true;
+      }
       _snapshotStale = false;
     }
     return _snapshot;
+  }
+
+  /// Moves [_history] to a list of its own before rows other than the newest
+  /// change, so a snapshot taken earlier never sees the change.
+  void _detach() {
+    if (!_exposed) return;
+    _history = List<String>.of(_history);
+    _exposed = false;
   }
 
   /// The live window exactly as the last read returned it.
@@ -118,7 +139,8 @@ class ScrollbackHistory {
 
   /// Forgets everything (used when the read source switches).
   void clear() {
-    _history.clear();
+    _history = [];
+    _exposed = false;
     _snapshot = const [];
     _snapshotStale = false;
     _historyBytes = 0;
@@ -314,6 +336,7 @@ class ScrollbackHistory {
     for (var i = length; i < current; i++) {
       _historyBytes -= _history[i].length;
     }
+    _detach();
     _history.removeRange(length, current);
     if (_lastGap >= length) {
       var i = length - 1;
@@ -353,6 +376,7 @@ class ScrollbackHistory {
     for (var i = 0; i < count; i++) {
       if (!identical(_history[i], gapRow)) _dropped++;
     }
+    _detach();
     _history.removeRange(0, count);
     _historyBytes -= freed;
     _lastGap = _lastGap < count ? -1 : _lastGap - count;

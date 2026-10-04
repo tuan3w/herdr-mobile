@@ -5,6 +5,7 @@ import 'package:herdr_mobile/ui/core/ansi.dart';
 import 'package:herdr_mobile/ui/core/line_wrap.dart';
 import 'package:herdr_mobile/ui/core/terminal_document.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/pane/scrollback_history.dart';
 
 const _esc = '\x1b';
 
@@ -397,6 +398,78 @@ void main() {
       expect(line.links, isEmpty);
       expect(line.linksOnRow(0, 0), isEmpty);
       expect(line.links, same(line.links));
+    });
+  });
+
+  group('history from a ScrollbackHistory (snapshots sharing one list)', () {
+    // What a document must hold, worked out from scratch: the rows copied into
+    // a plain list, so nothing is skipped and nothing is shared.
+    List<Object> fresh(ScrollbackHistory h) {
+      final doc = TerminalDocument()..update([...h.rows], h.window);
+      return [..._dumpDoc(doc), doc.tableColumns];
+    }
+
+    test('a long-lived document equals one made from scratch at every read', () {
+      final rng = Random(8675309);
+      for (var round = 0; round < 60; round++) {
+        // Small caps so rows are dropped from the top, and the 5-row anchor
+        // is often not there yet when the history is short.
+        final h = ScrollbackHistory(maxRows: 6 + rng.nextInt(40));
+        final doc = TerminalDocument();
+        final out = <String>[];
+        var window = 5 + rng.nextInt(30);
+        for (var step = 0; step < 60; step++) {
+          switch (rng.nextInt(12)) {
+            case 0:
+              // The pane jumped further than one read can see.
+              for (var i = rng.nextInt(80); i >= 0; i--) {
+                out.add('${_genLine(rng)}\r');
+              }
+            case 1:
+              window = 5 + rng.nextInt(60); // a deeper or shallower read
+            case 2:
+              if (out.isNotEmpty) out[out.length - 1] = '${_genLine(rng)}\r';
+            case 3 when rng.nextInt(6) == 0:
+              h.clear();
+            default:
+              for (var i = rng.nextInt(7); i > 0; i--) {
+                out.add('${_genLine(rng)}\r');
+              }
+          }
+          final from = max(0, out.length - window);
+          final text = out.isEmpty ? '' : '${out.sublist(from).join('\n')}\n';
+          h.update(text, truncated: from > 0);
+          doc.update(h.rows, h.window);
+          expect(
+            [..._dumpDoc(doc), doc.tableColumns],
+            fresh(h),
+            reason: 'round $round step $step: ${h.rows.length} history rows',
+          );
+        }
+      }
+    });
+
+    test('a snapshot taken earlier never sees later changes to the history', () {
+      final h = ScrollbackHistory(maxRows: 8);
+      final out = <String>[];
+      String read() {
+        final from = max(0, out.length - 5);
+        return '${out.sublist(from).join('\n')}\n';
+      }
+
+      for (var i = 0; i < 12; i++) {
+        out.add('row $i\r');
+        h.update(read(), truncated: true);
+      }
+      final snapshot = h.rows;
+      final before = [...snapshot];
+      for (var i = 12; i < 40; i++) {
+        out.add('row $i\r'); // grows, then evicts from the top at the cap
+        h.update(read(), truncated: true);
+      }
+      expect([...snapshot], before);
+      expect(snapshot.length, before.length);
+      expect(() => snapshot.add('x'), throwsUnsupportedError);
     });
   });
 }

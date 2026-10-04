@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'ansi.dart';
 import 'cell_width.dart';
 import 'line_wrap.dart';
+import 'rows_snapshot.dart';
 import 'table_lines.dart';
 import 'terminal_links.dart';
 
@@ -158,6 +159,18 @@ final class TerminalDocument {
   var _tableColumnsStale = false;
   var _base = 0;
 
+  // What the last update saw of the history, to skip the rows that cannot have
+  // changed: when the history is a [RowsSnapshot] of the same list as before
+  // and at least as long, its first [_historyLength] rows are the ones already
+  // parsed (a snapshot's list is only appended to), so only the rows after
+  // them and the window need looking at. With thousands of rows of history
+  // that is the difference between touching every line on every read and
+  // touching a screenful.
+  Object? _historyList;
+  var _historyLength = 0;
+  // The widest of the lines made from the history.
+  var _historyColumns = 0;
+
   List<DocLine> get lines => _lines;
 
   /// Width of the widest line in cells.
@@ -199,7 +212,16 @@ final class TerminalDocument {
     String at(int i) => i < windowStart ? history[i] : window[i - windowStart];
 
     final oldLength = _lines.length;
-    final shift = _shiftOf(_lines, at, total);
+    final list = history is RowsSnapshot ? history.backing : null;
+    final known = list != null &&
+            identical(list, _historyList) &&
+            windowStart >= _historyLength &&
+            // Enough lines for _shiftOf to anchor on, so that it would answer 0.
+            _historyLength >= _anchorLines &&
+            _lines.length >= _historyLength
+        ? _historyLength
+        : 0;
+    final shift = known > 0 ? 0 : _shiftOf(_lines, at, total);
     final offset = shift ?? 0;
 
     // Line a of the old content is candidate [a - offset] for the new line
@@ -215,9 +237,9 @@ final class TerminalDocument {
       lines.insertAll(0, List<DocLine>.filled(inserted, lines.first));
     }
 
-    var state = AnsiState.initial;
+    var state = known > 0 ? _lines[known - 1].end : AnsiState.initial;
     var end = total;
-    for (var i = 0; i < total; i++) {
+    for (var i = known; i < total; i++) {
       final raw = at(i);
       final start = (i == 0 || i == windowStart) ? AnsiState.initial : state;
       final candidate = i >= inserted && i < lines.length ? lines[i] : null;
@@ -242,10 +264,18 @@ final class TerminalDocument {
     }
     if (lines.length > end) lines.removeRange(end, lines.length);
 
-    var columns = 0;
-    for (final line in lines) {
-      if (line.columns > columns) columns = line.columns;
+    final historyEnd = math.min(windowStart, lines.length);
+    var historyColumns = known > 0 ? _historyColumns : 0;
+    for (var i = known; i < historyEnd; i++) {
+      if (lines[i].columns > historyColumns) historyColumns = lines[i].columns;
     }
+    var columns = historyColumns;
+    for (var i = historyEnd; i < lines.length; i++) {
+      if (lines[i].columns > columns) columns = lines[i].columns;
+    }
+    _historyList = list;
+    _historyLength = windowStart;
+    _historyColumns = historyColumns;
     _columns = columns;
     _tableColumnsStale = true;
     if (shift == null) {
