@@ -343,6 +343,29 @@ class MuxClient {
     return unwrapDecoded(decoded);
   }
 
+  /// The rows [ops] describe over [old]: `[start, count]` keeps a run of old
+  /// rows, a list of strings is new rows. Null if [ops] is not that or points
+  /// outside [old].
+  static List<String>? _applyOps(List<String> old, Object? ops) {
+    if (ops is! List) return null;
+    final rows = <String>[];
+    for (final op in ops) {
+      if (op is! List || op.isEmpty) return null;
+      if (op[0] is int) {
+        if (op.length != 2 || op[1] is! int) return null;
+        final s = op[0] as int, n = op[1] as int;
+        if (s < 0 || n < 0 || s + n > old.length) return null;
+        rows.addAll(old.getRange(s, s + n));
+      } else {
+        for (final row in op) {
+          if (row is! String) return null;
+          rows.add(row);
+        }
+      }
+    }
+    return rows;
+  }
+
   /// Completes a `pane.read` answer: a delta (see [muxDeltaMin]) is turned
   /// back into the full `text` using [basis], the answer this request named,
   /// and the rows of the answer are held for the next request.
@@ -356,28 +379,14 @@ class MuxClient {
     final List<String> rows;
     final int chars;
     if (delta is Map<String, dynamic>) {
-      final s = delta['s'], k = delta['k'], x = delta['x'], lit = delta['t'];
-      if (basis == null ||
-          delta['base'] != basis.seq ||
-          seq is! int ||
-          s is! int ||
-          k is! int ||
-          x is! int ||
-          lit is! List ||
-          s < 0 ||
-          k < 0 ||
-          x < 0 ||
-          s + k > basis.rows.length ||
-          x > basis.rows.length) {
+      final rebuilt = basis != null && delta['base'] == basis.seq && seq is int
+          ? _applyOps(basis.rows, delta['o'])
+          : null;
+      if (rebuilt == null) {
         _drop(key);
         throw const HerdrTransportException('herdr sent a pane read we cannot rebuild');
       }
-      final old = basis.rows;
-      rows = [
-        ...old.getRange(s, s + k),
-        ...lit.cast<String>(),
-        ...old.getRange(old.length - x, old.length),
-      ];
+      rows = rebuilt;
       read.remove('delta');
       final text = rows.join('\n');
       chars = text.length;

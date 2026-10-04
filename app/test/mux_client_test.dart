@@ -239,22 +239,14 @@ void main() {
             },
           };
 
-      Map<String, dynamic> delta(
-        String id,
-        int seq,
-        int base, {
-        required int s,
-        required int k,
-        required int x,
-        required List<String> t,
-      }) =>
-          {
+      /// A delta over the answer [base]: [ops] as the script writes them.
+      Map<String, dynamic> delta(String id, int seq, int base, List<Object> ops) => {
             'id': id,
             'seq': seq,
             'result': {
               'type': 'pane_read',
               'read': {
-                'delta': {'base': base, 's': s, 'k': k, 'x': x, 't': t},
+                'delta': {'base': base, 'o': ops},
                 'truncated': true,
               },
             },
@@ -272,9 +264,13 @@ void main() {
 
           final b = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
           expect(ch.sent[1]['mux_have'], 7);
-          // Rows were [a, b, c, d, '']: keep b c (s=1, k=2), add e, keep the
-          // trailing '' (x=1).
-          ch.emit(jsonEncode(delta(ch.idOf(1), 8, 7, s: 1, k: 2, x: 1, t: ['e\r'])));
+          // Rows were [a\r, b\r, c\r, d\r, '']: keep b c, add e, keep the
+          // trailing ''.
+          ch.emit(jsonEncode(delta(ch.idOf(1), 8, 7, [
+            [1, 2],
+            ['e\r'],
+            [4, 1],
+          ])));
           async.flushMicrotasks();
           final read = b.value!['read'] as Map;
           expect(read['text'], 'b\r\nc\r\ne\r\n');
@@ -316,10 +312,14 @@ void main() {
           async.flushMicrotasks();
 
           for (final bad in [
-            delta('x', 3, 99, s: 0, k: 1, x: 0, t: []), // another base
-            delta('x', 3, 1, s: 2, k: 2, x: 0, t: []), // past the rows held
-            delta('x', 3, 1, s: 0, k: 1, x: 9, t: []), // suffix longer than held
-            delta('x', 3, 1, s: -1, k: 1, x: 0, t: []),
+            delta('x', 3, 99, [[0, 1]]), // another base
+            delta('x', 3, 1, [[2, 2]]), // past the rows held
+            delta('x', 3, 1, [[0, -1]]),
+            delta('x', 3, 1, [[-1, 1]]),
+            delta('x', 3, 1, [[0, 1, 2]]),
+            delta('x', 3, 1, [['ok', 5]]), // a literal that is not all strings
+            delta('x', 3, 1, [[]]),
+            delta('x', 3, 1, [7]),
           ]) {
             final r = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
             final sentAt = ch.sent.length - 1;

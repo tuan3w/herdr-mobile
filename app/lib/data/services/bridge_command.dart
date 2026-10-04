@@ -49,6 +49,10 @@ const muxDeltaMin = 512;
 const muxDeltaKeep = 256;
 const muxDeltaChars = 4000000;
 
+/// Reads with more rows than this (old and new together) are sent whole: the
+/// row diff is quadratic in the worst case.
+const muxDeltaRows = 4000;
+
 /// What the mux script cuts out of an answer before sending it, by method: the
 /// parts of an answer the app reads. The same shape as the answer; `true`
 /// keeps a value whole, a map keeps the listed keys of an object (of each
@@ -133,7 +137,7 @@ os._exit(code)
 /// herdr's one-request-per-connection socket. Responses are written as they
 /// complete (possibly out of order); the client matches them by `id`.
 const _pythonMux = '''
-import socket,sys,os,json,threading,zlib,itertools
+import socket,sys,os,json,threading,zlib,itertools,difflib
 P=sys.argv[1]
 K=json.loads(r"""$_keepSlot""")
 W=threading.Lock()
@@ -150,24 +154,20 @@ H={}
 T=[0]
 HL=threading.Lock()
 SQ=itertools.count(1)
-def diff(O,N):
-    if not O or not N:
-        return None
-    best=None
-    for b in [j for j,l in enumerate(O) if l==N[0]][:16]:
-        k=0
-        m=min(len(N),len(O)-b)
-        while k<m and N[k]==O[b+k]:
-            k+=1
-        if best is None or k>best[1]:
-            best=(b,k)
-    if best is None:
-        return None
-    b,k=best
-    x=0
-    while x<len(O)-b-k and x<len(N)-k and N[-1-x]==O[-1-x]:
-        x+=1
-    return b,k,x
+def ops(O,N):
+    out=[]
+    lit=[]
+    for t,i1,i2,j1,j2 in difflib.SequenceMatcher(None,O,N,autojunk=False).get_opcodes():
+        if t=="equal":
+            if lit:
+                out.append(lit)
+                lit=[]
+            out.append([i1,i2-i1])
+        else:
+            lit+=N[j1:j2]
+    if lit:
+        out.append(lit)
+    return out
 def prune(v,s):
     if s is True:
         return v
@@ -195,14 +195,11 @@ def delta(q,d,have):
         while len(H)>1 and (len(H)>$muxDeltaKeep or T[0]>$muxDeltaChars):
             T[0]-=H.pop(next(iter(H)))[2]
     d["seq"]=seq
-    if old is not None and old[0]==have:
-        p=diff(old[1],rows)
-        if p:
-            b,k,x=p
-            lit=rows[k:len(rows)-x]
-            if sum(len(l) for l in lit)*2<len(text):
-                del rd["text"]
-                rd["delta"]={"base":have,"s":b,"k":k,"x":x,"t":lit}
+    if old is not None and old[0]==have and len(old[1])+len(rows)<=$muxDeltaRows:
+        o=ops(old[1],rows)
+        if sum(len(l) for e in o if isinstance(e[0],str) for l in e)*2<n:
+            del rd["text"]
+            rd["delta"]={"base":have,"o":o}
 def post(q,r,have,keep):
     d=json.loads(r)
     if keep:
