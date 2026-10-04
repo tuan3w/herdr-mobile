@@ -34,14 +34,16 @@ const muxCompressMin = 512;
 /// First line the mux script prints, once it is ready to serve requests.
 const muxReadyLine = 'herdr-mux-v1';
 
-/// A `pane.read` whose text is at least this many characters is remembered by
-/// the mux (the last [muxDeltaKeep] distinct reads). A client that still holds
-/// the previous answer to the same read says so (`mux_have`: the `seq` that
-/// answer carried) and gets only the rows that differ: the pane view reads a
-/// sliding 300-row window many times a second and almost all of it is
-/// unchanged. Smaller reads (the board's previews) are sent whole.
-const muxDeltaMin = 4096;
-const muxDeltaKeep = 16;
+/// A `pane.read` whose text is at least [muxDeltaMin] characters is remembered
+/// by the mux (the last [muxDeltaKeep] distinct reads, at most [muxDeltaChars]
+/// characters of text; the oldest go first). A client that still holds the
+/// previous answer to the same read says so (`mux_have`: the `seq` that answer
+/// carried) and gets only the rows that differ: the pane view reads a sliding
+/// 300-row window many times a second and almost all of it is unchanged, and
+/// so is most of a board card's 24 rows between two reads.
+const muxDeltaMin = 512;
+const muxDeltaKeep = 256;
+const muxDeltaChars = 4000000;
 
 /// Remote half of the multiplexed request channel: one JSON request per
 /// stdin line, each served on its own thread against a fresh connection to
@@ -61,6 +63,7 @@ def out(b):
 def fail(i,m):
     out(json.dumps({"id":i,"error":{"code":"bridge_error","message":m}}).encode())
 H={}
+T=[0]
 HL=threading.Lock()
 SQ=itertools.count(1)
 def diff(O,N):
@@ -100,11 +103,13 @@ def delta(q,d,have):
     key=json.dumps(q.get("params"),sort_keys=True)
     seq=next(SQ)
     rows=text.split("\\n")
+    n=len(text)
     with HL:
         old=H.pop(key,None)
-        H[key]=(seq,rows)
-        while len(H)>$muxDeltaKeep:
-            del H[next(iter(H))]
+        H[key]=(seq,rows,n)
+        T[0]+=n-(old[2] if old else 0)
+        while len(H)>1 and (len(H)>$muxDeltaKeep or T[0]>$muxDeltaChars):
+            T[0]-=H.pop(next(iter(H)))[2]
     d["seq"]=seq
     if old is not None and old[0]==have:
         p=diff(old[1],rows)

@@ -676,6 +676,31 @@ esac
         expect(await read(), screen);
       });
 
+      test('a small read is sent whole; one past the threshold is tracked', () async {
+        String rows(int n) => '${List.generate(n, (i) {
+          final r = math.Random(i);
+          return 'line $i ${r.nextInt(1 << 30).toRadixString(36)} ${r.nextInt(1 << 30).toRadixString(36)}';
+        }).join('\r\n')}\r\n';
+        // A card's worth: under muxDeltaMin characters.
+        screen = rows(10);
+        expect(screen.length, lessThan(muxDeltaMin));
+        expect(await read(), screen);
+        expect(await read(), screen);
+        final plain = channel.lineLengths.skip(1).toList();
+        expect(plain.every((n) => n > screen.length), isTrue, reason: '$plain');
+
+        // 40 rows: over it, and the second read is a delta.
+        screen = rows(40);
+        expect(screen.length, greaterThan(muxDeltaMin));
+        expect(await read(), screen);
+        final whole = channel.lineLengths.last;
+        screen = '${rows(40)}one more\r\n';
+        expect(await read(), screen);
+        expect(channel.lineLengths.last, lessThan(whole));
+        expect(await read(), screen);
+        expect(channel.lineLengths.last, lessThan(whole ~/ 2));
+      });
+
       test('two reads at once both come back exact', () async {
         await read();
         screen = window(3);

@@ -122,6 +122,7 @@ class MuxClient {
 
   // The last answer to each distinct pane.read, for delta answers.
   final _held = <String, _HeldRead>{};
+  var _heldChars = 0;
   final _reading = <String>{};
 
   bool get isAlive => _alive;
@@ -261,6 +262,7 @@ class MuxClient {
     final seq = decoded['seq'];
     final delta = read['delta'];
     final List<String> rows;
+    final int chars;
     if (delta is Map<String, dynamic>) {
       final s = delta['s'], k = delta['k'], x = delta['x'], lit = delta['t'];
       if (basis == null ||
@@ -275,7 +277,7 @@ class MuxClient {
           x < 0 ||
           s + k > basis.rows.length ||
           x > basis.rows.length) {
-        _held.remove(key);
+        _drop(key);
         throw const HerdrTransportException('herdr sent a pane read we cannot rebuild');
       }
       final old = basis.rows;
@@ -285,20 +287,30 @@ class MuxClient {
         ...old.getRange(old.length - x, old.length),
       ];
       read.remove('delta');
-      read['text'] = rows.join('\n');
+      final text = rows.join('\n');
+      chars = text.length;
+      read['text'] = text;
     } else {
       final text = read['text'];
       if (seq is! int || text is! String) {
-        _held.remove(key);
+        _drop(key);
         return;
       }
+      chars = text.length;
       rows = text.split('\n');
     }
-    _held.remove(key);
-    _held[key] = _HeldRead(seq, rows);
-    while (_held.length > muxDeltaKeep) {
-      _held.remove(_held.keys.first);
+    _drop(key);
+    _held[key] = _HeldRead(seq, rows, chars);
+    _heldChars += chars;
+    while (_held.length > 1 &&
+        (_held.length > muxDeltaKeep || _heldChars > muxDeltaChars)) {
+      _drop(_held.keys.first);
     }
+  }
+
+  void _drop(String key) {
+    final gone = _held.remove(key);
+    if (gone != null) _heldChars -= gone.chars;
   }
 
   Future<void> _beat() async {
@@ -333,10 +345,12 @@ class MuxClient {
   void close() => _die(MuxDeath.closed, 'herdr connection closed');
 }
 
-/// The rows of a `pane.read` answer and the `seq` the mux gave it.
+/// The rows of a `pane.read` answer (of [chars] characters of text) and the
+/// `seq` the mux gave it.
 class _HeldRead {
-  const _HeldRead(this.seq, this.rows);
+  const _HeldRead(this.seq, this.rows, this.chars);
 
   final int seq;
   final List<String> rows;
+  final int chars;
 }
