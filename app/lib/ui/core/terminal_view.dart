@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/repositories/terminal_settings.dart'
@@ -533,6 +534,11 @@ class _TerminalViewState extends State<TerminalView> {
                           delegate: _selection,
                           child: CustomScrollView(
                           reverse: true,
+                          // Rows are cheap to build as they come into view and
+                          // costly to keep (each streamed update walks every
+                          // live row), so keep few beyond the screen.
+                          scrollCacheExtent:
+                              ScrollCacheExtent.pixels(metrics.lineHeight * 4),
                           controller: _scroll,
                           physics: pinching
                               ? const NeverScrollableScrollPhysics()
@@ -543,7 +549,8 @@ class _TerminalViewState extends State<TerminalView> {
                               sliver: SliverFixedExtentList(
                                 key: _list,
                                 itemExtent: metrics.lineHeight,
-                                delegate: SliverChildBuilderDelegate(
+                                delegate: _RowsDelegate(
+                                  itemExtent: metrics.lineHeight,
                                   (context, i) {
                                     final row = _rowCount - 1 - i;
                                     final index = _lineOfRow(row);
@@ -676,6 +683,34 @@ class _TopRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The rows of a [TerminalView], all [itemExtent] high.
+///
+/// A list whose end is not built extrapolates its scroll extent from the rows
+/// it has, and the result differs from the exact one by a few nanopixels that
+/// depend on which rows happen to be built. Every row has the same height, so
+/// the exact extent is known: reporting it keeps the extent identical from one
+/// frame to the next, however the user has scrolled.
+class _RowsDelegate extends SliverChildBuilderDelegate {
+  _RowsDelegate(
+    super.builder, {
+    required this.itemExtent,
+    required int super.childCount,
+    super.addAutomaticKeepAlives,
+    super.addSemanticIndexes,
+    super.findChildIndexCallback,
+  });
+
+  final double itemExtent;
+
+  @override
+  double? estimateMaxScrollOffset(
+    int firstIndex,
+    int lastIndex,
+    double leadingScrollOffset,
+    double trailingScrollOffset,
+  ) => childCount! * itemExtent;
 }
 
 /// A scroll position that can move itself and make its viewport lay out again.
