@@ -25,6 +25,12 @@ while True:
             s.sendall(d)
 ''';
 
+/// Responses longer than this many bytes are sent deflated (zlib, then base64
+/// so the line protocol stays text) with a leading `z`; JSON lines start with
+/// `{`, so the two cannot be confused. Pane text compresses 5-10x and costs
+/// the phone far less to inflate than to decrypt.
+const muxCompressMin = 512;
+
 /// First line the mux script prints, once it is ready to serve requests.
 const muxReadyLine = 'herdr-mux-v1';
 
@@ -33,7 +39,7 @@ const muxReadyLine = 'herdr-mux-v1';
 /// herdr's one-request-per-connection socket. Responses are written as they
 /// complete (possibly out of order); the client matches them by `id`.
 const _pythonMux = '''
-import socket,sys,os,json,threading
+import socket,sys,os,json,threading,zlib,base64
 P=sys.argv[1]
 W=threading.Lock()
 def out(b):
@@ -74,6 +80,8 @@ def serve(line):
             # or the client would wait for a reply that is never matched.
             if i is not None and r.startswith(b'{"id":"",'):
                 r=json.dumps(dict(json.loads(r),id=i)).encode()
+            if len(r)>$muxCompressMin:
+                r=b"z"+base64.b64encode(zlib.compress(r,6))
             out(r)
     except Exception as e:
         fail(i,str(e) or e.__class__.__name__)

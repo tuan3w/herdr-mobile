@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show zlib;
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -225,6 +226,38 @@ void main() {
         ch.reply(ch.idOf(1), {'type': 'pong'});
         async.flushMicrotasks();
         expect(next.value, {'type': 'pong'});
+      });
+    });
+
+    test('a deflated response (z + base64 of zlib) is inflated and routed', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        final client = _start(async, ch);
+        final r = _Outcome(client.request('pane.read'));
+        final text = 'Xin chào \u001b[1mđường dẫn\u001b[0m\r\n' * 50;
+        final json = jsonEncode({'id': ch.idOf(0), 'result': {'text': text}});
+
+        ch.emit('z${base64.encode(zlib.encode(utf8.encode(json)))}');
+        async.flushMicrotasks();
+
+        expect(r.value, {'text': text});
+      });
+    });
+
+    test('a corrupt deflated response is ignored like any malformed line', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        final client = _start(async, ch);
+        final r = _Outcome(client.request('ping'));
+
+        ch.emit('znot-base64!');
+        ch.emit('z${base64.encode([1, 2, 3, 4, 5])}');
+        async.flushMicrotasks();
+        expect(r.done, isFalse);
+
+        ch.reply(ch.idOf(0), {'type': 'pong'});
+        async.flushMicrotasks();
+        expect(r.value, {'type': 'pong'});
       });
     });
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show zlib;
 
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
@@ -143,12 +144,18 @@ class MuxClient {
     );
   }
 
+  /// A response the remote deflated (see [muxCompressMin]): `z`, then base64
+  /// of zlib data holding the JSON line. Parsed straight from the bytes.
+  static Object? _inflate(String line) => json
+      .fuse(utf8)
+      .decode(zlib.decode(base64.decode(line.substring(1))));
+
   void _route(String line) {
     // The one and only decode of this response: requests receive the decoded
     // object (re-decoding a 140 KB pane read cost ~14 ms on a mid-range phone).
     final Object? decoded;
     try {
-      decoded = jsonDecode(line);
+      decoded = line.startsWith('z') ? _inflate(line) : jsonDecode(line);
     } on FormatException {
       return;
     }

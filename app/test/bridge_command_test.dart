@@ -8,6 +8,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/services/bridge_command.dart';
 
+/// A mux response line as JSON text: the plain line, or what a `z` line
+/// (base64 of zlib data) inflates to.
+String _inflate(String line) => line.startsWith('z')
+    ? utf8.decode(zlib.decode(base64.decode(line.substring(1))))
+    : line;
+
 /// Runs [command] the way an SSH server would (`sh -c`) with a controlled
 /// $HOME and a minimal PATH, so the host's real herdr cannot interfere.
 Future<({String out, String err, int code})> _run(
@@ -248,9 +254,35 @@ esac
 
       mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
 
-      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+      final reply = await mux.nextJson();
       expect(reply['id'], 'big');
       expect((reply['result'] as Map)['blob'], blob);
+    });
+
+    test('a large response is deflated and a small one is not', () async {
+      final text = List.generate(400, (i) => '\u001b[38;2;1;2;3mrow $i of text')
+          .join('\r\n');
+      final big = jsonEncode({'id': 'big', 'result': {'text': text}});
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          req['id'] == 'big' ? big : pong(req['id']));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
+      mux.send({'id': 'small', 'method': 'ping', 'params': {}});
+      final lines = {
+        for (final line in [await mux.next(), await mux.next()])
+          (jsonDecode(_inflate(line)) as Map)['id'] as String: line,
+      };
+
+      expect(lines['big']!.startsWith('z'), isTrue);
+      expect(lines['big']!.length, lessThan(big.length ~/ 4));
+      expect(_inflate(lines['big']!), big);
+      expect(lines['small'], pong('small'));
     });
 
     test('an error herdr could not correlate (id "") comes back under the id it was sent with',
@@ -481,6 +513,10 @@ class _MuxProc {
     }
     return _lines.current;
   }
+
+  /// The next response line, inflated if the mux deflated it.
+  Future<Map<String, dynamic>> nextJson() async =>
+      jsonDecode(_inflate(await next())) as Map<String, dynamic>;
 
   Future<void> stop() async {
     process.kill();
