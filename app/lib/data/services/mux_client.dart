@@ -99,6 +99,10 @@ class MuxClient {
   var _alive = true;
   var _beating = false;
 
+  // The last answer to each distinct pane.read, for delta answers.
+  final _held = <String, _HeldRead>{};
+  final _reading = <String>{};
+
   bool get isAlive => _alive;
 
   /// Completes when this client dies, with the cause.
@@ -170,12 +174,18 @@ class MuxClient {
     String id,
     String method,
     Map<String, dynamic> params,
-    Duration timeout,
-  ) async {
+    Duration timeout, {
+    int? have,
+  }) async {
     if (!_alive) throw const HerdrTransportException('herdr connection lost');
     final reply = _pending[id] = Completer<Object?>();
     try {
-      _channel.send(jsonEncode({'id': id, 'method': method, 'params': params}));
+      _channel.send(jsonEncode({
+        'id': id,
+        'method': method,
+        'params': params,
+        'mux_have': ?have,
+      }));
     } on Object catch (e) {
       _pending.remove(id);
       _die(MuxDeath.closed, 'herdr connection lost: $e');
@@ -195,13 +205,78 @@ class MuxClient {
     String method, [
     Map<String, dynamic> params = const {},
   ]) async {
+    // One read per distinct pane read at a time may name the answer it holds;
+    // a second one concurrently gets the whole text.
+    final key = method == 'pane.read' ? jsonEncode(params) : null;
+    final owns = key != null && _reading.add(key);
+    final basis = owns ? _held[key] : null;
     final Object? decoded;
     try {
-      decoded = await _exchange('m${_nextId++}', method, params, requestTimeout);
+      decoded = await _exchange(
+        'm${_nextId++}',
+        method,
+        params,
+        requestTimeout,
+        have: basis?.seq,
+      );
     } on TimeoutException {
       throw HerdrTransportException('herdr did not answer $method in time');
+    } finally {
+      if (owns) _reading.remove(key);
     }
+    if (key != null) _resolveRead(key, basis, decoded);
     return unwrapDecoded(decoded);
+  }
+
+  /// Completes a `pane.read` answer: a delta (see [muxDeltaMin]) is turned
+  /// back into the full `text` using [basis], the answer this request named,
+  /// and the rows of the answer are held for the next request.
+  void _resolveRead(String key, _HeldRead? basis, Object? decoded) {
+    if (decoded is! Map<String, dynamic>) return;
+    final result = decoded['result'];
+    final read = result is Map<String, dynamic> ? result['read'] : null;
+    if (read is! Map<String, dynamic>) return;
+    final seq = decoded['seq'];
+    final delta = read['delta'];
+    final List<String> rows;
+    if (delta is Map<String, dynamic>) {
+      final s = delta['s'], k = delta['k'], x = delta['x'], lit = delta['t'];
+      if (basis == null ||
+          delta['base'] != basis.seq ||
+          seq is! int ||
+          s is! int ||
+          k is! int ||
+          x is! int ||
+          lit is! List ||
+          s < 0 ||
+          k < 0 ||
+          x < 0 ||
+          s + k > basis.rows.length ||
+          x > basis.rows.length) {
+        _held.remove(key);
+        throw const HerdrTransportException('herdr sent a pane read we cannot rebuild');
+      }
+      final old = basis.rows;
+      rows = [
+        ...old.getRange(s, s + k),
+        ...lit.cast<String>(),
+        ...old.getRange(old.length - x, old.length),
+      ];
+      read.remove('delta');
+      read['text'] = rows.join('\n');
+    } else {
+      final text = read['text'];
+      if (seq is! int || text is! String) {
+        _held.remove(key);
+        return;
+      }
+      rows = text.split('\n');
+    }
+    _held.remove(key);
+    _held[key] = _HeldRead(seq, rows);
+    while (_held.length > muxDeltaKeep) {
+      _held.remove(_held.keys.first);
+    }
   }
 
   Future<void> _beat() async {
@@ -234,4 +309,12 @@ class MuxClient {
 
   /// Kills the client now; in-flight requests fail with a retryable error.
   void close() => _die(MuxDeath.closed, 'herdr connection closed');
+}
+
+/// The rows of a `pane.read` answer and the `seq` the mux gave it.
+class _HeldRead {
+  const _HeldRead(this.seq, this.rows);
+
+  final int seq;
+  final List<String> rows;
 }

@@ -261,6 +261,136 @@ void main() {
       });
     });
 
+    group('pane.read deltas', () {
+      Map<String, dynamic> whole(String id, int seq, String text) => {
+            'id': id,
+            'seq': seq,
+            'result': {
+              'type': 'pane_read',
+              'read': {'text': text, 'truncated': false},
+            },
+          };
+
+      Map<String, dynamic> delta(
+        String id,
+        int seq,
+        int base, {
+        required int s,
+        required int k,
+        required int x,
+        required List<String> t,
+      }) =>
+          {
+            'id': id,
+            'seq': seq,
+            'result': {
+              'type': 'pane_read',
+              'read': {
+                'delta': {'base': base, 's': s, 'k': k, 'x': x, 't': t},
+                'truncated': true,
+              },
+            },
+          };
+
+      test('a delta is rebuilt from the answer the request named', () {
+        fakeAsync((async) {
+          final ch = _FakeChannel();
+          final client = _start(async, ch);
+          final a = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          expect(ch.sent[0].containsKey('mux_have'), isFalse);
+          ch.emit(jsonEncode(whole(ch.idOf(0), 7, 'a\r\nb\r\nc\r\nd\r\n')));
+          async.flushMicrotasks();
+          expect((a.value!['read'] as Map)['text'], 'a\r\nb\r\nc\r\nd\r\n');
+
+          final b = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          expect(ch.sent[1]['mux_have'], 7);
+          // Rows were [a, b, c, d, '']: keep b c (s=1, k=2), add e, keep the
+          // trailing '' (x=1).
+          ch.emit(jsonEncode(delta(ch.idOf(1), 8, 7, s: 1, k: 2, x: 1, t: ['e\r'])));
+          async.flushMicrotasks();
+          final read = b.value!['read'] as Map;
+          expect(read['text'], 'b\r\nc\r\ne\r\n');
+          expect(read.containsKey('delta'), isFalse);
+          expect(read['truncated'], isTrue);
+
+          // The rebuilt answer is what the next request names.
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          expect(ch.sent[2]['mux_have'], 8);
+          // Other parameters are another read.
+          _Outcome(client.request('pane.read', {'pane_id': 'q'}));
+          expect(ch.sent[3].containsKey('mux_have'), isFalse);
+        });
+      });
+
+      test('only one request at a time names the answer held', () {
+        fakeAsync((async) {
+          final ch = _FakeChannel();
+          final client = _start(async, ch);
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          ch.emit(jsonEncode(whole(ch.idOf(0), 1, 'a\r\n')));
+          async.flushMicrotasks();
+
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+
+          expect(ch.sent[1]['mux_have'], 1);
+          expect(ch.sent[2].containsKey('mux_have'), isFalse);
+        });
+      });
+
+      test('a delta against an answer we do not hold fails the request, not the link',
+          () {
+        fakeAsync((async) {
+          final ch = _FakeChannel();
+          final client = _start(async, ch);
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          ch.emit(jsonEncode(whole(ch.idOf(0), 1, 'a\r\nb\r\n')));
+          async.flushMicrotasks();
+
+          for (final bad in [
+            delta('x', 3, 99, s: 0, k: 1, x: 0, t: []), // another base
+            delta('x', 3, 1, s: 2, k: 2, x: 0, t: []), // past the rows held
+            delta('x', 3, 1, s: 0, k: 1, x: 9, t: []), // suffix longer than held
+            delta('x', 3, 1, s: -1, k: 1, x: 0, t: []),
+          ]) {
+            final r = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+            final sentAt = ch.sent.length - 1;
+            ch.emit(jsonEncode({...bad, 'id': ch.idOf(sentAt)}));
+            async.flushMicrotasks();
+
+            final e = r.error;
+            expect(e, isA<HerdrTransportException>(), reason: '$bad');
+            expect((e! as HerdrTransportException).fatal, isFalse);
+            expect(client.isAlive, isTrue);
+
+            // Nothing is held any more: the next request asks for the whole.
+            _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+            expect(ch.sent.last.containsKey('mux_have'), isFalse);
+            ch.emit(jsonEncode(whole(ch.idOf(ch.sent.length - 1), 1, 'a\r\nb\r\n')));
+            async.flushMicrotasks();
+          }
+        });
+      });
+
+      test('an error answer leaves the answer held in place', () {
+        fakeAsync((async) {
+          final ch = _FakeChannel();
+          final client = _start(async, ch);
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          ch.emit(jsonEncode(whole(ch.idOf(0), 4, 'a\r\n')));
+          async.flushMicrotasks();
+
+          final r = _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          ch.replyError(ch.idOf(1), 'pane_not_found', 'gone');
+          async.flushMicrotasks();
+          expect(r.error, isA<HerdrApiException>());
+
+          _Outcome(client.request('pane.read', {'pane_id': 'p'}));
+          expect(ch.sent[2]['mux_have'], 4);
+        });
+      });
+    });
+
     test('malformed and unmatched lines are ignored', () {
       fakeAsync((async) {
         final ch = _FakeChannel();

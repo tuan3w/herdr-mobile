@@ -4,9 +4,12 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/services/bridge_command.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/services/mux_client.dart';
 
 /// A mux response line as JSON text: the plain line, or what a `z` line
 /// (base64 of zlib data) inflates to.
@@ -477,6 +480,144 @@ esac
             reason: bad);
       }
     });
+
+    group('pane.read deltas', () {
+      late _FakeHerdr herdr;
+      late _ProcessChannel channel;
+      late MuxClient client;
+      final seen = <Map<String, dynamic>>[];
+      var screen = '';
+      FutureOr<void> Function(int call)? beforeAnswer;
+
+      /// Rows `top`..`top+199` (each with its own random-looking tail, so the
+      /// whole read does not deflate to nothing) and a footer line.
+      String window(int top, [String footer = 'tick 0']) {
+        String noise(int i) {
+          final r = math.Random(i);
+          return List.generate(5, (_) => r.nextInt(1 << 30).toRadixString(36)).join(' ');
+        }
+
+        final rows = [
+          for (var i = top; i < top + 200; i++) 'row $i đường dẫn ${noise(i)}',
+          'footer $footer',
+        ];
+        return '${rows.join('\r\n')}\r\n';
+      }
+
+      Future<String> read([int lines = 200]) async {
+        final r = await client.request('pane.read', {'pane_id': 'p1', 'lines': lines});
+        return (r['read'] as Map)['text'] as String;
+      }
+
+      setUp(() async {
+        seen.clear();
+        beforeAnswer = null;
+        screen = window(0);
+        herdr = await _FakeHerdr.bind('$xdg/herdr/herdr.sock', (req) async {
+          seen.add(req);
+          await beforeAnswer?.call(seen.length);
+          return jsonEncode({
+            'id': req['id'],
+            'result': {
+              'type': 'pane_read',
+              'read': {'pane_id': 'p1', 'text': screen, 'truncated': false},
+            },
+          });
+        });
+        final process = await Process.start(
+          '/bin/sh',
+          ['-c', buildMuxCommand(session: 'default')],
+          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': xdg},
+          includeParentEnvironment: false,
+        );
+        channel = _ProcessChannel(process);
+        client = await MuxClient.connect(
+          channel,
+          requestTimeout: const Duration(milliseconds: 700),
+          heartbeatInterval: const Duration(hours: 1),
+        );
+      });
+
+      tearDown(() async {
+        client.close();
+        await herdr.close();
+      });
+
+      test('a window that slides comes back exact, in a fraction of the bytes',
+          () async {
+        final first = await read();
+        expect(first, screen);
+        for (var step = 1; step <= 5; step++) {
+          screen = window(step * 3, 'tick $step');
+          expect(await read(), screen, reason: 'step $step');
+        }
+
+        // [0] is the ready line, [1] the first (whole) read, the rest deltas.
+        final sizes = channel.lineLengths;
+        expect(sizes.length, 7);
+        expect(sizes[1], greaterThan(200));
+        for (final n in sizes.skip(2)) {
+          expect(n, lessThan(sizes[1] ~/ 5));
+        }
+        // herdr never sees the mux's own bookkeeping.
+        expect(seen.every((r) => !r.containsKey('mux_have')), isTrue);
+      });
+
+      test('unchanged, edited, jumped and truncated reads all come back exact',
+          () async {
+        await read();
+        final steps = <String>[
+          screen, // nothing changed
+          window(0).replaceFirst('row 100 ', 'ROW 100 '), // one row edited
+          window(0).replaceFirst('row 0 ', 'ROW 0 '), // the first row edited
+          window(5000), // no row in common
+          window(5000, 'tick 9'),
+          '${window(5000, 'tick 9')}extra\r\n', // rows appended
+          window(5002, 'tick 9').substring(0, 6000), // cut short
+          '', // emptied
+          window(1),
+        ];
+        for (final next in steps) {
+          screen = next;
+          expect(await read(), screen);
+        }
+      });
+
+      test('reads with other parameters are held apart', () async {
+        await read(200);
+        screen = window(3);
+        expect(await read(100), screen);
+        expect(await read(200), screen);
+        screen = window(6);
+        expect(await read(100), screen);
+        expect(await read(200), screen);
+      });
+
+      test('a read that timed out does not corrupt the next', () async {
+        await read();
+        screen = window(3);
+        beforeAnswer = (call) async {
+          if (call == 2) await Future<void>.delayed(const Duration(milliseconds: 1000));
+        };
+        // The mux answers (and remembers) this one after the client gave up.
+        await expectLater(read(), throwsA(isA<HerdrTransportException>()));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        screen = window(6);
+        expect(await read(), screen);
+        screen = window(9);
+        expect(await read(), screen);
+      });
+
+      test('two reads at once both come back exact', () async {
+        await read();
+        screen = window(3);
+        final both = await Future.wait([read(), read()]);
+        expect(both, [screen, screen]);
+        screen = window(6);
+        expect(await read(), screen);
+      });
+    });
   }, skip: _has('python3') ? false : 'needs python3');
 }
 
@@ -555,4 +696,33 @@ class _FakeHerdr {
   Future<void> close() async {
     await _server.close();
   }
+}
+
+/// [MuxChannel] over a running mux script, noting the length of each line it
+/// wrote (what would cross the wire).
+class _ProcessChannel implements MuxChannel {
+  _ProcessChannel(this._process) {
+    unawaited(_process.stderr.drain<void>());
+  }
+
+  final Process _process;
+  final lineLengths = <int>[];
+
+  @override
+  late final Stream<String> lines = utf8.decoder
+      .bind(_process.stdout)
+      .transform(const LineSplitter())
+      .map((line) {
+    lineLengths.add(line.length);
+    return line;
+  });
+
+  @override
+  void send(String line) => _process.stdin.writeln(line);
+
+  @override
+  Future<void> close() async => _process.kill();
+
+  @override
+  Future<int?> get exitCode => _process.exitCode;
 }

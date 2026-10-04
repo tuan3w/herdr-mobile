@@ -201,7 +201,7 @@ def handle(conn):
             out = pane_read(p)
         else:
             out = {"error": {"code": "invalid_request", "message": "unknown variant `%s`" % m}}
-        out["id"] = req.get("id")
+        out = dict(id=req.get("id"), **out)  # herdr writes the id first
         conn.sendall(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode() + b"\n")
     finally:
         conn.close()

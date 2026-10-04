@@ -34,12 +34,21 @@ const muxCompressMin = 512;
 /// First line the mux script prints, once it is ready to serve requests.
 const muxReadyLine = 'herdr-mux-v1';
 
+/// A `pane.read` whose text is at least this many characters is remembered by
+/// the mux (the last [muxDeltaKeep] distinct reads). A client that still holds
+/// the previous answer to the same read says so (`mux_have`: the `seq` that
+/// answer carried) and gets only the rows that differ: the pane view reads a
+/// sliding 300-row window many times a second and almost all of it is
+/// unchanged. Smaller reads (the board's previews) are sent whole.
+const muxDeltaMin = 4096;
+const muxDeltaKeep = 16;
+
 /// Remote half of the multiplexed request channel: one JSON request per
 /// stdin line, each served on its own thread against a fresh connection to
 /// herdr's one-request-per-connection socket. Responses are written as they
 /// complete (possibly out of order); the client matches them by `id`.
 const _pythonMux = '''
-import socket,sys,os,json,threading,zlib,base64
+import socket,sys,os,json,threading,zlib,base64,itertools
 P=sys.argv[1]
 W=threading.Lock()
 def out(b):
@@ -51,12 +60,62 @@ def out(b):
         os._exit(1)
 def fail(i,m):
     out(json.dumps({"id":i,"error":{"code":"bridge_error","message":m}}).encode())
+H={}
+HL=threading.Lock()
+SQ=itertools.count(1)
+def diff(O,N):
+    if not O or not N:
+        return None
+    best=None
+    for b in [j for j,l in enumerate(O) if l==N[0]][:16]:
+        k=0
+        m=min(len(N),len(O)-b)
+        while k<m and N[k]==O[b+k]:
+            k+=1
+        if best is None or k>best[1]:
+            best=(b,k)
+    if best is None:
+        return None
+    b,k=best
+    x=0
+    while x<len(O)-b-k and x<len(N)-k and N[-1-x]==O[-1-x]:
+        x+=1
+    return b,k,x
+def shrink(q,r,have):
+    d=json.loads(r)
+    rd=d["result"]["read"]
+    text=rd["text"]
+    if len(text)<$muxDeltaMin:
+        return r
+    key=json.dumps(q.get("params"),sort_keys=True)
+    seq=next(SQ)
+    rows=text.split("\\n")
+    with HL:
+        old=H.pop(key,None)
+        H[key]=(seq,rows)
+        while len(H)>$muxDeltaKeep:
+            del H[next(iter(H))]
+    if old is not None and old[0]==have:
+        p=diff(old[1],rows)
+        if p:
+            b,k,x=p
+            lit=rows[k:len(rows)-x]
+            if sum(len(l) for l in lit)*2<len(text):
+                del rd["text"]
+                rd["delta"]={"base":have,"s":b,"k":k,"x":x,"t":lit}
+                d["seq"]=seq
+                return json.dumps(d,ensure_ascii=False,separators=(",",":")).encode()
+    return b'{"seq":%d,'%seq+r[1:]
 def serve(line):
     i=None
     try:
         q=json.loads(line)
+        have=False
         if isinstance(q,dict):
             i=q.get("id")
+            have=q.pop("mux_have",None)
+            if have is not None:
+                line=json.dumps(q).encode()
         s=socket.socket(socket.AF_UNIX)
         try:
             s.settimeout(30)
@@ -80,6 +139,11 @@ def serve(line):
             # or the client would wait for a reply that is never matched.
             if i is not None and r.startswith(b'{"id":"",'):
                 r=json.dumps(dict(json.loads(r),id=i)).encode()
+            if have is not False and q.get("method")=="pane.read" and r.startswith(b'{"id"'):
+                try:
+                    r=shrink(q,r,have)
+                except Exception:
+                    pass
             if len(r)>$muxCompressMin:
                 r=b"z"+base64.b64encode(zlib.compress(r,6))
             out(r)
