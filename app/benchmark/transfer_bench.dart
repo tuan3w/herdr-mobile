@@ -57,8 +57,8 @@ double _cpuMs() {
   return ticks * 10.0; // CLK_TCK is 100
 }
 
-/// Bytes sent + received on this process's connection to an sshd.
-Future<int> _wireBytes() async {
+/// Bytes (sent, received) on this process's connection to an sshd.
+Future<(int, int)> _wireBytes() async {
   final r = await Process.run('ss', ['-tinpH', 'state', 'established', '( dport = :22 )']);
   final lines = (r.stdout as String).split('\n');
   for (var i = 0; i < lines.length - 1; i++) {
@@ -67,13 +67,13 @@ Future<int> _wireBytes() async {
     final sent = RegExp(r'bytes_sent:(\d+)').firstMatch(m);
     final got = RegExp(r'bytes_received:(\d+)').firstMatch(m);
     if (sent != null && got != null) {
-      return int.parse(sent.group(1)!) + int.parse(got.group(1)!);
+      return (int.parse(sent.group(1)!), int.parse(got.group(1)!));
     }
   }
   throw StateError('no ssh connection of pid $pid in ss output:\n${r.stdout}');
 }
 
-typedef _Result = ({double cpu, double wall, int bytes});
+typedef _Result = ({double cpu, double wall, int bytes, int up});
 
 Future<_Result> _measure(Future<void> Function() work) async {
   final b0 = await _wireBytes();
@@ -83,7 +83,12 @@ Future<_Result> _measure(Future<void> Function() work) async {
   w.stop();
   final c1 = _cpuMs();
   final b1 = await _wireBytes();
-  return (cpu: c1 - c0, wall: w.elapsedMicroseconds / 1000, bytes: b1 - b0);
+  return (
+    cpu: c1 - c0,
+    wall: w.elapsedMicroseconds / 1000,
+    bytes: (b1.$1 - b0.$1) + (b1.$2 - b0.$2),
+    up: b1.$1 - b0.$1,
+  );
 }
 
 void main() {
@@ -158,6 +163,7 @@ void main() {
     void phase(String name, _Result r) {
       _metric('${name}_ms', ms(r));
       _metric('${name}_kb', r.bytes / 1024);
+      _metric('${name}_up_kb', r.up / 1024);
       _metric('${name}_cpu_ms', r.cpu);
       _metric('${name}_wall_ms', r.wall);
     }
@@ -167,9 +173,11 @@ void main() {
       cpu: all.fold(0.0, (a, r) => a + r.cpu),
       wall: all.fold(0.0, (a, r) => a + r.wall),
       bytes: all.fold(0, (a, r) => a + r.bytes),
+      up: all.fold(0, (a, r) => a + r.up),
     );
     _metric('transfer_ms', ms(total));
     _metric('wire_kb', total.bytes / 1024);
+    _metric('up_kb', total.up / 1024);
     _metric('cpu_ms', total.cpu);
     _metric('wall_ms', total.wall);
     phase('snapshot', snapshots);

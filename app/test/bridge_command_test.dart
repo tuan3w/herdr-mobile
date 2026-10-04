@@ -249,7 +249,7 @@ esac
       });
       await mux.next();
 
-      mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
+      mux.send({'id': 'big', 'method': 'server.dump', 'params': {}});
 
       final reply = await mux.nextJson();
       expect(reply['id'], 'big');
@@ -270,7 +270,7 @@ esac
       await mux.next();
 
       var before = mux.wireBytes;
-      mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
+      mux.send({'id': 'big', 'method': 'server.dump', 'params': {}});
       expect(await mux.next(), big);
       expect(mux.wireBytes - before, lessThan(big.length ~/ 4));
 
@@ -280,29 +280,46 @@ esac
       expect(mux.wireBytes - before, pong('small').length + 1); // plain line
     });
 
-    test('mux_keep keeps only the listed fields, spares errors, and never reaches herdr',
+    test('a snapshot or pane read is cut down to what the app reads; errors and other methods are not',
         () async {
-      final seen = <Map<String, dynamic>>[];
       final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
-        seen.add(req);
         if (req['id'] == 'bad') {
           return '{"id":"bad","error":{"code":"pane_not_found","message":"gone","extra":1}}';
         }
-        return jsonEncode({
-          'id': req['id'],
-          'result': {
-            'type': 'session_snapshot',
-            'snapshot': {
-              'version': '1',
-              'protocol': 22,
-              'panes': [
-                {'pane_id': 'p1', 'agent': 'omp', 'scroll': {'a': 1}, 'revision': 4},
-                {'pane_id': 'p2'},
-              ],
-              'layouts': [{'x': 1}],
+        final Map<String, dynamic> result = switch (req['method']) {
+          'session.snapshot' => {
+              'type': 'session_snapshot',
+              'snapshot': {
+                'version': '1',
+                'protocol': 22,
+                'workspaces': [
+                  {'workspace_id': 'w1', 'label': 'x', 'pane_count': 2, 'extra': 1},
+                ],
+                'tabs': [
+                  {'tab_id': 'w1:t1', 'workspace_id': 'w1', 'extra': 1},
+                ],
+                'panes': [
+                  {
+                    'pane_id': 'p1',
+                    'agent': 'omp',
+                    'terminal_title': 'π > x',
+                    'agent_session': {'value': '/home/u/session.jsonl'},
+                    'scroll': {'a': 1},
+                    'revision': 4,
+                  },
+                  {'pane_id': 'p2'},
+                ],
+                'layouts': [{'x': 1}],
+                'agents': [{'pane_id': 'p1'}],
+              },
             },
-          },
-        });
+          'pane.read' => {
+              'type': 'pane_read',
+              'read': {'pane_id': 'p1', 'source': 'recent', 'text': 'hi', 'truncated': true},
+            },
+          _ => {'type': 'other', 'keep': 'all', 'protocol': 22},
+        };
+        return jsonEncode({'id': req['id'], 'result': result});
       });
       final mux = await start();
       addTearDown(() async {
@@ -310,30 +327,34 @@ esac
         await herdr.close();
       });
       await mux.next();
-      const keep = {
-        'id': true,
-        'error': true,
-        'result': {
-          'snapshot': {
-            'version': true,
-            'panes': {'pane_id': true, 'agent': true},
-          },
-        },
-      };
 
-      mux.send({'id': 'a', 'method': 'session.snapshot', 'params': {}, 'mux_keep': keep});
-      mux.send({'id': 'bad', 'method': 'session.snapshot', 'params': {}, 'mux_keep': keep});
-      final replies = {
-        for (final r in [await mux.nextJson(), await mux.nextJson()]) r['id']: r,
-      };
+      for (final (id, method) in [
+        ('snap', 'session.snapshot'),
+        ('bad', 'session.snapshot'),
+        ('read', 'pane.read'),
+        ('other', 'server.info'),
+      ]) {
+        mux.send({'id': id, 'method': method, 'params': {}});
+      }
+      final replies = <Object?, Map<String, dynamic>>{};
+      for (var n = 0; n < 4; n++) {
+        final r = await mux.nextJson();
+        replies[r['id']] = r;
+      }
 
-      expect(replies['a'], {
-        'id': 'a',
+      expect(replies['snap'], {
+        'id': 'snap',
         'result': {
           'snapshot': {
             'version': '1',
+            'workspaces': [
+              {'workspace_id': 'w1', 'label': 'x', 'pane_count': 2},
+            ],
+            'tabs': [
+              {'tab_id': 'w1:t1', 'workspace_id': 'w1'},
+            ],
             'panes': [
-              {'pane_id': 'p1', 'agent': 'omp'},
+              {'pane_id': 'p1', 'agent': 'omp', 'terminal_title': 'π > x'},
               {'pane_id': 'p2'},
             ],
           },
@@ -343,8 +364,16 @@ esac
         'id': 'bad',
         'error': {'code': 'pane_not_found', 'message': 'gone', 'extra': 1},
       });
-      expect(seen.length, 2);
-      expect(seen.every((r) => !r.containsKey('mux_keep')), isTrue);
+      expect(replies['read'], {
+        'id': 'read',
+        'result': {
+          'read': {'text': 'hi', 'truncated': true},
+        },
+      });
+      expect(replies['other'], {
+        'id': 'other',
+        'result': {'type': 'other', 'keep': 'all', 'protocol': 22},
+      });
     });
 
     test('an error herdr could not correlate (id "") comes back under the id it was sent with',

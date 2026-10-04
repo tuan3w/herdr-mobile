@@ -4,7 +4,6 @@ import 'dart:io' show zlib;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../models/herdr_models.dart' show snapshotWireFields;
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
 
@@ -120,26 +119,6 @@ Stream<String> muxMessages(Stream<List<int>> bytes) {
   return StreamTransformer<List<int>, String>.fromHandlers(handleData: feed)
       .bind(bytes);
 }
-
-/// The parts of an answer the app reads, by method (`mux_keep` in the
-/// request): the remote script drops everything else before it is sent. The
-/// same shape as the answer; `true` keeps a value whole, a map keeps the
-/// listed keys of an object (of each object, for a list). `id` and `error`
-/// are always listed so a failure still arrives whole.
-const _projections = <String, Map<String, Object>>{
-  'session.snapshot': {
-    'id': true,
-    'error': true,
-    'result': {'snapshot': snapshotWireFields},
-  },
-  'pane.read': {
-    'id': true,
-    'error': true,
-    'result': {
-      'read': {'text': true, 'truncated': true},
-    },
-  },
-};
 
 /// Multiplexes pipelined requests over one [MuxChannel], matching responses
 /// by id. Once dead (channel closed or heartbeat missed) it never revives;
@@ -274,7 +253,6 @@ class MuxClient {
         'method': method,
         'params': params,
         'mux_have': ?have,
-        'mux_keep': ?_projections[method],
       }));
     } on Object catch (e) {
       _pending.remove(id);

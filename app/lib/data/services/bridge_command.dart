@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../models/herdr_models.dart' show snapshotWireFields;
+
 final _safeName = RegExp(r'^[A-Za-z0-9._-]+$');
 
 const _pythonBridge = '''
@@ -47,6 +49,32 @@ const muxDeltaMin = 512;
 const muxDeltaKeep = 256;
 const muxDeltaChars = 4000000;
 
+/// What the mux script cuts out of an answer before sending it, by method: the
+/// parts of an answer the app reads. The same shape as the answer; `true`
+/// keeps a value whole, a map keeps the listed keys of an object (of each
+/// object, for a list). `id` and `error` are always listed so a failure still
+/// arrives whole. Per-pane session paths, scroll state, the layouts and the
+/// duplicate `agents` list are most of a snapshot and nothing reads them
+/// (`snapshotWireFields`); `pane.read` repeats ids the caller already has.
+/// Embedded in the script, so it costs nothing per request.
+const muxProjections = <String, Map<String, Object>>{
+  'session.snapshot': {
+    'id': true,
+    'error': true,
+    'result': {'snapshot': snapshotWireFields},
+  },
+  'pane.read': {
+    'id': true,
+    'error': true,
+    'result': {
+      'read': {'text': true, 'truncated': true},
+    },
+  },
+};
+
+/// Where [muxProjections] go in the script.
+const _keepSlot = '@@KEEP@@';
+
 /// Remote half of the multiplexed request channel: one JSON request per
 /// stdin line, each served on its own thread against a fresh connection to
 /// herdr's one-request-per-connection socket. Responses are written as they
@@ -54,6 +82,7 @@ const muxDeltaChars = 4000000;
 const _pythonMux = '''
 import socket,sys,os,json,threading,zlib,itertools
 P=sys.argv[1]
+K=json.loads(r"""$_keepSlot""")
 W=threading.Lock()
 def out(b,end=b"\\n"):
     try:
@@ -136,8 +165,9 @@ def serve(line):
         if isinstance(q,dict):
             i=q.get("id")
             have=q.pop("mux_have",None)
-            keep=q.pop("mux_keep",None)
-            if have is not None or keep is not None:
+            m=q.get("method")
+            keep=K.get(m) if isinstance(m,str) else None
+            if have is not None:
                 line=json.dumps(q).encode()
         s=socket.socket(socket.AF_UNIX)
         try:
@@ -221,7 +251,7 @@ if [ ! -S "\$S" ]; then
   echo "herdr-mobile: no herdr socket at \$S for session $session" >&2
   exit 78
 fi
-exec python3 -c ${_shQuote(_pythonMux)} "\$S"
+exec python3 -c ${_shQuote(_pythonMux.replaceFirst(_keepSlot, jsonEncode(muxProjections)))} "\$S"
 ''');
 }
 
