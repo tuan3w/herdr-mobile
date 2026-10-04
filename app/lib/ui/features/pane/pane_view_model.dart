@@ -301,24 +301,39 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> sendLine(String text) => _send(() => _sendLine(text));
 
   /// Sends herdr key-combo strings (`esc`, `ctrl+c`, `up` …).
-  Future<bool> sendKeys(List<String> keys) => _send(() => _sendKeys(keys));
+  ///
+  /// Keys are not a "send": they never mark the model as [sending], so a
+  /// tapped hotkey does not disable the key row and the composer while it is
+  /// in flight. Calls keep their order, one answer at a time.
+  Future<bool> sendKeys(List<String> keys) {
+    final run = _keysTail.then((_) => _send(() => _sendKeys(keys), track: false));
+    _keysTail = run.then((_) {}, onError: (_) {});
+    return run;
+  }
 
-  Future<bool> _send(Future<void> Function() action) async {
-    _sending = true;
-    notifyListeners();
+  Future<void> _keysTail = Future.value();
+
+  Future<bool> _send(Future<void> Function() action, {bool track = true}) async {
+    if (track) {
+      _sending = true;
+      notifyListeners();
+    }
+    var failed = false;
     try {
       await action();
       refresh();
       return true;
     } on HerdrApiException catch (e) {
       _error = e.toString();
+      failed = true;
       return false;
     } on HerdrTransportException catch (e) {
       _error = e.message;
+      failed = true;
       return false;
     } finally {
-      _sending = false;
-      if (!_disposed) notifyListeners();
+      if (track) _sending = false;
+      if ((track || failed) && !_disposed) notifyListeners();
     }
   }
 

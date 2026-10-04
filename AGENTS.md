@@ -110,6 +110,14 @@ check which one loads before relying on it.
   DESIGN.md "Semantics"). Check a screen by rendering it with
   `test/support/shot.dart` in light and dark, with worst-case data (long names,
   one item, zero items, Vietnamese diacritics), and look at the PNG.
+- **Keys are not a send.** `PaneViewModel.sendKeys` never sets `sending` (a
+  tapped hotkey must not disable the key row) and keeps calls in order; only
+  `sendLine` is a tracked send. Ctrl/Alt are one-shot latches (`StickyModifiers`,
+  `key_modifiers.dart`): `ModifierTypingFormatter` turns the next typed
+  character into a chord and keeps it out of the field. herdr's key names have
+  no home/end/pgup/pgdn/delete (`parse_key_combo`); `pane.send_text` is the raw
+  route for those. `pane.send_input` brackets text when the pane asks, so a
+  newline in the composer does not submit.
 - **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`
   wraps every route in one `AnnotatedRegion` using `AppTheme.systemBars`. Do not
   use Flutter's stock `SystemUiOverlayStyle.light/dark` (no status bar colour:

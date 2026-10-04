@@ -304,7 +304,7 @@ class _PaneHostScreenState extends State<PaneHostScreen>
 
   void _openFiles(MachineConnection machine, String paneId) {
     unawaited(
-      openFileBrowser(context, machine, startDir: paneIn(machine, paneId)?.cwd),
+      openFileBrowser(context, machine, startDir: machine.paneById(paneId)?.cwd),
     );
   }
 

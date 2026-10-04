@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/open_tabs.dart';
-import 'pane_screen.dart' show paneIn;
 
 /// What the tab strip, the tray and the top bar show about one tab. Built from
 /// the machine's snapshot; equal infos mean nothing visible changed.
@@ -24,7 +23,7 @@ class TabInfo {
   /// when the pane (or its whole machine) has vanished, so the tab keeps its
   /// name and can still be closed.
   factory TabInfo.of(TabRef ref, MachineConnection? machine, {TabInfo? known}) {
-    final pane = machine == null ? null : paneIn(machine, ref.paneId);
+    final pane = machine?.paneById(ref.paneId);
     if (pane == null) {
       return TabInfo(
         ref: ref,

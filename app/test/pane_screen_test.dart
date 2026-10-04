@@ -469,12 +469,115 @@ void main() {
       await pumpPane(tester);
 
       await tester.tap(find.text('esc'));
-      await tester.tap(find.text('ctrl+c'));
       await tester.tap(find.bySemanticsLabel('Up'));
       await tester.tap(find.byIcon(LucideIcons.cornerDownLeft));
+      await tester.ensureVisible(find.text('ctrl+c'));
+      await tester.pump();
+      await tester.tap(find.text('ctrl+c'));
       await tester.pump();
 
-      expect(transport.sent, ['keys:esc', 'keys:ctrl+c', 'keys:up', 'keys:enter']);
+      expect(transport.sent, ['keys:esc', 'keys:up', 'keys:enter', 'keys:ctrl+c']);
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('Ctrl armed, the next typed letter is that chord, once', (tester) async {
+      await pumpPane(tester);
+
+      await tester.tap(find.text('ctrl'));
+      await tester.pump();
+      await tester.enterText(composer(), 'r');
+      await tester.pump();
+
+      expect(transport.sent, ['keys:ctrl+r']);
+      expect(tester.widget<TextField>(composer()).controller!.text, isEmpty,
+          reason: 'the letter is a key, not text');
+
+      await tester.enterText(composer(), 'x');
+      await tester.pump();
+      expect(transport.sent, ['keys:ctrl+r'], reason: 'the latch is spent');
+      expect(tester.widget<TextField>(composer()).controller!.text, 'x');
+      await teardown(tester);
+    });
+
+    testWidgets('Ctrl and Alt armed together prefix a tapped key', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      await tester.tap(find.text('ctrl'));
+      await tester.tap(find.text('alt'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Left'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Left'));
+      await tester.pump();
+
+      expect(transport.sent, ['keys:ctrl+alt+left', 'keys:left']);
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('a key that is already a combo ignores the armed modifier but keeps it',
+        (tester) async {
+      await pumpPane(tester);
+
+      await tester.tap(find.text('ctrl'));
+      await tester.pump();
+      await tester.tap(find.text('shift+tab'));
+      await tester.pump();
+      await tester.enterText(composer(), 'o');
+      await tester.pump();
+
+      expect(transport.sent, ['keys:shift+tab', 'keys:ctrl+o']);
+      await teardown(tester);
+    });
+
+    testWidgets('the new line key breaks the line in the composer and sends nothing',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      await tester.enterText(composer(), 'first');
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('New line'));
+      await tester.pump();
+
+      expect(tester.widget<TextField>(composer()).controller!.text, 'first\n');
+      expect(transport.sent, isEmpty);
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('a held arrow repeats and its release is not one more press',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      final hold = await tester.startGesture(tester.getCenter(find.bySemanticsLabel('Up')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(transport.sent, isEmpty, reason: 'not before the delay');
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final repeated = transport.sent.length;
+      expect(repeated, greaterThanOrEqualTo(3));
+
+      await hold.up();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(transport.sent.length, repeated);
+      expect(transport.sent, everyElement('keys:up'));
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('a quick tap on an arrow presses it once', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPane(tester);
+
+      await tester.tap(find.bySemanticsLabel('Up'));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(transport.sent, ['keys:up']);
       semantics.dispose();
       await teardown(tester);
     });
@@ -638,7 +741,7 @@ void main() {
   });
 
   group('layout', () {
-    testWidgets('the five most used keys are on screen at 412dp', (tester) async {
+    testWidgets('the prompt, cursor and new line keys are on screen at 412dp', (tester) async {
       tester.view.physicalSize = const Size(412, 892);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -651,7 +754,9 @@ void main() {
       expect(rectOf(key(LucideIcons.arrowUp)).right, lessThan(412));
       expect(rectOf(key(LucideIcons.arrowDown)).right, lessThan(412));
       expect(rectOf(key(LucideIcons.cornerDownLeft)).right, lessThan(412));
-      expect(rectOf(find.text('tab')).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.arrowLeft)).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.arrowRight)).right, lessThan(412));
+      expect(rectOf(key(LucideIcons.pilcrow)).right, lessThan(412));
       await teardown(tester);
     });
 
@@ -992,7 +1097,7 @@ void main() {
 
       expect(notified, greaterThan(0), reason: 'the machine did notify');
       expect(
-        rebuilt.where({'PaneTopBar', '_Banner', '_QuickKeys', '_Composer', '_TerminalPanel', '_PaneView'}.contains),
+        rebuilt.where({'PaneTopBar', '_Banner', 'QuickKeys', '_Composer', '_TerminalPanel', '_PaneView'}.contains),
         isEmpty,
       );
 
@@ -1006,7 +1111,7 @@ void main() {
       await tester.pump();
       expect(rebuilt, contains('ValueListenableBuilder<List<TabInfo>>'),
           reason: 'the title block follows the pane');
-      expect(rebuilt.where({'_QuickKeys', '_Composer', '_Banner'}.contains), isEmpty);
+      expect(rebuilt.where({'QuickKeys', '_Composer', '_Banner'}.contains), isEmpty);
       await teardown(tester);
     });
   });

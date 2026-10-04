@@ -616,6 +616,43 @@ void main() {
       vm.dispose();
     });
 
+    _scenario('a key press is not a send: it never marks the model sending', (async, f) {
+      final vm = f.vm();
+      final sending = <bool>[];
+      vm.addListener(() => sending.add(vm.sending));
+      async.elapse(_ms(500));
+      sending.clear();
+
+      vm.sendKeys(const ['up']);
+      vm.sendKeys(const ['down']);
+      expect(vm.sending, isFalse);
+      async.flushMicrotasks();
+
+      expect(sending, everyElement(isFalse));
+      expect(f.sent, ['up', 'down'], reason: 'kept in order');
+      vm.dispose();
+    });
+
+    _scenario('a failed key press does not stop the next one', (async, f) {
+      final vm = f.vm();
+      async.elapse(_ms(500));
+      f.sendFailure = const HerdrTransportException('write failed');
+      bool? first;
+      vm.sendKeys(const ['up']).then((v) => first = v);
+      async.flushMicrotasks();
+      expect(first, isFalse);
+      expect(vm.error, 'write failed');
+
+      f.sendFailure = null;
+      bool? second;
+      vm.sendKeys(const ['down']).then((v) => second = v);
+      async.flushMicrotasks();
+
+      expect(second, isTrue);
+      expect(f.sent, ['down']);
+      vm.dispose();
+    });
+
     _scenario('a failed send reports the error and does not read', (async, f) {
       final vm = f.vm();
       async.elapse(_ms(500));

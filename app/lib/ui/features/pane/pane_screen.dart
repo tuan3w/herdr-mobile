@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../core/controls.dart';
@@ -17,8 +16,10 @@ import '../../core/terminal_links.dart';
 import '../../core/terminal_view.dart';
 import '../../core/theme.dart';
 import '../files/files_navigation.dart';
+import 'key_modifiers.dart';
 import 'link_sheet.dart';
 import 'pane_view_model.dart';
+import 'quick_keys.dart';
 import 'tab_swipe.dart';
 
 /// Height of the composer with one line.
@@ -29,7 +30,6 @@ const _composerRadius = 20.0;
 /// 46px of inner height (48 less the hairline).
 const _sendSize = 36.0;
 const _sendHit = 44.0;
-const _quickKeysHeight = 44.0;
 
 /// One open pane: its banner, terminal, quick keys and composer. The tab
 /// screen ([PaneHostScreen]) owns the view model and the chrome around it
@@ -94,18 +94,6 @@ class _Compact extends InheritedWidget {
 bool compactLayout(BuildContext context) =>
     context.dependOnInheritedWidgetOfExactType<_Compact>()?.compact ?? false;
 
-/// [id] in the machine's last snapshot, if herdr still has it.
-Pane? paneIn(MachineConnection machine, String id) {
-  for (final pane in machine.snapshot.panes) {
-    if (pane.id == id) return pane;
-  }
-  return null;
-}
-
-/// Whether input can reach the pane: the machine is live and the pane exists.
-bool _acceptsInput(MachineConnection machine, String id) =>
-    machine.isLive && paneIn(machine, id) != null;
-
 /// Owns what outlives a rebuild (the composer's text, the keys toggle) and
 /// composes the regions. Every region selects only what it shows, so a
 /// notify about some other pane rebuilds nothing here.
@@ -121,7 +109,10 @@ class _PaneView extends StatefulWidget {
 
 class _PaneViewState extends State<_PaneView> {
   final _input = TextEditingController();
+  final _focus = FocusNode();
+  final _mods = StickyModifiers();
   late final PaneViewModel _vm = context.read<PaneViewModel>();
+  late final _typing = ModifierTypingFormatter(_mods, _pressChord);
   bool _keysOpen = false;
 
   /// A table wider than the view makes the terminal scroll sideways.
@@ -130,8 +121,35 @@ class _PaneViewState extends State<_PaneView> {
   @override
   void dispose() {
     _input.dispose();
+    _focus.dispose();
+    _mods.dispose();
     _sideways.dispose();
     super.dispose();
+  }
+
+  /// A key row key, with Ctrl/Alt in front when one is armed.
+  Future<void> _pressKeys(List<String> keys) async {
+    await _vm.sendKeys(_mods.apply(keys));
+  }
+
+  /// A character typed while Ctrl/Alt was armed, already a combo.
+  void _pressChord(String combo) {
+    HapticFeedback.selectionClick();
+    _vm.sendKeys([combo]);
+  }
+
+  /// Types [text] into the composer at the cursor and brings the keyboard up.
+  void _insert(String text) {
+    final value = _input.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    _input.value = value.copyWith(
+      text: value.text.replaceRange(start, end, text),
+      selection: TextSelection.collapsed(offset: start + text.length),
+      composing: TextRange.empty,
+    );
+    _focus.requestFocus();
   }
 
   /// Types the composer's text and presses enter. With nothing but whitespace
@@ -172,7 +190,7 @@ class _PaneViewState extends State<_PaneView> {
             context,
             machine,
             link.target,
-            cwd: paneIn(machine, widget.paneId)?.cwd,
+            cwd: machine.paneById(widget.paneId)?.cwd,
             line: link.line,
           ),
         );
@@ -203,16 +221,17 @@ class _PaneViewState extends State<_PaneView> {
             ),
           ),
         ),
-        keys: _QuickKeys(
+        keys: QuickKeys(
           paneId: widget.paneId,
-          onKey: (keys) {
-            HapticFeedback.selectionClick();
-            _vm.sendKeys(keys);
-          },
+          modifiers: _mods,
+          onKeys: _pressKeys,
+          onInsert: _insert,
         ),
         composer: _Composer(
           paneId: widget.paneId,
           controller: _input,
+          focusNode: _focus,
+          typing: _typing,
           onSubmit: _submit,
         ),
       );
@@ -328,7 +347,7 @@ class _TerminalPanel extends StatelessWidget {
               );
               // What it shows is a pane that is gone: dimmed, not live.
               final closed = context.select<MachineConnection, bool>(
-                (m) => m.isLive && paneIn(m, paneId) == null,
+                (m) => m.isLive && m.paneById(paneId) == null,
               );
               final settings = context.read<TerminalSettings>();
               final vm = context.read<PaneViewModel>();
@@ -409,7 +428,7 @@ class _BannerState extends State<_Banner> {
     final ds = context.ds;
     final id = widget.paneId;
     final link = context.select<MachineConnection, ({LinkState state, String? error, bool open})>(
-      (m) => (state: m.state, error: m.error, open: paneIn(m, id) != null),
+      (m) => (state: m.state, error: m.error, open: m.paneById(id) != null),
     );
     final readError = context.select<PaneViewModel, String?>((v) => v.error);
 
@@ -474,118 +493,21 @@ class _BannerState extends State<_Banner> {
   }
 }
 
-/// One key of the quick row: a text label or an icon, and the herdr key
-/// combo(s) it sends.
-class _QuickKey {
-  const _QuickKey(this.label, this.keys, {this.icon, String? semantic})
-      : semantic = semantic ?? label;
-
-  final String label;
-  final IconData? icon;
-  final String semantic;
-  final List<String> keys;
-}
-
-/// Keys a phone keyboard lacks. Horizontally scrolling; ordered by use when
-/// answering a prompt, so the first five fit a 412dp phone.
-class _QuickKeys extends StatelessWidget {
-  const _QuickKeys({required this.paneId, required this.onKey});
-
-  final String paneId;
-  final ValueChanged<List<String>> onKey;
-
-  static const _keys = <_QuickKey>[
-    _QuickKey('esc', ['esc']),
-    _QuickKey('', ['up'], icon: LucideIcons.arrowUp, semantic: 'Up'),
-    _QuickKey('', ['down'], icon: LucideIcons.arrowDown, semantic: 'Down'),
-    _QuickKey('', ['enter'], icon: LucideIcons.cornerDownLeft, semantic: 'Enter'),
-    _QuickKey('tab', ['tab']),
-    _QuickKey('shift+tab', ['shift+tab']),
-    _QuickKey('ctrl+c', ['ctrl+c']),
-    _QuickKey('', ['left'], icon: LucideIcons.arrowLeft, semantic: 'Left'),
-    _QuickKey('', ['right'], icon: LucideIcons.arrowRight, semantic: 'Right'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = context.select<MachineConnection, bool>((m) => _acceptsInput(m, paneId)) &&
-        !context.select<PaneViewModel, bool>((v) => v.sending);
-    return SizedBox(
-      height: _quickKeysHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-        itemCount: _keys.length,
-        separatorBuilder: (_, _) => const SizedBox(width: Gap.sm),
-        itemBuilder: (_, i) {
-          final key = _keys[i];
-          return _KeyButton(
-            data: key,
-            onPressed: enabled ? () => onKey(key.keys) : null,
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _KeyButton extends StatelessWidget {
-  const _KeyButton({required this.data, required this.onPressed});
-
-  final _QuickKey data;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final color = onPressed == null ? ds.textTertiary : ds.text;
-    return PressBuilder(
-      onTap: onPressed,
-      scale: 0.96,
-      // Icon keys are named; text keys are read from their text.
-      semanticLabel: data.icon != null ? data.semantic : null,
-      builder: (context, pressed) => Center(
-        child: AnimatedContainer(
-          duration: pressed ? Motion.press : Motion.release,
-          curve: Motion.easeOut,
-          height: 36,
-          constraints: const BoxConstraints(minWidth: 44),
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: pressed ? ds.fillPressed : ds.fill,
-            borderRadius: BorderRadius.circular(Radii.control),
-          ),
-          child: data.icon != null
-              ? Icon(data.icon, size: 16, color: color)
-              : Text(
-                  data.label,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontFamily: monoFamily,
-                    fontSize: 13,
-                    height: 1.2,
-                    fontWeight: FontWeight.w500,
-                    color: color,
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Rounded multi-line input with a round send button at its right. Grows to
 /// five lines, then scrolls.
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.paneId,
     required this.controller,
+    required this.focusNode,
+    required this.typing,
     required this.onSubmit,
   });
 
   final String paneId;
   final TextEditingController controller;
+  final FocusNode focusNode;
+  final TextInputFormatter typing;
   final VoidCallback onSubmit;
 
   @override
@@ -593,7 +515,7 @@ class _Composer extends StatelessWidget {
     final ds = context.ds;
     final (state, open, agent) = context.select<MachineConnection, (LinkState, bool, String?)>(
       (m) {
-        final pane = paneIn(m, paneId);
+        final pane = m.paneById(paneId);
         return (m.state, pane != null, pane?.agent);
       },
     );
@@ -626,6 +548,12 @@ class _Composer extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
+              inputFormatters: [typing],
+              // Autocorrect rewrites commands, paths and flags; it only helps
+              // when the line is a prompt for an agent.
+              autocorrect: agent != null,
+              enableSuggestions: agent != null,
               enabled: enabled,
               minLines: 1,
               maxLines: 5,

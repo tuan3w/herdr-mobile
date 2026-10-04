@@ -113,6 +113,17 @@ class MachineConnection extends ChangeNotifier {
   DateTime? get lastSync => _lastSync;
   bool get isLive => _state == LinkState.online;
 
+  /// [id] in the last snapshot, if herdr still has it.
+  Pane? paneById(String id) {
+    for (final pane in _snapshot.panes) {
+      if (pane.id == id) return pane;
+    }
+    return null;
+  }
+
+  /// Whether input can reach pane [id]: the machine is live and the pane exists.
+  bool acceptsInput(String id) => isLive && paneById(id) != null;
+
   /// The `https` link to approve a sign-in at, while [state] is
   /// [LinkState.approval]; null otherwise.
   String? get approvalUrl => _state == LinkState.approval ? _approvalUrl : null;

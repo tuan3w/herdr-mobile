@@ -53,8 +53,11 @@ widgets, then frames it; needs Pillow).
   background tab that needs you, and a tray with a preview card per tab. Each
   tab keeps its scroll and history; only the visible one reads.
 - Live pane view in colour (truecolor/256/16, bold/dim/italic/underline),
-  virtualized so a long scrollback stays at full frame rate. Type a line or
-  send keys (esc, tab, ctrl+c, arrows, enter). Updates arrive on activity,
+  virtualized so a long scrollback stays at full frame rate. Type a line (a
+  new-line key makes it multi-line; autocorrect is off in a shell pane) or press
+  keys: a key row that follows what the pane runs, sticky Ctrl/Alt that turn the
+  next key you type into a chord (arm Ctrl, type `r` = `ctrl+r`), arrows that
+  repeat while held. Updates arrive on activity,
   not by polling, and stop while the app is in the background.
 - Built for phone networks: switching Wi-Fi/cellular or losing signal is
   detected (machines show "No network" and reconnect within a second of
