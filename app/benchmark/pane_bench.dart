@@ -137,20 +137,53 @@ void _report(String name, List<double> ms) {
   _metric('${name}_max_ms', s.last);
 }
 
-Widget _app(String text, List<String> history, {required bool wrap}) =>
-    MaterialApp(
-      theme: AppTheme.dark(),
-      home: Scaffold(
-        body: Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 392,
-            height: 760,
-            child: TerminalView(text: text, history: history, wrap: wrap),
+/// What the pane shows. The app stays mounted and only this changes, as in
+/// the real pane screen, where a ChangeNotifier rebuilds the pane and not the
+/// app around it (pumping a new MaterialApp per read would measure re-walking
+/// the theme and scaffold, which a read never does).
+final _shown = ValueNotifier<({String text, List<String> history})>(
+  (text: '', history: const []),
+);
+var _mounted = false;
+
+Widget _app(ScrollbackHistory h, {required bool wrap}) {
+  _shown.value = (text: h.window, history: h.rows);
+  return MaterialApp(
+    theme: AppTheme.dark(),
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: 392,
+          height: 760,
+          child: ValueListenableBuilder(
+            valueListenable: _shown,
+            builder: (context, shown, _) => TerminalView(
+              text: shown.text,
+              history: shown.history,
+              wrap: wrap,
+            ),
           ),
         ),
       ),
-    );
+    ),
+  );
+}
+
+/// Mounts the app on the first call; afterwards only swaps the content.
+Future<void> _show(
+  WidgetTester tester,
+  ScrollbackHistory h, {
+  required bool wrap,
+}) async {
+  if (!_mounted) {
+    _mounted = true;
+    await tester.pumpWidget(_app(h, wrap: wrap));
+    return;
+  }
+  _shown.value = (text: h.window, history: h.rows);
+  await tester.pump();
+}
 
 /// Streams [steps] reads through history + view; returns per-step ms split
 /// into (history merge, view update). [read] gives the text of read `s`.
@@ -169,7 +202,7 @@ Future<({List<double> history, List<double> view})> _stream(
     final sw = Stopwatch()..start();
     history.update(text, truncated: true);
     final a = sw.elapsedMicroseconds;
-    await tester.pumpWidget(_app(history.window, history.rows, wrap: wrap));
+    await _show(tester, history, wrap: wrap);
     final b = sw.elapsedMicroseconds - a;
     hist.add(a / 1000);
     view.add(b / 1000);
@@ -205,6 +238,7 @@ Future<void> _deepScenario(
   String name, {
   required bool wrap,
 }) async {
+  _mounted = false;
   final history = ScrollbackHistory();
   var newest = 1000;
   var step = 0;
@@ -223,7 +257,7 @@ Future<void> _deepScenario(
 
   // Cold open: parse (and, wrapping, flow) every line, lay out one screen.
   final cold = Stopwatch()..start();
-  await tester.pumpWidget(_app(history.window, history.rows, wrap: wrap));
+  await _show(tester, history, wrap: wrap);
   _metric('${name}_open_ms', cold.elapsedMicroseconds / 1000);
 
   // Streaming with the whole history in the view.
@@ -316,12 +350,13 @@ Future<void> _scenario(
   String name, {
   required bool wrap,
 }) async {
+  _mounted = false;
   final history = ScrollbackHistory();
 
   // Cold open: first paint of a full tail.
   final cold = Stopwatch()..start();
   history.update(_read(0), truncated: true);
-  await tester.pumpWidget(_app(history.window, history.rows, wrap: wrap));
+  await _show(tester, history, wrap: wrap);
   _metric('${name}_open_ms', cold.elapsedMicroseconds / 1000);
 
   await _stream(tester, history, 1, _warmup, wrap: wrap);
