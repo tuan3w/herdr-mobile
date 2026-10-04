@@ -33,8 +33,10 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
   // The tab survives the process being reclaimed.
   late final _tab = RestorableInt(widget.initialTab);
 
-  // Settings is the quietest tab: built on first visit, then kept (with its
-  // scroll position) like the others.
+  // Machines and Settings are built on first visit, then kept (with their
+  // scroll position) like the Agents board. Hidden, they would only add to the
+  // first frame, which is the one the person is waiting for.
+  bool _machinesOpened = false;
   bool _settingsOpened = false;
 
   @override
@@ -61,6 +63,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
     final ds = context.ds;
     final needYou = context.select<FleetRepository, int>((f) => f.attentionCount);
     final index = _tab.value;
+    if (index == _machines) _machinesOpened = true;
     if (index == _settings) _settingsOpened = true;
     return Scaffold(
       body: Stack(
@@ -73,7 +76,10 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin {
                 enabled: index == _agents,
                 child: AgentsScreen(onShowMachines: () => _select(_machines)),
               ),
-              TickerMode(enabled: index == _machines, child: const MachinesScreen()),
+              TickerMode(
+                enabled: index == _machines,
+                child: _machinesOpened ? const MachinesScreen() : const SizedBox.shrink(),
+              ),
               TickerMode(
                 enabled: index == _settings,
                 child: _settingsOpened ? const SettingsScreen() : const SizedBox.shrink(),
