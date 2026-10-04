@@ -13,14 +13,35 @@ HerdrTransport createSshTransport(
   MachineSecrets secrets,
   void Function(String fingerprint) onPinHostKey,
   void Function(String banner) onNotice,
+) => createSshTransportLater(profile, () async => secrets, onPinHostKey, onNotice);
+
+/// [createSshTransport] for secrets that are not at hand yet. [secrets] is
+/// asked for when the worker starts, on the first request, so a connection can
+/// exist (and show what it cached) while the keychain is still answering. A
+/// keychain that fails is a failed attempt, retried like any other.
+HerdrTransport createSshTransportLater(
+  MachineProfile profile,
+  Future<MachineSecrets> Function() secrets,
+  void Function(String fingerprint) onPinHostKey,
+  void Function(String banner) onNotice,
 ) =>
     IsolateTransport(
       builder: _buildSsh,
-      config: {
-        'profile': profile.toJson(),
-        'privateKeyPem': secrets.privateKeyPem,
-        'passphrase': secrets.passphrase,
-        'password': secrets.password,
+      config: () async {
+        final MachineSecrets s;
+        try {
+          s = await secrets();
+        } on Object {
+          throw const HerdrTransportException(
+            "Couldn't read the saved credentials from the keychain.",
+          );
+        }
+        return {
+          'profile': profile.toJson(),
+          'privateKeyPem': s.privateKeyPem,
+          'passphrase': s.passphrase,
+          'password': s.password,
+        };
       },
       onPin: onPinHostKey,
       onNotice: onNotice,

@@ -50,12 +50,22 @@ class KeychainSecretStore implements SecretStore {
 
   String _k(String id, String field) => 'machine.$id.$field';
 
+  // The three reads go out together (not one after the other), so a machine's
+  // secrets cost one round trip's wait, and reading several machines queues
+  // their reads machine by machine: the first is ready as early as it can be.
   @override
-  Future<MachineSecrets> read(String id) async => MachineSecrets(
-        privateKeyPem: await _s.read(key: _k(id, 'key')),
-        passphrase: await _s.read(key: _k(id, 'passphrase')),
-        password: await _s.read(key: _k(id, 'password')),
-      );
+  Future<MachineSecrets> read(String id) async {
+    final fields = await Future.wait([
+      _s.read(key: _k(id, 'key')),
+      _s.read(key: _k(id, 'passphrase')),
+      _s.read(key: _k(id, 'password')),
+    ]);
+    return MachineSecrets(
+      privateKeyPem: fields[0],
+      passphrase: fields[1],
+      password: fields[2],
+    );
+  }
 
   Future<void> _put(String id, String field, String? value) => value == null
       ? _s.delete(key: _k(id, field))
@@ -92,7 +102,22 @@ class MachineRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<MachineSecrets> secretsFor(String id) => _secrets.read(id);
+  // Reads started ahead of need (see [warmSecrets]), each handed over once.
+  final Map<String, Future<MachineSecrets>> _warm = {};
+
+  /// Starts reading every saved machine's secrets now, all at once, so that
+  /// the keychain's start-up work (the first read pays for its cipher) runs
+  /// while the first frame is built instead of after it. Each read is handed
+  /// to the first [secretsFor] that asks and then forgotten: nothing decrypted
+  /// is kept longer than a connection being set up needs it.
+  void warmSecrets() {
+    for (final m in _machines) {
+      _warm[m.id] ??= (_secrets.read(m.id)..ignore());
+    }
+  }
+
+  Future<MachineSecrets> secretsFor(String id) =>
+      _warm.remove(id) ?? _secrets.read(id);
 
   String newId() {
     final r = Random.secure();
@@ -104,6 +129,7 @@ class MachineRepository extends ChangeNotifier {
   /// null keeps the stored ones.
   Future<void> save(MachineProfile profile, {MachineSecrets? secrets}) async {
     if (secrets != null) {
+      _warm.remove(profile.id);
       await _secrets.write(profile.id, secrets);
       _credentialRevision[profile.id] = credentialRevision(profile.id) + 1;
     }
@@ -119,6 +145,7 @@ class MachineRepository extends ChangeNotifier {
 
   Future<void> remove(String id) async {
     _machines = _machines.where((m) => m.id != id).toList();
+    _warm.remove(id);
     await _profiles.write(_machines);
     await _secrets.delete(id);
     notifyListeners();

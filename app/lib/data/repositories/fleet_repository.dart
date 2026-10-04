@@ -9,9 +9,13 @@ import '../services/network_monitor.dart';
 import 'machine_connection.dart';
 import 'machine_repository.dart';
 
+/// Builds the connection to [profile]. [secrets] reads its credentials from
+/// the keychain; it is for the connection to call when it needs them (to open
+/// the transport), not for the factory to wait on: a connection that exists
+/// already shows what it cached, and the keychain answers meanwhile.
 typedef ConnectionFactory = MachineConnection Function(
   MachineProfile profile,
-  MachineSecrets secrets,
+  Future<MachineSecrets> Function() secrets,
 );
 
 /// An agent pane together with where it lives.
@@ -137,9 +141,8 @@ class FleetRepository extends ChangeNotifier {
     }
     for (final p in wanted.values) {
       if (_connections.containsKey(p.id)) continue;
-      final secrets = await _machines.secretsFor(p.id);
-      if (_disposed) return;
-      final c = _connect(p, secrets)..addListener(notifyListeners);
+      final c = _connect(p, () => _machines.secretsFor(p.id))
+        ..addListener(notifyListeners);
       _connections[p.id] = c;
       _keys[p.id] = _keyOf(p);
       if (_network.current.online) {

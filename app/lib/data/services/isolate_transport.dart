@@ -8,7 +8,8 @@ import 'herdr_transport.dart';
 /// Builds the real transport inside the worker isolate.
 ///
 /// Must be a top-level or static function (closures cannot cross an isolate
-/// boundary) and [config] must be sendable. [onPin] reports a host key trusted
+/// boundary) and what [IsolateTransport.config] returns must be sendable.
+/// [onPin] reports a host key trusted
 /// on first use back to the main isolate; [onNotice] forwards login banners.
 typedef TransportBuilder = HerdrTransport Function(
   Object? config,
@@ -34,7 +35,12 @@ class IsolateTransport implements HerdrTransport {
   });
 
   final TransportBuilder builder;
-  final Object? config;
+
+  /// What the worker is built from. Asked for each time a worker starts (the
+  /// first request, and again after one died or a start failed), so it can
+  /// wait for something the app does not have yet, such as the keychain's
+  /// answer, without the connection having to wait for it to exist.
+  final FutureOr<Object?> Function() config;
   final void Function(String fingerprint) onPin;
 
   /// Receives text the server shows before login (an SSH banner), such as a
@@ -60,7 +66,12 @@ class IsolateTransport implements HerdrTransport {
 
   Future<_Worker> _start() async {
     try {
-      final worker = await _Worker.spawn(builder, config, onPin, onNotice ?? (_) {});
+      final worker = await _Worker.spawn(
+        builder,
+        await config(),
+        onPin,
+        onNotice ?? (_) {},
+      );
       _live = worker;
       // A dead worker is replaced by the next call.
       unawaited(worker.gone.then((_) {

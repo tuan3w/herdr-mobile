@@ -22,6 +22,9 @@ Future<HerdrMobileApp> bootApp({
     secrets: secrets ?? KeychainSecretStore(),
   );
   await machines.load();
+  // The keychain starts on every machine's secrets now, while the rest of the
+  // stores load and the first frame is built; connections pick them up later.
+  machines.warmSecrets();
   final terminalSettings = TerminalSettings(PrefsTerminalSettingsStore());
   await terminalSettings.load();
   final newSessionSettings = NewSessionSettings(PrefsNewSessionStore());

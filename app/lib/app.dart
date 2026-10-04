@@ -78,7 +78,10 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     ),
   );
 
-  MachineConnection _sshConnection(MachineProfile profile, MachineSecrets secrets) {
+  MachineConnection _sshConnection(
+    MachineProfile profile,
+    Future<MachineSecrets> Function() secrets,
+  ) {
     // The transport reports login banners; they belong to the connection it
     // serves, which only exists once the transport has been built.
     late final MachineConnection connection;
@@ -86,7 +89,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
       profile: profile,
       cache: widget.snapshotCache,
       api: HerdrApi(
-        createSshTransport(
+        createSshTransportLater(
           profile,
           secrets,
           (fp) => widget.machines.pinHostKey(profile.id, fp),

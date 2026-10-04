@@ -160,7 +160,7 @@ IsolateTransport _transport({
 }) =>
     IsolateTransport(
       builder: _buildProbe,
-      config: config,
+      config: () => config,
       onPin: onPin ?? (_) {},
       onNotice: onNotice,
     );
@@ -178,6 +178,39 @@ void main() {
 
     final nested = (r['params'] as Map<String, dynamic>)['nested'] as Map<String, dynamic>;
     expect(nested['list'], [1, 'two', {'three': 3.0}]);
+  });
+
+  test('the worker is built from config asked at its first request, and again '
+      'after a start that failed', () async {
+    var asked = 0;
+    t = IsolateTransport(
+      builder: _buildProbe,
+      config: () async {
+        asked++;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        // The keychain is slow, and fails the first time.
+        if (asked == 1) {
+          throw const HerdrTransportException('keychain unavailable');
+        }
+        return null;
+      },
+      onPin: (_) {},
+    );
+    expect(asked, 0, reason: 'nothing is read until a request needs a worker');
+
+    await expectLater(
+      t.request('echo'),
+      throwsA(isA<HerdrTransportException>()
+          .having((e) => e.fatal, 'fatal', isFalse)
+          .having((e) => e.message, 'message', 'keychain unavailable')),
+    );
+
+    final r = await t.request('echo', {'again': true});
+    expect(r['params'], {'again': true});
+    expect(asked, 2);
+
+    await t.request('echo');
+    expect(asked, 2, reason: 'one worker serves the requests that follow');
   });
 
   test('a megabyte of text arrives whole', () async {

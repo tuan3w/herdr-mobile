@@ -33,11 +33,12 @@ import 'dart:math' as math;
 
 import 'package:herdr_mobile/app.dart' show HerdrMobileApp;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/boot.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
-import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
+import 'package:herdr_mobile/data/models/machine_profile.dart' show MachineSecrets;
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
@@ -94,49 +95,58 @@ Map<String, dynamic> _snapshot(int machine) {
   );
 }
 
-/// Answers nothing: the first paint has to come from the cache.
+/// The real transport asks for its secrets when its first request starts the
+/// worker, then talks to the network; this asks the same way and then answers
+/// nothing, so the first paint has to come from the cache.
 class _SilentTransport extends FakeTransport {
+  _SilentTransport(this._secrets, this._onSecrets);
+
+  final Future<MachineSecrets> Function() _secrets;
+  final void Function() _onSecrets;
+  var _asked = false;
+
   @override
   Future<Map<String, dynamic>> request(
     String method, [
     Map<String, dynamic> params = const {},
-  ]) => Completer<Map<String, dynamic>>().future;
+  ]) async {
+    if (!_asked) {
+      _asked = true;
+      await _secrets();
+      _onSecrets();
+    }
+    return Completer<Map<String, dynamic>>().future;
+  }
 }
 
-/// The platform keychain: one worker thread, so reads queue behind each other;
-/// the first pays for the cipher set-up. Answers come after virtual time.
-class _Keychain implements SecretStore {
+/// The platform keychain under the real [KeychainSecretStore]: one worker
+/// thread, so calls queue behind each other in the order they were made; the
+/// first pays for the cipher set-up. Answers come after virtual time.
+class _Keychain extends FlutterSecureStorage {
+  _Keychain();
+
   Future<void> _tail = Future.value();
   var _warm = false;
   int reads = 0;
 
-  Future<T> _onWorker<T>(T value) {
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
     final cost = _warm ? _keychainRead : _keychainFirstRead;
     _warm = true;
     reads++;
     final done = _tail.then((_) => Future<void>.delayed(cost));
     _tail = done;
-    return done.then((_) => value);
+    // Machines sign in with a password here; the key and passphrase are unset.
+    return done.then((_) => key.endsWith('.password') ? 'x' : null);
   }
-
-  @override
-  Future<MachineSecrets> read(String id) async {
-    // As KeychainSecretStore does: key, passphrase, password.
-    final key = await _onWorker<String?>(null);
-    final passphrase = await _onWorker<String?>(null);
-    final password = await _onWorker<String?>('x');
-    return MachineSecrets(
-      privateKeyPem: key,
-      passphrase: passphrase,
-      password: password,
-    );
-  }
-
-  @override
-  Future<void> write(String id, MachineSecrets secrets) async {}
-
-  @override
-  Future<void> delete(String id) async {}
 }
 
 ({Map<String, Object> values, int agents}) _seed() {
@@ -203,6 +213,7 @@ void main() {
     final seed = _seed();
 
     final total = <double>[];
+    final connectReady = <double>[];
     final firstCard = <double>[];
     final booted = <double>[];
     final cpu = <double>[];
@@ -235,18 +246,31 @@ void main() {
         slowest = math.max(slowest, watch.elapsedMicroseconds);
       }
 
+      var secretsReady = 0; // connections whose secrets have been read
+      var secretsReadyUs = 0; // when the last of them was
       final keychain = _Keychain();
       final cache = PrefsSnapshotCache();
       HerdrMobileApp? app;
       unawaited(
         bootApp(
           network: FakeNetwork(),
-          secrets: keychain,
+          secrets: KeychainSecretStore(keychain),
           snapshotCache: cache,
-          connect: (profile, secrets) => MachineConnection(
+          // `dynamic` so the same benchmark runs on code that hands the
+          // connection its secrets already read (a value) and on code that
+          // hands it a way to read them (a function): that is the comparison.
+          connect: (profile, dynamic secrets) => MachineConnection(
             profile: profile,
             cache: cache,
-            api: HerdrApi(_SilentTransport()),
+            api: HerdrApi(_SilentTransport(
+              secrets is MachineSecrets
+                  ? (() async => secrets)
+                  : secrets as Future<MachineSecrets> Function(),
+              () {
+                secretsReady++;
+                secretsReadyUs = virtualUs;
+              },
+            )),
             backoff: (_) => const Duration(hours: 1),
             pollInterval: const Duration(hours: 1),
           ),
@@ -265,7 +289,9 @@ void main() {
         ..start();
       await tester.pumpWidget(app!);
       watch.stop();
-      virtualUs += watch.elapsedMicroseconds;
+      // The clock the plugins' timers run on has not moved while this frame was
+      // built; the next pump catches it up by exactly this much, so the frame
+      // overlaps whatever the platform was doing meanwhile.
       cpuUs += watch.elapsedMicroseconds;
       slowest = math.max(slowest, watch.elapsedMicroseconds);
       final firstFrameUs = watch.elapsedMicroseconds;
@@ -286,14 +312,26 @@ void main() {
         if (firstCardUs == null && cards()) firstCardUs = virtualUs;
       }
       expect(fleet().agents.length, seed.agents, reason: 'run $run: not all agents arrived');
-      // One more frame so the last machine's cards are painted, not just known.
-      await pump(16000);
+      // One more frame so the last machine's cards are painted, not just known;
+      // the time it took counts.
+      await pump(1000);
+      virtualUs += math.max(0, watch.elapsedMicroseconds - 1000);
       expect(cards(), isTrue, reason: 'run $run: no cards painted');
       firstCardUs ??= virtualUs;
+      final cardsUs = virtualUs;
+      // Then until every connection could open: the keychain has answered for
+      // all of them. Moving the keychain off the path to the cards must not
+      // make connecting slower.
+      var wait = 0;
+      while (secretsReady < _machines && wait++ < 4000) {
+        await pump(1000);
+      }
+      expect(secretsReady, _machines, reason: 'run $run: secrets never read');
       keychainReads = keychain.reads;
 
       if (run < _discard) continue;
-      total.add(virtualUs / 1000);
+      total.add(cardsUs / 1000);
+      connectReady.add(secretsReadyUs / 1000);
       firstCard.add(firstCardUs / 1000);
       booted.add(bootUs / 1000);
       cpu.add(cpuUs / 1000);
@@ -303,6 +341,7 @@ void main() {
 
     _metric('startup_total_ms', _median(total));
     _metric('first_card_ms', _median(firstCard));
+    _metric('connect_ready_ms', _median(connectReady));
     _metric('boot_ms', _median(booted));
     _metric('first_frame_cpu_ms', _median(firstFrame));
     _metric('cpu_total_ms', _median(cpu));
