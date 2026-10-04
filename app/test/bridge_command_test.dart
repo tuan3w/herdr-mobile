@@ -280,7 +280,7 @@ esac
       expect(mux.wireBytes - before, pong('small').length + 1); // plain line
     });
 
-    test('a snapshot or pane read is cut down to what the app reads; errors and other methods are not',
+    test('a pane read is cut down to what the app reads; errors and other methods are not',
         () async {
       final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
         if (req['id'] == 'bad') {
@@ -329,7 +329,6 @@ esac
       await mux.next();
 
       for (final (id, method) in [
-        ('snap', 'session.snapshot'),
         ('bad', 'session.snapshot'),
         ('read', 'pane.read'),
         ('other', 'server.info'),
@@ -337,29 +336,11 @@ esac
         mux.send({'id': id, 'method': method, 'params': {}});
       }
       final replies = <Object?, Map<String, dynamic>>{};
-      for (var n = 0; n < 4; n++) {
+      for (var n = 0; n < 3; n++) {
         final r = await mux.nextJson();
         replies[r['id']] = r;
       }
 
-      expect(replies['snap'], {
-        'id': 'snap',
-        'result': {
-          'snapshot': {
-            'version': '1',
-            'workspaces': [
-              {'workspace_id': 'w1', 'label': 'x', 'pane_count': 2},
-            ],
-            'tabs': [
-              {'tab_id': 'w1:t1', 'workspace_id': 'w1'},
-            ],
-            'panes': [
-              {'pane_id': 'p1', 'agent': 'omp', 'terminal_title': 'π > x'},
-              {'pane_id': 'p2'},
-            ],
-          },
-        },
-      });
       expect(replies['bad'], {
         'id': 'bad',
         'error': {'code': 'pane_not_found', 'message': 'gone', 'extra': 1},
@@ -575,6 +556,7 @@ esac
       late MuxClient client;
       final seen = <Map<String, dynamic>>[];
       var screen = '';
+      var herdrSnapshot = <String, dynamic>{};
       FutureOr<void> Function(int call)? beforeAnswer;
 
       /// Rows `top`..`top+199` (each with its own random-looking tail, so the
@@ -604,6 +586,12 @@ esac
         herdr = await _FakeHerdr.bind('$xdg/herdr/herdr.sock', (req) async {
           seen.add(req);
           await beforeAnswer?.call(seen.length);
+          if (req['method'] == 'session.snapshot') {
+            return jsonEncode({
+              'id': req['id'],
+              'result': {'type': 'session_snapshot', 'snapshot': herdrSnapshot},
+            });
+          }
           return jsonEncode({
             'id': req['id'],
             'result': {
@@ -720,6 +708,93 @@ esac
         expect(channel.lineLengths.last, lessThan(whole));
         expect(await read(), screen);
         expect(channel.lineLengths.last, lessThan(whole ~/ 2));
+      });
+
+      group('snapshots', () {
+        /// A snapshot of [n] panes the way herdr 0.9 sends it: the fields the
+        /// app reads plus ones it does not.
+        Map<String, dynamic> snapshot(int n, {Map<int, String> status = const {}}) => {
+              'version': '0.9.3',
+              'protocol': 22,
+              'workspaces': [
+                {'workspace_id': 'w1', 'number': 1, 'label': 'Dự án', 'focused': true, 'pane_count': n, 'tab_count': 1, 'agent_status': 'working', 'active_tab_id': 'w1:t1'},
+              ],
+              'tabs': [
+                {'tab_id': 'w1:t1', 'workspace_id': 'w1', 'number': 1, 'label': '1', 'focused': true, 'pane_count': n, 'agent_status': 'working'},
+              ],
+              'panes': [
+                for (var i = 0; i < n; i++)
+                  {
+                    'pane_id': 'w1:p$i',
+                    'workspace_id': 'w1',
+                    'tab_id': 'w1:t1',
+                    'focused': i == 0,
+                    'cwd': '/home/u/project',
+                    'foreground_cwd': '/home/u/project',
+                    'terminal_title':
+                        'π > Task $i ${math.Random(i).nextInt(1 << 30).toRadixString(36)} đường dẫn ${math.Random(i + 99).nextInt(1 << 30).toRadixString(36)}',
+                    'agent': 'omp',
+                    'agent_status': status[i] ?? 'idle',
+                    'agent_session': {'value': '/home/u/.omp/s$i.jsonl'},
+                    'scroll': {'a': i},
+                    'revision': 4,
+                  },
+              ],
+              'layouts': [{'x': 1}],
+              'agents': [{'pane_id': 'w1:p0'}],
+            };
+
+        /// What the app reads of [snapshot].
+        Map<String, dynamic> cut(Map<String, dynamic> s) => {
+              'version': s['version'],
+              'workspaces': [
+                for (final w in s['workspaces'] as List)
+                  {for (final k in ['workspace_id', 'number', 'label', 'focused', 'pane_count', 'tab_count', 'agent_status']) k: (w as Map)[k]},
+              ],
+              'tabs': [
+                for (final t in s['tabs'] as List)
+                  {for (final k in ['tab_id', 'workspace_id', 'number', 'label', 'focused', 'pane_count', 'agent_status']) k: (t as Map)[k]},
+              ],
+              'panes': [
+                for (final p in s['panes'] as List)
+                  {for (final k in ['pane_id', 'workspace_id', 'tab_id', 'focused', 'cwd', 'foreground_cwd', 'terminal_title', 'agent', 'agent_status']) k: (p as Map)[k]},
+              ],
+            };
+
+        Future<Map<String, dynamic>> fetch() async =>
+            (await client.request('session.snapshot'))['snapshot'] as Map<String, dynamic>;
+
+        test('comes back as the fields the app reads, every time, whole or as a delta', () async {
+          for (final n in [40, 40, 41, 3, 3, 0, 40]) {
+            herdrSnapshot = snapshot(n, status: {n ~/ 2: 'blocked'});
+            expect(await fetch(), cut(herdrSnapshot), reason: '$n panes');
+          }
+        });
+
+        test('one pane changing status costs under half of the whole, an unchanged snapshot almost nothing', () async {
+          herdrSnapshot = snapshot(40);
+          await fetch();
+          final whole = channel.lineLengths.last;
+
+          herdrSnapshot = snapshot(40, status: {17: 'blocked'});
+          expect(await fetch(), cut(herdrSnapshot));
+          final changed = channel.lineLengths.last;
+          expect(await fetch(), cut(herdrSnapshot));
+          final same = channel.lineLengths.last;
+
+          expect(changed, lessThan(whole ~/ 2));
+          expect(same, lessThan(changed ~/ 3));
+        });
+
+        test('snapshot and pane reads are held apart', () async {
+          herdrSnapshot = snapshot(5);
+          await fetch();
+          expect(await read(), screen);
+          herdrSnapshot = snapshot(5, status: {1: 'working'});
+          screen = window(3);
+          expect(await fetch(), cut(herdrSnapshot));
+          expect(await read(), screen);
+        });
       });
 
       test('two reads at once both come back exact', () async {

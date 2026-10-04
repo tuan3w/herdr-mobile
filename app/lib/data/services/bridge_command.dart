@@ -178,16 +178,25 @@ def prune(v,s):
     return v
 def delta(q,d,have):
     res=d.get("result")
-    rd=res.get("read") if isinstance(res,dict) else None
-    if not isinstance(rd,dict) or not isinstance(rd.get("text"),str):
+    if not isinstance(res,dict):
         return
-    text=rd["text"]
-    if len(text)<$muxDeltaMin:
+    snap=q.get("method")=="session.snapshot"
+    box=res.get("snapshot" if snap else "read")
+    if not isinstance(box,dict):
         return
-    key=json.dumps(q.get("params"),sort_keys=True)
+    if snap:
+        rows=["v"+str(box.get("version",""))]
+        for k,c in (("workspaces","w"),("tabs","t"),("panes","p")):
+            for x in box.get(k) or []:
+                rows.append(c+json.dumps(x,ensure_ascii=False,separators=(",",":")))
+    else:
+        text=box.get("text")
+        if not isinstance(text,str) or len(text)<$muxDeltaMin:
+            return
+        rows=text.split("\\n")
+    n=sum(len(l)+1 for l in rows)
+    key=json.dumps([q.get("method"),q.get("params")],sort_keys=True)
     seq=next(SQ)
-    rows=text.split("\\n")
-    n=len(text)
     with HL:
         old=H.pop(key,None)
         H[key]=(seq,rows,n)
@@ -195,16 +204,21 @@ def delta(q,d,have):
         while len(H)>1 and (len(H)>$muxDeltaKeep or T[0]>$muxDeltaChars):
             T[0]-=H.pop(next(iter(H)))[2]
     d["seq"]=seq
+    body=None
     if old is not None and old[0]==have and len(old[1])+len(rows)<=$muxDeltaRows:
         o=ops(old[1],rows)
         if sum(len(l) for e in o if isinstance(e[0],str) for l in e)*2<n:
-            del rd["text"]
-            rd["delta"]={"base":have,"o":o}
+            body={"base":have,"o":o}
+    if snap:
+        res["snapshot"]={"delta":body} if body else {"rows":rows}
+    elif body:
+        del box["text"]
+        box["delta"]=body
 def post(q,r,have,keep):
     d=json.loads(r)
     if keep:
         d=prune(d,keep)
-    if q.get("method")=="pane.read":
+    if q.get("method") in ("pane.read","session.snapshot"):
         delta(q,d,have)
     return json.dumps(d,ensure_ascii=False,separators=(",",":")).encode()
 def serve(line):
@@ -242,7 +256,7 @@ def serve(line):
             # or the client would wait for a reply that is never matched.
             if i is not None and r.startswith(b'{"id":"",'):
                 r=json.dumps(dict(json.loads(r),id=i)).encode()
-            if isinstance(q,dict) and (keep or q.get("method")=="pane.read") and r.startswith(b'{"id"'):
+            if isinstance(q,dict) and keep and r.startswith(b'{"id"'):
                 try:
                     r=post(q,r,have,keep)
                 except Exception:

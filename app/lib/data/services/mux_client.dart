@@ -320,9 +320,11 @@ class MuxClient {
     String method, [
     Map<String, dynamic> params = const {},
   ]) async {
-    // One read per distinct pane read at a time may name the answer it holds;
-    // a second one concurrently gets the whole text.
-    final key = method == 'pane.read' ? jsonEncode(params) : null;
+    // One read per distinct pane read or snapshot at a time may name the
+    // answer it holds; a second one concurrently gets the whole answer.
+    final key = method == 'pane.read' || method == 'session.snapshot'
+        ? '$method ${jsonEncode(params)}'
+        : null;
     final owns = key != null && _reading.add(key);
     final basis = owns ? _held[key] : null;
     final Object? decoded;
@@ -339,7 +341,7 @@ class MuxClient {
     } finally {
       if (owns) _reading.remove(key);
     }
-    if (key != null) _resolveRead(key, basis, decoded);
+    if (key != null) _resolveHeld(method, key, basis, decoded);
     return unwrapDecoded(decoded);
   }
 
@@ -366,47 +368,86 @@ class MuxClient {
     return rows;
   }
 
-  /// Completes a `pane.read` answer: a delta (see [muxDeltaMin]) is turned
-  /// back into the full `text` using [basis], the answer this request named,
-  /// and the rows of the answer are held for the next request.
-  void _resolveRead(String key, _HeldRead? basis, Object? decoded) {
+  /// Completes a `pane.read` or `session.snapshot` answer. A delta (see
+  /// [muxDeltaMin]) is turned back into the whole answer using [basis], the
+  /// answer this request named; a snapshot always travels as rows (one per
+  /// workspace, tab and pane, see [_snapshotFromRows]). The rows of the answer
+  /// are held for the next request.
+  void _resolveHeld(String method, String key, _HeldRead? basis, Object? decoded) {
     if (decoded is! Map<String, dynamic>) return;
     final result = decoded['result'];
-    final read = result is Map<String, dynamic> ? result['read'] : null;
-    if (read is! Map<String, dynamic>) return;
+    final snapshot = method == 'session.snapshot';
+    final box = result is Map<String, dynamic> ? result[snapshot ? 'snapshot' : 'read'] : null;
+    if (box is! Map<String, dynamic>) return;
     final seq = decoded['seq'];
-    final delta = read['delta'];
+    final delta = box['delta'];
     final List<String> rows;
-    final int chars;
     if (delta is Map<String, dynamic>) {
       final rebuilt = basis != null && delta['base'] == basis.seq && seq is int
           ? _applyOps(basis.rows, delta['o'])
           : null;
       if (rebuilt == null) {
         _drop(key);
-        throw const HerdrTransportException('herdr sent a pane read we cannot rebuild');
+        throw HerdrTransportException('herdr sent a $method answer we cannot rebuild');
       }
       rows = rebuilt;
-      read.remove('delta');
-      final text = rows.join('\n');
-      chars = text.length;
-      read['text'] = text;
+      if (!snapshot) {
+        box.remove('delta');
+        box['text'] = rows.join('\n');
+      }
+    } else if (snapshot) {
+      final sent = box['rows'];
+      if (seq is! int || sent is! List || sent.any((r) => r is! String)) {
+        _drop(key);
+        return;
+      }
+      rows = sent.cast<String>();
     } else {
-      final text = read['text'];
+      final text = box['text'];
       if (seq is! int || text is! String) {
         _drop(key);
         return;
       }
-      chars = text.length;
       rows = text.split('\n');
     }
+    if (snapshot) {
+      final whole = _snapshotFromRows(rows);
+      if (whole == null) {
+        _drop(key);
+        throw const HerdrTransportException('herdr sent a snapshot we cannot read');
+      }
+      (result! as Map<String, dynamic>)['snapshot'] = whole;
+    }
     _drop(key);
-    _held[key] = _HeldRead(seq, rows, chars);
+    final chars = rows.fold<int>(0, (n, r) => n + r.length + 1);
+    _held[key] = _HeldRead(seq as int, rows, chars);
     _heldChars += chars;
     while (_held.length > 1 &&
         (_held.length > muxDeltaKeep || _heldChars > muxDeltaChars)) {
       _drop(_held.keys.first);
     }
+  }
+
+  /// The snapshot the rows of the mux script describe: `v<version>`, then a
+  /// letter and the JSON of each workspace (`w`), tab (`t`) and pane (`p`).
+  static Map<String, dynamic>? _snapshotFromRows(List<String> rows) {
+    if (rows.isEmpty || !rows.first.startsWith('v')) return null;
+    final lists = {'w': <Object?>[], 't': <Object?>[], 'p': <Object?>[]};
+    try {
+      for (final row in rows.skip(1)) {
+        final list = row.isEmpty ? null : lists[row[0]];
+        if (list == null) return null;
+        list.add(jsonDecode(row.substring(1)));
+      }
+    } on FormatException {
+      return null;
+    }
+    return {
+      'version': rows.first.substring(1),
+      'workspaces': lists['w'],
+      'tabs': lists['t'],
+      'panes': lists['p'],
+    };
   }
 
   void _drop(String key) {
