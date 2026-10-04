@@ -732,6 +732,162 @@ esac
       });
     });
   }, skip: _has('python3') ? false : 'needs python3');
+
+  group('event subscription', () {
+    late String sock;
+    late _EventHerdr herdr;
+    setUp(() async {
+      sock = '${home.path}/xdg/herdr/herdr.sock';
+      herdr = await _EventHerdr.bind(sock);
+    });
+    tearDown(() => herdr.close());
+
+    Future<_MuxProc> subscribe({
+      String? socketPath,
+    }) async {
+      final proc = await _MuxProc.start(
+        buildEventsCommand(session: 'default', socketPath: socketPath ?? sock),
+        home,
+        {'XDG_CONFIG_HOME': '${home.path}/xdg'},
+      );
+      proc.send({
+        'id': 's',
+        'method': 'events.subscribe',
+        'params': {'subscriptions': []},
+      });
+      return proc;
+    }
+
+    Map<String, dynamic> paneEvent(int n, {String status = 'working'}) => {
+          'data': {
+            'pane': {
+              'agent': 'omp',
+              'agent_session': {'value': '/home/u/.omp/agent/sessions/x.jsonl'},
+              'agent_status': status,
+              'cwd': '/home/u/project',
+              'focused': true,
+              'foreground_cwd': '/home/u/project',
+              'pane_id': 'w1:p1',
+              'revision': 1000 + n,
+              'scroll': {'max_offset_from_bottom': 4758, 'viewport_rows': 57},
+              'tab_id': 'w1:t1',
+              'terminal_id': 'term_65cf7aec92d3f7',
+              'terminal_title': 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app',
+              'terminal_title_stripped': 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app',
+              'workspace_id': 'w1',
+            },
+            'type': 'pane_updated',
+          },
+          'event': 'pane_updated',
+        };
+
+    test('forwards the request, acks plain, then sends events cut down and deflated',
+        () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+
+      final ack = await proc.next();
+      expect(jsonDecode(ack), {
+        'id': 's',
+        'result': {'type': 'subscription_started'},
+      });
+      expect(herdr.requests, hasLength(1));
+      expect(herdr.requests.single['method'], 'events.subscribe');
+
+      await herdr.untilSubscribed();
+      final before = proc.wireBytes;
+      for (var n = 0; n < 40; n++) {
+        herdr.emit(paneEvent(n));
+      }
+      herdr.emit({
+        'data': {'workspace': {'workspace_id': 'w1', 'label': 'x'}, 'type': 'workspace_created'},
+        'event': 'workspace_created',
+      });
+      final got = [for (var n = 0; n < 41; n++) jsonDecode(await proc.next()) as Map];
+
+      expect(got.first, {
+        'event': 'pane_updated',
+        'data': {
+          'pane': {
+            'agent': 'omp',
+            'agent_status': 'working',
+            'cwd': '/home/u/project',
+            'focused': true,
+            'foreground_cwd': '/home/u/project',
+            'pane_id': 'w1:p1',
+            'tab_id': 'w1:t1',
+            'terminal_title': 'π ⠋ Redesign the app',
+            'terminal_title_stripped': 'π ⠋ Redesign the app',
+            'workspace_id': 'w1',
+          },
+        },
+      });
+      expect(
+        [for (final e in got.take(40)) (e['data'] as Map)['pane']['terminal_title']],
+        [for (var n = 0; n < 40; n++) 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app'],
+      );
+      // Only the name of an event that is not about a pane survives.
+      expect(got.last, {'event': 'workspace_created', 'data': <String, dynamic>{}});
+      // 41 events of ~700 bytes each, in a few hundred bytes apiece at most.
+      expect(proc.wireBytes - before, lessThan(41 * 700 ~/ 8));
+    });
+
+    test('an error herdr answers with comes back plain and the script ends', () async {
+      herdr.ack = '{"id":"s","error":{"code":"invalid_request","message":"no such event"}}';
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+
+      expect(jsonDecode(await proc.next())['error']['code'], 'invalid_request');
+      herdr.hangUp();
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('ends when herdr hangs up', () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+      await proc.next();
+      await herdr.untilSubscribed();
+
+      herdr.hangUp();
+
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('ends when the channel closes', () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+      await proc.next();
+
+      await proc.process.stdin.close();
+
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('a missing socket exits 78 with a hint, like the mux', () async {
+      final r = await _run(
+        buildEventsCommand(session: 'work'),
+        home,
+        env: {'XDG_CONFIG_HOME': '${home.path}/nowhere'},
+      );
+
+      expect(r.code, 78);
+      expect(r.out, isEmpty);
+      expect(r.err, contains('no herdr socket'));
+    });
+
+    test('shell metacharacters in a socket path are never executed', () async {
+      for (final evil in [
+        "x'; touch ${home.path}/pwned; '",
+        '\$(touch ${home.path}/pwned)',
+        '`touch ${home.path}/pwned`',
+      ]) {
+        final r = await _run(buildEventsCommand(session: 'work', socketPath: evil), home);
+
+        expect(File('${home.path}/pwned').existsSync(), isFalse, reason: evil);
+        expect(r.code, 78, reason: evil);
+      }
+    });
+  }, skip: _has('python3') ? false : 'needs python3');
 }
 
 /// A running mux command with line-oriented access to its stdout.
@@ -850,4 +1006,59 @@ class _ProcessChannel implements MuxChannel {
 
   @override
   Future<int?> get exitCode => _process.exitCode;
+}
+
+/// A herdr that keeps the connection of an `events.subscribe` open and sends
+/// what the test tells it to.
+class _EventHerdr {
+  _EventHerdr._(this._server);
+
+  static Future<_EventHerdr> bind(String path) async {
+    Directory(File(path).parent.path).createSync(recursive: true);
+    final server = await ServerSocket.bind(
+      InternetAddress(path, type: InternetAddressType.unix),
+      0,
+    );
+    final herdr = _EventHerdr._(server);
+    server.listen((client) {
+      utf8.decoder.bind(client).transform(const LineSplitter()).first.then((line) {
+        herdr.requests.add(jsonDecode(line) as Map<String, dynamic>);
+        final id = (herdr.requests.last['id'] as String?) ?? '';
+        client.write('${herdr.ack ?? '{"id":"$id","result":{"type":"subscription_started"}}'}\n');
+        herdr._clients.add(client);
+      });
+    });
+    return herdr;
+  }
+
+  final ServerSocket _server;
+  final _clients = <Socket>[];
+  final requests = <Map<String, dynamic>>[];
+
+  /// What to answer the subscription with, if not a success.
+  String? ack;
+
+  Future<void> untilSubscribed() async {
+    while (_clients.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  void emit(Map<String, dynamic> event) {
+    for (final c in _clients) {
+      c.write('${jsonEncode(event)}\n');
+    }
+  }
+
+  void hangUp() {
+    for (final c in _clients) {
+      c.destroy();
+    }
+    _clients.clear();
+  }
+
+  Future<void> close() async {
+    hangUp();
+    await _server.close();
+  }
 }

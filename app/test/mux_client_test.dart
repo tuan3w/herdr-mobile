@@ -616,6 +616,77 @@ void main() {
 
       expect(got, ['{"id":"ok"}']);
     });
+
+    group('event stream (E frames)', () {
+      // The events script sends one zlib stream, cut into frames after every
+      // event. Stored blocks make the same kind of stream without a deflater:
+      // a header, then one non-final block per frame (what a sync flush ends
+      // with).
+      List<int> stored(List<int> data, {bool first = false}) {
+        final z = [
+          if (first) ...[0x78, 0x01],
+          0x00,
+          data.length & 0xff,
+          data.length >> 8,
+          ~data.length & 0xff,
+          (~data.length >> 8) & 0xff,
+          ...data,
+        ];
+        return [...ascii.encode('E${z.length}\n'), ...z];
+      }
+
+      final ack = utf8.encode('{"id":"s","result":{"type":"subscription_started"}}\n');
+      final events = [
+        '{"event":"pane_updated","data":{"pane":{"pane_id":"w1:p1","terminal_title":"π ⠋ đường"}}}',
+        '{"event":"pane_updated","data":{"pane":{"pane_id":"w1:p1","terminal_title":"π ⠙ đường"}}}',
+        '{"event":"tab_closed"}',
+      ];
+
+      test('the ack comes plain, then each event, however the bytes are cut', () async {
+        final stream = [
+          ...ack,
+          ...stored(utf8.encode('${events[0]}\n'), first: true),
+          ...stored(utf8.encode('${events[1]}\n${events[2]}\n')),
+        ];
+        for (final size in [1, 2, 5, 17, 100, stream.length]) {
+          expect(
+            await muxMessages(Stream.fromIterable(_chunks(stream, size))).toList(),
+            [utf8.decode(ack).trim(), ...events],
+            reason: 'chunks of $size bytes',
+          );
+        }
+      });
+
+      test('a line may continue in the next frame', () async {
+        final line = utf8.encode('${events[0]}\n');
+        final cut = line.length ~/ 2 + 1; // inside a multi-byte character too
+        final stream = [
+          ...stored(line.sublist(0, cut), first: true),
+          ...stored(line.sublist(cut)),
+        ];
+        expect(
+          await muxMessages(Stream.fromIterable(_chunks(stream, 7))).toList(),
+          [events[0]],
+        );
+      });
+
+      test('a stream that stops inflating is an error, and ends the reading', () async {
+        final stream = [
+          ...stored(utf8.encode('${events[0]}\n'), first: true),
+          ...ascii.encode('E4\n'),
+          0xff, 0xff, 0xff, 0xff, // not a deflate block
+          ...stored(utf8.encode('${events[1]}\n')),
+        ];
+        final got = <String>[];
+        final errors = <Object>[];
+        await muxMessages(Stream.fromIterable(_chunks(stream, 9)))
+            .handleError(errors.add)
+            .forEach(got.add);
+
+        expect(got, [events[0]]);
+        expect(errors, hasLength(1));
+      });
+    });
   });
 }
 

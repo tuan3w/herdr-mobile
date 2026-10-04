@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../models/herdr_models.dart' show snapshotWireFields;
+import '../models/herdr_models.dart' show paneWireFields, snapshotWireFields;
 
 final _safeName = RegExp(r'^[A-Za-z0-9._-]+$');
 
@@ -74,6 +74,59 @@ const muxProjections = <String, Map<String, Object>>{
 
 /// Where [muxProjections] go in the script.
 const _keepSlot = '@@KEEP@@';
+
+/// What the events script keeps of each event: its name and, for
+/// `pane_updated`, the pane fields the app reads. The app tells other events
+/// apart by name alone (`MachineConnection` refreshes on them).
+const eventProjection = <String, Object>{
+  'event': true,
+  'data': {'pane': paneWireFields},
+};
+
+/// Remote half of one event subscription (see [buildEventsCommand]).
+const _pythonEvents = '''
+import socket,sys,os,json,zlib,threading
+K=json.loads(r"""$_keepSlot""")
+def prune(v,s):
+    if s is True:
+        return v
+    if isinstance(v,list):
+        return [prune(x,s) for x in v]
+    if isinstance(v,dict):
+        return {k:prune(v[k],t) for k,t in s.items() if k in v}
+    return v
+q=sys.stdin.buffer.readline()
+s=socket.socket(socket.AF_UNIX)
+s.connect(sys.argv[1])
+s.sendall(q)
+def watch():
+    sys.stdin.buffer.read()
+    os._exit(0)
+threading.Thread(target=watch,daemon=True).start()
+def run():
+    f=s.makefile("rb")
+    o=sys.stdout.buffer
+    a=f.readline()
+    if not a:
+        return 1
+    o.write(a)
+    o.flush()
+    c=zlib.compressobj(6)
+    for line in f:
+        try:
+            line=json.dumps(prune(json.loads(line),K),ensure_ascii=False,separators=(",",":")).encode()+b"\\n"
+        except Exception:
+            pass
+        z=c.compress(line)+c.flush(zlib.Z_SYNC_FLUSH)
+        o.write(b"E%d\\n"%len(z)+z)
+        o.flush()
+    return 0
+try:
+    code=run()
+except Exception:
+    code=1
+os._exit(code)
+''';
 
 /// Remote half of the multiplexed request channel: one JSON request per
 /// stdin line, each served on its own thread against a fresh connection to
@@ -232,7 +285,38 @@ String _shellCommand(String script) {
 /// when either is missing so callers can fall back to [buildBridgeCommand].
 ///
 /// Shipped base64-encoded like [buildBridgeCommand], with stdin untouched.
-String buildMuxCommand({required String session, String? socketPath}) {
+String buildMuxCommand({required String session, String? socketPath}) =>
+    _pythonCommand(
+      what: 'the multiplexed channel',
+      script: _pythonMux.replaceFirst(_keepSlot, jsonEncode(muxProjections)),
+      session: session,
+      socketPath: socketPath,
+    );
+
+/// Builds the remote command for one event subscription: reads the
+/// `events.subscribe` request line from stdin, forwards it to herdr's socket
+/// and prints herdr's acknowledgement as a plain line, then every event cut
+/// down to what the app reads ([eventProjection]) and deflated as `E<n>`
+/// frames of one continuous zlib stream (see `muxMessages`). A working agent
+/// makes herdr send ~10 near-identical 770-byte events a second; in a stream
+/// that remembers the last one they cost ~30 bytes each. Exits when stdin
+/// closes or herdr hangs up. Needs `python3` and the socket like
+/// [buildMuxCommand], and exits 78 when either is missing, so the caller can
+/// use [buildBridgeCommand] instead.
+String buildEventsCommand({required String session, String? socketPath}) =>
+    _pythonCommand(
+      what: 'the event channel',
+      script: _pythonEvents.replaceFirst(_keepSlot, jsonEncode(eventProjection)),
+      session: session,
+      socketPath: socketPath,
+    );
+
+String _pythonCommand({
+  required String what,
+  required String script,
+  required String session,
+  required String? socketPath,
+}) {
   _checkSession(session);
   final String socketExpr;
   if (socketPath != null && socketPath.isNotEmpty) {
@@ -243,7 +327,7 @@ String buildMuxCommand({required String session, String? socketPath}) {
   }
   return _shellCommand('''
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "herdr-mobile: the multiplexed channel needs python3 on this host" >&2
+  echo "herdr-mobile: $what needs python3 on this host" >&2
   exit 78
 fi
 S=$socketExpr
@@ -251,7 +335,7 @@ if [ ! -S "\$S" ]; then
   echo "herdr-mobile: no herdr socket at \$S for session $session" >&2
   exit 78
 fi
-exec python3 -c ${_shQuote(_pythonMux.replaceFirst(_keepSlot, jsonEncode(muxProjections)))} "\$S"
+exec python3 -c ${_shQuote(script)} "\$S"
 ''');
 }
 

@@ -63,6 +63,10 @@ class SshTransport implements HerdrTransport {
         _muxCommand = buildMuxCommand(
           session: profile.session,
           socketPath: profile.socketPath,
+        ),
+        _eventsCommand = buildEventsCommand(
+          session: profile.session,
+          socketPath: profile.socketPath,
         );
 
   final MachineProfile profile;
@@ -82,6 +86,7 @@ class SshTransport implements HerdrTransport {
 
   final String _command;
   final String _muxCommand;
+  final String _eventsCommand;
   late String? _pinned = profile.hostKeyFingerprint;
   Future<SSHClient>? _client;
   MuxClient? _mux;
@@ -89,7 +94,8 @@ class SshTransport implements HerdrTransport {
   // After a failed mux start (no python3, or herdr's socket is not there right
   // now, e.g. herdr is restarting) requests use the slower bridge channel until
   // this instant, then the mux is tried again. Not permanent: a missing socket
-  // is a transient condition, not a property of the host.
+  // is a transient condition, not a property of the host. An event
+  // subscription whose script exits 78 sets it too, and takes the bridge.
   DateTime? _muxRetryAt;
   static const _muxRetryDelay = Duration(seconds: 30);
   // Bumped by every teardown so a mux that finished starting afterwards is
@@ -397,8 +403,10 @@ class SshTransport implements HerdrTransport {
     out = StreamController<Map<String, dynamic>>(
       onListen: () async {
         _liveEvents.add(fail);
-        try {
-          final s = session = await _open(_command);
+        // Opens the subscription through [command] (the events script, or
+        // the bridge it falls back to).
+        Future<void> subscribe(String command, {required bool script}) async {
+          final s = session = await _open(command);
           if (out.isClosed) {
             s.close();
             return;
@@ -407,7 +415,7 @@ class SshTransport implements HerdrTransport {
           s.stdin.add(utf8.encode(
               _frame('events.subscribe', {'subscriptions': subscriptions})));
           var acked = false;
-          sub = jsonLines(s.stdout).listen(
+          sub = muxMessages(s.stdout).listen(
             (line) {
               try {
                 if (!acked) {
@@ -422,8 +430,34 @@ class SshTransport implements HerdrTransport {
               }
             },
             onError: out.addError,
-            onDone: () async => fail(await _bridgeFailure(s, stderr)),
+            onDone: () async {
+              final failure = await _bridgeFailure(s, stderr);
+              if (script && !acked && failure.fatal && !out.isClosed) {
+                // Exit 78: this host cannot run the script (no python3, or no
+                // socket where it looked). The bridge can; mux and script
+                // share the verdict.
+                _muxRetryAt = DateTime.now().add(_muxRetryDelay);
+                try {
+                  await subscribe(_command, script: false);
+                } on Object catch (e) {
+                  if (out.isClosed) return;
+                  _liveEvents.remove(fail);
+                  out.addError(e);
+                  await out.close();
+                }
+                return;
+              }
+              fail(failure);
+            },
           );
+        }
+
+        try {
+          final retryAt = _muxRetryAt;
+          final scriptsDown = retryAt != null && DateTime.now().isBefore(retryAt);
+          await (scriptsDown
+              ? subscribe(_command, script: false)
+              : subscribe(_eventsCommand, script: true));
         } on Object catch (e) {
           if (out.isClosed) return;
           _liveEvents.remove(fail);

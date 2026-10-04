@@ -68,8 +68,28 @@ const _maxFrame = 1 << 26;
 Stream<String> muxMessages(Stream<List<int>> bytes) {
   var buf = Uint8List(64 * 1024);
   var start = 0, end = 0;
+  // The `E` frames: one inflater for the whole stream, and the rest of a line
+  // it has not finished yet.
+  ByteConversionSink? inflater;
+  EventSink<String>? inflated;
+  var partial = const <int>[];
+  var broken = false;
+
+  void onInflated(List<int> data) {
+    final all = partial.isEmpty ? data : [...partial, ...data];
+    var from = 0;
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] != 0x0A) continue;
+      if (i > from) {
+        inflated!.add(utf8.decode(all.sublist(from, i), allowMalformed: true));
+      }
+      from = i + 1;
+    }
+    partial = from == all.length ? const [] : all.sublist(from);
+  }
 
   void feed(List<int> chunk, EventSink<String> sink) {
+    if (broken) return;
     if (end + chunk.length > buf.length) {
       final live = end - start;
       if (live + chunk.length > buf.length) {
@@ -91,7 +111,8 @@ Stream<String> muxMessages(Stream<List<int>> bytes) {
         nl++;
       }
       if (nl == end) break; // no complete line yet
-      if (buf[start] != 0x5A /* Z */) {
+      final kind = buf[start];
+      if (kind != 0x5A /* Z */ && kind != 0x45 /* E */) {
         final line = Uint8List.sublistView(buf, start, nl);
         start = nl + 1;
         sink.add(utf8.decode(line, allowMalformed: true));
@@ -105,6 +126,19 @@ Stream<String> muxMessages(Stream<List<int>> bytes) {
       if (end - (nl + 1) < n) break; // the rest of the frame is on its way
       final frame = Uint8List.sublistView(buf, nl + 1, nl + 1 + n);
       start = nl + 1 + n;
+      if (kind == 0x45) {
+        // Another piece of the one zlib stream; what it inflates to is lines.
+        inflated = sink;
+        try {
+          (inflater ??= zlib.decoder.startChunkedConversion(_Collect(onInflated))).add(frame);
+        } on Object {
+          // The stream's state is gone: nothing after this can be read.
+          broken = true;
+          sink.addError(const FormatException('event stream is corrupt'));
+          return;
+        }
+        continue;
+      }
       final String text;
       try {
         text = utf8.decode(zlib.decode(frame));
@@ -118,6 +152,19 @@ Stream<String> muxMessages(Stream<List<int>> bytes) {
 
   return StreamTransformer<List<int>, String>.fromHandlers(handleData: feed)
       .bind(bytes);
+}
+
+/// Receives what a chunked zlib decoder produces.
+class _Collect implements Sink<List<int>> {
+  const _Collect(this._onData);
+
+  final void Function(List<int>) _onData;
+
+  @override
+  void add(List<int> data) => _onData(data);
+
+  @override
+  void close() {}
 }
 
 /// Multiplexes pipelined requests over one [MuxChannel], matching responses
