@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """A deterministic stand-in for herdr's API socket, for transfer_bench.dart.
 
-One JSON request per connection, one JSON line back (like the real socket).
-Serves `ping`, `session.snapshot` and `pane.read`. Payloads have the shape and
+One JSON request per connection, one JSON line back (like the real socket),
+except `events.subscribe`, which keeps its connection and gets a
+`pane_updated` event (shaped like herdr 0.9.3's: the whole pane, ~770 B, with
+a title spinner and a revision that change every time) for each `bench.emit`
+count asked for. Serves `ping`, `session.snapshot`, `pane.read`. Payloads have the shape and
 size of what herdr 0.9.3 sends (snapshot: workspaces, tabs, panes, layouts and
 agents, ~680 B per pane; pane.read: ANSI rows). Content is seeded, and a pane
 advances only when it is read, so a sequential client sees the same bytes in
@@ -178,6 +181,50 @@ def pane_read(params):
 
 
 SEQ = [0]
+SUBS = []  # connections of events.subscribe
+EMITTED = [0]
+
+
+def pane_event(n):
+    index = n % PANES
+    w, t, p = PANE_LIST[index]
+    title = "π %s Task %d refactor the thing" % ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[n % 10], index)
+    return {
+        "data": {
+            "pane": {
+                "agent": ["omp", "claude", "codex", None][index % 4],
+                "agent_session": {"agent": "omp", "kind": "path", "source": "herdr:omp", "value": SESSION},
+                "agent_status": "working",
+                "cwd": "/media/user/data/workspace/project%d" % (index % WORKSPACES),
+                "focused": index == 3,
+                "foreground_cwd": "/media/user/data/workspace/project%d" % (index % WORKSPACES),
+                "pane_id": p,
+                "revision": 118000 + n,
+                "scroll": {"max_offset_from_bottom": 4758, "offset_from_bottom": 0, "viewport_rows": 57},
+                "tab_id": t,
+                "terminal_id": "term_%014x" % (index * 7919),
+                "terminal_title": title,
+                "terminal_title_stripped": title,
+                "workspace_id": w,
+            },
+            "type": "pane_updated",
+        },
+        "event": "pane_updated",
+    }
+
+
+def emit(count):
+    with LOCK:
+        subs = list(SUBS)
+        first = EMITTED[0]
+        EMITTED[0] += count
+    for n in range(first, first + count):
+        line = json.dumps(pane_event(n), ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
+        for c in subs:
+            try:
+                c.sendall(line)
+            except OSError:
+                pass
 
 
 def handle(conn):
@@ -190,7 +237,15 @@ def handle(conn):
             b += d
         req = json.loads(b)
         m, p = req.get("method"), req.get("params") or {}
-        if m == "ping":
+        if m == "events.subscribe":
+            conn.sendall(b'{"id":%s,"result":{"type":"subscription_started"}}\n' % json.dumps(req.get("id")).encode())
+            with LOCK:
+                SUBS.append(conn)
+            return  # stays open; the connection is closed when the client goes
+        if m == "bench.emit":
+            emit(int(p.get("count", 1)))
+            out = {"result": {"type": "ok"}}
+        elif m == "ping":
             out = {"result": {"type": "pong", "version": "0.9.3", "protocol": 22}}
         elif m == "session.snapshot":
             with LOCK:
@@ -204,7 +259,8 @@ def handle(conn):
         out = dict(id=req.get("id"), **out)  # herdr writes the id first
         conn.sendall(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode() + b"\n")
     finally:
-        conn.close()
+        if conn not in SUBS:
+            conn.close()
 
 
 def main():

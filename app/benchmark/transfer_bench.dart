@@ -6,7 +6,8 @@
 // script -> a unix socket) talking to a deterministic stand-in for herdr
 // (`fake_herdr.py`), over SSH to this machine's own sshd. The workload is what
 // a session asks for: snapshot refreshes, pane screen reads (300 ANSI rows),
-// and the board's 24-row preview reads. It goes through HerdrApi, so the
+// the board's 24-row preview reads, and the stream of `pane_updated` events a
+// working agent causes (herdr sends ~10 a second, ~770 B each). It goes through HerdrApi, so the
 // models' parsing is part of the cost.
 //
 // What is measured, per workload and in total:
@@ -38,6 +39,7 @@ const _snapshots = 60;
 const _screenReads = 60;
 const _previewRounds = 3;
 const _previewPanes = 40;
+const _events = 300;
 
 final _out = <String>[];
 
@@ -159,6 +161,31 @@ void main() {
       }
     });
 
+    // A working agent's events: one subscription, a burst of pane_updated.
+    var got = 0, bad = 0;
+    final allIn = Completer<void>();
+    final sub = api.changes().listen((e) {
+      final pane = e['data'] is Map ? (e['data'] as Map)['pane'] : null;
+      if (e['event'] == 'pane_updated' && pane is Map && pane['pane_id'] is String) {
+        got++;
+      } else {
+        bad++;
+      }
+      if (got >= _events && !allIn.isCompleted) allIn.complete();
+    });
+    // The fake has no ack to wait for: poke it until the subscription is live.
+    while (got == 0) {
+      await transport.request('bench.emit', {'count': 1});
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    got = 0;
+    final events = await _measure(() async {
+      await transport.request('bench.emit', {'count': _events});
+      await allIn.future.timeout(const Duration(seconds: 20));
+    });
+    await sub.cancel();
+    expect(bad, 0);
+
     double ms(_Result r) => r.cpu + r.bytes / _linkBytesPerMs;
     void phase(String name, _Result r) {
       _metric('${name}_ms', ms(r));
@@ -168,7 +195,7 @@ void main() {
       _metric('${name}_wall_ms', r.wall);
     }
 
-    final all = [snapshots, screen, previews];
+    final all = [snapshots, screen, previews, events];
     final total = (
       cpu: all.fold(0.0, (a, r) => a + r.cpu),
       wall: all.fold(0.0, (a, r) => a + r.wall),
@@ -183,6 +210,7 @@ void main() {
     phase('snapshot', snapshots);
     phase('screen', screen);
     phase('preview', previews);
+    phase('events', events);
 
     File(Platform.environment['BENCH_OUT']!).writeAsStringSync('${_out.join('\n')}\n');
   }, timeout: const Timeout(Duration(minutes: 3)));
