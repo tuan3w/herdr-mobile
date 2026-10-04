@@ -228,22 +228,34 @@ void main() {
       SharedPreferences.resetStatic();
       SharedPreferences.setMockInitialValues(Map<String, Object>.of(seed.values));
 
-      var virtualUs = 0; // the clock the app sees
+      var virtualUs = 0; // the clock the app sees (timers run on it)
+      var lastCpuUs = 0; // CPU of the operation just finished, not yet on it
       var cpuUs = 0; // work actually done
       var slowest = 0;
       final watch = Stopwatch();
 
-      /// Lets [step] of virtual time pass (at least as long as the last thing
-      /// took), running whatever is due.
+      /// When it is "now" for a reader right after an operation: the clock plus
+      /// the work that operation did, which the clock only catches up with on
+      /// the next pump. (A frame that ends the run counts in full.)
+      int now() => virtualUs + lastCpuUs;
+
+      void spent() {
+        watch.stop();
+        lastCpuUs = watch.elapsedMicroseconds;
+        cpuUs += lastCpuUs;
+        slowest = math.max(slowest, lastCpuUs);
+      }
+
+      /// Lets [stepUs] of virtual time pass, running whatever is due. The clock
+      /// moves first, so a callback that fires inside sees the end of the step
+      /// (a conservative reading of when it ran).
       Future<void> pump(int stepUs) async {
+        virtualUs += stepUs;
         watch
           ..reset()
           ..start();
         await tester.pump(Duration(microseconds: stepUs));
-        watch.stop();
-        virtualUs += stepUs;
-        cpuUs += watch.elapsedMicroseconds;
-        slowest = math.max(slowest, watch.elapsedMicroseconds);
+        spent();
       }
 
       var secretsReady = 0; // connections whose secrets have been read
@@ -281,44 +293,58 @@ void main() {
       while (app == null) {
         await pump(step);
       }
-      final bootUs = virtualUs;
+      final bootUs = now();
 
-      // main() hands the booted app to runApp: the first frame.
-      watch
-        ..reset()
-        ..start();
-      await tester.pumpWidget(app!);
-      watch.stop();
-      // The clock the plugins' timers run on has not moved while this frame was
-      // built; the next pump catches it up by exactly this much, so the frame
-      // overlaps whatever the platform was doing meanwhile.
-      cpuUs += watch.elapsedMicroseconds;
-      slowest = math.max(slowest, watch.elapsedMicroseconds);
-      final firstFrameUs = watch.elapsedMicroseconds;
+      // Whether every machine's agents are known, wherever the fleet lives:
+      // in the app handed to runApp (built at boot), or in the mounted tree.
+      var mounted = false;
+      bool known() {
+        if (mounted) {
+          return Provider.of<FleetRepository>(
+                tester.element(find.byType(Scaffold).first),
+                listen: false,
+              ).agents.length >=
+              seed.agents;
+        }
+        try {
+          final FleetRepository? f = (app as dynamic).fleet as FleetRepository?;
+          return f != null && f.agents.length >= seed.agents;
+        } on NoSuchMethodError {
+          return false; // older code: the fleet only exists once mounted
+        }
+      }
 
-      FleetRepository fleet() => Provider.of<FleetRepository>(
-            tester.element(find.byType(Scaffold).first),
-            listen: false,
-          );
       bool cards() =>
           find.byType(AgentCard).evaluate().isNotEmpty ||
           find.byType(AgentCompactRow).evaluate().isNotEmpty;
 
+      // main() hands the booted app to runApp: the first frame.
+      var knownAtFrameStart = known();
+      watch
+        ..reset()
+        ..start();
+      await tester.pumpWidget(app!);
+      spent();
+      mounted = true;
+      final firstFrameUs = lastCpuUs;
+
       int? firstCardUs;
+      int? cardsUs;
+      if (cards()) firstCardUs = now();
+      if (knownAtFrameStart) cardsUs = now();
       var guard = 0;
-      while (fleet().agents.length < seed.agents && guard++ < 4000) {
-        step = math.max(1000, watch.elapsedMicroseconds);
+      while (cardsUs == null && guard++ < 4000) {
+        knownAtFrameStart = known();
+        step = math.max(1000, lastCpuUs);
         await pump(step);
-        if (firstCardUs == null && cards()) firstCardUs = virtualUs;
+        if (firstCardUs == null && cards()) firstCardUs = now();
+        // The frame that just ended began with every agent known: they are on
+        // screen (the list builds what is visible; more would only scroll).
+        if (knownAtFrameStart) cardsUs = now();
       }
-      expect(fleet().agents.length, seed.agents, reason: 'run $run: not all agents arrived');
-      // One more frame so the last machine's cards are painted, not just known;
-      // the time it took counts.
-      await pump(1000);
-      virtualUs += math.max(0, watch.elapsedMicroseconds - 1000);
+      expect(cardsUs, isNotNull, reason: 'run $run: not all agents arrived');
       expect(cards(), isTrue, reason: 'run $run: no cards painted');
-      firstCardUs ??= virtualUs;
-      final cardsUs = virtualUs;
+      firstCardUs ??= cardsUs;
       // Then until every connection could open: the keychain has answered for
       // all of them. Moving the keychain off the path to the cards must not
       // make connecting slower.
@@ -330,9 +356,9 @@ void main() {
       keychainReads = keychain.reads;
 
       if (run < _discard) continue;
-      total.add(cardsUs / 1000);
+      total.add(cardsUs! / 1000);
       connectReady.add(secretsReadyUs / 1000);
-      firstCard.add(firstCardUs / 1000);
+      firstCard.add(firstCardUs! / 1000);
       booted.add(bootUs / 1000);
       cpu.add(cpuUs / 1000);
       firstFrame.add(firstFrameUs / 1000);
