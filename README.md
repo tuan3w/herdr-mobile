@@ -136,6 +136,50 @@ What caused it, in order of impact:
 5. **A looping animation** (the working-agent pulse) kept the GPU busy
    continuously, so it was removed.
 
+### Bytes on the wire
+
+herdr answers in verbose JSON and a busy agent makes it chatty: a 300-row
+`pane.read` is ~150 KB, a `session.snapshot` of 40 panes ~55 KB, and a working
+agent sends ~10 `pane_updated` events a second, 775 bytes each. On a phone that
+is cipher time, radio time and mobile data. `benchmark/transfer_bench.dart`
+(`autoresearch.sh`) runs the real stack (isolate, dartssh2, remote script)
+against a deterministic fake herdr over SSH to this machine, and counts the TCP
+bytes of both directions, SSH framing included:
+
+| per request | before | after |
+| --- | --- | --- |
+| `session.snapshot`, 40 panes | 54.8 KB | 1.2 KB |
+| `pane.read`, 300 ANSI rows, sliding window | 152 KB | 1.3 KB |
+| `pane.read`, 24 rows (a board card) | 3.9 KB | 0.6 KB |
+| `pane_updated` event | 775 B | 54 B |
+| client CPU, 240 requests | 600 ms | 200 ms |
+
+(Synthetic pane content with random 24-bit colours, so a real pane compresses
+better; the event row is a burst, a steady stream adds one SSH packet per
+event.) Everything happens in the remote Python scripts and `mux_client.dart`,
+so the models, repositories and UI are unchanged:
+
+1. **Deflate.** Answers over 512 bytes cross as `Z<n>` frames of raw zlib data,
+   not text. Inflating is native and costs the phone far less than decrypting
+   the bytes it saves.
+2. **Projection.** The script cuts a snapshot, a pane read and an event down to
+   the fields the models read (`muxProjections`, `snapshotWireFields`,
+   `paneWireFields`); a test fails when a `fromJson` reads a field that is not
+   listed. The projection is part of the shipped script, not of each request.
+3. **Row deltas for `pane.read`.** The mux remembers the last answer to each
+   read; a client that still holds it names it (`mux_have`) and gets the run of
+   old rows to keep, the rows that changed and the unchanged tail. The client
+   rebuilds the exact text off the UI thread, and a missing or stale answer
+   just means a whole one.
+4. **Events as one stream.** `buildEventsCommand` replaces herdr's bridge for
+   event subscriptions (the bridge is the fallback when the host has no
+   python3): pruned events go through a single zlib stream that remembers the
+   previous event.
+
+Do not read the channel's stream with `await for` or an `async*` generator:
+pausing it around every chunk made each round trip take 40 ms instead of 2
+(`muxMessages` is a synchronous transformer for that reason).
+
 ## Design
 
 Not Material. Notion-style paper in light, Linear-style ink in dark: flat rows
@@ -151,8 +195,9 @@ app/lib/
   data/
     models/         herdr_models.dart, machine_profile.dart
     services/       herdr_transport.dart (interface), ssh_transport.dart,
-                    mux_client.dart (persistent request channel),
-                    bridge_command.dart, herdr_api.dart,
+                    mux_client.dart (persistent request channel, frame reader),
+                    bridge_command.dart (remote scripts: bridge, mux, events),
+                    herdr_api.dart,
                     network_monitor.dart, snapshot_cache.dart
     repositories/   machine_repository.dart   saved machines + secrets
                     machine_connection.dart   one machine: snapshot + reconnect

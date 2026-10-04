@@ -48,6 +48,17 @@ check which one loads before relying on it.
   persistent channel (`mux_client.dart`) and falls back to a channel per
   request only when the mux is unavailable. Never open a channel per call in
   new code.
+- **Wire format** (`bridge_command.dart`, `mux_client.dart`): the remote mux
+  script deflates answers over 512 B (`Z<n>\n` + n zlib bytes), cuts snapshots,
+  pane reads and events to the fields the models read (`muxProjections`,
+  `eventProjection`, built from `snapshotWireFields`/`paneWireFields` in
+  `herdr_models.dart`: add a field there when a `fromJson` starts reading it;
+  `herdr_models_test.dart` fails otherwise), and answers a `pane.read` with row
+  deltas against the answer the client names in `mux_have`. Event subscriptions
+  use `buildEventsCommand` (one zlib stream, `E<n>` frames) and fall back to
+  the bridge on exit 78. `benchmark/transfer_bench.dart` measures it; its fake
+  herdr is `benchmark/fake_herdr.py`. Never read the SSH channel's stream with
+  `await for`/`async*`: the pause per chunk cost 40 ms per round trip.
 - Every `HerdrTransportException` must say whether it is `fatal`; fatal means
   stop retrying and surface `LinkState.attention`.
 - Remote commands are built in `bridge_command.dart`. Anything interpolated
