@@ -209,12 +209,15 @@ class _TerminalViewState extends State<TerminalView> {
     return true;
   }
 
+  /// The selection container of the rows (see [TerminalRowSelection]).
+  final _selection = TerminalRowSelection();
+
   /// What the rows share (see [TerminalRowEnv]): the same instance until
   /// something in it changes, so rows keep their cached widgets.
   TerminalRowEnv? _env;
 
   TerminalRowEnv _rowEnv(BuildContext context, CellMetrics metrics) {
-    final fresh = TerminalRowEnv.of(context, metrics);
+    final fresh = TerminalRowEnv.of(context, metrics, registrar: _selection);
     final old = _env;
     if (old != null && old.sameAs(fresh)) return old;
     return _env = fresh;
@@ -288,6 +291,7 @@ class _TerminalViewState extends State<TerminalView> {
     _scroll.dispose();
     _following.dispose();
     _pinching.dispose();
+    _selection.dispose();
     _cache?.dispose();
     super.dispose();
   }
@@ -525,7 +529,9 @@ class _TerminalViewState extends State<TerminalView> {
                         // constraints cut down to the viewport's height: this
                         // must not read the box's height (see [_body]).
                         height: top == TerminalTop.none ? height : double.infinity,
-                        child: CustomScrollView(
+                        child: SelectionContainer(
+                          delegate: _selection,
+                          child: CustomScrollView(
                           reverse: true,
                           controller: _scroll,
                           physics: pinching
@@ -570,6 +576,7 @@ class _TerminalViewState extends State<TerminalView> {
                                   : _TopRow(top: top, width: viewWidth),
                             ),
                           ],
+                        ),
                         ),
                       ),
                     ),

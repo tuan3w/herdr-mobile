@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart'
-    show PaintingContext, RenderParagraph, SelectionRegistrar;
+    show PaintingContext, RenderParagraph, Selectable, SelectionRegistrar;
 import 'package:flutter/widgets.dart';
 
 import 'ansi.dart';
@@ -515,6 +515,47 @@ final class TerminalLineCache {
   }
 }
 
+/// The selection container of a [TerminalView]'s rows.
+///
+/// Flutter's default orders the selectables of a container by sorting them on
+/// their screen position, and every comparison asks both rows for their
+/// transform to the root. A jump to rows never seen registers dozens of them
+/// in one frame, which made the sort a fifth of that frame. Here a row's
+/// position is asked for once per frame.
+///
+/// Rows are lines one above the other, so the order is simply top to bottom.
+final class TerminalRowSelection extends StaticSelectionContainerDelegate {
+  final _rects = <Selectable, Rect>{};
+
+  @override
+  void add(Selectable selectable) {
+    // A new frame's worth of registrations: positions may have moved since.
+    _rects.clear();
+    super.add(selectable);
+  }
+
+  @override
+  void remove(Selectable selectable) {
+    _rects.remove(selectable);
+    super.remove(selectable);
+  }
+
+  Rect _rectOf(Selectable selectable) => _rects[selectable] ??=
+      MatrixUtils.transformRect(
+        selectable.getTransformTo(null),
+        selectable.boundingBoxes.reduce((a, b) => a.expandToInclude(b)),
+      );
+
+  static int _topToBottom(Rect a, Rect b) {
+    final byTop = a.top.compareTo(b.top);
+    return byTop != 0 ? byTop : a.left.compareTo(b.left);
+  }
+
+  @override
+  Comparator<Selectable> get compareOrder =>
+      (a, b) => _topToBottom(_rectOf(a), _rectOf(b));
+}
+
 /// What every row of one [TerminalView] layout shares and a row would
 /// otherwise look up in the tree on each build: the text style, selection
 /// hookup, locale and direction. Made once per layout pass; the view keeps the
@@ -531,7 +572,11 @@ final class TerminalRowEnv {
   });
 
   /// The environment [metrics]-sized rows have at [context].
-  factory TerminalRowEnv.of(BuildContext context, CellMetrics metrics) {
+  factory TerminalRowEnv.of(
+    BuildContext context,
+    CellMetrics metrics, {
+    SelectionRegistrar? registrar,
+  }) {
     // What `Text.rich` would have made of the style, minus the machinery
     // around it (a MouseRegion and a selection container per row).
     var style = DefaultTextStyle.of(context).style.merge(metrics.textStyle);
@@ -541,7 +586,7 @@ final class TerminalRowEnv {
     return TerminalRowEnv._(
       metrics: metrics,
       style: style,
-      registrar: SelectionContainer.maybeOf(context),
+      registrar: registrar ?? SelectionContainer.maybeOf(context),
       selectionColor: DefaultSelectionStyle.of(context).selectionColor ??
           DefaultSelectionStyle.defaultColor,
       locale: Localizations.maybeLocaleOf(context),
