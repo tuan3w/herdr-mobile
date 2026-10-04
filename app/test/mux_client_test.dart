@@ -229,38 +229,6 @@ void main() {
       });
     });
 
-    test('a deflated response (z + base64 of zlib) is inflated and routed', () {
-      fakeAsync((async) {
-        final ch = _FakeChannel();
-        final client = _start(async, ch);
-        final r = _Outcome(client.request('pane.read'));
-        final text = 'Xin chào \u001b[1mđường dẫn\u001b[0m\r\n' * 50;
-        final json = jsonEncode({'id': ch.idOf(0), 'result': {'text': text}});
-
-        ch.emit('z${base64.encode(zlib.encode(utf8.encode(json)))}');
-        async.flushMicrotasks();
-
-        expect(r.value, {'text': text});
-      });
-    });
-
-    test('a corrupt deflated response is ignored like any malformed line', () {
-      fakeAsync((async) {
-        final ch = _FakeChannel();
-        final client = _start(async, ch);
-        final r = _Outcome(client.request('ping'));
-
-        ch.emit('znot-base64!');
-        ch.emit('z${base64.encode([1, 2, 3, 4, 5])}');
-        async.flushMicrotasks();
-        expect(r.done, isFalse);
-
-        ch.reply(ch.idOf(0), {'type': 'pong'});
-        async.flushMicrotasks();
-        expect(r.value, {'type': 'pong'});
-      });
-    });
-
     group('pane.read deltas', () {
       Map<String, dynamic> whole(String id, int seq, String text) => {
             'id': id,
@@ -592,4 +560,72 @@ void main() {
       });
     });
   });
+
+  group('muxMessages', () {
+    final text = 'Xin chào \u001b[1mđường dẫn\u001b[0m\r\n' * 50;
+    final big = jsonEncode({'id': 'a', 'result': {'text': text}});
+    final stream = [
+      ...utf8.encode('herdr-mux-v1\n'),
+      ...utf8.encode('{"id":"p","result":{"type":"pong"}}\n'),
+      ..._frame(big),
+      ...utf8.encode('{"id":"q","result":{"text":"đường"}}\n'),
+      ..._frame(big),
+    ];
+    final expected = [
+      'herdr-mux-v1',
+      '{"id":"p","result":{"type":"pong"}}',
+      big,
+      '{"id":"q","result":{"text":"đường"}}',
+      big,
+    ];
+
+    test('plain lines and deflated frames come out in order, however the bytes are cut',
+        () async {
+      for (final size in [1, 2, 3, 7, 64, 1000, stream.length]) {
+        expect(
+          await muxMessages(Stream.fromIterable(_chunks(stream, size))).toList(),
+          expected,
+          reason: 'chunks of $size bytes',
+        );
+      }
+    });
+
+    test('a message of several MB crosses the buffer intact', () async {
+      final rows = List.generate(120000, (i) => 'row $i ${i * 7919 % 1000003}');
+      final huge = jsonEncode({'id': 'h', 'result': {'text': rows.join('\r\n')}});
+      expect(huge.length, greaterThan(2 * 1024 * 1024));
+
+      final got = await muxMessages(
+        Stream.fromIterable(_chunks([..._frame(huge), ...utf8.encode('{"id":"z"}\n')], 16384)),
+      ).toList();
+
+      expect(got, [huge, '{"id":"z"}']);
+    });
+
+    test('a frame that does not inflate, or a bad header, costs only that message', () async {
+      final junk = [
+        ...ascii.encode('Z5\n'),
+        1, 2, 3, 4, 5, // not zlib data
+        ...ascii.encode('Zxyz\n'), // no length
+        ...ascii.encode('Z-3\n'),
+        ...ascii.encode('Z999999999999\n'),
+      ];
+      final got = await muxMessages(
+        Stream.fromIterable(_chunks([...junk, ...utf8.encode('{"id":"ok"}\n')], 3)),
+      ).toList();
+
+      expect(got, ['{"id":"ok"}']);
+    });
+  });
 }
+
+/// A deflated frame as the mux script writes it.
+List<int> _frame(String json) {
+  final z = zlib.encode(utf8.encode(json));
+  return [...ascii.encode('Z${z.length}\n'), ...z];
+}
+
+List<List<int>> _chunks(List<int> bytes, int size) => [
+      for (var i = 0; i < bytes.length; i += size)
+        bytes.sublist(i, i + size > bytes.length ? bytes.length : i + size),
+    ];

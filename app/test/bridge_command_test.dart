@@ -11,12 +11,6 @@ import 'package:herdr_mobile/data/services/bridge_command.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/mux_client.dart';
 
-/// A mux response line as JSON text: the plain line, or what a `z` line
-/// (base64 of zlib data) inflates to.
-String _inflate(String line) => line.startsWith('z')
-    ? utf8.decode(zlib.decode(base64.decode(line.substring(1))))
-    : line;
-
 /// Runs [command] the way an SSH server would (`sh -c`) with a controlled
 /// $HOME and a minimal PATH, so the host's real herdr cannot interfere.
 Future<({String out, String err, int code})> _run(
@@ -275,17 +269,15 @@ esac
       });
       await mux.next();
 
+      var before = mux.wireBytes;
       mux.send({'id': 'big', 'method': 'pane.read', 'params': {}});
-      mux.send({'id': 'small', 'method': 'ping', 'params': {}});
-      final lines = {
-        for (final line in [await mux.next(), await mux.next()])
-          (jsonDecode(_inflate(line)) as Map)['id'] as String: line,
-      };
+      expect(await mux.next(), big);
+      expect(mux.wireBytes - before, lessThan(big.length ~/ 4));
 
-      expect(lines['big']!.startsWith('z'), isTrue);
-      expect(lines['big']!.length, lessThan(big.length ~/ 4));
-      expect(_inflate(lines['big']!), big);
-      expect(lines['small'], pong('small'));
+      before = mux.wireBytes;
+      mux.send({'id': 'small', 'method': 'ping', 'params': {}});
+      expect(await mux.next(), pong('small'));
+      expect(mux.wireBytes - before, pong('small').length + 1); // plain line
     });
 
     test('mux_keep keeps only the listed fields, spares errors, and never reaches herdr',
@@ -715,9 +707,12 @@ esac
 
 /// A running mux command with line-oriented access to its stdout.
 class _MuxProc {
-  _MuxProc._(this.process)
-      : _lines = StreamIterator(
-            utf8.decoder.bind(process.stdout).transform(const LineSplitter()));
+  _MuxProc._(this.process) {
+    _lines = StreamIterator(muxMessages(process.stdout.map((chunk) {
+      _wire += chunk.length;
+      return chunk;
+    })));
+  }
 
   static Future<_MuxProc> start(
     String command,
@@ -735,7 +730,7 @@ class _MuxProc {
   }
 
   final Process process;
-  final StreamIterator<String> _lines;
+  late final StreamIterator<String> _lines;
 
   void send(Map<String, dynamic> request) =>
       process.stdin.writeln(jsonEncode(request));
@@ -747,9 +742,13 @@ class _MuxProc {
     return _lines.current;
   }
 
-  /// The next response line, inflated if the mux deflated it.
+  /// Bytes the script has written so far.
+  int get wireBytes => _wire;
+  var _wire = 0;
+
+  /// The next response, decoded.
   Future<Map<String, dynamic>> nextJson() async =>
-      jsonDecode(_inflate(await next())) as Map<String, dynamic>;
+      jsonDecode(await next()) as Map<String, dynamic>;
 
   Future<void> stop() async {
     process.kill();
@@ -799,14 +798,19 @@ class _ProcessChannel implements MuxChannel {
 
   final Process _process;
   final lineLengths = <int>[];
+  var _wire = 0;
+  var _counted = 0;
 
+  /// Each message in order; [lineLengths] gets the bytes the script wrote for
+  /// it (what would cross the wire; one request in flight at a time).
   @override
-  late final Stream<String> lines = utf8.decoder
-      .bind(_process.stdout)
-      .transform(const LineSplitter())
-      .map((line) {
-    lineLengths.add(line.length);
-    return line;
+  late final Stream<String> lines = muxMessages(_process.stdout.map((chunk) {
+    _wire += chunk.length;
+    return chunk;
+  })).map((message) {
+    lineLengths.add(_wire - _counted);
+    _counted = _wire;
+    return message;
   });
 
   @override

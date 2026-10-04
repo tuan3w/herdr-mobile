@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show zlib;
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../models/herdr_models.dart' show snapshotWireFields;
 import 'bridge_command.dart';
@@ -46,6 +48,77 @@ enum MuxDeath {
   /// half-open (e.g. after a network switch) and the whole connection
   /// should be dropped.
   unresponsive,
+}
+
+/// Largest deflated frame [muxMessages] waits for; a bigger announcement is
+/// not one of ours.
+const _maxFrame = 1 << 26;
+
+/// The messages the remote mux script wrote, as JSON text: plain lines as they
+/// are, and each deflated frame (`Z<n>\n` and `n` bytes of zlib data, see
+/// [muxCompressMin]) inflated. A frame that does not inflate is dropped, like
+/// any other line that is not JSON. Splits on the bytes, so the compressed
+/// data is never decoded as text.
+///
+/// A synchronous transformer, not an `async*` generator: the same parser
+/// written with `await for` pauses the SSH channel's stream around every
+/// chunk, and a request/response loop over loopback then took 40 ms per round
+/// trip instead of 2 (a delayed-ACK stall; the likely cause is the channel's
+/// window update held back by Nagle's algorithm, not confirmed). Never pause
+/// the channel's stream per message.
+Stream<String> muxMessages(Stream<List<int>> bytes) {
+  var buf = Uint8List(64 * 1024);
+  var start = 0, end = 0;
+
+  void feed(List<int> chunk, EventSink<String> sink) {
+    if (end + chunk.length > buf.length) {
+      final live = end - start;
+      if (live + chunk.length > buf.length) {
+        final bigger = Uint8List(math.max(live + chunk.length, buf.length * 2));
+        bigger.setRange(0, live, buf, start);
+        buf = bigger;
+      } else {
+        buf.setRange(0, live, buf, start);
+      }
+      start = 0;
+      end = live;
+    }
+    buf.setRange(end, end + chunk.length, chunk);
+    end += chunk.length;
+
+    while (start < end) {
+      var nl = start;
+      while (nl < end && buf[nl] != 0x0A) {
+        nl++;
+      }
+      if (nl == end) break; // no complete line yet
+      if (buf[start] != 0x5A /* Z */) {
+        final line = Uint8List.sublistView(buf, start, nl);
+        start = nl + 1;
+        sink.add(utf8.decode(line, allowMalformed: true));
+        continue;
+      }
+      final n = int.tryParse(ascii.decode(buf.sublist(start + 1, nl), allowInvalid: true));
+      if (n == null || n < 0 || n > _maxFrame) {
+        start = nl + 1; // not a frame header: skip the line
+        continue;
+      }
+      if (end - (nl + 1) < n) break; // the rest of the frame is on its way
+      final frame = Uint8List.sublistView(buf, nl + 1, nl + 1 + n);
+      start = nl + 1 + n;
+      final String text;
+      try {
+        text = utf8.decode(zlib.decode(frame));
+      } on Object {
+        continue;
+      }
+      sink.add(text);
+    }
+    if (start == end) start = end = 0;
+  }
+
+  return StreamTransformer<List<int>, String>.fromHandlers(handleData: feed)
+      .bind(bytes);
 }
 
 /// The parts of an answer the app reads, by method (`mux_keep` in the
@@ -170,18 +243,12 @@ class MuxClient {
     );
   }
 
-  /// A response the remote deflated (see [muxCompressMin]): `z`, then base64
-  /// of zlib data holding the JSON line. Parsed straight from the bytes.
-  static Object? _inflate(String line) => json
-      .fuse(utf8)
-      .decode(zlib.decode(base64.decode(line.substring(1))));
-
   void _route(String line) {
     // The one and only decode of this response: requests receive the decoded
     // object (re-decoding a 140 KB pane read cost ~14 ms on a mid-range phone).
     final Object? decoded;
     try {
-      decoded = line.startsWith('z') ? _inflate(line) : jsonDecode(line);
+      decoded = jsonDecode(line);
     } on FormatException {
       return;
     }

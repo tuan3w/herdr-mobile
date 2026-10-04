@@ -481,7 +481,7 @@ class _SshMuxChannel implements MuxChannel {
   final SSHSession _session;
 
   @override
-  late final Stream<String> lines = jsonLines(_session.stdout);
+  late final Stream<String> lines = muxMessages(_session.stdout);
 
   @override
   void send(String line) => _session.stdin.add(utf8.encode('$line\n'));
