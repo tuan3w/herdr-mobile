@@ -658,5 +658,5 @@ system.
   `app/test/support/shot.dart`.
 - **Phone-only measurements.** Benchmarks are in `app/benchmark/`. The
   keyboard and streaming measurements run on a real phone over adb
-  (`autoresearch.sh`, `autoresearch-stream.sh`).
+  (`autoresearch-keyboard.sh`, `autoresearch-stream.sh`).
 - **One command.** `tool/check.sh` runs `pub get`, the analyzer and the tests.

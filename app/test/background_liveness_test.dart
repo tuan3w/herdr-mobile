@@ -105,7 +105,7 @@ class _Rig {
       profile: const MachineProfile(id: 'm', label: 'm', host: 'h', username: 'u'),
       secrets: const MachineSecrets(),
       onPinHostKey: (_) {},
-      connectClient: () async {
+      connectClient: (_) async {
         final c = _Client();
         clients.add(c);
         return c;

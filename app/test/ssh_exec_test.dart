@@ -108,7 +108,7 @@ SshTransport _transportOver(List<_Client> clients, _Client Function() make) => S
       profile: _profile,
       secrets: const MachineSecrets(),
       onPinHostKey: (_) {},
-      connectClient: () async {
+      connectClient: (_) async {
         final client = make();
         clients.add(client);
         return client;

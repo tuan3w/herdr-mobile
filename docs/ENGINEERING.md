@@ -177,7 +177,7 @@ keyboard moves: raster p95 of a busy pane went 8.8 -> 14.3 ms (budget 16.7, max
 15.2): watch it on slower GPUs. `DartPerformanceMode.latency` while the field
 is focused measured nothing.
 
-### `./autoresearch.sh` measures the keyboard on a phone
+### `./autoresearch-keyboard.sh` measures the keyboard on a phone
 
 adb to a real device; the header says how, Wi-Fi works and it finds the phone
 again when Wireless debugging changes port. It builds the real app tree over an
@@ -470,7 +470,7 @@ rewrites `CADENCE.md`, which `autoresearch-stream.sh` replays on the phone.
 
 ### `./autoresearch-stream.sh` measures streaming on a phone
 
-Same adb rules and the same Tailscale route as `autoresearch.sh`; the header
+Same adb rules and the same Tailscale route as `autoresearch-keyboard.sh`; the header
 lists the environment: `STREAM_PROFILES`, `STREAM_KB`, `STREAM_ROWS`,
 `STREAM_SMOOTH`, `STREAM_NO_BUILD`. It builds
 `app/benchmark/stream_device_bench.dart` as a profile APK
@@ -556,3 +556,13 @@ THE BACKGROUND PROFILE (`HerdrTransport.setBackground(true)` +
   2 min, session list 90 s, streaming sessions notify at most every 2 s, a down
   machine is retried at most every 5 min.
 - Anything that adds a timer, a subscription or a retry must respect it.
+
+`./autoresearch.sh` measures all of this without a phone
+(`app/benchmark/background_bench_test.dart`): the real fleet, connection, SSH
+transport, mux and notifier over an in-memory link, on a virtual clock, with
+every message metered. Its radio model (a 10 s high-power tail after any packet,
+a wake-up worth 2 s more) and its round trip (80 ms) are assumptions, not
+measurements: use it to compare changes, and measure the battery on a phone
+before quoting a number. `DateTime.now()` is not moved by `fakeAsync`, so any
+new clock in this path must be injectable, or the bench (and its tests) see the
+machine's time.
