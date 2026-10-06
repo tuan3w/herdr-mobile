@@ -13,6 +13,10 @@ with one hand free.
   <img src="docs/screenshots/pane.png" width="32%" alt="A live terminal pane, one swipe from the next agent">
 </p>
 
+[![Watch the demo on YouTube](https://img.youtube.com/vi/mEwpHyMWeKw/maxresdefault.jpg)](https://www.youtube.com/watch?v=mEwpHyMWeKw)
+
+**[Watch the demo](https://www.youtube.com/watch?v=mEwpHyMWeKw)** (31 s, real recordings on a Galaxy A51).
+
 ## Why
 
 I always wanted one app on my phone to run the coding agents on all my machines,
