@@ -56,6 +56,8 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/acp/agent_host.dart' show AgentHost, KeeperInfo;
+import 'package:herdr_mobile/data/repositories/agent_session_repository.dart';
 import 'package:herdr_mobile/data/repositories/attention_notifier.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
@@ -71,7 +73,6 @@ import 'package:herdr_mobile/data/services/mux_client.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
 import 'package:herdr_mobile/data/services/ssh_transport.dart';
 
-import '../test/support/fake_agent_session.dart';
 import '../test/support/fake_network.dart';
 import '../test/support/fake_notifier.dart';
 import '../test/support/fake_transport.dart' show snapshotJson;
@@ -602,6 +603,41 @@ class _Mux implements MuxChannel {
   Future<int?> get exitCode => _exit.future;
 }
 
+/// The agent sessions' side of a machine: the keeper lists what runs on the
+/// host over a channel of the SSH link of its own (one exec: open, command,
+/// answer, close). No agent session runs, so the answer is empty; what is
+/// measured is the asking.
+class _MeteredHost implements AgentHost {
+  _MeteredHost(this.host);
+
+  final _Host host;
+
+  @override
+  Future<List<KeeperInfo>> list() async {
+    final meter = host.meter;
+    if (host.down || host.link == null || host.link!.closed) {
+      throw StateError('no link');
+    }
+    meter
+      ..count('keeper_lists')
+      ..add(120, up: true); // open the channel
+    await _later(rtt);
+    meter
+      ..add(100, up: false)
+      ..add(180, up: true); // exec the command
+    await _later(rtt);
+    meter
+      ..add(60, up: false) // the answer
+      ..add(40, up: false) // exit status, EOF
+      ..add(30, up: true); // close
+    host.link?.inbound();
+    return const [];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// Records when each notification was posted.
 class _TimedNotifier extends FakeNotifier {
   _TimedNotifier(this._now);
@@ -679,7 +715,11 @@ class _Rig {
       final settings = NotificationSettings(
         MemoryNotificationStore(NotificationChoice(enabled: notifications, alsoDone: false)),
       )..load();
-      final sessions = FakeAgentSessions([]);
+      sessions = AgentSessionRepository(
+        fleet: fleet,
+        hostFor: (machine) => _MeteredHost(hosts[machine.profile.id]!),
+        clock: wall,
+      );
       attention = AttentionNotifier(
         fleet: fleet,
         sessions: sessions,
@@ -700,6 +740,7 @@ class _Rig {
   late final Zone zone;
   late final FleetRepository fleet;
   late final PanePreviews previews;
+  late final AgentSessionRepository sessions;
   late final AttentionNotifier attention;
   final handles = <PreviewHandle>[];
   var counting = false;
@@ -808,6 +849,7 @@ class _Rig {
     zone.run(() {
       fleet.onLifecycleState(state);
       previews.onLifecycleState(state);
+      sessions.onLifecycleState(state);
       attention.onLifecycleState(state);
     });
     async.flushMicrotasks();
@@ -816,6 +858,7 @@ class _Rig {
   /// Opens a preview of every agent card, as the board does.
   void openBoard() {
     zone.run(() {
+      sessions.setBoardVisible(true);
       for (final h in hosts.values) {
         for (final pane in h.statuses.keys) {
           handles.add(previews.watch(h.id, pane));
@@ -849,6 +892,7 @@ class _Rig {
         h.release();
       }
       unawaited(attention.dispose());
+      sessions.dispose();
       previews.dispose();
       fleet.dispose();
     });

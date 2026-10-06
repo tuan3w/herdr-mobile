@@ -13,6 +13,7 @@ import 'fleet_repository.dart';
 import 'machine_connection.dart';
 import 'attention_set.dart';
 import 'reviewed_state.dart';
+import '../services/aligned_ticker.dart';
 import '../services/transcript_cache.dart';
 
 /// Builds what talks to the keepers of [machine]. The real one rides on the
@@ -56,7 +57,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     this.maxAttached = 4,
     this.recentAttached = 3,
     this.refreshEvery = const Duration(seconds: 30),
-    this.backgroundRefreshEvery = const Duration(seconds: 90),
+    this.backgroundRefreshEvery = const Duration(minutes: 4),
     this.detachAfter = const Duration(seconds: 90),
     this.notifyEvery = const Duration(milliseconds: 16),
     this.flush,
@@ -124,6 +125,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   List<AgentSessionView>? _sorted;
 
   Timer? _timer;
+  AlignedTicker? _ticker;
   bool _boardVisible = false;
   DateTime? _backgroundedAt;
   bool _keepAlive = false;
@@ -442,11 +444,15 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   void _syncTimer() {
     _timer?.cancel();
     _timer = null;
+    _ticker?.cancel();
+    _ticker = null;
     if (_disposed) return;
     if (_backgroundedAt != null) {
       // Kept alive: the hosts are listed now and then, so a session that starts
       // waiting while it is unattached is seen. Otherwise nothing runs.
-      if (_keepAlive) _timer = Timer.periodic(backgroundRefreshEvery, (_) => unawaited(refresh()));
+      if (_keepAlive) {
+        _ticker = AlignedTicker(backgroundRefreshEvery, _clock, () => unawaited(refresh()));
+      }
       return;
     }
     if (!_boardVisible) return;
@@ -711,6 +717,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     if (_disposed) return;
     _disposed = true;
     _timer?.cancel();
+    _ticker?.cancel();
     _fleet.removeListener(_onFleet);
     for (final s in _sessions.values.toList()) {
       if (_listeners.remove(s.key) case final listener?) s.removeListener(listener);

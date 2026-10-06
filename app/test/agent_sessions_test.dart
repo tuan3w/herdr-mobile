@@ -24,6 +24,7 @@ import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/reviewed_state.dart';
+import 'package:herdr_mobile/data/services/aligned_ticker.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 
 import 'acp/support/fake_agent.dart' show claudeInitialize, codexInitialize, ompInitialize;
@@ -632,14 +633,14 @@ void main() {
       expect(r.notifications, greaterThan(n));
     }, seed: (h) => h.add(sessionId: 's1'));
 
-    test('the repository keeps its sessions and lists the online hosts every 90 s', () {
+    test('the repository keeps its sessions and lists the online hosts every 4 min, on the clock grid', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         final a = h.host('a')..add(id: 'k1');
         final b = h.host('b')..add(id: 'k2');
         h.addMachine('a', 'alpha');
         h.addMachine('b', 'beta');
-        expect(h.repo.backgroundRefreshEvery, const Duration(seconds: 90));
+        expect(h.repo.backgroundRefreshEvery, const Duration(minutes: 4));
         h.repo.keepAliveInBackground = true;
         h.repo.onLifecycleState(AppLifecycleState.paused);
         h.conn('b').goOffline();
@@ -647,12 +648,13 @@ void main() {
         final listsA = a.listCalls;
         final listsB = b.listCalls;
 
-        async.elapse(const Duration(seconds: 89));
+        final wait = AlignedTicker.untilNext(h.repo.backgroundRefreshEvery, _t0.add(async.elapsed));
+        async.elapse(wait - const Duration(seconds: 1));
         expect(a.listCalls, listsA);
         async.elapse(const Duration(seconds: 1));
         expect(a.listCalls, listsA + 1);
         async.elapse(const Duration(minutes: 9));
-        expect(a.listCalls, listsA + 7);
+        expect(a.listCalls, listsA + 3, reason: 'two more grid points in 9 minutes');
         expect(b.listCalls, listsB, reason: 'an offline machine is not asked');
 
         expect(a.attachCalls, attaches, reason: 'nothing is attached again, nothing let go');
@@ -673,7 +675,7 @@ void main() {
         h.repo.keepAliveInBackground = true;
         h.repo.onLifecycleState(AppLifecycleState.paused);
         idle.askPermission();
-        async.elapse(const Duration(seconds: 91));
+        async.elapse(const Duration(seconds: 241));
 
         expect(h.repo.blockedCount, 1);
         expect(_attached(h, 'a/k1'), isTrue, reason: 'waiting requests take a channel first');
@@ -691,7 +693,7 @@ void main() {
         for (final id in ['k00', 'k01', 'k02', 'k03', 'k04']) {
           host.keepers[id]!.askPermission();
         }
-        async.elapse(const Duration(minutes: 3));
+        async.elapse(const Duration(minutes: 5));
 
         expect(host.peakOpenLinks, lessThanOrEqualTo(4));
         expect(_open(host), {'k00', 'k01', 'k02', 'k03'}, reason: 'waiting first, longest waiting first');
@@ -746,7 +748,7 @@ void main() {
         async.elapse(const Duration(minutes: 5));
 
         host.add(id: 'k2');
-        async.elapse(const Duration(seconds: 90));
+        async.elapse(const Duration(minutes: 4));
         expect(h.repo.byKey('a/k2')!.link, AgentLink.live);
         expect(_attached(h, 'a/k2'), isTrue);
         h.dispose();

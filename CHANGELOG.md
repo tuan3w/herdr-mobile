@@ -4,6 +4,22 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## Unreleased
+
+### Watching from the background costs far less
+
+- A Wi-Fi to mobile handover, a tunnel or a host that reboots no longer ends
+  the watch: the app brings the connections back by itself and still tells you
+  when an agent needs you. Before, the first network blip in the background
+  stopped watching until you opened the app.
+- The background safety poll runs every 4 minutes instead of 2 and doubles as
+  the liveness test, so the phone sends far fewer packets while nothing
+  happens. Polls and agent-session listings of all machines now share one
+  clock grid, so the radio wakes once for all of them.
+- In the modelled benchmark (`./autoresearch.sh`, radio model assumed, not
+  measured on a phone) a turbulent 2 hour watch went from 4607 to 355
+  radio-seconds per hour, with every blocked agent announced.
+
 ## [0.1.0] - 2026-10-06
 
 The first public release.

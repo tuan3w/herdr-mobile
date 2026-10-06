@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/herdr_models.dart';
 import '../models/machine_profile.dart';
 import '../models/status_time.dart';
+import '../services/aligned_ticker.dart';
 import '../services/auth_notice.dart';
 import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart';
@@ -649,14 +650,24 @@ class MachineConnection extends ChangeNotifier {
           },
         );
     if (gap) refresher.schedule(urgent: true);
-    final poll = Timer.periodic(
-      _background ? backgroundPollInterval : pollInterval,
-      (_) => refresher.schedule(urgent: true),
-    );
+    // In the background the poll falls on the grid every machine and the agent
+    // sessions share (see [AlignedTicker]): one radio wake-up for all of them.
+    final void Function() stopPoll;
+    if (_background) {
+      final ticker = AlignedTicker(
+        backgroundPollInterval,
+        _clock,
+        () => refresher.schedule(urgent: true),
+      );
+      stopPoll = ticker.cancel;
+    } else {
+      final timer = Timer.periodic(pollInterval, (_) => refresher.schedule(urgent: true));
+      stopPoll = timer.cancel;
+    }
     try {
       await end.future;
     } finally {
-      poll.cancel();
+      stopPoll();
       refresher.close();
       if (identical(_watchEnd, end)) {
         _watchEnd = null;

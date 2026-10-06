@@ -380,9 +380,9 @@ Rules:
   is visible.
 - The permission card always shows the command and gates standing grants with
   a hold (`command_risk.dart`).
-- `SshTransport` pings only an idle link (25 s in the foreground, 150 s in the
-  background profile, 10-15 s timeout) and the mux heartbeats every 8 s (120 s
-  in the background), so a dead link ends every channel within ~35 s in the
+- `SshTransport` pings only an idle link (25 s in the foreground, 330 s in the
+  background profile, 10-15 s timeout) and the mux heartbeats every 8 s (300 s
+  in the background, skipped while a real answer came within the interval), so a dead link ends every channel within ~35 s in the
   foreground; a refused channel (sshd `MaxSessions`) fails that channel only,
   never the connection.
 
@@ -552,8 +552,11 @@ THE BACKGROUND PROFILE (`HerdrTransport.setBackground(true)` +
   structural events; `pane.updated` fires for every spinner frame and would
   keep the radio awake; the pane list is rebuilt from a fresh snapshot because
   a vanished pane id rejects the WHOLE subscription).
-- Mux heartbeat 8 s -> 120 s, idle link ping 25 s -> 150 s, safety poll 20 s ->
-  2 min, session list 90 s, streaming sessions notify at most every 2 s, a down
+- Mux heartbeat 8 s -> 300 s, idle link ping 25 s -> 330 s, safety poll 20 s ->
+  4 min (the poll is the liveness test: its answer counts as proof of life, so
+  the other two only fire when it stops being answered), session list 4 min on
+  the same clock grid as the poll (`AlignedTicker`: one radio wake-up for all
+  machines), streaming sessions notify at most every 2 s, a down
   machine is retried at most every 5 min.
 - Anything that adds a timer, a subscription or a retry must respect it.
 

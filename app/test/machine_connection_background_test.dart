@@ -5,10 +5,13 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/services/aligned_ticker.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 
 import 'support/fake_transport.dart';
+
+final _t0 = DateTime.utc(2026, 3, 1, 12);
 
 typedef _Pane = ({String id, String ws, String? agent, String status});
 
@@ -38,7 +41,8 @@ class _Rig {
       api: HerdrApi(transport),
       backoff: (_) => backoff,
       pollInterval: const Duration(seconds: 20),
-      backgroundPollInterval: const Duration(minutes: 2),
+      backgroundPollInterval: const Duration(minutes: 4),
+      clock: () => _t0.add(async.elapsed),
     )..addListener(() => states.add(connection.state));
     connection.start();
     async.elapse(const Duration(seconds: 1));
@@ -314,13 +318,15 @@ void main() {
       }, [_agent('w1:p1', 'working')]);
     });
 
-    test('every 2 minutes in the background, and the 20 s timer is gone', () {
+    test('every 4 minutes in the background, on the clock grid, and the 20 s timer is gone', () {
       _run((r) {
         r.connection.setBackground(true);
         r.elapse(second);
-        expect(polls(r, const Duration(seconds: 118)), 0);
+        // The grid is the clock's: a tick at every multiple of 4 minutes.
+        final wait = AlignedTicker.untilNext(const Duration(minutes: 4), _t0.add(r.async.elapsed));
+        expect(polls(r, wait - const Duration(seconds: 1)), 0);
         expect(polls(r, const Duration(seconds: 2)), 1);
-        expect(polls(r, const Duration(minutes: 10)), 5);
+        expect(polls(r, const Duration(minutes: 12)), 3);
 
         r.connection.setBackground(false);
         r.elapse(second);

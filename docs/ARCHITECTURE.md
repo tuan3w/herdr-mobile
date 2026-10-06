@@ -142,12 +142,13 @@ and the app stops retrying.
 ### Liveness, reconnect and backoff
 
 - **Link watch.** The transport pings only an idle link: 25 s with a 10 s
-  timeout in the foreground, 150 s with a 15 s timeout in the background
+  timeout in the foreground, 330 s with a 15 s timeout in the background
   (`app/lib/data/services/link_liveness.dart:27-41`). Any inbound byte counts
   as proof of life. When a ping goes unanswered, the whole connection is reset,
   so every channel ends at once (`ssh_transport.dart:274-308`).
-- **Mux heartbeat.** Every 8 s in the foreground and every 120 s in the
-  background (`link_liveness.dart`). A mux that stops answering resets the
+- **Mux heartbeat.** Every 8 s in the foreground and every 300 s in the
+  background (`link_liveness.dart`), and skipped whenever any other answer came
+  within the interval. A mux that stops answering resets the
   connection (`ssh_transport.dart:464-470`).
 - **Reconnect loop.** `MachineConnection` retries after 1, 2, 4, 8, 15 and then
   30 s (`machine_connection.dart:38-39`). In the background profile it waits at
@@ -156,7 +157,7 @@ and the app stops retrying.
   host key or a missing bridge are fatal. The machine goes to
   `LinkState.attention` and waits for you (`machine_connection.dart:459-461`).
 - **Safety poll.** Events drive the updates. A poll catches anything missed:
-  every 20 s in the foreground and every 2 minutes in the background
+  every 20 s in the foreground and every 4 minutes in the background
   (`machine_connection.dart:57-58`). Events are throttled rather than
   debounced, because busy agents send them all the time
   (`machine_connection.dart:836-842`).
@@ -340,7 +341,7 @@ line.
 ### Agent sessions (ACP)
 
 - **`AgentSessionRepository`** lists keepers per machine. It runs one short
-  `list` command every 30 s while the board is visible, and every 90 s in the
+  `list` command every 30 s while the board is visible, and every 4 minutes in the
   background profile. It holds one `AcpAgentSession` per keeper
   (`app/lib/data/repositories/agent_session_repository.dart`,
   `acp_agent_session.dart`).
@@ -574,9 +575,10 @@ they switch to the background profile (`machine_connection.dart:187-199`,
 - The event stream carries status changes only (one
   `pane.agent_status_changed` per agent pane, plus structural events).
   `pane.updated`, which fires for every spinner frame, is not subscribed.
-- The mux heartbeat goes from 8 s to 120 s. The idle link ping goes from 25 s
-  to 150 s. The safety poll goes from 20 s to 2 minutes.
-- Agent sessions are listed every 90 s. A streaming session updates the app at
+- The mux heartbeat goes from 8 s to 300 s. The idle link ping goes from 25 s
+  to 330 s. The safety poll goes from 20 s to 4 minutes, and its answer counts
+  as proof of life, so the other two stay silent while it is answered.
+- Agent sessions are listed every 4 minutes, on the same clock grid as the poll. A streaming session updates the app at
   most every 2 s. A machine that is down is retried at most every 5 minutes.
 
 The service stops when nothing is working or blocked, or when you turn the
