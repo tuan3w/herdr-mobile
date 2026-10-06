@@ -772,7 +772,31 @@ class _Rig {
   /// does not move: every clock the app takes is given this one.
   DateTime wall() => DateTime.utc(2026, 1, 1, 12).add(async.elapsed);
 
-  void elapse(Duration d) => async.elapse(d);
+  /// Moves the clock in steps of at most [step], letting the root zone's
+  /// microtasks run in between. A subscription cancelled after its stream
+  /// ended answers with a future of the root zone; `fakeAsync` never runs
+  /// those, so the code awaiting one would hang in the bench for ever (a
+  /// connection whose event stream failed would stay `online`).
+  Future<void> elapse(Duration d, {Duration step = const Duration(seconds: 1)}) async {
+    var left = d;
+    while (left > Duration.zero) {
+      final s = left < step ? left : step;
+      async.elapse(s);
+      left -= s;
+      for (var i = 0; i < 4; i++) {
+        await Future<void>.value();
+      }
+      async.flushMicrotasks();
+    }
+  }
+
+  /// A timer of the scenario, outside the zone whose timers are the app's.
+  Timer at(Duration d, void Function() f) => async.run((_) => Timer(d, f));
+
+  Timer every(Duration d, void Function() f) => async.run((_) => Timer.periodic(d, (_) => f()));
+
+  static _Rig start(FakeAsync async, {required bool notifications}) =>
+      async.run((_) => _Rig(async, notifications: notifications));
 
   void life(AppLifecycleState state) {
     zone.run(() {
@@ -804,11 +828,11 @@ class _Rig {
       });
 
   /// Time until [fresh], stepping 100 ms; null if it never was within 2 min.
-  Duration? untilFresh() {
+  Future<Duration?> untilFresh() async {
     final start = now;
     while (now - start < const Duration(minutes: 2)) {
       if (fresh) return now - start;
-      elapse(const Duration(milliseconds: 100));
+      await elapse(const Duration(milliseconds: 100));
     }
     return fresh ? now - start : null;
   }
@@ -878,17 +902,18 @@ List<_Episode> _episodes(_Rig r, Duration watchFor, List<(String, int, int)> out
 /// The app leaves for [watchFor] with notifications on, and what that costs is
 /// written as `<prefix>_*` metrics. With [turbulent] the world misbehaves: a
 /// handover, a pane that appears and one that closes, a machine that is down.
-void _watch({
+Future<void> _watch({
   required String prefix,
   required Duration watchFor,
   required bool turbulent,
-}) {
-  fakeAsync((async) {
-    final r = _Rig(async, notifications: true);
+}) async {
+  {
+    final async = FakeAsync(initialTime: DateTime.utc(2026, 1, 1, 12));
+    final r = _Rig.start(async, notifications: true);
     final meter = r.meter;
 
     // The scenario's own timers live in the fakeAsync zone, outside the app's.
-    Timer.periodic(const Duration(milliseconds: 100), (_) {
+    r.every(const Duration(milliseconds: 100), () {
       for (final h in r.hosts.values) {
         h.churn();
       }
@@ -896,16 +921,16 @@ void _watch({
 
     // -- in front -------------------------------------------------------------
     r.openBoard();
-    r.elapse(const Duration(seconds: 5));
+    await r.elapse(const Duration(seconds: 5));
     if (!r.fresh) _failures.add('$prefix: not fresh after connecting');
     if (turbulent) {
       final from = r.now.inMilliseconds;
-      r.elapse(const Duration(minutes: 3));
+      await r.elapse(const Duration(minutes: 3));
       final fg = meter.window(from, r.now.inMilliseconds);
       _kb('fg_kb_per_min', fg.bytes / 3);
       _metric('fg_packets_per_min', fg.packets / 3);
     } else {
-      r.elapse(const Duration(minutes: 1));
+      await r.elapse(const Duration(minutes: 1));
     }
 
     // -- the world while the app is away ----------------------------------------
@@ -917,37 +942,37 @@ void _watch({
       if (turbulent) ('b', outageFrom, outageTo),
     ]);
     for (final e in episodes) {
-      Timer(Duration(seconds: e.startS), () => r.hosts[e.host]!.setStatus(e.pane, 'blocked'));
-      Timer(Duration(seconds: e.endS), () => r.hosts[e.host]!.setStatus(e.pane, 'working'));
+      r.at(Duration(seconds: e.startS), () => r.hosts[e.host]!.setStatus(e.pane, 'blocked'));
+      r.at(Duration(seconds: e.endS), () => r.hosts[e.host]!.setStatus(e.pane, 'working'));
     }
     // (machine, from, to) in seconds away: where a machine may rightly be down.
     final excused = <(String, int, int)>[];
     if (turbulent) {
       // A handover: no network for 5 s; the retry may wait out a backoff.
       excused.add(('*', handoverAt, handoverAt + 5 + 60));
-      Timer(Duration(seconds: handoverAt), () {
+      r.at(Duration(seconds: handoverAt), () {
         // The old address is gone: what was connected from it is black-holed.
         r.network.goOffline();
         for (final h in r.hosts.values) {
           h.dropLinks();
         }
-        Timer(const Duration(seconds: 5), () => r.network.goOnline('mobile'));
+        r.at(const Duration(seconds: 5), () => r.network.goOnline('mobile'));
       });
-      Timer(Duration(seconds: 55 * 60), () => r.hosts['a']!.addAgent('p9', 'idle'));
-      Timer(Duration(seconds: 56 * 60), () => r.hosts['a']!.setStatus('p9', 'working'));
-      Timer(Duration(seconds: 95 * 60), () => r.hosts['b']!.closePane('q4'));
+      r.at(Duration(seconds: 55 * 60), () => r.hosts['a']!.addAgent('p9', 'idle'));
+      r.at(Duration(seconds: 56 * 60), () => r.hosts['a']!.setStatus('p9', 'working'));
+      r.at(Duration(seconds: 95 * 60), () => r.hosts['b']!.closePane('q4'));
       // Down for 15 min; the background backoff is 5 min at most.
       excused.add(('b', outageFrom, outageTo + 6 * 60));
-      Timer(Duration(seconds: outageFrom), () {
+      r.at(Duration(seconds: outageFrom), () {
         r.hosts['b']!
           ..down = true
           ..dropLinks();
       });
-      Timer(Duration(seconds: outageTo), () => r.hosts['b']!.down = false);
+      r.at(Duration(seconds: outageTo), () => r.hosts['b']!.down = false);
     }
     // Is every machine that can be reached watched? Sampled every 10 s.
     var samples = 0, unwatched = 0;
-    Timer.periodic(const Duration(seconds: 10), (_) {
+    r.every(const Duration(seconds: 10), () {
       final t = r.now.inSeconds - awayS;
       if (t < 0) return;
       for (final h in r.hosts.values) {
@@ -962,7 +987,7 @@ void _watch({
     r.counting = true;
     r.life(AppLifecycleState.paused);
     for (var m = 0; m < watchFor.inMinutes; m += 5) {
-      r.elapse(const Duration(minutes: 5));
+      await r.elapse(const Duration(minutes: 5));
       if (trace) {
         // ignore: avoid_print
         print('TRACE $prefix +${m + 5}m ${r.fleet.connections.map((c) => c.state.name).join(',')} '
@@ -992,6 +1017,10 @@ void _watch({
       final shown = r.notifier.posted.where((p) => p.id == id && p.ms >= from && p.ms < (awayS + e.endS) * 1000);
       if (shown.isEmpty) {
         missed++;
+        if (trace) {
+          // ignore: avoid_print
+          print('TRACE $prefix missed ${e.host}/${e.pane}@${e.startS}');
+        }
       } else {
         latencies.add((shown.first.ms - from) / 1000);
       }
@@ -1021,35 +1050,36 @@ void _watch({
     if (turbulent) {
       final from = r.now.inMilliseconds;
       r.life(AppLifecycleState.resumed);
-      final took = r.untilFresh();
-      r.elapse(const Duration(seconds: 20));
+      final took = await r.untilFresh();
+      await r.elapse(const Duration(seconds: 20));
       final resume = meter.window(from, r.now.inMilliseconds);
       _metric('resume_fresh_ms', took?.inMilliseconds ?? 120000);
       _kb('resume_kb', resume.bytes);
       if (took == null) _failures.add('$prefix: the board was not fresh 2 min after resuming');
     }
     r.dispose();
-  }, initialTime: DateTime.utc(2026, 1, 1, 12));
+  }
 }
 
 /// Notifications off, the default: the app lets go 90 s after it left.
-void _suspended() {
-  fakeAsync((async) {
-    final r = _Rig(async, notifications: false);
-    Timer.periodic(const Duration(milliseconds: 100), (_) {
+Future<void> _suspended() async {
+  {
+    final async = FakeAsync(initialTime: DateTime.utc(2026, 1, 1, 12));
+    final r = _Rig.start(async, notifications: false);
+    r.every(const Duration(milliseconds: 100), () {
       for (final h in r.hosts.values) {
         h.churn();
       }
     });
     r.openBoard();
-    r.elapse(const Duration(seconds: 30));
+    await r.elapse(const Duration(seconds: 30));
     final away = r.now;
     r.counting = true;
     r.life(AppLifecycleState.paused);
     // The 90 s grace, then the radio's tail.
-    r.elapse(const Duration(minutes: 2));
+    await r.elapse(const Duration(minutes: 2));
     final settled = r.now;
-    r.elapse(const Duration(hours: 1));
+    await r.elapse(const Duration(hours: 1));
     r.counting = false;
     final idle = r.meter.window(settled.inMilliseconds, r.now.inMilliseconds);
     final leave = r.meter.window(away.inMilliseconds, settled.inMilliseconds);
@@ -1060,22 +1090,22 @@ void _suspended() {
     final from = r.now.inMilliseconds;
     r.hosts['a']!.setStatus('p1', 'blocked');
     r.life(AppLifecycleState.resumed);
-    final took = r.untilFresh();
-    r.elapse(const Duration(seconds: 20));
+    final took = await r.untilFresh();
+    await r.elapse(const Duration(seconds: 20));
     final resume = r.meter.window(from, r.now.inMilliseconds);
     _metric('cold_resume_fresh_ms', took?.inMilliseconds ?? 120000);
     _kb('cold_resume_kb', resume.bytes);
     if (took == null) _failures.add('suspended: the board was not fresh 2 min after resuming');
     r.dispose();
-  }, initialTime: DateTime.utc(2026, 1, 1, 12));
+  }
 }
 
 void main() {
-  test('what watching agents costs the radio and the battery', () {
+  test('what watching agents costs the radio and the battery', () async {
     // The score is the turbulent run's; the steady run is its quiet baseline.
-    _watch(prefix: 'bg', watchFor: const Duration(hours: 2), turbulent: true);
-    _watch(prefix: 'steady', watchFor: const Duration(hours: 1), turbulent: false);
-    _suspended();
+    await _watch(prefix: 'bg', watchFor: const Duration(hours: 2), turbulent: true);
+    await _watch(prefix: 'steady', watchFor: const Duration(hours: 1), turbulent: false);
+    await _suspended();
 
     final path = Platform.environment['BENCH_OUT'];
     if (path != null) File(path).writeAsStringSync('${_out.join('\n')}\n');

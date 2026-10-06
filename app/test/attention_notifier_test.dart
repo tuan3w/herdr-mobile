@@ -17,6 +17,7 @@ import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/pane_answerer.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrTransportException;
 import 'package:herdr_mobile/data/services/notifier.dart';
 import 'package:herdr_mobile/ui/core/deep_link.dart';
 import 'package:herdr_mobile/ui/features/agent_session/visible_text.dart';
@@ -994,7 +995,39 @@ void main() {
         r.connection('b').goOffline();
         r.async.flushMicrotasks();
         r.advance(const Duration(seconds: 3));
-        expect(r.notifier.watching, [3, 4, 3], reason: 'an offline machine is not watched');
+        expect(r.notifier.watching, [3, 4], reason: 'a machine out of reach is still watched: it comes back');
+        r.dispose();
+      });
+    });
+
+    test('the network going away for a moment does not end the watch', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {'a': {'w1:p1': 'working'}});
+        r.life(AppLifecycleState.paused);
+        r.advance(const Duration(minutes: 5)); // past the 90 s grace
+        expect(r.fleet.keepAliveInBackground, isTrue);
+
+        r.network.goOffline();
+        r.advance(const Duration(seconds: 10));
+        expect(r.fleet.keepAliveInBackground, isTrue, reason: 'nothing to watch is not what happened');
+        expect(r.notifier.watching.last, isNot(0));
+
+        r.network.goOnline('mobile');
+        r.advance(const Duration(seconds: 5));
+        expect(r.connection('a').isLive, isTrue, reason: 'back by itself, nobody opened the app');
+        r.dispose();
+      });
+    });
+
+    test('a machine that needs the person is not watched', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {'a': {'w1:p1': 'working'}});
+        r.transports['a']!.failure = const HerdrTransportException('bad key', fatal: true);
+        r.connection('a').reconnect();
+        r.advance(const Duration(seconds: 5));
+        expect(r.connection('a').state, LinkState.attention);
+        expect(r.notifier.watching.last, 0);
+        expect(r.fleet.keepAliveInBackground, isFalse);
         r.dispose();
       });
     });
