@@ -21,6 +21,9 @@ import 'support/fake_transport.dart';
 const _s = Duration(seconds: 1);
 Duration _sec(int n) => Duration(seconds: n);
 
+final _bgMux = LivenessTiming.background.muxInterval.inSeconds;
+final _bgLink = LivenessTiming.background.linkInterval.inSeconds;
+
 /// A mux script that answers every request.
 class _MuxChannel implements MuxChannel {
   _MuxChannel() {
@@ -105,7 +108,7 @@ class _Rig {
       profile: const MachineProfile(id: 'm', label: 'm', host: 'h', username: 'u'),
       secrets: const MachineSecrets(),
       onPinHostKey: (_) {},
-      connectClient: () async {
+      connectClient: (_) async {
         final c = _Client();
         clients.add(c);
         return c;
@@ -218,27 +221,32 @@ void main() {
           [_sec(8), _sec(5), _sec(25), _sec(10)]);
     });
 
-    test('the background is 120 s / 15 s for the mux and 150 s / 15 s for the link', () {
+    test('the background tests are longer than the safety-net poll, so its answers make them needless', () {
       const b = LivenessTiming.background;
-      expect([b.muxInterval, b.muxTimeout, b.linkInterval, b.linkTimeout],
-          [_sec(120), _sec(15), _sec(150), _sec(15)]);
+      // MachineConnection.backgroundPollInterval; while the poll is answered
+      // neither the mux nor the link sends a packet of its own.
+      const poll = Duration(minutes: 4);
+      expect(b.muxInterval, greaterThan(poll));
+      expect(b.linkInterval, greaterThan(poll));
+      expect(b.muxTimeout, _sec(15));
+      expect(b.linkTimeout, _sec(15));
       expect(LivenessTiming.of(background: true), same(b));
       expect(LivenessTiming.of(background: false), same(LivenessTiming.foreground));
     });
   });
 
   group('the mux heartbeat', () {
-    _rig('beats every 8 s in the foreground, every 120 s after going to the background', (r) {
+    _rig('beats every 8 s in the foreground, every background interval after going to the background', (r) {
       r.startMux();
       r.elapse(_sec(17));
       expect(r.mux.beats, 2);
 
       r.t.setBackground(true);
-      r.elapse(_sec(119));
+      r.elapse(_sec(_bgMux - 1));
       expect(r.mux.beats, 2, reason: 'nothing for 119 s');
       r.elapse(_s);
       expect(r.mux.beats, 3);
-      r.elapse(_sec(240));
+      r.elapse(_sec(2 * _bgMux));
       expect(r.mux.beats, 5);
     });
 
@@ -264,7 +272,7 @@ void main() {
       r.t.setBackground(true);
       r.mux.silent = true;
 
-      r.elapse(_sec(120)); // the beat goes out
+      r.elapse(_sec(_bgMux)); // the beat goes out
       expect(r.mux.beats, 1);
       r.elapse(_sec(14));
       expect(r.client.closed, isFalse, reason: 'the background allows 15 s for the answer');
@@ -291,19 +299,19 @@ void main() {
     _rig('setBackground is idempotent: repeating it neither beats nor re-arms', (r) {
       r.startMux();
       r.t.setBackground(true);
-      r.elapse(_sec(100));
+      r.elapse(_sec(_bgMux - 20));
       r.t.setBackground(true);
       r.t.setBackground(true);
 
       r.elapse(_sec(20));
 
-      expect(r.mux.beats, 1, reason: 'the 120 s beat of the first call, not pushed back');
+      expect(r.mux.beats, 1, reason: 'the beat of the first call, not pushed back');
     });
 
     _rig('the setting survives a reconnect', (r) {
       r.t.setBackground(true);
       r.startMux();
-      r.elapse(_sec(119));
+      r.elapse(_sec(_bgMux - 1));
       expect(r.mux.beats, 0);
       r.elapse(_s);
       expect(r.mux.beats, 1);
@@ -312,7 +320,7 @@ void main() {
       r.async.flushMicrotasks();
       r.startMux();
       expect(r.muxes, hasLength(2));
-      r.elapse(_sec(119));
+      r.elapse(_sec(_bgMux - 1));
       expect(r.mux.beats, 0, reason: 'the new mux starts in the background mode');
       r.elapse(_s);
       expect(r.mux.beats, 1);
@@ -324,7 +332,7 @@ void main() {
       r.t.setBackground(true);
       r.async.flushMicrotasks();
 
-      r.elapse(_sec(119));
+      r.elapse(_sec(_bgMux - 1));
       expect(r.mux.beats, 0);
       r.elapse(_s);
       expect(r.mux.beats, 1);
@@ -342,15 +350,15 @@ void main() {
       expect(r.client.pings, 2);
     });
 
-    _rig('in the background an idle link is pinged every 150 s', (r) {
+    _rig('in the background an idle link is pinged every background interval', (r) {
       r.connectLink();
       r.t.setBackground(true);
 
-      r.elapse(_sec(149));
+      r.elapse(_sec(_bgLink - 1));
       expect(r.client.pings, 0);
       r.elapse(_s);
       expect(r.client.pings, 1);
-      r.elapse(_sec(150));
+      r.elapse(_sec(_bgLink));
       expect(r.client.pings, 2);
     });
 
@@ -359,8 +367,8 @@ void main() {
       r.elapse(_sec(20)); // 20 s quiet, ping due in 5 s
 
       r.t.setBackground(true);
-      r.elapse(_sec(129));
-      expect(r.client.pings, 0, reason: 'due at 150 s of quiet');
+      r.elapse(_sec(_bgLink - 21));
+      expect(r.client.pings, 0, reason: 'due after the background interval of quiet');
       r.elapse(_s);
       expect(r.client.pings, 1);
     });
@@ -384,7 +392,7 @@ void main() {
     _rig('going back to the foreground does not ping a link that just spoke', (r) {
       r.connectLink();
       r.t.setBackground(true);
-      r.elapse(_sec(150)); // pinged, answered: quiet clock restarts
+      r.elapse(_sec(_bgLink)); // pinged, answered: quiet clock restarts
       expect(r.client.pings, 1);
       r.elapse(_sec(3));
 
@@ -400,7 +408,7 @@ void main() {
       r.connectLink();
       r.client.holdPing = Completer<void>();
       r.t.setBackground(true);
-      r.elapse(_sec(150));
+      r.elapse(_sec(_bgLink));
       expect(r.client.pings, 1);
       expect(r.client.closed, isFalse);
 
@@ -415,7 +423,7 @@ void main() {
       r.t.setBackground(true);
       r.connectLink();
 
-      r.elapse(_sec(149));
+      r.elapse(_sec(_bgLink - 1));
       expect(r.client.pings, 0);
       r.elapse(_s);
       expect(r.client.pings, 1);

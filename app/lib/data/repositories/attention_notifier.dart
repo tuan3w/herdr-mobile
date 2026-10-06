@@ -9,6 +9,7 @@ import 'pane_answerer.dart';
 import 'agent_session.dart';
 import 'attention_set.dart';
 import 'fleet_repository.dart';
+import 'machine_connection.dart' show LinkState, MachineConnection;
 import 'notification_settings.dart';
 
 /// `herdr://agent/<machine>/<pane>`, both parts percent-encoded (a pane id
@@ -268,20 +269,32 @@ class AttentionNotifier {
     _syncWatching();
   }
 
+  /// A machine whose link is up, or is being brought back by itself (a
+  /// handover, a tunnel, a host that rebooted): what it ran when last seen is
+  /// still being watched. Counting only live links ended the watch for good at
+  /// the first blip in the background: with no agent counted the keep-alive
+  /// went off, the fleet suspended, and nothing reconnected when the network
+  /// came back. A machine that needs the person (`attention`), is disabled or
+  /// waits for a sign-in is not coming back by itself.
+  static bool _recoverable(MachineConnection c) => switch (c.state) {
+        LinkState.online || LinkState.connecting || LinkState.reconnecting || LinkState.offline => true,
+        LinkState.attention || LinkState.disabled || LinkState.approval => false,
+      };
+
   /// Agents to watch (working or blocked, terminal and session, on a machine
-  /// that is online: a session reconnecting there is still worth keeping the
-  /// connection for), and how many need the person: the [AttentionSet]'s
+  /// whose link is up or coming back; a session reconnecting there is still
+  /// worth keeping the connection for), and how many need the person: the [AttentionSet]'s
   /// count, the number the badge and the pill show.
   _Glance _countWatching() {
     var n = 0;
     for (final c in _fleet.connections) {
-      if (!c.isLive) continue;
+      if (!_recoverable(c)) continue;
       for (final p in c.snapshot.panes) {
         if (p.isAgent && (p.status == AgentStatus.blocked || p.status == AgentStatus.working)) n++;
       }
     }
     for (final s in _sessions?.sessions ?? const <AgentSessionView>[]) {
-      if (s.machine.isLive && s.phase != AgentPhase.idle) n++;
+      if (_recoverable(s.machine) && s.phase != AgentPhase.idle) n++;
     }
     return (count: n, blocked: _attention.needsYou.length);
   }

@@ -1,7 +1,7 @@
 // ignore_for_file: avoid_print, invalid_use_of_visible_for_testing_member
 //
 // The keyboard benchmark, on a phone: what tapping the composer of an agent's
-// terminal costs, frame by frame. `autoresearch.sh` builds and runs it:
+// terminal costs, frame by frame. `autoresearch-keyboard.sh` builds and runs it:
 //
 //   flutter build apk --profile -t benchmark/keyboard_device_bench.dart
 //
@@ -26,7 +26,7 @@
 //   * every frame's build (UI thread) and raster time, from FrameTiming;
 //   * the time from the tap to the first frame that moved.
 // Results go to logcat as KBBENCH_* lines (profile builds still print them);
-// `autoresearch.sh` turns the KBBENCH_METRIC ones into METRIC lines.
+// `autoresearch-keyboard.sh` turns the KBBENCH_METRIC ones into METRIC lines.
 //
 // Time budget: a frame has 1000 / refresh rate ms in each stage (build and
 // raster run in parallel on two threads). `jank_ms` is how far past that

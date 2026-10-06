@@ -24,7 +24,7 @@ and everything I tried felt half-baked: a Telegram bot here, a mobile terminal l
 Moshi there, each solving one piece of the job. So I set out to build the best one,
 and optimized it for how it feels in the hand. Some of that went a little far: the
 keyboard and the terminal's rendering were tuned on a real phone with automated
-measure-and-improve loops (`autoresearch.sh`, `autoresearch-stream.sh`), until the
+measure-and-improve loops (`autoresearch-keyboard.sh`, `autoresearch-stream.sh`), until the
 keyboard opened without skipping a single frame.
 
 ## What it does

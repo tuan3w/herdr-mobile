@@ -172,7 +172,7 @@ A frame has 16.7 ms on a Galaxy A51-class phone while an agent streams
 - Streaming text updates one live row, never the list (`LiveMessageRow`,
   `RevealPacer`, `FrameFlush`).
 - When feel or frames matter, check them on the phone: a profile build, real
-  touch (`adb shell input swipe`), a controllable load, `./autoresearch.sh`
+  touch (`adb shell input swipe`), a controllable load, `./autoresearch-keyboard.sh`
   (keyboard) and `./autoresearch-stream.sh` (streaming). If you could not, say
   which feel-checks remain.
 

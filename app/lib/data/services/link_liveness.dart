@@ -31,13 +31,18 @@ class LivenessTiming {
     linkTimeout: Duration(seconds: 10),
   );
 
-  /// The mux heartbeat is the first test to fire (every 120 s) and its answer
-  /// counts as inbound bytes, so the link's own ping (150 s) only goes out
-  /// when the mux is not in use.
+  /// In the background the safety-net poll (every 4 minutes,
+  /// `MachineConnection.backgroundPollInterval`) is the liveness test: its
+  /// answer is inbound bytes, which the mux (`MuxClient`) and the link
+  /// ([LinkLiveness]) both count as proof of life. These intervals are longer
+  /// than the poll's on purpose, so while the poll is answered neither ever
+  /// sends a packet of its own; they only fire when the poll stops being
+  /// answered (a dead link is then found within a poll interval plus the
+  /// timeout).
   static const background = LivenessTiming(
-    muxInterval: Duration(seconds: 120),
+    muxInterval: Duration(seconds: 300),
     muxTimeout: Duration(seconds: 15),
-    linkInterval: Duration(seconds: 150),
+    linkInterval: Duration(seconds: 330),
     linkTimeout: Duration(seconds: 15),
   );
 

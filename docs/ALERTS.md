@@ -60,9 +60,10 @@ While it runs the connections are not dropped after 90 s, and they go quiet:
   every spinner frame and keystroke of a busy agent, is dropped: against a real
   herdr 0.9.3, 150 lines of output caused 150 events with the full
   subscription and none with the status-only one;
-- the mux heartbeat goes from 8 s to 120 s, the idle link ping from 25 s to
-  150 s, and the safety-net poll from 20 s to 2 min;
-- agent sessions are listed every 90 s and a streaming session updates the app
+- the mux heartbeat goes from 8 s to 300 s, the idle link ping from 25 s to
+  330 s, and the safety-net poll from 20 s to 4 min (its answer is the
+  liveness test);
+- agent sessions are listed every 4 min and a streaming session updates the app
   at most every 2 s; a machine that is down is retried at most every 5 min.
 
 Returning to the app restores the live view. When nothing is working or

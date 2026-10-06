@@ -101,7 +101,7 @@ cleanup() {
   [ -n "${logpid:-}" ] && kill "$logpid" 2>/dev/null || true
   phone shell am force-stop "$pkg" >/dev/null 2>&1 || true
   # The run keeps the screen on while plugged in; put the setting back (unless
-  # /tmp/herdr-kb-keep-awake exists, see autoresearch.sh).
+  # /tmp/herdr-kb-keep-awake exists, see autoresearch-keyboard.sh).
   [ -e /tmp/herdr-kb-keep-awake ] || phone shell settings put global stay_on_while_plugged_in "${stayon:-0}" >/dev/null 2>&1 || true
   rm -rf "$work"
 }

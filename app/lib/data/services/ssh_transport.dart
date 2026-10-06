@@ -58,7 +58,7 @@ class SshTransport implements HerdrTransport {
     this.requestTimeout = const Duration(seconds: 20),
     this.approvalTimeout = const Duration(minutes: 5),
     this.onNotice,
-    Future<SSHClient> Function()? connectClient,
+    Future<SSHClient> Function(void Function() onInbound)? connectClient,
     Future<MuxChannel> Function(String command)? openMuxChannel,
     Duration Function()? livenessClock,
   })  : _connectClient = connectClient, // ignore: prefer_initializing_formals
@@ -93,8 +93,10 @@ class SshTransport implements HerdrTransport {
   final void Function(String banner)? onNotice;
 
   /// Replace the real connection, the mux channel and the clock of the link
-  /// watch; for tests.
-  final Future<SSHClient> Function()? _connectClient;
+  /// watch; for tests. The connection is told to call `onInbound` for every
+  /// chunk it receives, as the real socket does (proof of life, see
+  /// [LinkLiveness]).
+  final Future<SSHClient> Function(void Function() onInbound)? _connectClient;
   final Future<MuxChannel> Function(String command)? _openMuxChannel;
   final Duration Function()? _livenessClock;
   final String _command;
@@ -131,7 +133,7 @@ class SshTransport implements HerdrTransport {
       timeout: t.linkTimeout,
       clock: _livenessClock,
     );
-    return _client = (_connectClient?.call() ?? _connect(liveness)).then((c) {
+    return _client = (_connectClient?.call(liveness.inbound) ?? _connect(liveness)).then((c) {
       _ready = c;
       _watchLink(c, liveness);
       return c;
@@ -451,7 +453,8 @@ class SshTransport implements HerdrTransport {
     final mux = await MuxClient.connect(channel,
         requestTimeout: requestTimeout,
         heartbeatInterval: started.muxInterval,
-        heartbeatTimeout: started.muxTimeout);
+        heartbeatTimeout: started.muxTimeout,
+        clock: _livenessClock);
     if (epoch != _epoch) {
       mux.close();
       throw const HerdrTransportException('Connection reset');
