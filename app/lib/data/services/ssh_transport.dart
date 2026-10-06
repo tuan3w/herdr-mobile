@@ -453,7 +453,8 @@ class SshTransport implements HerdrTransport {
     final mux = await MuxClient.connect(channel,
         requestTimeout: requestTimeout,
         heartbeatInterval: started.muxInterval,
-        heartbeatTimeout: started.muxTimeout);
+        heartbeatTimeout: started.muxTimeout,
+        clock: _livenessClock);
     if (epoch != _epoch) {
       mux.close();
       throw const HerdrTransportException('Connection reset');

@@ -119,7 +119,13 @@ class Meter {
   final marks = <_Mark>[];
   final counts = <String, int>{};
 
-  void count(String what) => counts[what] = (counts[what] ?? 0) + 1;
+  /// What happened and when, in ms, for BENCH_TRACE.
+  final timeline = <(int, String)>[];
+
+  void count(String what) {
+    counts[what] = (counts[what] ?? 0) + 1;
+    timeline.add((_now().inMilliseconds, what));
+  }
 
   /// One message of [payload] bytes in one direction.
   void add(int payload, {required bool up}) {
@@ -1038,6 +1044,13 @@ Future<void> _watch({
     final missedFrac = episodes.isEmpty ? 0.0 : missed / episodes.length;
     // What nobody watched is worth as much as a radio held up the whole hour.
     _metric('${prefix}_score_s_per_h', bg.costS / hours + 3600 * (unwatchedFrac + missedFrac));
+
+    if (trace && !turbulent) {
+      final from = away.inMilliseconds + 10 * 60 * 1000;
+      // ignore: avoid_print
+      print('TRACE $prefix timeline 10..20 min away: '
+          '${[for (final (ms, w) in meter.timeline) if (ms >= from && ms < from + 600000) '${((ms - from) / 1000).toStringAsFixed(1)}s:$w']}');
+    }
 
     final sites = r.timerSites.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     _out.add('# $prefix timer wake-ups per hour, by the line that made the timer:');

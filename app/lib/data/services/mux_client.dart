@@ -209,8 +209,24 @@ class MuxClient {
     required this.requestTimeout,
     required Duration heartbeatInterval,
     required Duration heartbeatTimeout,
+    Duration Function()? clock,
   })  : _heartbeatInterval = heartbeatInterval, // ignore: prefer_initializing_formals
-        _heartbeatTimeout = heartbeatTimeout; // ignore: prefer_initializing_formals
+        _heartbeatTimeout = heartbeatTimeout, // ignore: prefer_initializing_formals
+        _now = clock ?? _stopwatchClock();
+
+  static Duration Function() _stopwatchClock() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
+
+  final Duration Function() _now;
+
+  /// When the last answer to a request that is not a heartbeat came in. An
+  /// answer proves the mux and the link are alive as well as a heartbeat's
+  /// does, so a heartbeat is only sent when none came for a whole interval:
+  /// in the background the safety-net poll is then the one thing that wakes
+  /// the radio, instead of the poll and the heartbeat each doing it.
+  Duration? _lastAnswer;
 
   /// Waits for the remote ready line, then starts the heartbeat.
   /// Throws [MuxUnavailable] if the channel closes first or never becomes
@@ -221,12 +237,14 @@ class MuxClient {
     Duration requestTimeout = const Duration(seconds: 20),
     Duration heartbeatInterval = const Duration(seconds: 8),
     Duration heartbeatTimeout = const Duration(seconds: 5),
+    Duration Function()? clock,
   }) async {
     final client = MuxClient._(
       channel,
       requestTimeout: requestTimeout,
       heartbeatInterval: heartbeatInterval,
       heartbeatTimeout: heartbeatTimeout,
+      clock: clock,
     );
     try {
       await client._ready(startupTimeout);
@@ -331,7 +349,10 @@ class MuxClient {
       return;
     }
     final id = decoded is Map<String, dynamic> ? decoded['id'] : null;
-    if (id is String) _pending.remove(id)?.complete(decoded);
+    if (id is String) {
+      if (!id.startsWith('hb')) _lastAnswer = _now();
+      _pending.remove(id)?.complete(decoded);
+    }
   }
 
   /// Sends one request and returns the decoded response. Throws
@@ -509,6 +530,8 @@ class MuxClient {
 
   Future<void> _beat() async {
     if (_beating || !_alive) return;
+    final last = _lastAnswer;
+    if (last != null && _now() - last < _heartbeatInterval) return;
     _beating = true;
     try {
       await _exchange('hb${_nextId++}', 'ping', const {}, _heartbeatTimeout);

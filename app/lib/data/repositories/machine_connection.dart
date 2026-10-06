@@ -55,7 +55,7 @@ class MachineConnection extends ChangeNotifier {
     this._cache,
     this.backoff = defaultBackoff,
     this.pollInterval = const Duration(seconds: 20),
-    this.backgroundPollInterval = const Duration(minutes: 2),
+    this.backgroundPollInterval = const Duration(minutes: 4),
     this.backgroundBackoff = defaultBackgroundBackoff,
     this.structuralDelay = const Duration(milliseconds: 150),
     this.churnInterval = const Duration(milliseconds: 1500),
