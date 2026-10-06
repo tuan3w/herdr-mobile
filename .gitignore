@@ -1,0 +1,13 @@
+# Release signing material must never be committed.
+*.jks
+*.keystore
+key.properties
+
+.DS_Store
+
+# Python bytecode (the host plugin's tests create it)
+__pycache__/
+*.pyc
+
+# Local helper scripts, not part of the project
+/local/

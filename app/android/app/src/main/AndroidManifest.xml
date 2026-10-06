@@ -1,0 +1,102 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- herdr is reached over SSH; release builds need this explicitly. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Local notifications (Android 13 asks at run time) and the quiet
+         "Watching" foreground notice that keeps the SSH connections alive
+         while agents work in the background. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <!-- "Save to phone" in the photo viewer (gal): Android 10 and later saves
+         through MediaStore with no permission; Android 9 and below (and 10
+         with its legacy storage flag, below) need this one. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
+    <!-- The attach sheet's Gallery tab (photo_manager) reads the phone's
+         pictures: READ_EXTERNAL_STORAGE up to Android 12 (merged in by the
+         plugin), READ_MEDIA_IMAGES on 13, and on 14 the person may share only
+         some photos: READ_MEDIA_VISUAL_USER_SELECTED is what lets the app see
+         that selection (the sheet's Manage chip re-opens the selector). Asked
+         only when the Gallery tab is first shown, after a one-line reason. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
+    <application
+        android:label="herdr"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true"
+        android:enableOnBackInvokedCallback="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- herdr://agent/<machine>/<pane-id>: what an alert notification
+                 opens (docs/ALERTS.md). Flutter hands the URI to the app as its
+                 initial route, or as route information while it runs. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="herdr" android:host="agent"/>
+            </intent-filter>
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="true"/>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+        <!-- Impeller on OpenGL ES (Mali GPUs that fall back from Vulkan)
+             measured ~40% slower per frame than Skia for terminal text. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
+        <!-- The answer buttons on a notification (actions that do not open the
+             app): the plugin hands a press to a background isolate, which
+             forwards it to the app's main isolate. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
+            android:exported="false" />
+        <!-- flutter_local_notifications' foreground service: it only shows the
+             "Watching N agents" notice. Swiping the app away must stop it,
+             since nothing would be watching. -->
+        <service
+            android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
+            android:exported="false"
+            android:stopWithTask="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the connection to the user's own machines alive while their coding agents work, so a question can be shown"/>
+        </service>
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

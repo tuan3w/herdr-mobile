@@ -1,0 +1,12 @@
+name: md_bench
+description: Markdown engine bench-off for the agent chat. Not part of the app.
+publish_to: none
+environment:
+  sdk: ^3.13.5
+dependencies:
+  markdown: ^7.3.1
+  meta: ^1.16.0
+  # Only for the files under app/lib/ui/core/markdown/, which are pure Dart.
+  # Resolving it needs the Flutter SDK on PATH (`dart pub get` finds it).
+  herdr_mobile:
+    path: ../../app

@@ -1,0 +1,151 @@
+[
+ {
+  "sessionUpdate": "tool_call",
+  "toolCallId": "toolu_01MxoZm83k53YKQ9GWkoLVNP",
+  "title": "Spawning PongReply subagent",
+  "kind": "other",
+  "status": "pending",
+  "rawInput": {
+   "context": "# Goal\nSpawn a simple subagent that replies with \"pong\"\n",
+   "tasks": [
+    {
+     "name": "PongReply",
+     "agent": "task",
+     "task": "Reply with the word pong and nothing else.",
+     "solutionSpace": "trivial: single word response required"
+    }
+   ]
+  }
+ },
+ {
+  "sessionUpdate": "tool_call_update",
+  "toolCallId": "toolu_01MxoZm83k53YKQ9GWkoLVNP",
+  "status": "in_progress",
+  "rawOutput": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running agent PongReply..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 3927,
+    "progress": [
+     {
+      "index": 0,
+      "id": "PongReply",
+      "agent": "task",
+      "agentSource": "bundled",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word pong and nothing else.",
+      "assignment": "Reply with the word pong and nothing else.",
+      "recentTools": [],
+      "recentOutput": [],
+      "toolCount": 1,
+      "requests": 1,
+      "tokens": 9523,
+      "cost": 0.019339000000000002,
+      "durationMs": 0,
+      "resolvedModel": "anthropic/claude-haiku-4-5:high",
+      "resolvedModelIdentity": "anthropic/claude-haiku-4-5",
+      "resolvedThinkingLevel": "high",
+      "resolvedModelIsFallback": false,
+      "contextTokens": 9523,
+      "contextWindow": 200000,
+      "currentTool": "yield",
+      "currentToolStartMs": 1791183994065
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "PongReply",
+     "type": "task"
+    }
+   }
+  },
+  "content": [
+   {
+    "type": "content",
+    "content": {
+     "type": "text",
+     "text": "Running agent PongReply..."
+    }
+   }
+  ]
+ },
+ {
+  "sessionUpdate": "tool_call_update",
+  "toolCallId": "toolu_01MxoZm83k53YKQ9GWkoLVNP",
+  "status": "in_progress",
+  "rawOutput": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Background task PongReply complete."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 3931,
+    "progress": [
+     {
+      "index": 0,
+      "id": "PongReply",
+      "agent": "task",
+      "agentSource": "bundled",
+      "status": "completed",
+      "task": "Complete assignment thoroughly:\n\nReply with the word pong and nothing else.",
+      "assignment": "Reply with the word pong and nothing else.",
+      "recentTools": [
+       {
+        "tool": "yield",
+        "args": "",
+        "isError": false,
+        "endMs": 1791183994065
+       }
+      ],
+      "recentOutput": [],
+      "toolCount": 1,
+      "requests": 1,
+      "tokens": 9523,
+      "cost": 0.019339000000000002,
+      "durationMs": 4075,
+      "resolvedModel": "anthropic/claude-haiku-4-5:high",
+      "resolvedModelIdentity": "anthropic/claude-haiku-4-5",
+      "resolvedThinkingLevel": "high",
+      "resolvedModelIsFallback": false,
+      "contextTokens": 9523,
+      "contextWindow": 200000,
+      "extractedToolData": {
+       "yield": [
+        {
+         "data": {
+          "reply": "pong"
+         },
+         "status": "success"
+        }
+       ]
+      }
+     }
+    ],
+    "async": {
+     "state": "completed",
+     "jobId": "PongReply",
+     "type": "task"
+    }
+   }
+  },
+  "content": [
+   {
+    "type": "content",
+    "content": {
+     "type": "text",
+     "text": "Background task PongReply complete."
+    }
+   }
+  ]
+ }
+]

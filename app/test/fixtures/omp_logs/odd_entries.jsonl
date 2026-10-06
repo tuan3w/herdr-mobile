@@ -1,0 +1,32 @@
+{"type":"title","v":1,"title":"","updatedAt":"2026-10-04T13:00:00.000Z","pad":"          "}
+{"type":"session","version":3,"id":"01a10000-0000-7000-8000-00000000a005","timestamp":"2026-10-04T13:00:00.000Z","cwd":"/tmp/work"}
+{"type":"model_change","id":"e1000001","parentId":null,"timestamp":"2026-10-04T13:00:00.100Z","model":"anthropic/claude-haiku-4-5","resolvedModelIsFallback":false}
+{"type":"thinking_level_change","id":"e1000002","parentId":"e1000001","timestamp":"2026-10-04T13:00:00.100Z","thinkingLevel":"low","configured":null}
+{"type":"credential_pin","id":"e1000003","parentId":"e1000002","timestamp":"2026-10-04T13:00:00.200Z","provider":"anthropic","hash":"0000000000000000000000000000000000000000000000000000000000000000"}
+{"type":"message","id":"e1000004","parentId":"e1000003","timestamp":"2026-10-04T13:00:01.000Z","message":{"role":"user","content":"A plain string user message","attribution":"user","timestamp":1791111601000}}
+{"type":"message","id":"e1000005","parentId":"e1000004","timestamp":"2026-10-04T13:00:02.000Z","message":{"role":"developer","content":[{"type":"text","text":"<system-reminder>hidden housekeeping</system-reminder>"}],"attribution":"agent","timestamp":1791111602000}}
+{"type":"custom_message","id":"e1000006","parentId":"e1000005","timestamp":"2026-10-04T13:00:03.000Z","customType":"mid-run-todo-nudge","content":"nudge for the model only","display":false,"attribution":"agent"}
+{"type":"custom_message","id":"e1000007","parentId":"e1000006","timestamp":"2026-10-04T13:00:04.000Z","customType":"async-result","content":"a background job finished","display":true,"attribution":"agent"}
+{"type":"custom_message","id":"e1000008","parentId":"e1000007","timestamp":"2026-10-04T13:00:05.000Z","customType":"skill-prompt","content":"The whole skill text, 215 lines of it","display":true,"details":{"name":"tdd","path":"/skills/tdd/SKILL.md","args":"the parser","lineCount":215},"attribution":"user"}
+{"type":"message","id":"e1000009","parentId":"e1000008","timestamp":"2026-10-04T13:00:06.000Z","message":{"role":"bashExecution","command":"git status --short","output":" M lib/a.dart\n","exitCode":0,"cancelled":false,"truncated":false,"timestamp":1791111606000}}
+{"type":"message","id":"e100000a","parentId":"e1000009","timestamp":"2026-10-04T13:00:07.000Z","message":{"role":"bashExecution","command":"false","output":"","exitCode":1,"cancelled":false,"truncated":false,"timestamp":1791111607000}}
+{"type":"message","id":"e100000b","parentId":"e100000a","timestamp":"2026-10-04T13:00:08.000Z","message":{"role":"fileMention","files":[{"path":"lib/a.dart","content":"void main() {}","lineCount":1}],"timestamp":1791111608000}}
+{"type":"message","id":"e100000c","parentId":"e100000b","timestamp":"2026-10-04T13:00:09.000Z","message":{"role":"user","content":[{"type":"text","text":"Look at this screenshot"},{"type":"image","data":"blob:sha256:0000000000000000000000000000000000000000000000000000000000000000","mimeType":"image/png"}],"attribution":"user","steering":true,"timestamp":1791111609000}}
+{"type":"future_entry_kind","id":"e100000d","parentId":"e100000c","timestamp":"2026-10-04T13:00:10.000Z","payload":{"anything":[1,2,3]}}
+{"type":"message","id":"e100000e","parentId":"e100000d","timestamp":"2026-10-04T13:00:11.000Z","message":{"role":"somethingNew","content":[{"type":"text","text":"a role this app has never seen"}]}}
+{"type":"message","id":"e100000f","parentId":"e100000e","timestamp":"2026-10-04T13:00:12.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"   "},{"type":"thinking","thinking":"","redacted":true},{"type":"text","text":"Visible answer"},{"type":"image","data":"blob:sha256:ff","mimeType":"image/png"}],"stopReason":"stop","timestamp":1791111612000}}
+{"type":"message","id":"e100000f","parentId":"e100000e","timestamp":"2026-10-04T13:00:12.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"   "},{"type":"thinking","thinking":"","redacted":true},{"type":"text","text":"Visible answer"},{"type":"image","data":"blob:sha256:ff","mimeType":"image/png"}],"stopReason":"stop","timestamp":1791111612000}}
+{"type":"title_change","id":"e1000010","parentId":"e100000f","timestamp":"2026-10-04T13:00:13.000Z","title":"Odd entries session","source":"auto","previousTitle":"","trigger":"auto"}
+{"type":"custom","customType":"session_exit","data":{"reason":"dispose","kind":"normal","recordedAt":"2026-10-04T13:00:14.000Z"},"id":"e1000011","parentId":"e1000010","timestamp":"2026-10-04T13:00:14.000Z"}
+{"type":"message","id":"e1000012","parentId":"e1000011","timestamp":"2026-10-04T13:00:15.000Z","message":{"role":"toolResult","toolCallId":"toolu_orphan_0001","toolName":"read","content":[{"type":"text","text":"a result whose call this log never showed"}],"details":{},"isError":false,"timestamp":1791111615000}}
+{"type":"message","id":"e1000013","parentId":"e1000012","timestamp":"2026-10-04T13:00:16.000Z","message":{"role":"user","content":[{"type":"text","text":"cut off in the middle","attribution":
+not json at all
+[1,2,3]
+null
+"just a string"
+{}
+{"type":"message"}
+{"type":"message","id":"e1000014","message":"not an object"}
+{"type":"message","id":"e1000015","message":{"role":"assistant","content":[{"type":"toolCall","name":"bash","arguments":{"command":"no id on this call"}}],"stopReason":"toolUse"}}
+{"type":"message","id":"e1000016","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"no call id on this result"}],"isError":false}}
+{"type":"message","id":"e1000017","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_str_args","name":"grep","arguments":"{\"pattern\":\"needle\",\"path\":\"src\"}"}],"stopReason":"toolUse"}}

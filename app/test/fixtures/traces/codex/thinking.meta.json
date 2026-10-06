@@ -1,0 +1,22 @@
+{
+  "agent": "codex",
+  "scenario": "thinking",
+  "prompt": "Think hard before answering, no tools: three switches outside a closed room control three bulbs inside, you may enter once. How do you find which switch controls which bulb? Answer in at most three sentences.",
+  "command": "npx -y @agentclientprotocol/codex-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/codex-acp",
+    "title": "Codex",
+    "version": "2.1.1"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 2385.344,
+  "stopReason": "end_turn",
+  "lines": 71,
+  "bytes": 48585,
+  "optionsCut": 0,
+  "configChosen": {
+    "reasoning_effort": "high"
+  },
+  "permissionDecisions": [],
+  "notes": []
+}

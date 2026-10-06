@@ -1,0 +1,13 @@
+id = "herdr-mobile.ntfy"
+name = "herdr-mobile ntfy alerts"
+version = "0.1.0"
+# Plugin v1 (event hooks, HERDR_PLUGIN_EVENT_JSON, config/state dirs) and the
+# pane.agent_status_changed hook arrived in 0.7.0; `pane read --source visible
+# --lines N` is documented in the 0.7.0 CLI reference.
+min_herdr_version = "0.7.0"
+description = "Push to an ntfy topic when an agent is blocked or done; the notification opens herdr-mobile on that agent."
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["bash", "notify.sh"]

@@ -1,0 +1,22 @@
+{
+  "agent": "omp",
+  "scenario": "tools",
+  "prompt": "Read the file notes.txt in the current directory, then run the shell command `echo hello-from-scratch`, then tell me in one sentence what each of them gave.",
+  "command": "omp acp",
+  "agentInfo": {
+    "name": "omp",
+    "title": "omp",
+    "version": "18.4.12"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 325.039,
+  "stopReason": "end_turn",
+  "lines": 32,
+  "bytes": 36156,
+  "optionsCut": 571,
+  "configChosen": {},
+  "permissionDecisions": [
+    "allowed once: echo hello-from-scratch"
+  ],
+  "notes": []
+}

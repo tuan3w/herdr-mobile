@@ -1,0 +1,20 @@
+{
+  "agent": "codex",
+  "scenario": "tools",
+  "prompt": "Read the file notes.txt in the current directory, then run the shell command `echo hello-from-scratch`, then tell me in one sentence what each of them gave.",
+  "command": "npx -y @agentclientprotocol/codex-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/codex-acp",
+    "title": "Codex",
+    "version": "2.1.1"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 1799.768,
+  "stopReason": "end_turn",
+  "lines": 78,
+  "bytes": 70230,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

@@ -1,0 +1,20 @@
+{
+  "agent": "codex",
+  "scenario": "plan",
+  "prompt": "Use your todo/plan tool to write a 3-step plan for adding a --verbose flag to src/main.py, then mark the steps done one by one WITHOUT editing any file. Finish with one line.",
+  "command": "npx -y @agentclientprotocol/codex-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/codex-acp",
+    "title": "Codex",
+    "version": "2.1.1"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 1863.591,
+  "stopReason": "end_turn",
+  "lines": 117,
+  "bytes": 60470,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

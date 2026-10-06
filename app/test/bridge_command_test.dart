@@ -1,0 +1,1287 @@
+@TestOn('linux || mac-os')
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/services/bridge_command.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/services/mux_client.dart';
+
+/// Runs [command] the way an SSH server would (`sh -c`) with a controlled
+/// $HOME and a minimal PATH, so the host's real herdr cannot interfere.
+Future<({String out, String err, int code})> _run(
+  String command,
+  Directory home, {
+  String input = '',
+  Map<String, String> env = const {},
+}) async {
+  final p = await Process.start(
+    '/bin/sh',
+    ['-c', command],
+    environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', ...env},
+    includeParentEnvironment: false,
+  );
+  p.stdin.write(input);
+  await p.stdin.close();
+  final out = utf8.decodeStream(p.stdout);
+  final err = utf8.decodeStream(p.stderr);
+  final code = await p.exitCode.timeout(const Duration(seconds: 10));
+  return (out: await out, err: await err, code: code);
+}
+
+bool _has(String bin) =>
+    ['/usr/bin', '/bin'].any((d) => File('$d/$bin').existsSync());
+
+void main() {
+  late Directory home;
+  setUp(() => home = Directory.systemTemp.createTempSync('bridge_test'));
+  tearDown(() => home.deleteSync(recursive: true));
+
+  group('fallback relay to the unix socket (older herdr)', () {
+    late ServerSocket server;
+    late String socketPath;
+    final received = <String>[];
+
+    setUp(() async {
+      Directory('${home.path}/.config/herdr').createSync(recursive: true);
+      socketPath = '${home.path}/.config/herdr/herdr.sock';
+      received.clear();
+      server = await ServerSocket.bind(
+        InternetAddress(socketPath, type: InternetAddressType.unix),
+        0,
+      );
+      server.listen((client) {
+        // One request per connection, like herdr.
+        utf8.decoder.bind(client).transform(const LineSplitter()).first.then((line) {
+          received.add(line);
+          client.write('{"id":"1","result":{"type":"pong"}}\n');
+          return client.close();
+        });
+      });
+    });
+    tearDown(() => server.close());
+
+    test('relays a request line to the socket and the response back', () async {
+      final r = await _run(
+        buildBridgeCommand(session: 'default'),
+        home,
+        input: '{"id":"1","method":"ping","params":{}}\n',
+      );
+
+      expect(r.err, isEmpty);
+      expect(r.out.trim(), '{"id":"1","result":{"type":"pong"}}');
+      expect(received, ['{"id":"1","method":"ping","params":{}}']);
+    }, skip: _has('socat') || _has('python3') ? false : 'needs socat or python3');
+
+    test('honours an explicit socket path for non-default sessions', () async {
+      final r = await _run(
+        buildBridgeCommand(session: 'work', socketPath: socketPath),
+        home,
+        input: '{"id":"1","method":"ping","params":{}}\n',
+      );
+
+      expect(r.out.trim(), contains('pong'));
+    }, skip: _has('socat') || _has('python3') ? false : 'needs socat or python3');
+
+    test('python relay works when socat is absent', () async {
+      // Hide socat by pointing PATH at a dir containing only python3.
+      final bin = Directory('${home.path}/bin')..createSync();
+      final py = ['/usr/bin/python3', '/bin/python3'].firstWhere(
+          (p) => File(p).existsSync(),
+          orElse: () => '');
+      if (py.isEmpty) return;
+      Link('${bin.path}/python3').createSync(py);
+      for (final tool in ['sh', 'base64', 'echo']) {
+        for (final d in ['/usr/bin', '/bin']) {
+          if (File('$d/$tool').existsSync()) {
+            Link('${bin.path}/$tool').createSync('$d/$tool');
+            break;
+          }
+        }
+      }
+      final p = await Process.start(
+        '/bin/sh',
+        ['-c', buildBridgeCommand(session: 'default')],
+        environment: {'HOME': home.path, 'PATH': bin.path},
+        includeParentEnvironment: false,
+      );
+      p.stdin.write('{"id":"1","method":"ping","params":{}}\n');
+      await p.stdin.close();
+      final out = await utf8.decodeStream(p.stdout);
+      await p.exitCode;
+
+      expect(out.trim(), contains('pong'));
+    });
+  });
+
+  group('herdr remote-api-bridge preference (herdr >= 0.9)', () {
+    File stubHerdr({required bool hasBridge}) {
+      final dir = Directory('${home.path}/.local/bin')..createSync(recursive: true);
+      return File('${dir.path}/herdr')
+        ..writeAsStringSync('''#!/bin/sh
+# args: [--session NAME] remote-api-bridge [--check]
+case "\$*" in
+  *--check*) [ "$hasBridge" = true ] && echo herdr-api-bridge-v1 || echo "unknown command" ;;
+  *remote-api-bridge*) echo "BRIDGE:\$*" ;;
+esac
+''')
+        ..setLastModifiedSync(DateTime.now());
+    }
+
+    Future<void> chmodX(File f) async => Process.run('chmod', ['+x', f.path]);
+
+    test('uses the bridge and passes the session name when supported', () async {
+      await chmodX(stubHerdr(hasBridge: true));
+
+      final r = await _run(buildBridgeCommand(session: 'agents'), home);
+
+      expect(r.out.trim(), 'BRIDGE:--session agents remote-api-bridge');
+    });
+
+    test('ignores a herdr that prints something else for --check', () async {
+      await chmodX(stubHerdr(hasBridge: false));
+      // No socket exists, so the fallback must be reached and fail visibly.
+      final r = await _run(buildBridgeCommand(session: 'default'), home);
+
+      expect(r.out, isNot(contains('BRIDGE')));
+      expect(r.code, isNot(0));
+    });
+  });
+
+  test('a named session without a socket path fails with exit 78 and a hint',
+      () async {
+    final r = await _run(buildBridgeCommand(session: 'work'), home);
+
+    expect(r.code, 78);
+    expect(r.err, contains('work'));
+  });
+
+  test('rejects session names that could inject shell', () {
+    for (final bad in ['a b', r'x;rm -rf /', r'$(id)', "a'b", '', '../x']) {
+      expect(() => buildBridgeCommand(session: bad), throwsArgumentError,
+          reason: bad);
+    }
+  });
+
+  test('a socket path with quotes cannot break out of the command', () async {
+    final evil = "x'; touch ${home.path}/pwned; '";
+    final r = await _run(
+        buildBridgeCommand(session: 'work', socketPath: evil), home);
+
+    expect(File('${home.path}/pwned').existsSync(), isFalse);
+    expect(r.code, isNot(0));
+  });
+
+  group('multiplexed request channel', () {
+    late String xdg;
+    setUp(() => xdg = Directory('${home.path}/xdg').path);
+
+    Future<_MuxProc> start({
+      String session = 'default',
+      String? socketPath,
+      Map<String, String>? env,
+    }) =>
+        _MuxProc.start(
+          buildMuxCommand(session: session, socketPath: socketPath),
+          home,
+          env ?? {'XDG_CONFIG_HOME': xdg},
+        );
+
+    String pong(Object? id) => jsonEncode({'id': id, 'result': {'type': 'pong'}});
+
+    Future<_FakeHerdr> serve(
+      String path, [
+      Future<String?> Function(Map<String, dynamic>)? handler,
+    ]) =>
+        _FakeHerdr.bind(path, handler ?? (req) async => pong(req['id']));
+
+    test('prints the ready line before anything else', () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+
+      expect(await mux.next(), muxReadyLine);
+    });
+
+    test('answers pipelined requests and matches them by id out of order',
+        () async {
+      final fastSeen = Completer<void>();
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
+        if (req['id'] == 'slow') {
+          await fastSeen.future; // replies only after 'fast' was served
+          // Let the fast response reach the wire first; without a real delay the
+          // continuation races ahead of the fast handler's own write.
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        } else if (!fastSeen.isCompleted) {
+          fastSeen.complete();
+        }
+        return pong(req['id']);
+      });
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'slow', 'method': 'ping', 'params': {}});
+      mux.send({'id': 'fast', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'fast');
+      expect(jsonDecode(await mux.next())['id'], 'slow');
+    });
+
+    test('relays a response larger than 1 MB intact', () async {
+      final blob = List.filled(1500000, 'x').join();
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'blob': blob}}));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'big', 'method': 'server.dump', 'params': {}});
+
+      final reply = await mux.nextJson();
+      expect(reply['id'], 'big');
+      expect((reply['result'] as Map)['blob'], blob);
+    });
+
+    test('a large response is deflated and a small one is not', () async {
+      final text = List.generate(400, (i) => '\u001b[38;2;1;2;3mrow $i of text')
+          .join('\r\n');
+      final big = jsonEncode({'id': 'big', 'result': {'text': text}});
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          req['id'] == 'big' ? big : pong(req['id']));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      var before = mux.wireBytes;
+      mux.send({'id': 'big', 'method': 'server.dump', 'params': {}});
+      expect(await mux.next(), big);
+      expect(mux.wireBytes - before, lessThan(big.length ~/ 4));
+
+      before = mux.wireBytes;
+      mux.send({'id': 'small', 'method': 'ping', 'params': {}});
+      expect(await mux.next(), pong('small'));
+      expect(mux.wireBytes - before, pong('small').length + 1); // plain line
+    });
+
+    test('a pane read is cut down to what the app reads; errors and other methods are not',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async {
+        if (req['id'] == 'bad') {
+          return '{"id":"bad","error":{"code":"pane_not_found","message":"gone","extra":1}}';
+        }
+        final Map<String, dynamic> result = switch (req['method']) {
+          'session.snapshot' => {
+              'type': 'session_snapshot',
+              'snapshot': {
+                'version': '1',
+                'protocol': 22,
+                'workspaces': [
+                  {'workspace_id': 'w1', 'label': 'x', 'pane_count': 2, 'extra': 1},
+                ],
+                'tabs': [
+                  {'tab_id': 'w1:t1', 'workspace_id': 'w1', 'extra': 1},
+                ],
+                'panes': [
+                  {
+                    'pane_id': 'p1',
+                    'agent': 'omp',
+                    'terminal_title': 'π > x',
+                    'agent_session': {'value': '/home/u/session.jsonl'},
+                    'scroll': {'a': 1},
+                    'revision': 4,
+                  },
+                  {'pane_id': 'p2'},
+                ],
+                'layouts': [{'x': 1}],
+                'agents': [{'pane_id': 'p1'}],
+              },
+            },
+          'pane.read' => {
+              'type': 'pane_read',
+              'read': {'pane_id': 'p1', 'source': 'recent', 'text': 'hi', 'truncated': true},
+            },
+          _ => {'type': 'other', 'keep': 'all', 'protocol': 22},
+        };
+        return jsonEncode({'id': req['id'], 'result': result});
+      });
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      for (final (id, method) in [
+        ('bad', 'session.snapshot'),
+        ('read', 'pane.read'),
+        ('other', 'server.info'),
+      ]) {
+        mux.send({'id': id, 'method': method, 'params': {}});
+      }
+      final replies = <Object?, Map<String, dynamic>>{};
+      for (var n = 0; n < 3; n++) {
+        final r = await mux.nextJson();
+        replies[r['id']] = r;
+      }
+
+      expect(replies['bad'], {
+        'id': 'bad',
+        'error': {'code': 'pane_not_found', 'message': 'gone', 'extra': 1},
+      });
+      expect(replies['read'], {
+        'id': 'read',
+        'result': {
+          'read': {'text': 'hi', 'truncated': true},
+        },
+      });
+      expect(replies['other'], {
+        'id': 'other',
+        'result': {'type': 'other', 'keep': 'all', 'protocol': 22},
+      });
+    });
+
+    test('requests sent as one deflated stream are served, however the bytes arrive',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+      final encoder = MuxRequestEncoder();
+      final request = {'method': 'ping', 'params': {'pane_id': 'w1:p1', 'lines': 24}};
+
+      final sizes = <int>[];
+      for (var i = 0; i < 12; i++) {
+        final frame = encoder.frame(jsonEncode({'id': 'r$i', ...request}));
+        sizes.add(frame.length);
+        // Cut into pieces, the way a network delivers it.
+        for (var at = 0; at < frame.length; at += 5) {
+          mux.process.stdin.add(frame.sublist(at, math.min(at + 5, frame.length)));
+          await mux.process.stdin.flush();
+        }
+        expect((await mux.nextJson())['id'], 'r$i');
+      }
+
+      // After the first, a request costs a small fraction of its text.
+      expect(sizes.skip(1).every((n) => n < 40), isTrue, reason: '$sizes');
+    });
+
+    test('plain request lines and deflated frames can be mixed', () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+      final encoder = MuxRequestEncoder();
+
+      mux.send({'id': 'plain1', 'method': 'ping', 'params': {}});
+      expect((await mux.nextJson())['id'], 'plain1');
+      mux.process.stdin.add(encoder.frame('{"id":"z1","method":"ping","params":{}}'));
+      expect((await mux.nextJson())['id'], 'z1');
+      mux.send({'id': 'plain2', 'method': 'ping', 'params': {}});
+      expect((await mux.nextJson())['id'], 'plain2');
+      mux.process.stdin.add(encoder.frame('{"id":"z2","method":"ping","params":{}}'));
+      expect((await mux.nextJson())['id'], 'z2');
+    });
+
+    test('a request stream that does not inflate ends the script with a reason', () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final p = await Process.start(
+        '/bin/sh',
+        ['-c', buildMuxCommand(session: 'default')],
+        environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': xdg},
+        includeParentEnvironment: false,
+      );
+      addTearDown(() async {
+        p.kill();
+        await herdr.close();
+      });
+      unawaited(p.stdout.drain<void>());
+
+      p.stdin.add([...ascii.encode('Q5\n'), 1, 2, 3, 4, 5]);
+      final err = await utf8.decodeStream(p.stderr);
+
+      expect(await p.exitCode.timeout(const Duration(seconds: 10)), 1);
+      expect(err, startsWith('herdr-mobile: bad request stream'));
+    });
+
+    test('an error herdr could not correlate (id "") comes back under the id it was sent with',
+        () async {
+      // herdr answers a method it does not know like this (seen on 0.8.2).
+      final herdr = await serve(
+        '$xdg/herdr/herdr.sock',
+        (req) async => req['method'] == 'bogus.method'
+            ? '{"id":"","error":{"code":"invalid_request","message":"invalid request: unknown variant `bogus.method`"}}'
+            : pong(req['id']),
+      );
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'm7', 'method': 'bogus.method', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'm7');
+      expect((reply['error'] as Map)['code'], 'invalid_request');
+    });
+    test('a server that closes without replying yields an error with that id',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          req['id'] == 'mute' ? null : pong(req['id']));
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'mute', 'method': 'ping', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'mute');
+      expect((reply['error'] as Map)['code'], 'bridge_error');
+      // The channel keeps serving afterwards.
+      mux.send({'id': 'next', 'method': 'ping', 'params': {}});
+      expect(jsonDecode(await mux.next())['id'], 'next');
+    });
+
+    test('an unreachable socket yields an error with that id', () async {
+      // The path exists as a socket at start, but nothing listens any more.
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(mux.stop);
+      await mux.next();
+      await herdr.close();
+
+      mux.send({'id': 'gone', 'method': 'ping', 'params': {}});
+      final reply = jsonDecode(await mux.next()) as Map<String, dynamic>;
+
+      expect(reply['id'], 'gone');
+      expect((reply['error'] as Map)['code'], 'bridge_error');
+    });
+
+    test('still delivers pending responses after stdin closes, then exits 0',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(herdr.close);
+      await mux.next();
+
+      mux.send({'id': 'last', 'method': 'ping', 'params': {}});
+      await mux.process.stdin.close();
+
+      expect(jsonDecode(await mux.next())['id'], 'last');
+      expect(await mux.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('default session resolves to \$XDG_CONFIG_HOME/herdr/herdr.sock',
+        () async {
+      final herdr = await serve('$xdg/herdr/herdr.sock');
+      final mux = await start();
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('without XDG_CONFIG_HOME the default session uses \$HOME/.config',
+        () async {
+      final herdr = await serve('${home.path}/.config/herdr/herdr.sock');
+      final mux = await start(env: {});
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('a named session resolves to sessions/<name>/herdr.sock', () async {
+      final herdr = await serve('$xdg/herdr/sessions/work/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'type': 'work'}}));
+      // A default-session server must not be picked for a named session.
+      final other = await serve('$xdg/herdr/herdr.sock', (req) async =>
+          jsonEncode({'id': req['id'], 'result': {'type': 'default'}}));
+      final mux = await start(session: 'work');
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+        await other.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['result']['type'], 'work');
+    });
+
+    test('an explicit socket path wins over the session-derived one', () async {
+      final herdr = await serve('${home.path}/custom.sock');
+      final mux = await start(session: 'work', socketPath: '${home.path}/custom.sock');
+      addTearDown(() async {
+        await mux.stop();
+        await herdr.close();
+      });
+      await mux.next();
+
+      mux.send({'id': 'a', 'method': 'ping', 'params': {}});
+
+      expect(jsonDecode(await mux.next())['id'], 'a');
+    });
+
+    test('a missing socket exits 78 with a hint and no ready line', () async {
+      final r = await _run(
+        buildMuxCommand(session: 'work'),
+        home,
+        env: {'XDG_CONFIG_HOME': xdg},
+      );
+
+      expect(r.code, 78);
+      expect(r.out, isEmpty);
+      expect(r.err, contains('no herdr socket'));
+      expect(r.err, contains('$xdg/herdr/sessions/work/herdr.sock'));
+    });
+
+    test('missing python3 exits 78 with a hint', () async {
+      final bin = Directory('${home.path}/bin')..createSync();
+      for (final tool in ['sh', 'base64']) {
+        for (final d in ['/usr/bin', '/bin']) {
+          if (File('$d/$tool').existsSync()) {
+            Link('${bin.path}/$tool').createSync('$d/$tool');
+            break;
+          }
+        }
+      }
+      final p = await Process.start(
+        '/bin/sh',
+        ['-c', buildMuxCommand(session: 'default')],
+        environment: {'HOME': home.path, 'PATH': bin.path},
+        includeParentEnvironment: false,
+      );
+      await p.stdin.close();
+      final err = await utf8.decodeStream(p.stderr);
+
+      expect(await p.exitCode, 78);
+      expect(err, contains('python3'));
+    });
+
+    test('shell metacharacters in a socket path are never executed', () async {
+      for (final evil in [
+        "x'; touch ${home.path}/pwned; '",
+        '\$(touch ${home.path}/pwned)',
+        '`touch ${home.path}/pwned`',
+        'x"; touch ${home.path}/pwned; "',
+      ]) {
+        final r = await _run(
+            buildMuxCommand(session: 'work', socketPath: evil), home);
+
+        expect(File('${home.path}/pwned').existsSync(), isFalse, reason: evil);
+        expect(r.code, 78, reason: evil);
+      }
+    });
+
+    test('rejects session names that could inject shell', () {
+      for (final bad in ['a b', r'x;rm -rf /', r'$(id)', "a'b", '', '../x']) {
+        expect(() => buildMuxCommand(session: bad), throwsArgumentError,
+            reason: bad);
+      }
+    });
+
+    group('pane.read deltas', () {
+      late _FakeHerdr herdr;
+      late _ProcessChannel channel;
+      late MuxClient client;
+      final seen = <Map<String, dynamic>>[];
+      var screen = '';
+      var herdrSnapshot = <String, dynamic>{};
+      FutureOr<void> Function(int call)? beforeAnswer;
+
+      /// Rows `top`..`top+199` (each with its own random-looking tail, so the
+      /// whole read does not deflate to nothing) and a footer line.
+      String window(int top, [String footer = 'tick 0']) {
+        String noise(int i) {
+          final r = math.Random(i);
+          return List.generate(5, (_) => r.nextInt(1 << 30).toRadixString(36)).join(' ');
+        }
+
+        final rows = [
+          for (var i = top; i < top + 200; i++) 'row $i đường dẫn ${noise(i)}',
+          'footer $footer',
+        ];
+        return '${rows.join('\r\n')}\r\n';
+      }
+
+      Future<String> read([int lines = 200]) async {
+        final r = await client.request('pane.read', {'pane_id': 'p1', 'lines': lines});
+        return (r['read'] as Map)['text'] as String;
+      }
+
+      setUp(() async {
+        seen.clear();
+        beforeAnswer = null;
+        screen = window(0);
+        herdr = await _FakeHerdr.bind('$xdg/herdr/herdr.sock', (req) async {
+          seen.add(req);
+          await beforeAnswer?.call(seen.length);
+          if (req['method'] == 'session.snapshot') {
+            return jsonEncode({
+              'id': req['id'],
+              'result': {'type': 'session_snapshot', 'snapshot': herdrSnapshot},
+            });
+          }
+          return jsonEncode({
+            'id': req['id'],
+            'result': {
+              'type': 'pane_read',
+              'read': {'pane_id': 'p1', 'text': screen, 'truncated': false},
+            },
+          });
+        });
+        final process = await Process.start(
+          '/bin/sh',
+          ['-c', buildMuxCommand(session: 'default')],
+          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': xdg},
+          includeParentEnvironment: false,
+        );
+        channel = _ProcessChannel(process);
+        client = await MuxClient.connect(
+          channel,
+          requestTimeout: const Duration(milliseconds: 700),
+          heartbeatInterval: const Duration(hours: 1),
+        );
+      });
+
+      tearDown(() async {
+        client.close();
+        await herdr.close();
+      });
+
+      test('a window that slides comes back exact, in a fraction of the bytes',
+          () async {
+        final first = await read();
+        expect(first, screen);
+        for (var step = 1; step <= 5; step++) {
+          screen = window(step * 3, 'tick $step');
+          expect(await read(), screen, reason: 'step $step');
+        }
+
+        // [0] is the ready line, [1] the first (whole) read, the rest deltas.
+        final sizes = channel.lineLengths;
+        expect(sizes.length, 7);
+        expect(sizes[1], greaterThan(200));
+        for (final n in sizes.skip(2)) {
+          expect(n, lessThan(sizes[1] ~/ 5));
+        }
+        // herdr never sees the mux's own bookkeeping.
+        expect(seen.every((r) => !r.containsKey('mux_have')), isTrue);
+      });
+
+      test('unchanged, edited, jumped and truncated reads all come back exact',
+          () async {
+        await read();
+        final steps = <String>[
+          screen, // nothing changed
+          window(0).replaceFirst('row 100 ', 'ROW 100 '), // one row edited
+          window(0).replaceFirst('row 0 ', 'ROW 0 '), // the first row edited
+          window(5000), // no row in common
+          window(5000, 'tick 9'),
+          '${window(5000, 'tick 9')}extra\r\n', // rows appended
+          window(5002, 'tick 9').substring(0, 6000), // cut short
+          '', // emptied
+          window(1),
+        ];
+        for (final next in steps) {
+          screen = next;
+          expect(await read(), screen);
+        }
+      });
+
+      test('reads with other parameters are held apart', () async {
+        await read(200);
+        screen = window(3);
+        expect(await read(100), screen);
+        expect(await read(200), screen);
+        screen = window(6);
+        expect(await read(100), screen);
+        expect(await read(200), screen);
+      });
+
+      test('a read that timed out does not corrupt the next', () async {
+        await read();
+        screen = window(3);
+        // herdr holds the second read back until the test lets it go.
+        final release = Completer<void>();
+        beforeAnswer = (call) async {
+          if (call == 2) await release.future;
+        };
+        await expectLater(read(), throwsA(isA<HerdrTransportException>()));
+
+        // The mux now answers (and remembers) it, after the client gave up.
+        final answered = channel.lineLengths.length;
+        release.complete();
+        while (channel.lineLengths.length == answered) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        screen = window(6);
+        expect(await read(), screen);
+        screen = window(9);
+        expect(await read(), screen);
+      });
+
+      test('a small read is sent whole; one past the threshold is tracked', () async {
+        String rows(int n) => '${List.generate(n, (i) {
+          final r = math.Random(i);
+          return 'line $i ${r.nextInt(1 << 30).toRadixString(36)} ${r.nextInt(1 << 30).toRadixString(36)}';
+        }).join('\r\n')}\r\n';
+        // A card's worth: under muxDeltaMin characters.
+        screen = rows(10);
+        expect(screen.length, lessThan(muxDeltaMin));
+        expect(await read(), screen);
+        expect(await read(), screen);
+        final plain = channel.lineLengths.skip(1).toList();
+        expect(plain.every((n) => n > screen.length), isTrue, reason: '$plain');
+
+        // 40 rows: over it, and the second read is a delta.
+        screen = rows(40);
+        expect(screen.length, greaterThan(muxDeltaMin));
+        expect(await read(), screen);
+        final whole = channel.lineLengths.last;
+        screen = '${rows(40)}one more\r\n';
+        expect(await read(), screen);
+        expect(channel.lineLengths.last, lessThan(whole));
+        expect(await read(), screen);
+        expect(channel.lineLengths.last, lessThan(whole ~/ 2));
+      });
+
+      group('snapshots', () {
+        /// A snapshot of [n] panes the way herdr 0.9 sends it: the fields the
+        /// app reads plus ones it does not.
+        Map<String, dynamic> snapshot(int n, {Map<int, String> status = const {}}) => {
+              'version': '0.9.3',
+              'protocol': 22,
+              'workspaces': [
+                {'workspace_id': 'w1', 'number': 1, 'label': 'Dự án', 'focused': true, 'pane_count': n, 'tab_count': 1, 'agent_status': 'working', 'active_tab_id': 'w1:t1'},
+              ],
+              'tabs': [
+                {'tab_id': 'w1:t1', 'workspace_id': 'w1', 'number': 1, 'label': '1', 'focused': true, 'pane_count': n, 'agent_status': 'working'},
+              ],
+              'panes': [
+                for (var i = 0; i < n; i++)
+                  {
+                    'pane_id': 'w1:p$i',
+                    'workspace_id': 'w1',
+                    'tab_id': 'w1:t1',
+                    'focused': i == 0,
+                    'cwd': '/home/u/project',
+                    'foreground_cwd': '/home/u/project',
+                    'terminal_title':
+                        'π > Task $i ${math.Random(i).nextInt(1 << 30).toRadixString(36)} đường dẫn ${math.Random(i + 99).nextInt(1 << 30).toRadixString(36)}',
+                    'agent': 'omp',
+                    'agent_status': status[i] ?? 'idle',
+                    'agent_session': {'value': '/home/u/.omp/s$i.jsonl'},
+                    'scroll': {'a': i},
+                    'revision': 4,
+                  },
+              ],
+              'layouts': [{'x': 1}],
+              'agents': [{'pane_id': 'w1:p0', 'completion_seq': 7}],
+            };
+
+        /// What the app reads of [snapshot]. herdr keeps `completion_seq` on
+        /// its per-agent list; the mux puts it on the pane row.
+        Map<String, dynamic> cut(Map<String, dynamic> s) {
+          final seq = {for (final a in s['agents'] as List) (a as Map)['pane_id']: a['completion_seq']};
+          return {
+            'version': s['version'],
+            'workspaces': [
+              for (final w in s['workspaces'] as List)
+                {for (final k in ['workspace_id', 'number', 'label', 'focused', 'pane_count', 'tab_count', 'agent_status']) k: (w as Map)[k]},
+            ],
+            'tabs': [
+              for (final t in s['tabs'] as List)
+                {for (final k in ['tab_id', 'workspace_id', 'number', 'label', 'focused', 'pane_count', 'agent_status']) k: (t as Map)[k]},
+            ],
+            'panes': [
+              for (final p in s['panes'] as List)
+                {
+                  for (final k in ['pane_id', 'workspace_id', 'tab_id', 'focused', 'cwd', 'foreground_cwd', 'terminal_title', 'agent', 'agent_status', 'agent_session']) k: (p as Map)[k],
+                  if (seq[p['pane_id']] case final int c) 'completion_seq': c,
+                },
+            ],
+          };
+        }
+
+        Future<Map<String, dynamic>> fetch() async =>
+            (await client.request('session.snapshot'))['snapshot'] as Map<String, dynamic>;
+
+        test('comes back as the fields the app reads, every time, whole or as a delta', () async {
+          for (final n in [40, 40, 41, 3, 3, 0, 40]) {
+            herdrSnapshot = snapshot(n, status: {n ~/ 2: 'blocked'});
+            expect(await fetch(), cut(herdrSnapshot), reason: '$n panes');
+          }
+        });
+
+        test('one pane changing status costs under half of the whole, an unchanged snapshot almost nothing', () async {
+          herdrSnapshot = snapshot(40);
+          await fetch();
+          final whole = channel.lineLengths.last;
+
+          herdrSnapshot = snapshot(40, status: {17: 'blocked'});
+          expect(await fetch(), cut(herdrSnapshot));
+          final changed = channel.lineLengths.last;
+          expect(await fetch(), cut(herdrSnapshot));
+          final same = channel.lineLengths.last;
+
+          expect(changed, lessThan(whole ~/ 2));
+          expect(same, lessThan(changed ~/ 3));
+        });
+
+        test('snapshot and pane reads are held apart', () async {
+          herdrSnapshot = snapshot(5);
+          await fetch();
+          expect(await read(), screen);
+          herdrSnapshot = snapshot(5, status: {1: 'working'});
+          screen = window(3);
+          expect(await fetch(), cut(herdrSnapshot));
+          expect(await read(), screen);
+        });
+      });
+
+      test('a pane of repeated rows (blank lines, rulers) comes back exact', () async {
+        String pane(Map<int, String> edits) {
+          final rows = [
+            for (var i = 0; i < 1000; i++) edits[i] ?? (i % 9 == 0 ? '─' * 80 : ''),
+          ];
+          return '${rows.join('\r\n')}\r\n';
+        }
+
+        screen = pane({});
+        expect(await read(1000), screen);
+        for (final edits in [
+          {500: 'one changed row'},
+          {0: 'first', 999: 'last'},
+          {10: 'a', 11: 'b', 700: 'c'},
+          <int, String>{},
+        ]) {
+          screen = pane(edits);
+          expect(await read(1000), screen, reason: '$edits');
+        }
+      });
+
+      test('two reads at once both come back exact', () async {
+        await read();
+        screen = window(3);
+        final both = await Future.wait([read(), read()]);
+        expect(both, [screen, screen]);
+        screen = window(6);
+        expect(await read(), screen);
+      });
+    });
+  }, skip: _has('python3') ? false : 'needs python3');
+
+  group('event subscription', () {
+    late String sock;
+    late _EventHerdr herdr;
+    setUp(() async {
+      sock = '${home.path}/xdg/herdr/herdr.sock';
+      herdr = await _EventHerdr.bind(sock);
+    });
+    tearDown(() => herdr.close());
+
+    Future<_MuxProc> subscribe({
+      String? socketPath,
+    }) async {
+      final proc = await _MuxProc.start(
+        buildEventsCommand(session: 'default', socketPath: socketPath ?? sock),
+        home,
+        {'XDG_CONFIG_HOME': '${home.path}/xdg'},
+      );
+      proc.send({
+        'id': 's',
+        'method': 'events.subscribe',
+        'params': {'subscriptions': []},
+      });
+      return proc;
+    }
+
+    Map<String, dynamic> paneEvent(int n, {String status = 'working'}) => {
+          'data': {
+            'pane': {
+              'agent': 'omp',
+              'agent_session': {'value': '/home/u/.omp/agent/sessions/x.jsonl'},
+              'agent_status': status,
+              'cwd': '/home/u/project',
+              'focused': true,
+              'foreground_cwd': '/home/u/project',
+              'pane_id': 'w1:p1',
+              'revision': 1000 + n,
+              'scroll': {'max_offset_from_bottom': 4758, 'viewport_rows': 57},
+              'tab_id': 'w1:t1',
+              'terminal_id': 'term_65cf7aec92d3f7',
+              'terminal_title': 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app',
+              'terminal_title_stripped': 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app',
+              'workspace_id': 'w1',
+            },
+            'type': 'pane_updated',
+          },
+          'event': 'pane_updated',
+        };
+
+    test('forwards the request, acks plain, then sends events cut down and deflated',
+        () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+
+      final ack = await proc.next();
+      expect(jsonDecode(ack), {
+        'id': 's',
+        'result': {'type': 'subscription_started'},
+      });
+      expect(herdr.requests, hasLength(1));
+      expect(herdr.requests.single['method'], 'events.subscribe');
+
+      await herdr.untilSubscribed();
+      final before = proc.wireBytes;
+      for (var n = 0; n < 40; n++) {
+        herdr.emit(paneEvent(n));
+      }
+      herdr.emit({
+        'data': {'workspace': {'workspace_id': 'w1', 'label': 'x'}, 'type': 'workspace_created'},
+        'event': 'workspace_created',
+      });
+      final got = [for (var n = 0; n < 41; n++) jsonDecode(await proc.next()) as Map];
+
+      expect(got.first, {
+        'event': 'pane_updated',
+        'data': {
+          'pane': {
+            'agent': 'omp',
+            'agent_session': {'value': '/home/u/.omp/agent/sessions/x.jsonl'},
+            'agent_status': 'working',
+            'cwd': '/home/u/project',
+            'focused': true,
+            'foreground_cwd': '/home/u/project',
+            'pane_id': 'w1:p1',
+            'tab_id': 'w1:t1',
+            'terminal_title': 'π ⠋ Redesign the app',
+            'terminal_title_stripped': 'π ⠋ Redesign the app',
+            'workspace_id': 'w1',
+          },
+        },
+      });
+      expect(
+        [for (final e in got.take(40)) (e['data'] as Map)['pane']['terminal_title']],
+        [for (var n = 0; n < 40; n++) 'π ${'⠋⠙⠹⠸⠼'[n % 5]} Redesign the app'],
+      );
+      // Only the name of an event that is not about a pane survives.
+      expect(got.last, {'event': 'workspace_created', 'data': <String, dynamic>{}});
+      // 41 events of ~700 bytes each, in a few hundred bytes apiece at most.
+      expect(proc.wireBytes - before, lessThan(41 * 700 ~/ 8));
+    });
+
+    test('a status event (the background profile) passes through by name, cut to nothing else', () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+      await proc.next();
+      await herdr.untilSubscribed();
+
+      // As real herdr 0.9.3 sends it.
+      herdr.emit({
+        'data': {'agent': 'claude', 'agent_status': 'blocked', 'pane_id': 'w1:p1', 'workspace_id': 'w1'},
+        'event': 'pane.agent_status_changed',
+      });
+      expect(jsonDecode(await proc.next()), {
+        'event': 'pane.agent_status_changed',
+        'data': <String, dynamic>{},
+      });
+    });
+
+    test('an error herdr answers with comes back plain and the script ends', () async {
+      herdr.ack = '{"id":"s","error":{"code":"invalid_request","message":"no such event"}}';
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+
+      expect(jsonDecode(await proc.next())['error']['code'], 'invalid_request');
+      herdr.hangUp();
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('ends when herdr hangs up', () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+      await proc.next();
+      await herdr.untilSubscribed();
+
+      herdr.hangUp();
+
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('ends when the channel closes', () async {
+      final proc = await subscribe();
+      addTearDown(proc.stop);
+      await proc.next();
+
+      await proc.process.stdin.close();
+
+      expect(await proc.process.exitCode.timeout(const Duration(seconds: 10)), 0);
+    });
+
+    test('a socket nobody listens on ends it with a one-line reason, not a traceback', () async {
+      // A stale socket file: bound by a process that is gone.
+      final stale = '${home.path}/stale.sock';
+      final made = await Process.run('python3', [
+        '-c',
+        'import socket,sys;s=socket.socket(socket.AF_UNIX);s.bind(sys.argv[1])',
+        stale,
+      ]);
+      expect(made.exitCode, 0);
+      // stdin stays open, as on the real channel (closing it ends the script).
+      final p = await Process.start(
+        '/bin/sh',
+        ['-c', buildEventsCommand(session: 'default', socketPath: stale)],
+        environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+        includeParentEnvironment: false,
+      );
+      addTearDown(p.kill);
+      p.stdin.writeln('{"id":"s","method":"events.subscribe","params":{"subscriptions":[]}}');
+      unawaited(p.stdout.drain<void>());
+      final err = await utf8.decodeStream(p.stderr);
+
+      expect(await p.exitCode.timeout(const Duration(seconds: 10)), 1);
+      expect(err.trim().split('\n'), hasLength(1));
+      expect(err, startsWith('herdr-mobile: '));
+    });
+
+    test('a missing socket exits 78 with a hint, like the mux', () async {
+      final r = await _run(
+        buildEventsCommand(session: 'work'),
+        home,
+        env: {'XDG_CONFIG_HOME': '${home.path}/nowhere'},
+      );
+
+      expect(r.code, 78);
+      expect(r.out, isEmpty);
+      expect(r.err, contains('no herdr socket'));
+    });
+
+    test('shell metacharacters in a socket path are never executed', () async {
+      for (final evil in [
+        "x'; touch ${home.path}/pwned; '",
+        '\$(touch ${home.path}/pwned)',
+        '`touch ${home.path}/pwned`',
+      ]) {
+        final r = await _run(buildEventsCommand(session: 'work', socketPath: evil), home);
+
+        expect(File('${home.path}/pwned').existsSync(), isFalse, reason: evil);
+        expect(r.code, 78, reason: evil);
+      }
+    });
+  }, skip: _has('python3') ? false : 'needs python3');
+}
+
+/// A running mux command with line-oriented access to its stdout.
+class _MuxProc {
+  _MuxProc._(this.process) {
+    _lines = StreamIterator(muxMessages(process.stdout.map((chunk) {
+      _wire += chunk.length;
+      return chunk;
+    })));
+  }
+
+  static Future<_MuxProc> start(
+    String command,
+    Directory home,
+    Map<String, String> env,
+  ) async {
+    final p = await Process.start(
+      '/bin/sh',
+      ['-c', command],
+      environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', ...env},
+      includeParentEnvironment: false,
+    );
+    unawaited(p.stderr.drain<void>());
+    return _MuxProc._(p);
+  }
+
+  final Process process;
+  late final StreamIterator<String> _lines;
+
+  void send(Map<String, dynamic> request) =>
+      process.stdin.writeln(jsonEncode(request));
+
+  Future<String> next() async {
+    if (!await _lines.moveNext().timeout(const Duration(seconds: 10))) {
+      throw StateError('mux closed its stdout');
+    }
+    return _lines.current;
+  }
+
+  /// Bytes the script has written so far.
+  int get wireBytes => _wire;
+  var _wire = 0;
+
+  /// The next response, decoded.
+  Future<Map<String, dynamic>> nextJson() async =>
+      jsonDecode(await next()) as Map<String, dynamic>;
+
+  Future<void> stop() async {
+    process.kill();
+    await process.exitCode;
+  }
+}
+
+/// Stands in for herdr's socket: one request per connection. [handler]
+/// returns the response line, or null to hang up without answering.
+class _FakeHerdr {
+  _FakeHerdr._(this._server);
+
+  static Future<_FakeHerdr> bind(
+    String path,
+    Future<String?> Function(Map<String, dynamic> request) handler,
+  ) async {
+    Directory(File(path).parent.path).createSync(recursive: true);
+    final server = await ServerSocket.bind(
+      InternetAddress(path, type: InternetAddressType.unix),
+      0,
+    );
+    server.listen((client) async {
+      final line = await utf8.decoder
+          .bind(client)
+          .transform(const LineSplitter())
+          .first;
+      final reply = await handler(jsonDecode(line) as Map<String, dynamic>);
+      if (reply != null) client.write('$reply\n');
+      await client.close();
+    });
+    return _FakeHerdr._(server);
+  }
+
+  final ServerSocket _server;
+
+  Future<void> close() async {
+    await _server.close();
+  }
+}
+
+/// [MuxChannel] over a running mux script, noting the length of each line it
+/// wrote (what would cross the wire).
+class _ProcessChannel implements MuxChannel {
+  _ProcessChannel(this._process) {
+    unawaited(_process.stderr.drain<void>());
+  }
+
+  final Process _process;
+  final lineLengths = <int>[];
+  var _wire = 0;
+  var _counted = 0;
+
+  /// Each message in order; [lineLengths] gets the bytes the script wrote for
+  /// it (what would cross the wire; one request in flight at a time).
+  @override
+  late final Stream<String> lines = muxMessages(_process.stdout.map((chunk) {
+    _wire += chunk.length;
+    return chunk;
+  })).map((message) {
+    lineLengths.add(_wire - _counted);
+    _counted = _wire;
+    return message;
+  });
+
+  @override
+  void send(String line) => _process.stdin.writeln(line);
+
+  @override
+  Future<void> close() async => _process.kill();
+
+  @override
+  Future<int?> get exitCode => _process.exitCode;
+}
+
+/// A herdr that keeps the connection of an `events.subscribe` open and sends
+/// what the test tells it to.
+class _EventHerdr {
+  _EventHerdr._(this._server);
+
+  static Future<_EventHerdr> bind(String path) async {
+    Directory(File(path).parent.path).createSync(recursive: true);
+    final server = await ServerSocket.bind(
+      InternetAddress(path, type: InternetAddressType.unix),
+      0,
+    );
+    final herdr = _EventHerdr._(server);
+    server.listen((client) {
+      utf8.decoder.bind(client).transform(const LineSplitter()).first.then((line) {
+        herdr.requests.add(jsonDecode(line) as Map<String, dynamic>);
+        final id = (herdr.requests.last['id'] as String?) ?? '';
+        client.write('${herdr.ack ?? '{"id":"$id","result":{"type":"subscription_started"}}'}\n');
+        herdr._clients.add(client);
+      });
+    });
+    return herdr;
+  }
+
+  final ServerSocket _server;
+  final _clients = <Socket>[];
+  final requests = <Map<String, dynamic>>[];
+
+  /// What to answer the subscription with, if not a success.
+  String? ack;
+
+  Future<void> untilSubscribed() async {
+    while (_clients.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  void emit(Map<String, dynamic> event) {
+    for (final c in _clients) {
+      c.write('${jsonEncode(event)}\n');
+    }
+  }
+
+  void hangUp() {
+    for (final c in _clients) {
+      c.destroy();
+    }
+    _clients.clear();
+  }
+
+  Future<void> close() async {
+    hangUp();
+    await _server.close();
+  }
+}

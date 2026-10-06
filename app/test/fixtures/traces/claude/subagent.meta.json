@@ -1,0 +1,24 @@
+{
+  "agent": "claude",
+  "scenario": "subagent",
+  "prompt": "Use the Task tool to start one subagent whose job is to run `ls` and report the file names it sees. Then answer with the names in one line.",
+  "command": "npx -y @agentclientprotocol/claude-agent-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/claude-agent-acp",
+    "title": "Claude Agent",
+    "version": "0.49.0"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 947.698,
+  "stopReason": "end_turn",
+  "lines": 300,
+  "bytes": 112080,
+  "optionsCut": 0,
+  "configChosen": {
+    "model": "haiku"
+  },
+  "permissionDecisions": [
+    "allowed once: rtk ls -1 /tmp/scratch"
+  ],
+  "notes": []
+}

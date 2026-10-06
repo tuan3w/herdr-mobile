@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resource shrinking drops what no code names. The notification icon is named
+     only by a string passed from Dart, so it is kept explicitly. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_herdr" />

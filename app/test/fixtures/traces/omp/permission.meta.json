@@ -1,0 +1,22 @@
+{
+  "agent": "omp",
+  "scenario": "permission",
+  "prompt": "Run the shell command `mkdir made-by-agent` in the current directory, then say it is done in one line.",
+  "command": "omp acp",
+  "agentInfo": {
+    "name": "omp",
+    "title": "omp",
+    "version": "18.4.12"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 304.113,
+  "stopReason": "end_turn",
+  "lines": 21,
+  "bytes": 32055,
+  "optionsCut": 571,
+  "configChosen": {},
+  "permissionDecisions": [
+    "allowed once: mkdir made-by-agent"
+  ],
+  "notes": []
+}

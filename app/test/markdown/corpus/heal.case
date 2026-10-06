@@ -1,0 +1,553 @@
+# Display-only tail healing (`healTail`), the `remend` cases of vercel/streamdown
+# plus ours. `=== name | heal`; the expectation is the healed SOURCE; an
+# optional `--- display` section is the dump of parse(healTail(input)).
+# A `@json "..."` line stands for the whole section (trailing spaces).
+
+=== bold_open | heal
+Text with **bold
+--- expect
+Text with **bold**
+--- display
+p "Text with " b"bold"
+
+=== bold_open_underscore | heal
+__bold
+--- expect
+__bold__
+--- display
+p b"bold"
+
+=== italic_open_star | heal
+*italic
+--- expect
+*italic*
+
+=== italic_open_underscore | heal
+_italic
+--- expect
+_italic_
+
+=== bold_italic_triple_open | heal
+***both
+--- expect
+***both***
+--- display
+p bi"both"
+
+=== nested_open_inner_first | heal
+**bold and *it
+--- expect
+**bold and *it***
+--- display
+p b"bold and " bi"it"
+
+=== strike_open | heal
+~~gone
+--- expect
+~~gone~~
+
+=== code_open | heal
+Use `code
+--- expect
+Use `code`
+--- display
+p "Use " c"code"
+
+=== code_open_double_backtick | heal
+``a`b
+--- expect
+``a`b``
+
+=== code_span_markers_ignored | heal
+`**x
+--- expect
+`**x`
+
+=== fence_open_untouched | heal
+```js
+const a = **b
+--- expect
+```js
+const a = **b
+--- display
+code[js] "const a = **b"
+
+=== fence_open_with_inner_backticks_untouched | heal
+```md
+use `x
+--- expect
+```md
+use `x
+
+=== closed_then_open | heal
+**a** and *b
+--- expect
+**a** and *b*
+
+=== closed_all_untouched | heal
+**a** _b_ `c`
+--- expect
+**a** _b_ `c`
+
+=== list_item_open | heal
+- **bold
+--- expect
+- **bold**
+
+=== list_marker_star_untouched | heal
+* item
+* other
+--- expect
+* item
+* other
+
+=== open_belongs_to_earlier_block_untouched | heal
+- **a
+- b
+--- expect
+- **a
+- b
+
+=== heading_open | heal
+## Title **bo
+--- expect
+## Title **bo**
+
+=== quote_open | heal
+> **bo
+--- expect
+> **bo**
+
+=== bold_open_across_lines | heal
+**bold
+more
+--- expect
+**bold
+more**
+
+=== bold_open_then_code | heal
+**a `b` c
+--- expect
+**a `b` c**
+
+=== bold_open_trailing_space_closes_before_it | heal
+@json "**bold "
+--- expect
+@json "**bold** "
+
+=== partial_closing_run | heal
+**bold*
+--- expect
+**bold**
+
+=== trailing_delimiter_after_space_is_held | heal
+@json "hello **"
+--- expect
+@json "hello "
+
+=== trailing_closer_without_opener_stays | heal
+done**
+--- expect
+done**
+
+=== math_stars_untouched | heal
+a * b
+--- expect
+a * b
+
+=== star_between_spaces_trailing_held | heal
+@json "2 * 3 *"
+--- expect
+@json "2 * 3 "
+
+=== intraword_underscore_untouched | heal
+x_y_z and snake_case_
+--- expect
+x_y_z and snake_case_
+
+=== dunder_file_untouched | heal
+Edit __init__.py now
+--- expect
+Edit __init__.py now
+
+=== tilde_range_untouched | heal
+It takes 20~25 min or 30~
+--- expect
+It takes 20~25 min or 30~
+
+=== dollar_untouched | heal
+It costs $5 and $10
+--- expect
+It costs $5 and $10
+
+=== less_than_untouched | heal
+if a < b and c <= d
+--- expect
+if a < b and c <= d
+
+=== less_than_then_open_bold | heal
+if a < b and **c
+--- expect
+if a < b and **c**
+
+=== escaped_star_untouched | heal
+\*not
+--- expect
+\*not
+
+=== escaped_then_real_open | heal
+\**x
+--- expect
+\**x*
+
+=== partial_autolink_held | heal
+<https://exa
+--- expect
+@json ""
+
+=== partial_autolink_after_text_held | heal
+@json "see <https://exa"
+--- expect
+@json "see "
+
+=== complete_autolink_untouched | heal
+see <https://example.com>
+--- expect
+see <https://example.com>
+
+=== partial_link_label_only | heal
+[the docs](https://exa
+--- expect
+[the docs]()
+--- display
+p a()"the docs"
+
+=== partial_link_after_text | heal
+See [the docs](https://example.com/very/lo
+--- expect
+See [the docs]()
+
+=== partial_link_open_paren_only | heal
+[the docs](
+--- expect
+[the docs]()
+
+=== partial_link_inside_bold | heal
+**see [a](https://x.y
+--- expect
+**see [a]()**
+--- display
+p b"see " a()b"a"
+
+=== complete_link_untouched | heal
+[a](https://x.y/z) then
+--- expect
+[a](https://x.y/z) then
+
+=== link_label_still_open_stays_literal | heal
+[the do
+--- expect
+[the do
+
+=== link_label_closed_without_paren_stays | heal
+see [note]
+--- expect
+see [note]
+
+=== partial_image_dropped | heal
+@json "see ![alt](https://x.y/a.p"
+--- expect
+@json "see "
+
+=== partial_image_label_open_dropped | heal
+@json "see ![al"
+--- expect
+@json "see "
+
+=== partial_image_label_closed_dropped | heal
+@json "see ![alt]"
+--- expect
+@json "see "
+
+=== complete_image_untouched | heal
+![alt](https://x.y/a.png)
+--- expect
+![alt](https://x.y/a.png)
+
+=== marker_only_hash | heal
+#
+--- expect
+@json ""
+
+=== marker_only_hashes | heal
+text
+
+##
+--- expect
+text
+
+=== marker_only_dash_after_list | heal
+- a
+-
+--- expect
+- a
+
+=== marker_only_star | heal
+text
+
+*
+--- expect
+text
+
+=== marker_only_quote | heal
+> a
+>
+--- expect
+> a
+
+=== marker_only_ordered | heal
+1. a
+2.
+--- expect
+1. a
+
+=== marker_only_indented_nested | heal
+- a
+  -
+--- expect
+- a
+
+=== marker_only_pipe | heal
+|
+--- expect
+@json ""
+
+=== marker_only_single_backtick | heal
+text
+
+`
+--- expect
+text
+
+=== marker_only_double_backtick | heal
+text
+
+``
+--- expect
+text
+
+=== fence_marker_is_shown | heal
+```
+--- expect
+```
+--- display
+code ""
+
+=== task_marker_only_held | heal
+- a
+- [ ]
+--- expect
+- a
+
+=== task_marker_partial_held | heal
+- a
+- [
+--- expect
+- a
+
+=== hash_with_text_untouched | heal
+## Title
+--- expect
+## Title
+
+=== setext_dash_pending | heal
+Title
+---
+--- expect
+Title
+
+=== setext_equals_pending | heal
+Title
+===
+--- expect
+Title
+
+=== setext_after_blank_is_rule | heal
+Title
+
+---
+--- expect
+Title
+
+---
+
+=== setext_partial_underline_pending | heal
+Title
+--
+--- expect
+Title
+
+=== table_header_only_held | heal
+text
+
+| a | b |
+--- expect
+text
+
+=== table_header_and_partial_delimiter_held | heal
+| a | b |
+|---
+--- expect
+@json ""
+
+=== table_delimiter_column_mismatch_held | heal
+| a | b |
+|---|
+--- expect
+@json ""
+
+=== table_delimiter_without_closing_pipe_held | heal
+| a | b |
+|:--|--
+--- expect
+@json ""
+
+=== table_complete_untouched | heal
+| a | b |
+|---|---|
+--- expect
+| a | b |
+|---|---|
+--- display
+table -,-
+  th "a" | "b"
+
+=== table_rows_untouched | heal
+| a | b |
+|---|---|
+| 1 | 2 |
+| 3 |
+--- expect
+| a | b |
+|---|---|
+| 1 | 2 |
+| 3 |
+
+=== pipe_in_prose_untouched | heal
+use a | b here
+--- expect
+use a | b here
+
+=== indented_code_untouched | heal
+    a **b
+--- expect
+    a **b
+
+=== empty_untouched | heal
+@json ""
+--- expect
+@json ""
+
+=== fence_partial_closer_dropped | heal
+```
+code
+``
+--- expect
+```
+code
+
+=== fence_closed_then_text_open_bold | heal
+```
+code
+```
+then **bo
+--- expect
+```
+code
+```
+then **bo**
+
+=== tilde_fence_open_untouched | heal
+~~~
+a **b
+--- expect
+~~~
+a **b
+
+=== list_item_second_paragraph_open | heal
+- a
+
+  second **para
+--- expect
+- a
+
+  second **para**
+
+=== closed_block_before_blank_not_healed | heal
+@json "**not closed\n\n"
+--- expect
+@json "**not closed\n\n"
+
+=== ordered_item_open | heal
+1. **bo
+--- expect
+1. **bo**
+
+=== table_cell_open | heal
+| a | b |
+|---|---|
+| **x | y
+--- expect
+| a | b |
+|---|---|
+| **x | y**
+
+=== link_destination_with_parens_complete | heal
+[w](https://en.wikipedia.org/wiki/Foo_(bar)) and **b
+--- expect
+[w](https://en.wikipedia.org/wiki/Foo_(bar)) and **b**
+
+=== link_destination_nested_paren_partial | heal
+[w](https://en.wikipedia.org/wiki/Foo_(ba
+--- expect
+[w]()
+
+=== code_span_complete_then_partial_link | heal
+`x` and [a](http
+--- expect
+`x` and [a]()
+
+=== bold_closed_trailing_marker_after_space | heal
+@json "**a** and _"
+--- expect
+@json "**a** and "
+
+=== list_item_with_only_a_bold_marker_held | heal
+- a
+- **
+--- expect
+- a
+
+=== star_rule_is_not_markers | heal
+text
+
+***
+--- expect
+text
+
+***
+
+=== code_span_partial_closer_counts | heal
+`` a`
+--- expect
+`` a``
+
+=== code_span_inner_pair_then_closer | heal
+`` `x`
+--- expect
+`` `x` ``
+
+=== strike_partial_closer_counts | heal
+~~gone~
+--- expect
+~~gone~~

@@ -1,0 +1,540 @@
+# Block structure. See defects.case for the dump grammar.
+
+=== atx_headings_levels
+# One
+## Two
+###### Six
+####### seven hashes is text
+--- expect
+h1 "One"
+h2 "Two"
+h6 "Six"
+p "####### seven hashes is text"
+
+=== atx_closing_hashes
+## Title ##
+--- expect
+h2 "Title"
+
+=== atx_needs_space
+#hashtag and #1
+--- expect
+p "#hashtag and #1"
+
+=== heading_with_inline
+## The `parse` **fix**
+--- expect
+h2 "The " c"parse" " " b"fix"
+
+=== paragraphs_split_by_blank
+one
+
+two
+--- expect
+p "one"
+p "two"
+
+=== rule_variants
+---
+
+***
+
+___
+--- expect
+rule
+rule
+rule
+
+=== rule_after_paragraph_is_setext
+text
+---
+--- expect
+h2 "text"
+
+=== setext_multiline
+A long
+title
+===
+--- expect
+h1 "A long\ntitle"
+
+=== bullets_all_markers
+- a
+* b
++ c
+--- expect
+ul tight
+  li
+    p "a"
+ul tight
+  li
+    p "b"
+ul tight
+  li
+    p "c"
+
+=== ordered_start_kept
+3. three
+4. four
+--- expect
+ol 3 tight
+  li
+    p "three"
+  li
+    p "four"
+
+=== ordered_paren_marker
+1) one
+2) two
+--- expect
+ol 1 tight
+  li
+    p "one"
+  li
+    p "two"
+
+=== list_loose_between_items
+- a
+
+- b
+--- expect
+ul loose
+  li
+    p "a"
+  li
+    p "b"
+
+=== list_nested_three_levels
+- a
+  - b
+    - c
+- d
+--- expect
+ul tight
+  li
+    p "a"
+    ul tight
+      li
+        p "b"
+        ul tight
+          li
+            p "c"
+  li
+    p "d"
+
+=== list_nested_ordered_in_bullet
+- run:
+  1. one
+  2. two
+- done
+--- expect
+ul tight
+  li
+    p "run:"
+    ol 1 tight
+      li
+        p "one"
+      li
+        p "two"
+  li
+    p "done"
+
+=== list_item_with_two_paragraphs_and_code
+1. Install
+
+   ```sh
+   npm i
+   ```
+
+   Then run it.
+2. Done
+--- expect
+ol 1 loose
+  li
+    p "Install"
+    code[sh] "npm i"
+    p "Then run it."
+  li
+    p "Done"
+
+=== list_item_code_with_blank_lines
+- a
+  ```
+  x
+
+  y
+  ```
+- b
+--- expect
+ul tight
+  li
+    p "a"
+    code "x\n\ny"
+  li
+    p "b"
+
+=== list_then_paragraph
+- a
+- b
+
+after
+--- expect
+ul tight
+  li
+    p "a"
+  li
+    p "b"
+p "after"
+
+=== list_item_with_quote
+- a
+  > quoted
+- b
+--- expect
+ul tight
+  li
+    p "a"
+    quote
+      p "quoted"
+  li
+    p "b"
+
+=== task_list_nested
+- [x] a
+  - [ ] b
+--- expect
+ul tight
+  li [x]
+    p "a"
+    ul tight
+      li [ ]
+        p "b"
+
+=== task_list_label_has_inline
+- [ ] fix `parse.dart`
+--- expect
+ul tight
+  li [ ]
+    p "fix " c"parse.dart"
+
+=== bracket_not_task
+- [] nothing
+- [y] other
+--- expect
+ul tight
+  li
+    p "[] nothing"
+  li
+    p "[y] other"
+
+=== empty_list_item
+-
+--- expect
+ul tight
+  li
+
+=== quote_simple_multiline
+> one
+> two
+--- expect
+quote
+  p "one\ntwo"
+
+=== quote_lazy_continuation
+> one
+two
+--- expect
+quote
+  p "one\ntwo"
+
+=== quote_with_code
+> ```sh
+> ls
+> ```
+--- expect
+quote
+  code[sh] "ls"
+
+=== quote_with_heading_and_list
+> ## Note
+> - a
+> - b
+--- expect
+quote
+  h2 "Note"
+  ul tight
+    li
+      p "a"
+    li
+      p "b"
+
+=== quote_nested_three
+> a
+>
+> > b
+> >
+> > > c
+--- expect
+quote
+  p "a"
+  quote
+    p "b"
+    quote
+      p "c"
+
+=== quotes_separated_by_blank
+> a
+
+> b
+--- expect
+quote
+  p "a"
+quote
+  p "b"
+
+=== alert_note_multiple_paragraphs
+> [!NOTE]
+> First.
+>
+> Second with **bold**.
+--- expect
+alert NOTE
+  p "First."
+  p "Second with " b"bold" "."
+
+=== alert_tip_important_caution
+> [!TIP]
+> a
+
+> [!IMPORTANT]
+> b
+
+> [!CAUTION]
+> c
+--- expect
+alert TIP
+  p "a"
+alert IMPORTANT
+  p "b"
+alert CAUTION
+  p "c"
+
+=== quote_not_alert_unknown_marker
+> [!INFO]
+> text
+--- expect
+quote
+  p "[!INFO]\ntext"
+
+=== code_fence_tilde
+~~~python
+print("x")
+~~~
+--- expect
+code[python] "print(\"x\")"
+
+=== code_fence_four_backticks_with_inner_fence
+````md
+```sh
+ls
+```
+````
+--- expect
+code[md] "```sh\nls\n```"
+
+=== code_fence_no_language
+```
+plain
+```
+--- expect
+code "plain"
+
+=== code_fence_info_string_attrs
+```ts title="a.ts" {1,3}
+let x = 1;
+```
+--- expect
+code[ts] "let x = 1;"
+
+=== code_fence_unclosed
+```dart
+void main() {
+  print(1);
+--- expect
+code[dart] "void main() {\n  print(1);"
+
+=== code_fence_keeps_indentation_and_blank_lines
+```
+  a
+
+    b
+```
+--- expect
+code "  a\n\n    b"
+
+=== code_fence_empty_body
+```
+```
+--- expect
+code ""
+
+=== code_fence_markup_stays_literal
+```md
+# not a heading
+**not bold** | not | table
+```
+--- expect
+code[md] "# not a heading\n**not bold** | not | table"
+
+=== code_indented
+    four spaces
+    more
+--- expect
+code "four spaces\nmore"
+
+=== code_fence_closing_fence_needs_same_char
+```
+a
+~~~
+b
+```
+--- expect
+code "a\n~~~\nb"
+
+=== table_basic_three_columns
+| Name | Qty | Note |
+| --- | :---: | --- |
+| a | 1 | x |
+| b | 22 | y |
+--- expect
+table -,c,-
+  th "Name" | "Qty" | "Note"
+  tr "a" | "1" | "x"
+  tr "b" | "22" | "y"
+
+=== table_inline_in_cells
+| File | Fix |
+|---|---|
+| `a.dart` | **bold** [l](https://x.y) |
+--- expect
+table -,-
+  th "File" | "Fix"
+  tr c"a.dart" | b"bold" " " a(https://x.y)"l"
+
+=== table_escaped_pipe_in_cell
+| a | b |
+|---|---|
+| x \| y | z |
+--- expect
+table -,-
+  th "a" | "b"
+  tr "x | y" | "z"
+
+=== table_ragged_rows
+| a | b | c |
+|---|---|---|
+| 1 | 2 |
+| 1 | 2 | 3 | 4 |
+--- expect
+table -,-,-
+  th "a" | "b" | "c"
+  tr "1" | "2" | ""
+  tr "1" | "2" | "3"
+
+=== table_no_outer_pipes
+a | b
+--|--
+1 | 2
+--- expect
+table -,-
+  th "a" | "b"
+  tr "1" | "2"
+
+=== table_then_paragraph
+| a |
+|---|
+| 1 |
+
+after
+--- expect
+table -
+  th "a"
+  tr "1"
+p "after"
+
+=== table_ends_at_next_block
+| a | b |
+|---|---|
+| 1 | 2 |
+# Next
+--- expect
+table -,-
+  th "a" | "b"
+  tr "1" | "2"
+h1 "Next"
+
+=== table_delimiter_missing_is_paragraph
+| a | b |
+| 1 | 2 |
+--- expect
+p "| a | b |\n| 1 | 2 |"
+
+=== html_block_comment_is_text
+<!-- note -->
+
+after
+--- expect
+p "<!-- note -->"
+p "after"
+
+=== html_block_table_is_text
+<table><tr><td>x</td></tr></table>
+--- expect
+p "<table><tr><td>x</td></tr></table>"
+
+=== block_after_paragraph_without_blank
+text
+# Heading
+- item
+> quote
+```
+code
+```
+--- expect
+p "text"
+h1 "Heading"
+ul tight
+  li
+    p "item"
+quote
+  p "quote"
+code "code"
+
+=== long_line_is_one_run
+@json "word word word word word word word word word word word word word word word word word word word word"
+--- expect
+p "word word word word word word word word word word word word word word word word word word word word"
+
+=== empty_input
+@json ""
+--- expect
+
+=== only_whitespace
+@json "   \n\n  \n"
+--- expect
+
+=== crlf_input
+@json "a\r\nb\r\n\r\nc"
+--- expect
+p "a\nb"
+p "c"
+
+=== tabs_in_list_indent
+@json "- a\n\t- b"
+--- expect
+ul tight
+  li
+    p "a"
+    ul tight
+      li
+        p "b"

@@ -1,0 +1,8 @@
+{"type":"session","version":3,"id":"01a10000-0000-7000-8000-00000000a003","timestamp":"2026-10-04T11:00:00.000Z","cwd":"/tmp/work","title":"Long running work","titleSource":"auto"}
+{"type":"message","id":"c1000001","parentId":null,"timestamp":"2026-10-04T11:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"First question"}],"attribution":"user","timestamp":1791104401000}}
+{"type":"message","id":"c1000002","parentId":"c1000001","timestamp":"2026-10-04T11:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"First answer"}],"stopReason":"stop","timestamp":1791104403000}}
+{"type":"compaction","id":"c1000003","parentId":"c1000002","timestamp":"2026-10-04T11:30:00.000Z","summary":"The user asked a first question and got an answer.","shortSummary":"First Q&A","firstKeptEntryId":"c1000002","tokensBefore":42000,"tokensAfter":3000,"method":"summary","details":{"readFiles":["src/a.ts"]},"preserveData":{"hookState":true},"fromExtension":false}
+{"type":"branch_summary","id":"c1000004","parentId":"c1000003","timestamp":"2026-10-04T11:31:00.000Z","fromId":"c1000002","summary":"Abandoned path: tried X.","fromExtension":false}
+{"type":"message","id":"c1000005","parentId":"c1000004","timestamp":"2026-10-04T11:32:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Second question"}],"attribution":"user","timestamp":1791106320000}}
+{"type":"reset_boundary","id":"c1000006","parentId":"c1000005","timestamp":"2026-10-04T11:40:00.000Z"}
+{"type":"message","id":"c1000007","parentId":"c1000006","timestamp":"2026-10-04T11:41:00.000Z","message":{"role":"user","content":[{"type":"text","text":"After the clear"}],"attribution":"user","timestamp":1791106860000}}

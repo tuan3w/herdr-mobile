@@ -1,0 +1,22 @@
+{
+  "agent": "omp",
+  "scenario": "ask",
+  "prompt": "Use your ask tool to ask me which colour I prefer, with the options red and blue, then say what I chose in one word.",
+  "command": "omp acp",
+  "agentInfo": {
+    "name": "omp",
+    "title": "omp",
+    "version": "18.4.12"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 317.234,
+  "stopReason": "end_turn",
+  "lines": 15,
+  "bytes": 29764,
+  "optionsCut": 571,
+  "configChosen": {},
+  "permissionDecisions": [
+    "answered a form with its first option"
+  ],
+  "notes": []
+}

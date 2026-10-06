@@ -1,0 +1,20 @@
+{
+  "agent": "omp",
+  "scenario": "plan",
+  "prompt": "Use your todo/plan tool to write a 3-step plan for adding a --verbose flag to src/main.py, then mark the steps done one by one WITHOUT editing any file. Finish with one line.",
+  "command": "omp acp",
+  "agentInfo": {
+    "name": "omp",
+    "title": "omp",
+    "version": "18.4.12"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 331.325,
+  "stopReason": "end_turn",
+  "lines": 32,
+  "bytes": 40227,
+  "optionsCut": 571,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

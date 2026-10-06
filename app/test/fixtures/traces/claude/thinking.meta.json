@@ -1,0 +1,22 @@
+{
+  "agent": "claude",
+  "scenario": "thinking",
+  "prompt": "Think hard before answering, no tools: three switches outside a closed room control three bulbs inside, you may enter once. How do you find which switch controls which bulb? Answer in at most three sentences.",
+  "command": "npx -y @agentclientprotocol/claude-agent-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/claude-agent-acp",
+    "title": "Claude Agent",
+    "version": "0.49.0"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 970.508,
+  "stopReason": "end_turn",
+  "lines": 153,
+  "bytes": 67679,
+  "optionsCut": 0,
+  "configChosen": {
+    "model": "haiku"
+  },
+  "permissionDecisions": [],
+  "notes": []
+}

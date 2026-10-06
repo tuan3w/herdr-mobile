@@ -1,0 +1,6 @@
+question:
+  Approve writing hello.txt with content 'hello omq'?
+replies:
+  ○ Yes | keys: enter | confirm: no
+  ○ No | keys: down enter | confirm: no
+  ○ Other (type your own) | keys: down down enter | confirm: no

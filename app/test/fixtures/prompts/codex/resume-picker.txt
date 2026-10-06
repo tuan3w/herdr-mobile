@@ -1,0 +1,43 @@
+# agent: codex
+# version: codex-cli 0.160.0
+# source: tmux capture-pane -e -p, 110x40, fresh directory, no model call
+# captured: 2026-10-04
+ [1mResume a previous session[0m
+
+ Filter: [1;4m Cwd [0m All    Status: [1m Active [0m Archived    Sort: [1m Updated [0m Created
+
+ Type to search
+
+  [3mNo sessions yet[0m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[2m───────────────────────────────────────────────────────────────────────────────────────────────[0m 0 / 0 · 100% [2m─
+[0m [1menter[0m resume   [1mesc[0m exit   [1mctrl+c[0m exit   [1mtab[0m focus   [1m←/→[0m option
+ [1mctrl+o[0m comfy   [1mctrl+t[0m preview   [1mctrl+e[0m exp   [1m↑/↓[0m browse

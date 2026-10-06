@@ -1,0 +1,22 @@
+{
+  "agent": "claude",
+  "scenario": "markdown",
+  "prompt": "Do not use any tools and do not read any files. Write a short answer in Markdown about how a small Python project could be laid out. It must contain: one `##` heading; a bulleted list with a nested sub-list; a table with a header and 3 rows; a fenced python code block directly after a line that cites `src/main.py:12`; a sentence with **bold** text and `inline code`; and one [link](https://example.com/docs). Under 25 lines.",
+  "command": "npx -y @agentclientprotocol/claude-agent-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/claude-agent-acp",
+    "title": "Claude Agent",
+    "version": "0.49.0"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 5928.226,
+  "stopReason": "end_turn",
+  "lines": 218,
+  "bytes": 85719,
+  "optionsCut": 0,
+  "configChosen": {
+    "model": "haiku"
+  },
+  "permissionDecisions": [],
+  "notes": []
+}

@@ -1,0 +1,213 @@
+# Inline structure. See defects.case for the dump grammar.
+
+=== italic_star_and_underscore
+*one* and _two_
+--- expect
+p i"one" " and " i"two"
+
+=== bold_star_and_underscore
+**one** and __two__
+--- expect
+p b"one" " and " b"two"
+
+=== intraword_underscore_stays
+x_y_z and snake_case_name
+--- expect
+p "x_y_z and snake_case_name"
+
+=== intraword_star_emphasis
+un*frigging*believable
+--- expect
+p "un" i"frigging" "believable"
+
+=== math_star_with_spaces
+a * b * c
+--- expect
+p "a * b * c"
+
+=== dunder_file_in_code
+Edit `__init__.py` now
+--- expect
+p "Edit " c"__init__.py" " now"
+
+=== tilde_range_single
+It takes 20~25 minutes.
+--- expect
+p "It takes 20~25 minutes."
+
+=== tilde_range_two_occurrences
+Takes 20~25 min or 30~35 min.
+--- expect
+p "Takes 20~25 min or 30~35 min."
+
+=== dollar_amounts
+It costs $5 and $10.
+--- expect
+p "It costs $5 and $10."
+
+=== less_than_comparison
+if a < b and c <= d then
+--- expect
+p "if a < b and c <= d then"
+
+=== escaped_backtick_and_underscore
+\`not code\` and snake\_case
+--- expect
+p "`not code` and snake_case"
+
+=== code_span_keeps_markup
+Use `**not bold**` and `a_b_c`.
+--- expect
+p "Use " c"**not bold**" " and " c"a_b_c" "."
+
+=== code_span_trims_one_space
+`` `x` ``
+--- expect
+p c"`x`"
+
+=== bold_with_link
+**see [the docs](https://d.dev/x)**
+--- expect
+p b"see " a(https://d.dev/x)b"the docs"
+
+=== link_with_title
+[docs](https://d.dev/x "Title")
+--- expect
+p a(https://d.dev/x)"docs"
+
+=== link_with_emphasis_label
+[**bold** label](https://d.dev)
+--- expect
+p a(https://d.dev)b"bold" a(https://d.dev)" label"
+
+=== link_url_with_parens
+[w](https://en.wikipedia.org/wiki/Foo_(bar))
+--- expect
+p a(https://en.wikipedia.org/wiki/Foo_(bar))"w"
+
+=== link_relative_path
+[the module](src/lib/a.dart)
+--- expect
+p a(src/lib/a.dart)"the module"
+
+=== bare_url_in_parens
+(see https://example.com/x)
+--- expect
+p "(see " a(https://example.com/x)"https://example.com/x" ")"
+
+=== bare_url_with_query_and_comma
+Go to https://example.com/a?b=1&c=2, then stop.
+--- expect
+p "Go to " a(https://example.com/a?b=1&c=2)"https://example.com/a?b=1&c=2" ", then stop."
+
+=== bare_www_autolink
+Visit www.example.com for more.
+--- expect
+p "Visit " a(http://www.example.com)"www.example.com" " for more."
+
+=== angle_autolink_mailto
+<me@example.com>
+--- expect
+p a(mailto:me@example.com)"me@example.com"
+
+=== link_in_code_is_text
+`https://example.com`
+--- expect
+p c"https://example.com"
+
+=== entities_numeric_and_named
+&lt;div&gt; &#35; &copy; &nbsp;x
+--- expect
+p "<div> # © \u00a0x"
+
+=== entity_bare_ampersand
+R&D and AT&T
+--- expect
+p "R&D and AT&T"
+
+=== html_inline_is_text
+a <span class="x">b</span> c
+--- expect
+p "a <span class=\"x\">b</span> c"
+
+=== br_variants
+a<br/>b<br />c<BR>d
+--- expect
+p "a" br "b" br "c" br "d"
+
+=== hard_break_two_spaces
+@json "first  \nsecond"
+--- expect
+p "first" br "second"
+
+=== hard_break_backslash
+first\
+second
+--- expect
+p "first" br "second"
+
+=== trailing_spaces_one_is_soft
+@json "first \nsecond"
+--- expect
+p "first\nsecond"
+
+=== emphasis_across_soft_break
+**one
+two**
+--- expect
+p b"one\ntwo"
+
+=== strike_nested_in_bold
+**a ~~b~~ c**
+--- expect
+p b"a " bs"b" b" c"
+
+=== strike_single_tilde_is_text
+~gone~
+--- expect
+p "~gone~"
+
+=== star_inside_word_with_code
+`a*b` and *c*
+--- expect
+p c"a*b" " and " i"c"
+
+=== vietnamese_text_with_bold
+**Đã sửa** lỗi _Hà Nội_ trong `parse.dart`: ký tự "ế" và "ặ".
+--- expect
+p b"Đã sửa" " lỗi " i"Hà Nội" " trong " c"parse.dart" ": ký tự \"ế\" và \"ặ\"."
+
+=== vietnamese_decomposed
+@json "**Hà Nội**"
+--- expect
+p b"Hà Nội"
+
+=== bidi_override_is_kept_in_text
+@json "a \u202eevil\u202c b"
+--- expect
+p "a \u202eevil\u202c b"
+
+=== emoji_zwj_and_flags
+Done 👨‍👩‍👧 🇻🇳 ✅
+--- expect
+p "Done 👨‍👩‍👧 🇻🇳 ✅"
+
+=== heavy_punctuation
+(see **note**), "quoted" and 'single', [brackets] {braces}
+--- expect
+p "(see " b"note" "), \"quoted\" and 'single', [brackets] {braces}"
+
+=== literal_brackets_no_link
+[WARNING] is not a link and [x] neither
+--- expect
+p "[WARNING] is not a link and [x] neither"
+
+=== emphasis_adjacent_underscores_in_path
+Path src/my_dir/a_b.dart and **bold**.
+--- expect
+p "Path src/my_dir/a_b.dart and " b"bold" "."
+
+=== asterisk_bullet_text_not_list
+2 * 3 = 6 and 5*4=20
+--- expect
+p "2 * 3 = 6 and 5*4=20"

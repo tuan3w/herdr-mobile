@@ -1,0 +1,186 @@
+# Realistic agent answers, written the way the four agents write them.
+# See defects.case for the dump grammar.
+
+=== answer_bugfix_summary_vietnamese
+Đã sửa lỗi **Hà Nội** trong `lib/locale/parse.dart`:
+
+- Nguyên nhân: parser chuyển về chữ thường *trước khi* chuẩn hóa NFC.
+- Sửa: đổi thứ tự trong [`normalize()`](lib/locale/normalize.dart).
+- Kiểm tra: `flutter test test/locale_test.dart` → **18 passed**, 0 failed.
+
+Chi tiết xem https://example.com/issues/42.
+--- expect
+p "Đã sửa lỗi " b"Hà Nội" " trong " c"lib/locale/parse.dart" ":"
+ul tight
+  li
+    p "Nguyên nhân: parser chuyển về chữ thường " i"trước khi" " chuẩn hóa NFC."
+  li
+    p "Sửa: đổi thứ tự trong " a(lib/locale/normalize.dart)c"normalize()" "."
+  li
+    p "Kiểm tra: " c"flutter test test/locale_test.dart" " → " b"18 passed" ", 0 failed."
+p "Chi tiết xem " a(https://example.com/issues/42)"https://example.com/issues/42" "."
+
+=== answer_review_nested_with_code
+## Review
+
+The change is **mostly fine**, with two issues:
+
+1. `Cache.get` can return a stale value
+   - the TTL is checked *after* the read
+   - see `lib/cache.dart:88`
+
+   Suggested fix:
+
+   ```dart
+   final v = _map[key];
+   if (v == null || v.expired) return null;
+   ```
+
+2. The `retry` loop never backs off.
+
+> **Note**
+> This is not a blocker.
+
+Overall: ship it after fixing (1).
+--- expect
+h2 "Review"
+p "The change is " b"mostly fine" ", with two issues:"
+ol 1 loose
+  li
+    p c"Cache.get" " can return a stale value"
+    ul tight
+      li
+        p "the TTL is checked " i"after" " the read"
+      li
+        p "see " c"lib/cache.dart:88"
+    p "Suggested fix:"
+    code[dart] "final v = _map[key];\nif (v == null || v.expired) return null;"
+  li
+    p "The " c"retry" " loop never backs off."
+quote
+  p b"Note" "\nThis is not a blocker."
+p "Overall: ship it after fixing (1)."
+
+=== answer_status_table_and_tasks
+### Status
+
+| Area | State | Tests |
+|:-----|:-----:|------:|
+| parser | `done` | 18 |
+| renderer | **wip** | 7 |
+| docs | ~~skipped~~ | - |
+
+Remaining work:
+
+- [x] parser
+- [ ] renderer
+- [ ] docs, see [plan](docs/PLAN.md)
+--- expect
+h3 "Status"
+table l,c,r
+  th "Area" | "State" | "Tests"
+  tr "parser" | c"done" | "18"
+  tr "renderer" | b"wip" | "7"
+  tr "docs" | s"skipped" | "-"
+p "Remaining work:"
+ul tight
+  li [x]
+    p "parser"
+  li [ ]
+    p "renderer"
+  li [ ]
+    p "docs, see " a(docs/PLAN.md)"plan"
+
+=== answer_plan_steps_loose
+Here is the plan:
+
+1. **Read** the failing test.
+
+2. **Reproduce** it:
+
+   ```sh
+   flutter test test/a_test.dart
+   ```
+
+3. **Fix** `a.dart`, then re-run.
+
+Let me know if you want a different approach.
+--- expect
+p "Here is the plan:"
+ol 1 loose
+  li
+    p b"Read" " the failing test."
+  li
+    p b"Reproduce" " it:"
+    code[sh] "flutter test test/a_test.dart"
+  li
+    p b"Fix" " " c"a.dart" ", then re-run."
+p "Let me know if you want a different approach."
+
+=== answer_label_value_lines
+Result:
+Files changed: 3
+Commands run: 4
+Failed: 1 (`flutter test`)
+
+**Next:** fix the failing test.
+--- expect
+p "Result:\nFiles changed: 3\nCommands run: 4\nFailed: 1 (" c"flutter test" ")"
+p b"Next:" " fix the failing test."
+
+=== answer_warning_and_diff_block
+> [!WARNING]
+> This rewrites history. Run `git stash` first.
+
+```diff
+- old line
++ new line
+```
+
+See `git log --oneline` for the result.
+--- expect
+alert WARNING
+  p "This rewrites history. Run " c"git stash" " first."
+code[diff] "- old line\n+ new line"
+p "See " c"git log --oneline" " for the result."
+
+=== answer_bidi_and_long_tokens
+@json "Cảnh báo: tên tệp `a\u202etxt.exe` và đường dẫn rất dài /srv/data/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/file_name_with_many_parts.txt."
+--- expect
+p "Cảnh báo: tên tệp " c"a\u202etxt.exe" " và đường dẫn rất dài /srv/data/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/file_name_with_many_parts.txt."
+
+=== answer_rtl_paragraph
+@json "نص عربي **غامق** و `code` ثم עברית."
+--- expect
+p "نص عربي " b"غامق" " و " c"code" " ثم עברית."
+
+=== answer_commands_in_list_with_continuation
+Run these in order:
+
+- `git fetch`
+- `git rebase origin/main`
+  (resolve conflicts if any)
+- `flutter test`
+--- expect
+p "Run these in order:"
+ul tight
+  li
+    p c"git fetch"
+  li
+    p c"git rebase origin/main" "\n(resolve conflicts if any)"
+  li
+    p c"flutter test"
+
+=== answer_headings_rules_and_images
+# Report
+
+![chart](https://x.y/chart.png)
+
+---
+
+Done.
+--- expect
+h1 "Report"
+p img(https://x.y/chart.png)"chart"
+rule
+p "Done."

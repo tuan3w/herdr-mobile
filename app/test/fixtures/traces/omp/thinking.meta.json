@@ -1,0 +1,22 @@
+{
+  "agent": "omp",
+  "scenario": "thinking",
+  "prompt": "Think hard before answering, no tools: three switches outside a closed room control three bulbs inside, you may enter once. How do you find which switch controls which bulb? Answer in at most three sentences.",
+  "command": "omp acp",
+  "agentInfo": {
+    "name": "omp",
+    "title": "omp",
+    "version": "18.4.12"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 338.971,
+  "stopReason": "end_turn",
+  "lines": 148,
+  "bytes": 74026,
+  "optionsCut": 1715,
+  "configChosen": {
+    "model": "anthropic/claude-haiku-4-5"
+  },
+  "permissionDecisions": [],
+  "notes": []
+}

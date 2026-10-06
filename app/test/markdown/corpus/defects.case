@@ -1,0 +1,249 @@
+# Probe inputs for the defects of the old Markdown renderer and of streaming.
+# Format (parsed by support/corpus.dart): `=== name | flags`, input lines (or one
+# `@json "..."` line), `--- expect`, the structure dump.
+# Dump grammar: blocks `p h1..h6 code[lang] rule quote alert ul/ol li table th tr`,
+# children indented two spaces; inline runs `"text"` with style letters
+# b i s c before the quote, `a(url)` for a link, `br`, `img(src)"alt"`.
+
+=== code_in_bold
+**`lib/main.dart`**
+--- expect
+p bc"lib/main.dart"
+
+=== link_with_code_label
+[`parse.dart`](https://x.y/z)
+--- expect
+p a(https://x.y/z)c"parse.dart"
+
+=== nested_emphasis
+**bold *it* more**
+--- expect
+p b"bold " bi"it" b" more"
+
+=== bold_italic_triple
+***both***
+--- expect
+p bi"both"
+
+=== strikethrough
+~~gone~~
+--- expect
+p s"gone"
+
+=== escaped_stars
+\*not\*
+--- expect
+p "*not*"
+
+=== angle_autolink
+<https://example.com/a>
+--- expect
+p a(https://example.com/a)"https://example.com/a"
+
+=== bare_autolink_trailing_dot
+see https://example.com/a.
+--- expect
+p "see " a(https://example.com/a)"https://example.com/a" "."
+
+=== soft_breaks_label_value
+Status: ok
+Files: 3
+--- expect
+p "Status: ok\nFiles: 3"
+
+=== soft_breaks_commonmark | soft=space
+Status: ok
+Files: 3
+--- expect
+p "Status: ok Files: 3"
+
+=== list_continuation_tight
+1. a
+   more
+2. b
+--- expect
+ol 1 tight
+  li
+    p "a\nmore"
+  li
+    p "b"
+
+=== list_continuation_paragraph_loose
+1. a
+
+   more
+2. b
+--- expect
+ol 1 loose
+  li
+    p "a"
+    p "more"
+  li
+    p "b"
+
+=== fence_in_list_item
+- step
+  ```sh
+  npm i
+  ```
+- next
+--- expect
+ul tight
+  li
+    p "step"
+    code[sh] "npm i"
+  li
+    p "next"
+
+=== nested_list_four_spaces
+- a
+    - b
+- c
+--- expect
+ul tight
+  li
+    p "a"
+    ul tight
+      li
+        p "b"
+  li
+    p "c"
+
+=== task_list
+- [ ] todo
+- [x] done
+--- expect
+ul tight
+  li [ ]
+    p "todo"
+  li [x]
+    p "done"
+
+=== pipe_table_alignment
+| a | b |
+|:--|--:|
+| 1 | 2 |
+--- expect
+table l,r
+  th "a" | "b"
+  tr "1" | "2"
+
+=== setext_h1
+Title
+=====
+--- expect
+h1 "Title"
+
+=== setext_h2
+Sub
+---
+--- expect
+h2 "Sub"
+
+=== nested_quote_with_list
+> a
+> > b
+> - c
+--- expect
+quote
+  p "a"
+  quote
+    p "b"
+  ul tight
+    li
+      p "c"
+
+=== html_br
+a<br>b
+--- expect
+p "a" br "b"
+
+=== html_entity
+Tom &amp; Jerry
+--- expect
+p "Tom & Jerry"
+
+=== html_details_is_text
+<details>
+<summary>More</summary>
+
+body
+
+</details>
+--- expect
+p "<details>\n<summary>More</summary>"
+p "body"
+p "</details>"
+
+=== image_block
+![alt text](https://x.y/a.png)
+--- expect
+p img(https://x.y/a.png)"alt text"
+
+=== image_inline
+see ![a](b.png) here
+--- expect
+p "see " img(b.png)"a" " here"
+
+=== fenced_code_language
+```dart
+void main() {}
+```
+--- expect
+code[dart] "void main() {}"
+
+=== path_with_line_stays_text
+Look at lib/a.dart:42 first.
+--- expect
+p "Look at lib/a.dart:42 first."
+
+=== dunder_is_bold
+__init__
+--- expect
+p b"init"
+
+=== lone_atx_marker
+##
+--- expect
+h2
+
+=== open_fence_with_partial_language
+```da
+--- expect
+code[da] ""
+
+=== unterminated_bold_is_literal
+**bo
+--- expect
+p "**bo"
+
+=== unterminated_code_is_literal
+`flutter te
+--- expect
+p "`flutter te"
+
+=== partial_link_is_literal
+[the docs](https://exa
+--- expect
+p "[the docs](https://exa"
+
+=== quote_then_paragraph
+> a
+
+b
+--- expect
+quote
+  p "a"
+p "b"
+
+=== alert_warning
+> [!WARNING]
+> Do not run this as root.
+--- expect
+alert WARNING
+  p "Do not run this as root."
+
+=== inline_code_with_backticks
+`` a`b ``
+--- expect
+p c"a`b"

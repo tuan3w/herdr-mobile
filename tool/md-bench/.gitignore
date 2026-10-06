@@ -1,0 +1,4 @@
+.dart_tool/
+build/
+# fetched by fetch_flutter_md.sh, not committed
+lib/fmd/

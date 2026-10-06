@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0D0E10</color>
+    <!-- Ds.paper.bg: the app's page colour, so launch shows no white flash.
+         There is deliberately no values-night override: light is the app's
+         default theme and the theme the person chose lives in Flutter's prefs,
+         which cannot be read before Flutter starts, so the launch window must
+         not follow the phone's dark mode (it would flash dark, then turn light). -->
+    <color name="herdr_bg">#FBFBFA</color>
+</resources>

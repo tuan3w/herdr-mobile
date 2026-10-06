@@ -1,0 +1,7 @@
+question:
+  Select Model and Effort
+replies:
+  1. GPT-6-Luna (default)  Fast and… | keys: 1 enter | confirm: no
+  2. GPT-5.6-Terra         Older… | keys: 2 enter | confirm: no
+  3. GPT-5.6-Luna          Older fast… | keys: 3 enter | confirm: no
+  4. GPT-5.5               Legacy coding… | keys: 4 enter | confirm: no

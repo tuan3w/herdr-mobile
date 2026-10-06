@@ -1,0 +1,44 @@
+# agent: claude
+# version: Claude Code 2.1.289
+# source: tmux capture-pane -e -p, 110x40, fresh directory, no model call
+# captured: 2026-10-04
+
+ ▐▛███▛█   Claude Code v2.1.289
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+ ▝▝   ▝▝   /tmp/pi-cap-claude
+
+  Updated to latest. Got 39 features, 259 bugfixes, and 132 other changes.
+  ]8;id=1rmwg0m;https://code.claude.com/docs/en/changelog\code.claude.com/docs/en/changelog]8;;\ for details
+
+
+❯ /model
+  ⎿  Kept model as Opus 5.5 (1M context)
+
+❯ /resume
+  ⎿  Resume cancelled
+
+
+
+
+
+
+
+
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ ◐ medium · /effort ▔
+   Help [7m General [0m  Commands   Custom commands
+
+   Claude understands your codebase, makes edits with your permission, and executes commands — right from
+   your terminal.
+   Shortcuts
+   ! for shell mode          double tap esc to clear input        ctrl + shift + _ to undo
+   / for commands            shift + tab to auto-accept edits     ctrl + z to suspend
+   @ for file paths          ctrl + o for verbose output          ctrl + v to paste images
+   /btw for side question    ctrl + t to toggle tasks             alt + p to switch model
+                             backslash (\) + return (⏎) for       ctrl + s to stash prompt
+                             newline                              ctrl + g to edit in $EDITOR
+                                                                  /keybindings to customize
+
+   For more help: ]8;id=sdguk7;https://code.claude.com/docs/en/overview\https://code.claude.com/docs/en/overview]8;;\
+
+   Esc to cancel

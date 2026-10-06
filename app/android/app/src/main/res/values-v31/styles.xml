@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: page colour, no icon background plate. The
+         Light parent keeps the status bar icons dark in both of the phone's
+         day and night modes, like the paper splash behind them. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/herdr_bg</item>
+    </style>
+</resources>

@@ -1,0 +1,24 @@
+{
+  "agent": "claude",
+  "scenario": "permission",
+  "prompt": "Run the shell command `mkdir made-by-agent` in the current directory, then say it is done in one line.",
+  "command": "npx -y @agentclientprotocol/claude-agent-acp",
+  "agentInfo": {
+    "name": "@agentclientprotocol/claude-agent-acp",
+    "title": "Claude Agent",
+    "version": "0.49.0"
+  },
+  "capturedOn": "2026-10-05",
+  "promptSentAtMs": 995.425,
+  "stopReason": "end_turn",
+  "lines": 47,
+  "bytes": 38773,
+  "optionsCut": 0,
+  "configChosen": {
+    "model": "haiku"
+  },
+  "permissionDecisions": [
+    "allowed once: mkdir made-by-agent"
+  ],
+  "notes": []
+}

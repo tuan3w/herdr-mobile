@@ -1,0 +1,44 @@
+# agent: claude
+# version: Claude Code 2.1.289
+# source: tmux capture-pane -e -p, 110x40, fresh directory, no model call
+# captured: 2026-10-04
+
+ ▐▛███▛█   Claude Code v2.1.289
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+ ▝▝   ▝▝   /tmp/pi-cap-claude
+
+  Updated to latest. Got 39 features, 259 bugfixes, and 132 other changes.
+  ]8;id=1rmwg0m;https://code.claude.com/docs/en/changelog\code.claude.com/docs/en/changelog]8;;\ for details
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ You've used 90% of your weekly limit · resets Oct 6, 8pm (Asia/Ho_Chi_Minh) · /usage-credits to keep using… ▔
+   Select model
+   Switch between Claude models. Your pick becomes the default for new sessions. For other/previous model
+   names, specify with --model.
+
+     1. Default (recommended)  Opus 5.5 · Best for everyday, complex tasks
+   ❯ 2. Opus ✔                 Opus 5.5 · Best for everyday, complex tasks
+     3. Fable                  Fable 5.1 · Most capable for your hardest and longest-running tasks
+     4. Sonnet                 Sonnet 5.5 · Efficient for routine tasks
+     5. Haiku                  Haiku 4.5 · Fastest for quick answers
+
+   ◐ Medium effort (default) ←/→ to adjust
+
+   Enter to set as default · s to use this session only · Esc to cancel
