@@ -68,6 +68,11 @@ class FakeExecChannel implements ExecChannel {
     if (!ended) _lines.add(line);
   }
 
+  /// The stream of lines fails (it goes on, as a line that was too long does).
+  void emitError(Object error) {
+    if (!ended) _lines.addError(error);
+  }
+
   /// The command ends.
   void exit(int? code, {String stderr = ''}) {
     if (ended) return;

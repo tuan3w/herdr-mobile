@@ -175,7 +175,7 @@ class _BgProbe implements HerdrTransport {
   void reset() {}
 
   @override
-  Future<ExecChannel> openExec(String command) => throw UnsupportedError('exec');
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) => throw UnsupportedError('exec');
 
   @override
   bool get supportsFiles => false;

@@ -14,10 +14,11 @@ const keeperRoutesSlot = '@@ROUTES@@';
 const keeperPython = r'''
 """herdr-keeper: owns one ACP agent process so it outlives the phone's SSH link.
 
-Subcommands: probe | list | start --agent ID --cwd DIR | attach ID | kill ID
+Subcommands: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID
 | follow PATH [--from N] | history AGENT [CWD].
 Single file, python 3.6+, standard library only. Design: docs/AGENT_SESSIONS.md.
 """
+import base64
 import collections
 import errno
 import glob
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import time
 import traceback
+import zlib
 
 ROUTES = json.loads(r"""@@ROUTES@@""")
 
@@ -516,6 +518,17 @@ class ReplayLog(object):
             for e in list(t.e):
                 yield e
 
+    def replay(self, since=None):
+        """(entry, turn seq) in replay order: what restates state first, then
+        the turns from `since` on (all of them when it is None)."""
+        for e in list(self.carry.values()):
+            yield e, None
+        for t in list(self.turns.values()):
+            if since is not None and t.seq < since:
+                continue
+            for e in list(t.e):
+                yield e, t.seq
+
     def over(self):
         return self.bytes > self.max_bytes or self.count > self.max_entries
 
@@ -820,6 +833,9 @@ class Keeper(object):
         self.pending = collections.OrderedDict()
         self.fwd = {}
         self.log = ReplayLog(LOG_BYTES, LOG_COUNT, LOG_FULL_TURNS, LOG_SOFT_BYTES)
+        # Names this log: its turn numbers mean nothing to a client that holds
+        # another (a keeper that started over counts from 0 again).
+        self.epoch = secrets.token_hex(6)
         self.session_id = None
         self.setup = None
         self.title = None
@@ -1218,6 +1234,21 @@ class Keeper(object):
             out["result"] = msg.get("result")
         self.send_agent(out)
 
+    def replay_since(self, msg):
+        """The turn a `session/load` asks the replay to start from
+        (`_meta.herdr.since`), when this log is the one it was counted in and
+        still has that turn; None otherwise (the whole log is replayed)."""
+        p = msg.get("params")
+        m = p.get("_meta") if isinstance(p, dict) else None
+        h = m.get("herdr") if isinstance(m, dict) else None
+        s = h.get("since") if isinstance(h, dict) else None
+        if not isinstance(s, dict) or s.get("epoch") != self.epoch:
+            return None
+        turn = s.get("turn")
+        if type(turn) is not int or turn not in self.log.turns:
+            return None
+        return turn
+
     def serve_held(self, conn, msg):
         # A prompt just sent has no update yet: the replay must still show it
         # (a refusal takes it back out of the log, see end_turn).
@@ -1225,10 +1256,30 @@ class Keeper(object):
         replay = msg["method"] == "session/load"
         sid = self.session_id
         if replay:
-            for e in self.log.entries():
+            since = self.replay_since(msg)
+            if since is not None:
+                # The phone holds every turn before this one: only this turn
+                # and the ones after it follow, and it must start from what it
+                # holds (this notice comes before the first update).
+                self.put(conn, enc({"jsonrpc": "2.0", "method": "_herdr/replay", "params": {"sessionId": sid, "from": since}}))
+            turn = None
+            for e, seq in self.log.replay(since):
                 p = e["o"].get("params")
-                if isinstance(p, dict) and p.get("sessionId") == sid:
-                    self.put(conn, enc(e["o"]))
+                if not (isinstance(p, dict) and p.get("sessionId") == sid):
+                    continue
+                o = e["o"]
+                if seq is not None and seq != turn:
+                    # The first line of each turn names it (and this log), so the
+                    # phone's saved copy can be cut where a turn begins and
+                    # `since` asked for from there.
+                    turn = seq
+                    p = dict(p)
+                    m = dict(p["_meta"]) if isinstance(p.get("_meta"), dict) else {}
+                    m["herdr"] = {"epoch": self.epoch, "turn": seq}
+                    p["_meta"] = m
+                    o = dict(o)
+                    o["params"] = p
+                self.put(conn, enc(o))
         result = dict(self.setup) if isinstance(self.setup, dict) else {}
         if replay:
             # What the log gave up, for an app that knows to say so (others ignore `_meta.herdr`).
@@ -1895,7 +1946,20 @@ def check_id(kid):
         fail(EX_USAGE, "not a keeper id: " + str(kid))
 
 
-def cmd_attach(kid):
+# `attach --z`: what goes to the phone is cut into the complete lines the keeper
+# wrote, and a batch of at least ATTACH_ZIP_MIN bytes travels as ONE line
+# `Z<base64 of zlib data>`: all batches are one zlib stream, each ended with a
+# sync flush so the phone can inflate it as it arrives. The replay of a long
+# thread is plain JSON text and shrinks ~10x (base64 costs a third of that
+# back); a small message (a streamed word) is cheaper as it is, and stays so.
+ATTACH_ZIP_MIN = 512
+
+
+def zip_batch(z, data):
+    return b"Z" + base64.b64encode(z.compress(data) + z.flush(zlib.Z_SYNC_FLUSH)) + b"\n"
+
+
+def cmd_attach(kid, zipped=False):
     check_id(kid)
     os.chdir(state_dir())
     info = read_info(kid)
@@ -1911,6 +1975,8 @@ def cmd_attach(kid):
             info = read_info(kid) or info
         fail(EX_EXITED, "keeper %s: %s" % (kid, info.get("exit_reason") or "the agent has exited."))
     s.setblocking(True)
+    z = zlib.compressobj(6) if zipped else None
+    held = b""
     while True:
         ready, _, _ = select.select([0, s], [], [])
         if 0 in ready:
@@ -1923,14 +1989,27 @@ def cmd_attach(kid):
                 break
         if s in ready:
             data = s.recv(65536)
-            if not data:
+            if z is not None:
+                held += data
+                cut = held.rfind(b"\n") + 1
+                if data and not cut:
+                    continue
+                whole, held = held[:cut], held[cut:]
+                if not data:
+                    whole += held  # the keeper hung up in the middle of a line
+                data_out = zip_batch(z, whole) if len(whole) >= ATTACH_ZIP_MIN else whole
+            else:
+                data_out = data
+            if not data and not data_out:
                 break
             try:
-                view = memoryview(data)
+                view = memoryview(data_out)
                 while view:
                     n = os.write(1, view)
                     view = view[n:]
             except OSError:
+                break
+            if not data:
                 break
     s.close()
 
@@ -2477,7 +2556,7 @@ def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL):
 
 def main(argv):
     if not argv:
-        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID | kill ID | follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
+        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
     cmd, rest = argv[0], argv[1:]
     try:
         if cmd == "probe":
@@ -2506,8 +2585,10 @@ def main(argv):
             poll = max(20, min(opts.get("--poll-ms", int(FOLLOW_POLL * 1000)), 60000)) / 1000.0
             tail = max(FOLLOW_TAIL_MIN, min(opts.get("--tail-bytes", FOLLOW_TAIL), FOLLOW_TAIL_MAX))
             cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail)
-        elif cmd in ("attach", "kill") and len(rest) == 1:
-            (cmd_attach if cmd == "attach" else cmd_kill)(rest[0])
+        elif cmd == "attach" and len(rest) in (1, 2) and (len(rest) == 1 or rest[1] == "--z"):
+            cmd_attach(rest[0], len(rest) == 2)
+        elif cmd == "kill" and len(rest) == 1:
+            cmd_kill(rest[0])
         else:
             fail(EX_USAGE, "unknown command: " + cmd)
     except OSError as e:

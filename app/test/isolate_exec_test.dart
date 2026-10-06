@@ -40,7 +40,7 @@ class _ExecProbe implements HerdrTransport {
   var closed = false;
 
   @override
-  Future<ExecChannel> openExec(String command) async {
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) async {
     final parts = command.split(':');
     final FakeExecChannel channel;
     switch (parts[0]) {
@@ -66,6 +66,10 @@ class _ExecProbe implements HerdrTransport {
             channel.emit('${parts[1]}-${i++}');
           }
         });
+      case 'zipflag':
+        // What the worker was asked for: the transport inflates there, so the
+        // flag has to arrive.
+        channel = FakeExecChannel.run(stdout: ['zipped=$zipped']);
       case 'echo':
         channel = _Echo();
       case 'reader':
@@ -166,6 +170,11 @@ void main() {
   tearDown(() => t.close());
 
   Future<Map<String, dynamic>> probe() => t.request('probe');
+
+  test('whether the lines are zipped reaches the worker, where the transport reads them back', () async {
+    expect((await _drain(await t.openExec('zipflag'))).lines, ['zipped=false']);
+    expect((await _drain(await t.openExec('zipflag', zipped: true))).lines, ['zipped=true']);
+  });
 
   test('a burst arrives whole, in order, in a handful of messages', () async {
     final channel = await t.openExec('burst:6000');

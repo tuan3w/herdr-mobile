@@ -11,6 +11,7 @@ import '../acp/auth_needed.dart';
 import '../acp/json_rpc.dart';
 import '../acp/past_session.dart';
 import '../acp/prompt_queue.dart';
+import '../acp/replay_since.dart';
 import '../acp/background/background_work.dart';
 import '../acp/session_state.dart';
 import '../acp/transcript_log.dart';
@@ -754,16 +755,11 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _client = client;
       _changes = client.changes.listen((c) => _onClientChange(client, c));
       unawaited(client.closed.then((_) => _onClosed(client)));
-      final init = await client.initialize();
-      if (epoch != _epoch) return;
-      _canSteer = client.canSteer;
-      _acceptsImages = init.capabilities.image;
-      _acceptsEmbeddedContext = init.capabilities.embeddedContext;
-      _replaying = true;
-      _holding = _state.items.isNotEmpty;
       // What is shown until the replay is whole is kept apart from it: the
       // replay may be shorter (the keeper's log is bounded), and a thread
       // never gets shorter because of a re-attach.
+      _replaying = true;
+      _holding = _state.items.isNotEmpty;
       final held = _holding ? _state : null;
       final heldLines = held == null
           ? const <String>[]
@@ -774,17 +770,42 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _recorder.reset();
       _recordingWhole = false;
       var older = 0;
-      final loaded = await _openSession(
+      // A copy that ends in turns the keeper stamped needs only the keeper's
+      // newest turns again, not its whole log; a past session is reopened
+      // from what the agent keeps, and starts over.
+      final since = held == null || _reopening ? null : replaySinceOf(heldLines);
+      // `initialize` and the request that opens the session go out together:
+      // the keeper answers the first from its cache and takes the second in
+      // order, so the open waits for one round trip, not two (on a 300 ms link
+      // that is 300 ms of every open).
+      final initializing = client.initialize();
+      final loading = _openSession(
         client,
-        init,
+        initializing,
         held == null
             ? null
             : (replayed) {
+                // The replay began where the copy was cut: it is the copy's
+                // turns and the keeper's newer ones, nothing is missing.
+                if (client.replayedFrom(replayed.sessionId) != null) return replayed;
                 final merged = replayed.withHeld(held);
                 older = merged.older;
                 return merged.state;
               },
+        since: since,
       );
+      // Whichever fails first is the failure; the other is not left unhandled.
+      unawaited(loading.then<void>((_) {}, onError: (Object _) {}));
+      unawaited(initializing.then<void>((_) {}, onError: (Object _) {}));
+      final init = await initializing;
+      if (epoch != _epoch) return;
+      _canSteer = client.canSteer;
+      _acceptsImages = init.capabilities.image;
+      _acceptsEmbeddedContext = init.capabilities.embeddedContext;
+      final loaded = await loading;
+      // What the keeper did not send again is the copy's, and the next saved
+      // copy needs it.
+      if (since != null && client.replayedFrom(loaded.sessionId) != null) _recorder.prepend(since.prefix);
       if (epoch != _epoch) return;
       _sessionId = loaded.sessionId;
       _holding = false;
@@ -830,26 +851,32 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// can do that, else the person is told the agent cannot reopen it.
   Future<AgentSessionState> _openSession(
     AcpClient client,
-    AcpInitializeResult init,
-    AgentSessionState Function(AgentSessionState replayed)? merge,
-  ) async {
+    Future<AcpInitializeResult> init,
+    AgentSessionState Function(AgentSessionState replayed)? merge, {
+    ReplaySince? since,
+  }) async {
     final sid = _sessionId;
     final meta = agentRouteById(_info.agent)?.sessionMeta;
     if (sid == null) return client.newSession(cwd: _info.cwd, meta: meta);
-    Future<AgentSessionState> resumeOnly() async {
+    Future<AgentSessionState> resumeOnly(AcpInitializeResult init) async {
       if (!init.capabilities.canResume) {
         throw AgentHostException('$agentLabel cannot reopen past sessions.', fatal: true);
       }
       return client.resumeSession(sid, cwd: _info.cwd, meta: meta, merge: merge);
     }
 
+    // A past session is reopened by what the agent says it can do, so that one
+    // waits for `initialize`. Every other open goes out behind it at once.
+    if (_reopening) {
+      final caps = await init;
+      if (!caps.capabilities.loadSession) return resumeOnly(caps);
+    }
     // The keeper tells every agent it can load; one that cannot answers
     // "method not found" to the first request for a session it does not hold.
-    if (_reopening && !init.capabilities.loadSession) return resumeOnly();
     try {
-      return await client.loadSession(sid, cwd: _info.cwd, meta: meta, merge: merge);
+      return await client.loadSession(sid, cwd: _info.cwd, meta: meta, merge: merge, pipelined: !_reopening, since: since);
     } on JsonRpcException catch (e) {
-      if (_reopening && e.code == JsonRpcCode.methodNotFound) return resumeOnly();
+      if (_reopening && e.code == JsonRpcCode.methodNotFound) return resumeOnly(await init);
       rethrow;
     }
   }

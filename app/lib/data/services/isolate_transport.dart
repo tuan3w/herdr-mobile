@@ -151,7 +151,8 @@ class IsolateTransport implements HerdrTransport {
   int get uploadProgressMessages => _live?.uploadProgress ?? 0;
 
   @override
-  Future<ExecChannel> openExec(String command) async => (await _ensure()).openExec(command);
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) async =>
+      (await _ensure()).openExec(command, zipped: zipped);
 
   /// How many batches of exec lines the main isolate has received from the
   /// current worker: lines cross the boundary in batches, never one message
@@ -363,14 +364,14 @@ class _Worker {
   /// Opens [command] in the worker. The channel is registered before the
   /// worker answers, so lines that follow the answer in the same turn are not
   /// lost; they wait in the channel until its stream is listened to.
-  Future<ExecChannel> openExec(String command) {
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) {
     if (_dead) {
       return Future.error(const HerdrTransportException('herdr connection lost'));
     }
     final id = _nextId++;
     _execs[id] = _MainExec(this, id);
     final opened = _opens[id] = Completer<ExecChannel>();
-    _to.send(['exec', id, command]);
+    _to.send(['exec', id, command, zipped]);
     return opened.future;
   }
 
@@ -519,11 +520,11 @@ void _workerMain(List<Object?> init) {
     }
   }
 
-  Future<void> serveExec(int id, String command) async {
+  Future<void> serveExec(int id, String command, bool zipped) async {
     final ExecChannel channel;
     try {
       if (closing) throw const HerdrTransportException('Transport closed');
-      channel = await transport.openExec(command);
+      channel = await transport.openExec(command, zipped: zipped);
     } on Object catch (e) {
       main.send(['xopenErr', id, ..._encodeError(e)]);
       return;
@@ -591,7 +592,7 @@ void _workerMain(List<Object?> init) {
       case 'op':
         unawaited(serveOp(m[1]! as int, m[2]! as String, (m[3]! as List).cast<Object?>()));
       case 'exec':
-        unawaited(serveExec(m[1]! as int, m[2]! as String));
+        unawaited(serveExec(m[1]! as int, m[2]! as String, m[3] == true));
       case 'up':
         serveUpload(m[1]! as int, m[2]! as String, m[3]! as String);
       case 'upcancel':

@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'zipped_lines.dart';
 import 'json_rpc.dart';
 
 /// An [AcpTransport] over a local child process's stdio. For tests and
 /// desktop tooling only: the app reaches agents over SSH, and `dart:io`
 /// `Process` does not exist on the platform the app ships to.
 class ProcessTransport implements AcpTransport {
-  ProcessTransport._(this._process) {
-    lines = splitLines(_process.stdout);
+  ProcessTransport._(this._process, {bool zipped = false}) {
+    lines = zipped ? zippedLines(splitLines(_process.stdout)) : splitLines(_process.stdout);
     // An agent logs to stderr; an unread pipe would stall it. Keep a tail
     // for diagnostics.
     _process.stderr.transform(utf8.decoder).listen((chunk) {
@@ -27,14 +28,16 @@ class ProcessTransport implements AcpTransport {
   }
 
   /// Starts [executable] with [arguments]. The child's stdout becomes
-  /// [lines].
+  /// [lines], read as `keeper attach --z` lines with [zipped].
   static Future<ProcessTransport> start(
     String executable,
     List<String> arguments, {
     String? workingDirectory,
     Map<String, String>? environment,
+    bool zipped = false,
   }) async => ProcessTransport._(
     await Process.start(executable, arguments, workingDirectory: workingDirectory, environment: environment),
+    zipped: zipped,
   );
 
   static const _stderrCap = 16 * 1024;

@@ -295,6 +295,42 @@ agent failed `initialize`, 78 python3 missing.
    is forwarded, and the first `session/new`/`load`/`resume` response fixes
    the keeper's `sessionId`. A prompt whose client left is orphaned: its end
    reaches the next client as `state_update idle`.
+   **On the wire.** The app attaches with `attach <id> --z`
+   (`keeperAttachCommand(zipped: true)`): the relay cuts what the keeper writes
+   into complete lines, and a batch of at least 512 bytes goes as ONE line
+   `Z<base64 of zlib data>` (all batches are one zlib stream, each ended with a
+   sync flush; `zippedLines` inflates them in order, in the transport's worker
+   isolate: `openExec(command, zipped: true)` wraps the channel in
+   `ZippedExecChannel` where it is opened, so base64 and inflate never run on
+   the UI isolate, and a piece that does not inflate closes the channel, which
+   the session sees as a dropped link and attaches again). The replay is plain JSON
+   and shrinks ~9x (a 600-item chat: 1.5 MB to 171 KB, base64 included); a
+   streamed word stays a plain line, which is cheaper than any frame. Why not
+   SSH compression: dartssh2 does not offer it. Why base64: the exec channel
+   hands the app text lines, and a binary frame would cross the isolate as
+   bytes the line splitter never sees.
+   **Asking for less.** The keeper stamps the first line of every turn it
+   replays with `params._meta.herdr = {epoch, turn}` (`epoch` names this log:
+   a keeper that started over counts from 0 again). The phone's saved copy is
+   cut where its last stamped turn begins, and `session/load` carries
+   `_meta.herdr.since = {epoch, turn}`: when the epoch is the log's and the turn
+   is still in it, the keeper first sends the notification `_herdr/replay
+   {from}` and then only the state it restates and the turns from there on. The
+   client starts that load from the copy's lines before the cut (folded by the
+   reducer a replay goes through) instead of from nothing, and the replay needs
+   no `withHeld`. Any other case (no stamp, another epoch, a turn the log
+   dropped) is the whole log, as before. The turn the copy ends in is asked for
+   again because it may have grown, and lines that came live carry no stamp:
+   an open costs the size of the newest turn and what came after the copy, not
+   of the log (3 KB for a 600-item chat that had not moved, 172 KB before).
+   A running keeper holds the script it started with in memory, so only
+   keepers started after the host got this script stamp turns and take a
+   `since`; against an older one the client's request is ignored, no
+   `_herdr/replay` comes and the whole log is replayed and merged with
+   `withHeld`, as before (zipping needs no keeper support: every attach is a
+   new process of the installed file). Turns the keeper trimmed after the
+   copy was made stay as the phone has them, fuller, exactly as `withHeld`
+   keeps them.
 6. One writer at a time: a new attach evicts the old one with a notification
    `_herdr/evicted` and a close. Detach is not cancel: `session/cancel` is
    forwarded only when a client sends it. A client too slow to read (64 MB
@@ -336,8 +372,10 @@ the first instant, so a cold `npx -y` start of a minute or more is listed,
 never swept as an orphan, and `kill` reaches it; `kill` only signals a pid whose
 command line is a keeper script).
 
-Open: cost of replaying a large log over a slow link (the soft budget keeps a
-replay near 1.5 MB and the hard 16 MB bound is the ceiling; measured
+Open: cost of replaying a large log over a slow link (zipped on the wire and
+asked for from the copy's last turn since "On the wire" above; the soft budget
+keeps a replay near 1.5 MB and the hard 16 MB bound is the ceiling; the measurements below are of the
+plain replay, before that; measured
 with `app/benchmark/session_open_bench.dart`: the replay is plain text and is 84-86 % of a
 cold open of a full log at 30 / 10 Mbit/s; the app paints a saved copy
 meanwhile, see "The saved copy and the pre-connect"); whether to keep the log on disk to survive a
@@ -369,6 +407,11 @@ session per keeper of every online machine.
   showing the phase it had until the next listing.
 - **Attach.** `attach` -> `initialize` -> `session/load` when the keeper holds
   a session (replay, then the waiting requests come back), else `session/new`.
+  The load (or the new session) goes out right behind `initialize`, without
+  waiting for its answer: the keeper answers `initialize` from its cache and
+  takes the next request in order, so an open waits one round trip less (a past
+  session being reopened still waits, it picks load or resume by what the
+  agent says it can do).
   A re-attach keeps showing the old transcript (marked disconnected) until the
   replay is whole, then swaps, keeping what the replay lacks (`withHeld`: the
   items above the replay's first item, matched by tool call id and message

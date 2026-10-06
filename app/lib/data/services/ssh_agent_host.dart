@@ -127,7 +127,7 @@ class SshAgentHost implements AgentHost {
 
   @override
   Future<AcpTransport> attach(String keeperId) async {
-    return KeeperAttachment._(await openKeeperChannel(keeperAttachCommand(keeperId)));
+    return KeeperAttachment._(await openKeeperChannel(keeperAttachCommand(keeperId, zipped: true), zipped: true));
   }
 
   /// Opens the long-lived channel of a keeper [command] (`keeperAttachCommand`,
@@ -135,20 +135,21 @@ class SshAgentHost implements AgentHost {
   /// script is not installed (65) it is installed and the command opened once
   /// more. [recheck] is for a caller whose channel just ended with 65 after it
   /// had been opened: the host is then not trusted to still have the script,
-  /// so the open watches for a 65 again. Everything that goes wrong is an
+  /// so the open watches for a 65 again. With [zipped] the command is
+  /// `keeper attach --z`, read back by the transport. Everything that goes wrong is an
   /// [AgentHostException] (a link problem a non-fatal one).
-  Future<ExecChannel> openKeeperChannel(String command, {bool recheck = false}) {
+  Future<ExecChannel> openKeeperChannel(String command, {bool recheck = false, bool zipped = false}) {
     if (recheck) _present = false;
-    return _withInstall(() => _openAttach(command));
+    return _withInstall(() => _openAttach(command, zipped: zipped));
   }
 
   /// Opens the long-lived attach channel. While the script is not known to be
   /// on the host the channel is watched for [attachCheck]: the short command
   /// checks for the script before anything else, so a 65 shows at once.
-  Future<ExecChannel> _openAttach(String command) async {
+  Future<ExecChannel> _openAttach(String command, {bool zipped = false}) async {
     final ExecChannel channel;
     try {
-      channel = await _transport.openExec(command);
+      channel = await _transport.openExec(command, zipped: zipped);
     } on HerdrTransportException catch (e) {
       throw AgentHostException(e.message, fatal: e.fatal);
     }
