@@ -100,7 +100,9 @@ app/test/                    unit and widget tests; support/ (fakes, shot.dart),
 app/benchmark/               benchmarks: transfer_bench.dart (bytes on the wire,
                              fake_herdr.py), pane_bench.dart, startup_bench.dart,
                              session_open_bench.dart (+ session_open_aot.dart,
-                             open_cache_bench_test.dart), upload_bench.dart,
+                             open_cache_bench_test.dart,
+                             session_open_wire_bench_test.dart: bytes and round
+                             trips of an open, any desktop), upload_bench.dart,
                              upload_real_bench.dart, background_bench_test.dart
                              (virtual time); on a phone:
                              keyboard_device_bench.dart, stream_device_bench.dart

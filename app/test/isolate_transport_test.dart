@@ -91,7 +91,7 @@ class _Probe implements HerdrTransport {
   void setBackground(bool background) => backgrounds.add(background);
 
   @override
-  Future<ExecChannel> openExec(String command) =>
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) =>
       Future.error(const HerdrTransportException('No commands can run here'));
 
   @override

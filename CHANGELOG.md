@@ -20,6 +20,21 @@ release.
   measured on a phone) a turbulent 2 hour watch went from 4607 to 355
   radio-seconds per hour, with every blocked agent announced.
 
+### Opening a chat waits less on a slow link
+
+- The history of a chat now crosses the link compressed: a 600-message chat
+  was 1.5 MB, it is 172 KB.
+- A chat you have opened before asks the machine only for its newest turns,
+  not the whole history again: re-opening one that had not moved cost 172 KB
+  and now costs about 3 KB. This holds for agent sessions started after your
+  machine has the new helper (it installs itself the first time you open a
+  chat after updating); a session that was already running keeps opening the
+  old way, compressed but whole, until it ends. The copy shown at once is
+  still not live, and answering still waits for the machine to confirm.
+- An open waits one round trip less.
+- All figures are from a desktop benchmark with a modelled link
+  (`session_open_wire_bench_test.dart`); a phone was not measured.
+
 ## [0.1.0] - 2026-10-06
 
 The first public release.

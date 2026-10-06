@@ -2,6 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show zlib;
 
+/// A `Z` line that is not base64 of a zlib stream, or a stream that stopped
+/// being one: nothing after it can be read.
+class CorruptZippedLines extends FormatException {
+  const CorruptZippedLines() : super('the keeper sent a replay that does not inflate');
+}
+
 /// Reads what `keeper attach --z` writes (`keeperAttachCommand(zipped: true)`):
 /// plain lines pass as they are, and a line `Z<base64>` is the next piece of
 /// ONE zlib stream (each piece ends with a sync flush) that inflates to whole
@@ -50,7 +56,7 @@ Stream<String> zippedLines(Stream<String> lines) {
           );
         } on Object {
           broken = true;
-          sink.addError(const FormatException('the keeper sent a replay that does not inflate'));
+          sink.addError(const CorruptZippedLines());
           sink.close();
         }
       },

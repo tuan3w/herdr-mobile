@@ -192,11 +192,13 @@ class KeeperProcessHost implements AgentHost {
 
   @override
   Future<AcpTransport> attach(String keeperId) async {
+    // As the app attaches: the replay arrives zipped and is read back here.
     final t = await ProcessTransport.start(
       '/bin/sh',
-      ['-c', keeperAttachCommand(keeperId)],
+      ['-c', keeperAttachCommand(keeperId, zipped: true)],
       environment: env,
       workingDirectory: home.path,
+      zipped: true,
     );
     _transports.add(t);
     return t;

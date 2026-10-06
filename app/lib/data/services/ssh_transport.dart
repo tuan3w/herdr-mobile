@@ -10,6 +10,7 @@ import '../models/remote_file.dart';
 import 'auth_notice.dart';
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
+import 'zipped_exec_channel.dart';
 import 'link_liveness.dart';
 import 'mux_client.dart';
 import 'sftp_files.dart';
@@ -333,8 +334,10 @@ class SshTransport implements HerdrTransport {
   }
 
   @override
-  Future<ExecChannel> openExec(String command) async =>
-      SshExecChannel(_SshSessionAdapter(await _open(command)));
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) async {
+    final channel = SshExecChannel(_SshSessionAdapter(await _open(command)));
+    return zipped ? ZippedExecChannel(channel) : channel;
+  }
 
   /// Files go over SFTP on the same authenticated connection: one cached
   /// session, reopened by [SftpFiles] when its channel dies.

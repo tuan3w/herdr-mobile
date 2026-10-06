@@ -518,6 +518,17 @@ class ReplayLog(object):
             for e in list(t.e):
                 yield e
 
+    def replay(self, since=None):
+        """(entry, turn seq) in replay order: what restates state first, then
+        the turns from `since` on (all of them when it is None)."""
+        for e in list(self.carry.values()):
+            yield e, None
+        for t in list(self.turns.values()):
+            if since is not None and t.seq < since:
+                continue
+            for e in list(t.e):
+                yield e, t.seq
+
     def over(self):
         return self.bytes > self.max_bytes or self.count > self.max_entries
 
@@ -822,6 +833,9 @@ class Keeper(object):
         self.pending = collections.OrderedDict()
         self.fwd = {}
         self.log = ReplayLog(LOG_BYTES, LOG_COUNT, LOG_FULL_TURNS, LOG_SOFT_BYTES)
+        # Names this log: its turn numbers mean nothing to a client that holds
+        # another (a keeper that started over counts from 0 again).
+        self.epoch = secrets.token_hex(6)
         self.session_id = None
         self.setup = None
         self.title = None
@@ -1220,6 +1234,21 @@ class Keeper(object):
             out["result"] = msg.get("result")
         self.send_agent(out)
 
+    def replay_since(self, msg):
+        """The turn a `session/load` asks the replay to start from
+        (`_meta.herdr.since`), when this log is the one it was counted in and
+        still has that turn; None otherwise (the whole log is replayed)."""
+        p = msg.get("params")
+        m = p.get("_meta") if isinstance(p, dict) else None
+        h = m.get("herdr") if isinstance(m, dict) else None
+        s = h.get("since") if isinstance(h, dict) else None
+        if not isinstance(s, dict) or s.get("epoch") != self.epoch:
+            return None
+        turn = s.get("turn")
+        if type(turn) is not int or turn not in self.log.turns:
+            return None
+        return turn
+
     def serve_held(self, conn, msg):
         # A prompt just sent has no update yet: the replay must still show it
         # (a refusal takes it back out of the log, see end_turn).
@@ -1227,10 +1256,30 @@ class Keeper(object):
         replay = msg["method"] == "session/load"
         sid = self.session_id
         if replay:
-            for e in self.log.entries():
+            since = self.replay_since(msg)
+            if since is not None:
+                # The phone holds every turn before this one: only this turn
+                # and the ones after it follow, and it must start from what it
+                # holds (this notice comes before the first update).
+                self.put(conn, enc({"jsonrpc": "2.0", "method": "_herdr/replay", "params": {"sessionId": sid, "from": since}}))
+            turn = None
+            for e, seq in self.log.replay(since):
                 p = e["o"].get("params")
-                if isinstance(p, dict) and p.get("sessionId") == sid:
-                    self.put(conn, enc(e["o"]))
+                if not (isinstance(p, dict) and p.get("sessionId") == sid):
+                    continue
+                o = e["o"]
+                if seq is not None and seq != turn:
+                    # The first line of each turn names it (and this log), so the
+                    # phone's saved copy can be cut where a turn begins and
+                    # `since` asked for from there.
+                    turn = seq
+                    p = dict(p)
+                    m = dict(p["_meta"]) if isinstance(p.get("_meta"), dict) else {}
+                    m["herdr"] = {"epoch": self.epoch, "turn": seq}
+                    p["_meta"] = m
+                    o = dict(o)
+                    o["params"] = p
+                self.put(conn, enc(o))
         result = dict(self.setup) if isinstance(self.setup, dict) else {}
         if replay:
             # What the log gave up, for an app that knows to say so (others ignore `_meta.herdr`).

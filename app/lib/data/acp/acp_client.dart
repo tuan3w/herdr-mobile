@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert' show jsonDecode;
 
 import 'acp_models.dart';
 import 'json_rpc.dart';
+import 'replay_since.dart';
 import 'session_state.dart';
 
 /// What the app decides for the agent. There is no default implementation on
@@ -92,6 +94,29 @@ class SessionChange {
 AgentSessionState applyUpdateParams(AgentSessionState state, Map<Object?, Object?> params, {DateTime? at}) =>
     state.apply(SessionUpdate.parse(params['update']), at: at);
 
+/// The state [lines] give: each notification of [sessionId] folded by the
+/// reducer a replay goes through, history (no times), as [replayCachedTranscript]
+/// folds a saved copy. A line the reducer cannot read costs that line.
+AgentSessionState foldLines(String sessionId, Iterable<String> lines) {
+  var state = AgentSessionState(sessionId, replaying: true);
+  for (final line in lines) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(line);
+    } on Object {
+      continue;
+    }
+    final params = decoded is Map ? decoded['params'] : null;
+    if (params is! Map || params['sessionId'] != sessionId) continue;
+    try {
+      state = applyUpdateParams(state, params);
+    } on Object {
+      continue;
+    }
+  }
+  return state;
+}
+
 /// An ACP client over one [AcpTransport]: one agent process, any number of
 /// sessions.
 ///
@@ -166,6 +191,11 @@ class AcpClient {
   final Duration loadTimeout;
 
   final _states = <String, AgentSessionState>{};
+
+  /// What each session's `session/load` asked to replay from, and the turn the
+  /// keeper said it replays from (absent: the whole log).
+  final _asked = <String, ReplaySince?>{};
+  final _replayedFrom = <String, int>{};
   final _changes = StreamController<SessionChange>.broadcast();
   final _aborts = <String, Set<Completer<void>>>{};
   final _cancelling = <String>{};
@@ -188,6 +218,11 @@ class AcpClient {
 
   /// Completes when the connection ended (agent exit, EOF, [close]).
   Future<void> get closed => _rpc.done;
+
+  /// The turn the keeper replayed [sessionId] from, when it took up the
+  /// [ReplaySince] of the last [loadSession]; null when it replayed the whole
+  /// log.
+  int? replayedFrom(String sessionId) => _replayedFrom[sessionId];
 
   /// The state of [sessionId] (an empty one for a session never seen).
   AgentSessionState state(String sessionId) => _states[sessionId] ?? AgentSessionState(sessionId);
@@ -258,6 +293,13 @@ class AcpClient {
   /// [initialize] is in, so the agent's capability is not checked first: the
   /// keeper claims it for every agent, and one that cannot load answers
   /// "method not found", which is the same failure a moment later.
+  ///
+  /// With [since] the keeper is asked to replay only from a turn the phone's
+  /// copy ends in ([ReplaySince]). When it can, it says so before its first
+  /// update (`_herdr/replay`), and the state then starts from the copy's lines
+  /// before that turn instead of from nothing; [replayedFrom] tells which. When
+  /// it cannot (another log, a turn it no longer has) the whole log arrives and
+  /// the state starts empty, as it always did.
   Future<AgentSessionState> loadSession(
     String sessionId, {
     required String cwd,
@@ -265,14 +307,24 @@ class AcpClient {
     AgentSessionState Function(AgentSessionState replayed)? merge,
     Json? meta,
     bool pipelined = false,
+    ReplaySince? since,
   }) async {
     if (!pipelined) _require(_agent?.capabilities.loadSession ?? false, 'session/load');
     _states[sessionId] = AgentSessionState(sessionId, replaying: true);
+    _asked[sessionId] = since;
+    _replayedFrom.remove(sessionId);
+    final sent = <String, Object?>{
+      ...?meta,
+      if (since != null)
+        'herdr': {
+          'since': {'epoch': since.epoch, 'turn': since.turn},
+        },
+    };
     final raw = await _rpc.request('session/load', {
       'sessionId': sessionId,
       'cwd': cwd,
       'mcpServers': mcpServers,
-      '_meta': ?meta,
+      if (sent.isNotEmpty) '_meta': sent,
     }, loadTimeout);
     _onSetup?.call(sessionId, raw);
     final setup = AcpSessionSetup.parse(raw);
@@ -599,6 +651,10 @@ class AcpClient {
       _onSdkMessage(params);
       return;
     }
+    if (method == '_herdr/replay') {
+      _onReplayFrom(params);
+      return;
+    }
     if (method != 'session/update') {
       _onExtension?.call(method, params);
       return;
@@ -610,6 +666,18 @@ class AcpClient {
       return;
     }
     _update(sid, (s) => applyUpdateParams(s, p, at: _clock()));
+  }
+
+  /// The keeper replays from a turn: what the phone holds before it is the
+  /// start of the state. Comes before the first update of the replay.
+  void _onReplayFrom(Object? params) {
+    final p = params is Map ? params : const {};
+    final sid = p['sessionId'];
+    final from = p['from'];
+    final since = sid is String ? _asked[sid] : null;
+    if (sid is! String || since == null || from != since.turn) return;
+    _replayedFrom[sid] = since.turn;
+    _update(sid, (_) => foldLines(sid, since.prefix));
   }
 
   /// Claude Code's raw SDK messages, which a session gets with

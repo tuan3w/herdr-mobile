@@ -66,13 +66,13 @@ void main() {
     );
     await done.future;
     expect(events.first, '{"id":1}');
-    expect(events[1], isA<FormatException>());
+    expect(events[1], isA<CorruptZippedLines>());
     expect(events, hasLength(2));
   });
 
   test('base64 that is not base64 is the same failure', () async {
     final events = <Object>[];
     await zippedLines(Stream.fromIterable(['Z!!!not base64!!!'])).handleError(events.add).toList();
-    expect(events.single, isA<FormatException>());
+    expect(events.single, isA<CorruptZippedLines>());
   });
 }

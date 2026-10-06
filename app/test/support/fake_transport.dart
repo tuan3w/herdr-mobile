@@ -138,15 +138,18 @@ class FakeTransport implements HerdrTransport {
   @override
   void setBackground(bool background) => backgroundCalls.add(background);
 
-  /// Commands passed to [openExec], in order.
+  /// Commands passed to [openExec], in order, and whether each asked for
+  /// zipped lines.
   final List<String> execCommands = [];
+  final List<bool> execZipped = [];
 
   /// What [openExec] answers; by default no command can run here.
   Future<ExecChannel> Function(String command)? onExec;
 
   @override
-  Future<ExecChannel> openExec(String command) {
+  Future<ExecChannel> openExec(String command, {bool zipped = false}) {
     execCommands.add(command);
+    execZipped.add(zipped);
     final handler = onExec;
     if (handler == null) {
       return Future.error(const HerdrTransportException('No commands can run here'));

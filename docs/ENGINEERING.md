@@ -494,6 +494,23 @@ benchmark/session_open_bench.dart`. It prints where an open spends its time
 (the replay bytes, then 4 round trips); those are desktop numbers, never quote
 them for the phone.
 
+### `benchmark/session_open_wire_bench_test.dart` measures what an open costs the link
+
+`BENCH_OUT=/tmp/open.txt flutter test benchmark/session_open_wire_bench_test.dart`
+(macOS or Linux, python3, about 20 s, no sshd). The real keeper and the real
+`AcpAgentSession.acquire()` over the attach command the app runs; every byte
+the keeper writes is counted before anything reads it. Per variant (`plain`,
+`zip`) and scenario (`cold`: nothing on the phone; `copy`: a new session
+object that holds the saved copy of an earlier open): `wire_kb`, `rtts` (the
+depth of the chain of requests the open waits on, plus the 2 round trips of an
+SSH exec channel), `phone_cpu_ms` (main-thread CPU of this machine, JIT, asserts
+on) and `open_<fast|mid|slow>_ms`, the modelled time on a link: `rtts * RTT +
+wire * 8 / rate + phone_cpu_ms`. The links (40 ms / 30 Mbit, 120 / 10, 300 / 2)
+and `phone_cpu_ms` are assumptions, not a phone's measurements: compare
+changes with them, never quote them. On a 600-item chat: cold 1.5 MB / 4 round
+trips plain, 172 KB / 3 zipped; copy 172 KB zipped, 3 KB with `session/load`
+asked from the copy's last turn.
+
 ## Platform shell
 
 - **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`

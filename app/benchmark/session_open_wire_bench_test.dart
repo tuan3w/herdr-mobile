@@ -116,6 +116,7 @@ class _Metered implements AcpTransport {
   var _answered = 0;
   var depth = 0;
 
+  @override
   late final Stream<String> lines;
 
   String _seen(String line) {

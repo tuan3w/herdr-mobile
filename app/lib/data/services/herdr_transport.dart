@@ -104,7 +104,13 @@ abstract interface class HerdrTransport {
   /// (a new channel on it, never a new connection) and returns once the
   /// command has started. Throws [HerdrTransportException] when the
   /// connection or the channel cannot be opened.
-  Future<ExecChannel> openExec(String command);
+  ///
+  /// With [zipped] the command is `keeper attach --z` (`keeperAttachCommand`):
+  /// what it writes is plain lines and `Z<base64>` lines of one zlib stream.
+  /// The transport reads that back where it decodes the network, so the
+  /// channel's [ExecChannel.lines] are plain lines either way and the caller
+  /// never inflates anything on the UI isolate.
+  Future<ExecChannel> openExec(String command, {bool zipped = false});
 
   /// Whether [statFile] and friends can work on this transport at all. False
   /// for transports without a file channel (they throw
