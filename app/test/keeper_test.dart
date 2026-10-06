@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
+import 'package:herdr_mobile/data/acp/zipped_lines.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 // Runs the real keeper script (python3) against a scripted ACP agent
@@ -404,15 +405,15 @@ class _Host {
     await Process.run('chmod', ['755', f.path]);
   }
 
-  Future<_Attach> attach(String id) async {
+  Future<_Attach> attach(String id, {bool zipped = false}) async {
     final p = await Process.start(
       '/bin/sh',
-      ['-c', keeperAttachCommand(id)],
+      ['-c', keeperAttachCommand(id, zipped: zipped)],
       environment: env,
       includeParentEnvironment: false,
       workingDirectory: home.path,
     );
-    final a = _Attach(p);
+    final a = _Attach(p, zipped: zipped);
     clients.add(a);
     return a;
   }
@@ -453,8 +454,15 @@ class _Running {
 
 /// The phone's side of `attach`: a process whose stdout lines are parsed.
 class _Attach {
-  _Attach(this.process) {
-    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+  _Attach(this.process, {bool zipped = false}) {
+    final text = process.stdout
+        .map((chunk) {
+          wire += chunk.length;
+          return chunk;
+        })
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    (zipped ? zippedLines(text) : text).listen((l) {
       if (l.trim().isNotEmpty) seen.add(_m(jsonDecode(l)));
     });
     process.stderr.transform(utf8.decoder).listen(stderr.write);
@@ -462,6 +470,9 @@ class _Attach {
 
   final Process process;
   final seen = <Json>[];
+
+  /// Bytes the command wrote to stdout.
+  var wire = 0;
   final stderr = StringBuffer();
   Future<int> get exit => process.exitCode;
   var _cursor = 0;
@@ -1303,6 +1314,37 @@ void main() {
         bytes: updates.fold(0, (n, m) => n + jsonEncode(m).length),
       );
     }
+
+    test('a zipped attach replays the same messages in a fraction of the bytes, and leaves small ones alone', () async {
+      final h = await newHost();
+      final info = await h.start();
+      await detached(h, info.id, 3, '28:20:100');
+
+      Future<(_Attach, Json)> open({required bool zipped}) async {
+        final c = await h.attach(info.id, zipped: zipped);
+        await c.initialize();
+        final load = await c.load(h);
+        return (c, load);
+      }
+
+      // One at a time: a newer attach evicts the older one.
+      final (plain, plainLoad) = await open(zipped: false);
+      await plain.close();
+      final (zipped, zippedLoad) = await open(zipped: true);
+      addTearDown(zipped.close);
+
+      expect(zipped.seen, plain.seen, reason: 'what the app reads is what it always read');
+      expect(zippedLoad, plainLoad);
+      expect(plain.wire, greaterThan(200 * 1024), reason: 'a replay worth zipping');
+      expect(zipped.wire, lessThan(plain.wire ~/ 4), reason: 'plain JSON text deflates well');
+
+      // A message that is not worth it travels as it is, a line of its own, and
+      // the stream keeps working after it.
+      final before = zipped.wire;
+      final answer = await zipped.request('session/list');
+      expect(_m(answer['result']), isNotNull);
+      expect(zipped.wire - before, lessThan(1024));
+    });
 
     test('twelve heavy turns: every question and answer comes back, the replay stays small', () async {
       final h = await newHost();

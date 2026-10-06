@@ -14,10 +14,11 @@ const keeperRoutesSlot = '@@ROUTES@@';
 const keeperPython = r'''
 """herdr-keeper: owns one ACP agent process so it outlives the phone's SSH link.
 
-Subcommands: probe | list | start --agent ID --cwd DIR | attach ID | kill ID
+Subcommands: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID
 | follow PATH [--from N] | history AGENT [CWD].
 Single file, python 3.6+, standard library only. Design: docs/AGENT_SESSIONS.md.
 """
+import base64
 import collections
 import errno
 import glob
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import time
 import traceback
+import zlib
 
 ROUTES = json.loads(r"""@@ROUTES@@""")
 
@@ -1895,7 +1897,20 @@ def check_id(kid):
         fail(EX_USAGE, "not a keeper id: " + str(kid))
 
 
-def cmd_attach(kid):
+# `attach --z`: what goes to the phone is cut into the complete lines the keeper
+# wrote, and a batch of at least ATTACH_ZIP_MIN bytes travels as ONE line
+# `Z<base64 of zlib data>`: all batches are one zlib stream, each ended with a
+# sync flush so the phone can inflate it as it arrives. The replay of a long
+# thread is plain JSON text and shrinks ~10x (base64 costs a third of that
+# back); a small message (a streamed word) is cheaper as it is, and stays so.
+ATTACH_ZIP_MIN = 512
+
+
+def zip_batch(z, data):
+    return b"Z" + base64.b64encode(z.compress(data) + z.flush(zlib.Z_SYNC_FLUSH)) + b"\n"
+
+
+def cmd_attach(kid, zipped=False):
     check_id(kid)
     os.chdir(state_dir())
     info = read_info(kid)
@@ -1911,6 +1926,8 @@ def cmd_attach(kid):
             info = read_info(kid) or info
         fail(EX_EXITED, "keeper %s: %s" % (kid, info.get("exit_reason") or "the agent has exited."))
     s.setblocking(True)
+    z = zlib.compressobj(6) if zipped else None
+    held = b""
     while True:
         ready, _, _ = select.select([0, s], [], [])
         if 0 in ready:
@@ -1923,14 +1940,27 @@ def cmd_attach(kid):
                 break
         if s in ready:
             data = s.recv(65536)
-            if not data:
+            if z is not None:
+                held += data
+                cut = held.rfind(b"\n") + 1
+                if data and not cut:
+                    continue
+                whole, held = held[:cut], held[cut:]
+                if not data:
+                    whole += held  # the keeper hung up in the middle of a line
+                data_out = zip_batch(z, whole) if len(whole) >= ATTACH_ZIP_MIN else whole
+            else:
+                data_out = data
+            if not data and not data_out:
                 break
             try:
-                view = memoryview(data)
+                view = memoryview(data_out)
                 while view:
                     n = os.write(1, view)
                     view = view[n:]
             except OSError:
+                break
+            if not data:
                 break
     s.close()
 
@@ -2477,7 +2507,7 @@ def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL):
 
 def main(argv):
     if not argv:
-        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID | kill ID | follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
+        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
     cmd, rest = argv[0], argv[1:]
     try:
         if cmd == "probe":
@@ -2506,8 +2536,10 @@ def main(argv):
             poll = max(20, min(opts.get("--poll-ms", int(FOLLOW_POLL * 1000)), 60000)) / 1000.0
             tail = max(FOLLOW_TAIL_MIN, min(opts.get("--tail-bytes", FOLLOW_TAIL), FOLLOW_TAIL_MAX))
             cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail)
-        elif cmd in ("attach", "kill") and len(rest) == 1:
-            (cmd_attach if cmd == "attach" else cmd_kill)(rest[0])
+        elif cmd == "attach" and len(rest) in (1, 2) and (len(rest) == 1 or rest[1] == "--z"):
+            cmd_attach(rest[0], len(rest) == 2)
+        elif cmd == "kill" and len(rest) == 1:
+            cmd_kill(rest[0])
         else:
             fail(EX_USAGE, "unknown command: " + cmd)
     except OSError as e:

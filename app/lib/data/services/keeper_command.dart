@@ -202,9 +202,14 @@ String keeperHistoryCommand({required String agent, String? cwd}) {
 /// `{"method":"_herdr/agent_exited","params":{"exitCode":n,"reason":...}}`, then
 /// closes. Exit codes: 66 no such keeper, 67 its agent has exited (stderr says
 /// why).
-String keeperAttachCommand(String keeperId) {
+///
+/// With [zipped] what the keeper writes comes back as `Z<base64>` lines of one
+/// zlib stream wherever a batch of lines is big enough to gain from it
+/// (`ATTACH_ZIP_MIN` in the script; [ZippedLines] reads it): the replay of a
+/// long thread is ~10x smaller on the wire. The other direction is plain.
+String keeperAttachCommand(String keeperId, {bool zipped = false}) {
   _checkKeeperId(keeperId);
-  return _command(['attach', keeperId]);
+  return _command(['attach', keeperId, if (zipped) '--z']);
 }
 
 /// Follows the session log [path] (absolute, `.jsonl`, under the host user's

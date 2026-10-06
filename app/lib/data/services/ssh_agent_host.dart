@@ -6,6 +6,7 @@ import '../acp/json_rpc.dart' show AcpTransport;
 import '../acp/past_session.dart';
 import 'herdr_transport.dart';
 import 'keeper_command.dart';
+import '../acp/zipped_lines.dart';
 
 /// How long the keeper waits for a new agent to answer `initialize` before it
 /// ends the start with the agent's last stderr lines: `INIT_TIMEOUT` in the
@@ -127,7 +128,7 @@ class SshAgentHost implements AgentHost {
 
   @override
   Future<AcpTransport> attach(String keeperId) async {
-    return KeeperAttachment._(await openKeeperChannel(keeperAttachCommand(keeperId)));
+    return KeeperAttachment._(await openKeeperChannel(keeperAttachCommand(keeperId, zipped: true)));
   }
 
   /// Opens the long-lived channel of a keeper [command] (`keeperAttachCommand`,
@@ -368,9 +369,13 @@ class _Output {
 /// why.
 class KeeperAttachment implements AcpTransport {
   KeeperAttachment._(this._channel) {
-    _channel.lines.listen(
+    zippedLines(_channel.lines).listen(
       _out.add,
-      onError: _out.addError,
+      onError: (Object e, StackTrace st) {
+        _out.addError(e, st);
+        // A stream that failed does not end the command: the channel must.
+        unawaited(_channel.close());
+      },
       onDone: _ended,
     );
   }

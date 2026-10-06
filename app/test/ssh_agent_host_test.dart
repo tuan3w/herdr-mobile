@@ -426,7 +426,7 @@ void main() {
         if (!there) {
           return FakeExecChannel.run(code: 65, stderr: 'herdr-mobile: the keeper is not installed');
         }
-        if (command == keeperAttachCommand('kp1')) return attachChannel;
+        if (command == keeperAttachCommand('kp1', zipped: true)) return attachChannel;
         if (command == keeperListCommand()) return FakeExecChannel.run(stdout: ['[]']);
         return FakeExecChannel.run(stdout: ['{"routes":["omp"]}']);
       };
@@ -566,7 +566,7 @@ void main() {
       attached.send('{"hello":1}');
 
       expect(transport.execCommands,
-          [keeperAttachCommand('kp1'), installCommand, keeperAttachCommand('kp1')]);
+          [keeperAttachCommand('kp1', zipped: true), installCommand, keeperAttachCommand('kp1', zipped: true)]);
       expect(attachChannel.sent, ['{"hello":1}']);
     });
 
@@ -575,7 +575,7 @@ void main() {
 
       await expectLater(host.attach('kp1'), throwsA(_hostError(fatal: true, message: contains('python3'))));
 
-      expect(transport.execCommands, [keeperAttachCommand('kp1'), installCommand]);
+      expect(transport.execCommands, [keeperAttachCommand('kp1', zipped: true), installCommand]);
     });
 
     test('attach on a host not yet known waits only the check, then returns the live channel', () async {
@@ -617,7 +617,7 @@ void main() {
       channel.emit('{"jsonrpc":"2.0","method":"session/update"}');
       await Future<void>.delayed(Duration.zero);
 
-      expect(transport.execCommands, [keeperAttachCommand('kp1')]);
+      expect(transport.execCommands, [keeperAttachCommand('kp1', zipped: true)]);
       expect(channel.sent, ['{"jsonrpc":"2.0","id":1,"method":"initialize"}']);
       expect(got, ['{"jsonrpc":"2.0","id":1,"result":{}}', '{"jsonrpc":"2.0","method":"session/update"}']);
     });
@@ -632,7 +632,7 @@ void main() {
       await ended.future.timeout(const Duration(seconds: 2));
 
       expect(channel.closeCalls, greaterThan(0), reason: 'the channel behind it is closed');
-      expect(transport.execCommands, [keeperAttachCommand('kp1')],
+      expect(transport.execCommands, [keeperAttachCommand('kp1', zipped: true)],
           reason: 'no kill command is ever run by a detach');
       expect(() => attached.send('x'), throwsStateError);
     });

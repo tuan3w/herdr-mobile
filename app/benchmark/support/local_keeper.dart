@@ -22,6 +22,10 @@ class LocalKeeperHost implements AgentHost {
   final Directory home;
   final Map<String, String> env;
 
+  /// Attach the way the app does (`keeperAttachCommand(zipped: true)`); false
+  /// to see what the same session costs as plain text.
+  bool zipped = true;
+
   String get work => '${home.path}/work';
 
   static Future<LocalKeeperHost> create() async {
@@ -79,7 +83,7 @@ class LocalKeeperHost implements AgentHost {
     return [for (final j in jsonDecode(r.out) as List) KeeperInfo.fromJson((j as Map).cast<String, Object?>())];
   }
 
-  /// A `Process` running the attach command, like the SSH exec channel does.
+  /// A `Process` running the plain attach command: raw bytes for a benchmark to read.
   Future<Process> attachProcess(String id) => Process.start(
     '/bin/sh',
     ['-c', keeperAttachCommand(id)],
@@ -91,9 +95,10 @@ class LocalKeeperHost implements AgentHost {
   @override
   Future<AcpTransport> attach(String keeperId) => ProcessTransport.start(
     '/bin/sh',
-    ['-c', keeperAttachCommand(keeperId)],
+    ['-c', keeperAttachCommand(keeperId, zipped: zipped)],
     environment: env,
     workingDirectory: home.path,
+    zipped: zipped,
   );
 
   @override
