@@ -253,14 +253,20 @@ class AcpClient {
   /// answer to the load is in) and returns the state to keep: the owner of a
   /// transcript shown meanwhile puts back what the replay is shorter by
   /// ([AgentSessionState.withHeld]).
+  ///
+  /// With [pipelined] the request may go out before the answer to
+  /// [initialize] is in, so the agent's capability is not checked first: the
+  /// keeper claims it for every agent, and one that cannot load answers
+  /// "method not found", which is the same failure a moment later.
   Future<AgentSessionState> loadSession(
     String sessionId, {
     required String cwd,
     List<Json> mcpServers = const [],
     AgentSessionState Function(AgentSessionState replayed)? merge,
     Json? meta,
+    bool pipelined = false,
   }) async {
-    _require(_agent?.capabilities.loadSession ?? false, 'session/load');
+    if (!pipelined) _require(_agent?.capabilities.loadSession ?? false, 'session/load');
     _states[sessionId] = AgentSessionState(sessionId, replaying: true);
     final raw = await _rpc.request('session/load', {
       'sessionId': sessionId,
