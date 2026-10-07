@@ -9,11 +9,15 @@ import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
 import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
 import 'package:herdr_mobile/data/services/ssh_log_source.dart';
+import 'package:herdr_mobile/data/services/zipped_exec_channel.dart';
 
 import 'support/fake_exec.dart';
 import 'support/fake_transport.dart';
 
 const _path = '/home/u/.omp/agent/sessions/--work--/2026-01-01_abc.jsonl';
+
+/// The command the source runs to follow [_path]: zipped, as the transport reads it back.
+String _follow({int? from, int? tailBytes}) => keeperFollowCommand(_path, from: from, tailBytes: tailBytes, zipped: true);
 
 /// What a listener of [SshLogSource.follow] saw.
 class _Run {
@@ -59,10 +63,11 @@ void main() {
       await settle();
 
       expect(transport.execCommands, [
-        keeperFollowCommand(_path),
-        keeperFollowCommand(_path, from: 4096),
-        keeperFollowCommand(_path, tailBytes: 1 << 20),
+        _follow(),
+        _follow(from: 4096),
+        _follow(tailBytes: 1 << 20),
       ]);
+      expect(transport.execZipped, everyElement(isTrue), reason: 'the transport reads the zipped lines back');
     });
 
     test('lines that arrive together are one batch, ended by the last offset', () async {
@@ -83,6 +88,26 @@ void main() {
       expect(run.batches.map((b) => b.endOffset), [40, 52]);
       expect(run.batches.any((b) => b.reset), isFalse);
       expect(run.errors, isEmpty);
+    });
+
+    test('the caught-up record is the only batch of a log with nothing to replay', () async {
+      final run = _Run(source.follow(_path, from: 300));
+      await settle();
+      channel.emit('C\t300');
+      await settle();
+
+      expect(run.batches.map((b) => '${b.lines.length} ${b.endOffset} ${b.reset}'), ['0 300 false']);
+    });
+
+    test('the caught-up record after lines adds no batch', () async {
+      final run = _Run(source.follow(_path));
+      await settle();
+      channel
+        ..emit('10\t{"a":1}')
+        ..emit('C\t10');
+      await settle();
+
+      expect(run.batches.map((b) => '${b.lines.join(' ')} ${b.endOffset}'), ['{"a":1} 10']);
     });
 
     test('a body is whatever follows the first tab, undecoded', () async {
@@ -360,7 +385,7 @@ void main() {
       await settle();
 
       expect(installs, 1);
-      expect(transport.execCommands, [keeperFollowCommand(_path), installCommand, keeperFollowCommand(_path)]);
+      expect(transport.execCommands, [_follow(), installCommand, _follow()]);
       expect(run.lines, ['{"a":1}']);
       expect(run.errors, isEmpty);
     });
@@ -371,13 +396,13 @@ void main() {
       await settle(300);
 
       expect(installs, 0);
-      expect(transport.execCommands, [keeperFollowCommand(_path)]);
+      expect(transport.execCommands, [_follow()]);
     });
 
     test('a helper that vanished after it was seen is installed again, once', () async {
       scripted(present: true);
       final run = _Run(source.follow(_path));
-      await settle(300); // the first channel passed the check: the host is known to have it
+      await settle(300); // the channel is running: nothing says the helper is missing
       there = false;
       final first = followChannel;
       followChannel = FakeExecChannel();
@@ -388,10 +413,9 @@ void main() {
 
       expect(installs, 1);
       expect(transport.execCommands, [
-        keeperFollowCommand(_path),
-        keeperFollowCommand(_path),
+        _follow(),
         installCommand,
-        keeperFollowCommand(_path),
+        _follow(),
       ]);
       expect(run.lines, ['{"a":1}']);
       expect(run.errors, isEmpty);
@@ -415,7 +439,11 @@ void main() {
     setUp(() {
       home = Directory.systemTemp.createTempSync('log_source_test_');
       final t = FakeTransport();
-      t.onExec = (command) async => _ProcessChannel.start(command, home.path);
+      // As the transport does: a command asked for zipped lines is read back through ZippedExecChannel.
+      t.onExec = (command) async {
+        final channel = await _ProcessChannel.start(command, home.path);
+        return t.execZipped.last ? ZippedExecChannel(channel) : channel;
+      };
       // The script is not on this "host" yet: the first follow installs it.
       local = SshLogSource(SshAgentHost(t, attachCheck: const Duration(milliseconds: 300)));
     });
@@ -442,7 +470,8 @@ void main() {
 
       final resumed = _Run(local.follow(f.path, from: end));
       await settle(600);
-      expect(resumed.batches, isEmpty, reason: 'nothing is replayed');
+      expect(resumed.lines, isEmpty, reason: 'nothing is replayed');
+      expect(resumed.batches.single.endOffset, end, reason: 'the helper says the phone is up to date at once');
       f.writeAsStringSync('{"n":4}\n', mode: FileMode.append, flush: true);
       await _until(() => resumed.lines.length == 1, 'the line after the offset', const Duration(seconds: 2));
       expect(resumed.lines, ['{"n":4}']);

@@ -225,10 +225,17 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 ///   `<endOffset>\t<json>`  a log line, re-serialised compactly, with every
 ///                          string cut to 16 KB (`... [N bytes cut]`) and
 ///                          binary payloads dropped; a line that is not JSON
-///                          is `{"raw":"<first 2 KB>"}`, one over 4 MB a stub
+///                          is `{"raw":"<first 2 KB>"}`, one over 4 MB a stub;
+///                          an omp message is left without what only omp
+///                          reads (token accounting, the provider's envelope,
+///                          `thinkingSignature`, `details.displayContent`)
+///                          and a `credential_pin` entry is not sent at all
 ///   `R\t<offset>`          the file shrank or was replaced (or [from] is not
 ///                          a line end of it): forget what came before, what
 ///                          follows is its content from [offset]
+///   `C\t<offset>`          once, after the first read to the end of the file:
+///                          everything up to [offset] has been sent, so an
+///                          empty log or a resume at its end is up to date
 ///   `E\t<message>`         reading failed; the command exits 70
 ///
 /// `endOffset` is the byte offset after the line: pass it back as [from] to
@@ -236,10 +243,17 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 /// [idleExit] > 0 it also ends, exit 0, after that many seconds without growth
 /// (for a phone that vanished without closing the channel).
 ///
+/// With [zipped] (`--z`) the records of a batch of at least 512 bytes travel as
+/// one `Z<base64 of zlib data>` line of ONE zlib stream (each batch ended with
+/// a sync flush), the others as they are: the log of a long chat is plain JSON
+/// and deflates ~3x. A reader that does not know `Z` lines sees records it
+/// skips, so only a transport that reads them back (`openExec(zipped: true)`)
+/// should ask.
+///
 /// Throws [ArgumentError] for a [path] that is empty, too long or holds a
 /// control character, and for a negative [from] or [idleExit], a [pollMs] below
 /// 1 or a [tailBytes] below 1. [from] wins over [tailBytes].
-String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, int? tailBytes}) {
+String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, int? tailBytes, bool zipped = false}) {
   if (path.isEmpty || path.length > _maxCwd || path.runes.any((c) => c < 0x20 || c == 0x7f)) {
     throw ArgumentError.value(path, 'path', 'invalid path');
   }
@@ -250,6 +264,7 @@ String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, 
   return _command([
     'follow',
     path,
+    if (zipped) '--z',
     if (from != null) ...['--from', '$from'],
     if (pollMs != null) ...['--poll-ms', '$pollMs'],
     if (idleExit != null) ...['--idle-exit', '$idleExit'],

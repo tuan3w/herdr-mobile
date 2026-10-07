@@ -511,6 +511,76 @@ changes with them, never quote them. On a 600-item chat: cold 1.5 MB / 4 round
 trips plain, 172 KB / 3 zipped; copy 172 KB zipped, 3 KB with `session/load`
 asked from the copy's last turn.
 
+### `benchmark/observed_open_bench_test.dart` measures opening the chat of an agent in a pane
+
+`BENCH_OUT=/tmp/obs.txt flutter test benchmark/observed_open_bench_test.dart`
+(python3, about 15 s, no sshd). The real helper (`keeper follow`), `SshLogSource`
+over a new `SshAgentHost` per session (as `boot.dart` makes it),
+`ObservedAgentSession`, `OmpLogMapper` and the reducer; SSH is `sh -c`, and a
+`zipped` exec is read back through `ZippedExecChannel` as the transport does.
+The log (`support/omp_log_workload.dart`, fixed seed) has the shape of a real
+omp log; its sizes are assumptions the file states. `cold` is a new session
+object; `relink` is the same session coming back after the follow was dropped.
+The formula is in the bench's header (host start and the transfer in series,
+parse and apply after); `./autoresearch-open.sh` sums this bench and the wire
+bench over the three links into `open_score_ms`, a trend number whose two parts
+are modelled differently. On the benchmark log (desktop, JIT, modelled link,
+not a phone): cold 45 KB, 0.19 / 0.37 / 0.88 s on the fast / mid / slow link;
+back to the same chat 0.17 / 0.33 / 0.69 s. There is no switch for the old
+behaviour, so the before figures (2.6 s and 3.1 s on the slow link, 159 KB) are
+from the benchmark's first run on this log with the old code and cannot be
+reproduced from the tree.
+
+How the open of an observed chat is kept short, and why:
+
+- **No fixed wait for the channel.** `SshAgentHost` holds an attach channel for
+  `attachCheck` to catch the helper's exit 65 ("not installed") when it does not
+  know the host has it, and `boot.dart` makes a new host per session, so a fixed
+  2 s was paid by every cold open. The follow takes the channel at once
+  (`verify: false`); `SshLogSource` reads a 65 from the exit status and
+  installs, then reopens (`missing: true`). Attach keeps the gate: its first
+  request must not meet a 65.
+- **The helper says when it has caught up.** An empty log, or a resume at its
+  end, prints no record, so the session cannot tell "caught up" from "not here
+  yet"; it used to call itself live after `readyAfter` (2.5 s) of silence. The
+  follower prints `C\t<offset>` once after its first read to the end;
+  `SshLogSource` turns it into an empty batch only when nothing else was
+  delivered. `readyAfter` stays as the fallback for a channel that is quiet
+  without failing.
+- **Less on the wire.** `follow --z` sends batches of >= 512 bytes as `Z` lines
+  of one zlib stream, as attach does, and the helper leaves out what only omp
+  reads (`usage`, `contextSnapshot`, the response envelope of an assistant
+  message, `thinkingSignature`, `details.displayContent`, `credential_pin`
+  entries). On the benchmark log the replay is 159 KB plain; the cut alone makes
+  it 97 KB, deflate ~3x makes that 33 KB, base64 45 KB. The cut's share is
+  partly by construction (the generated log holds these fields in the
+  proportions its author chose); the real share on a real log is unverified.
+  The omp fixtures read identically with and without it
+  (`log_follower_test.dart`), but that test cannot see a key the mapper starts to
+  read later: such a key MUST leave `FOLLOW_MESSAGE_NOISE`.
+- **The first batch is shown at once.** `ObservedAgentSession._changed` held
+  every notification for `notifyEvery` (16 ms), so the first paint of an open
+  came a frame late. The change that shows the first batch of a follow goes out
+  on the next turn of the event loop (never synchronously: `acquire()` runs in
+  `initState`); the following ones are held to one per 16 ms as before.
+- **A lighter start for `follow`.** The helper imports `traceback`,
+  `subprocess`, `secrets` and others only for the commands that use them
+  (`load_daemon_modules`): about 30 ms of a start on Python 3.14 here, less on
+  older Pythons.
+
+Not done, and why:
+
+- A persisted copy of an observed chat: the open is already two round trips and
+  45 KB, a copy would save bytes, not trips, and needs its own staleness rules.
+- A tail-first replay of an agent session (the biggest cell left, 172 KB on the
+  slow link): it changes what the chat shows on open and needs a way to ask for
+  the rest, an owner decision.
+- The saved copy of an agent session is read and folded on the UI thread after
+  the worker has decoded it: 36 ms of main-thread CPU on a 600-item chat
+  (desktop, JIT). Folding it in the worker as well halves that, but needs
+  three forms of one copy (decoded updates, stored lines, folded state) kept in
+  step by two caches; it was tried and dropped for that.
+
 ## Platform shell
 
 - **Edge to edge.** `main()` enables `SystemUiMode.edgeToEdge` and `app.dart`

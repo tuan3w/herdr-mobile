@@ -7,6 +7,8 @@ import 'package:herdr_mobile/data/acp/background/background_work.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 
+import 'support/transcript_fingerprint.dart';
+
 const _dir = 'test/fixtures/omp_logs';
 
 /// The lines of a fixture log (the last empty one dropped).
@@ -48,31 +50,6 @@ String _toolText(ToolCall c) => [
 ].join('\n');
 
 List<ToolDiff> _diffs(ToolCall c) => c.content.whereType<ToolDiff>().toList();
-
-/// Everything the transcript shows, as one comparable string.
-String _fingerprint(AgentSessionState s) {
-  final b = StringBuffer();
-  for (final i in s.items) {
-    switch (i) {
-      case TranscriptMessage():
-        b.writeln('m ${i.key} ${i.role.name} ${i.messageId} ${jsonEncode(i.text)}');
-      case TranscriptTool(:final call):
-        b.writeln(
-          't ${call.toolCallId} ${call.name} ${call.kind.name} ${call.status.name} ${jsonEncode(call.title)} '
-          '${jsonEncode(call.rawInput)} ${jsonEncode(call.rawOutput)} '
-          '${jsonEncode([for (final c in call.content) c.toJson()])} '
-          '${[for (final l in call.locations) '${l.path}:${l.line}']}',
-        );
-      case TranscriptStop():
-        b.writeln('s ${i.key} ${i.reason.name}');
-      case TranscriptNote():
-        b.writeln('n ${i.key} ${jsonEncode(i.text)}');
-    }
-  }
-  b.writeln('plan ${[for (final p in s.plan) '${p.status.name}:${p.content}']}');
-  b.writeln('title ${s.title}');
-  return b.toString();
-}
 
 const _fixtures = [
   'bash_turn',
@@ -696,22 +673,22 @@ void main() {
     for (final name in _fixtures) {
       test('$name: the whole log fed twice, line by line twice, or overlapped, changes nothing', () {
         final lines = _lines(name);
-        final once = _fingerprint(_feed(OmpLogMapper(), lines));
+        final once = transcriptFingerprint(_feed(OmpLogMapper(), lines));
 
         final twiceSameMapper = OmpLogMapper();
-        expect(_fingerprint(_feed(twiceSameMapper, [...lines, ...lines])), once, reason: 'replayed log, same mapper');
+        expect(transcriptFingerprint(_feed(twiceSameMapper, [...lines, ...lines])), once, reason: 'replayed log, same mapper');
 
         final freshMapper = _feed(OmpLogMapper(), lines);
-        expect(_fingerprint(_feed(OmpLogMapper(), lines, freshMapper)), once, reason: 'replayed log, new mapper');
+        expect(transcriptFingerprint(_feed(OmpLogMapper(), lines, freshMapper)), once, reason: 'replayed log, new mapper');
 
         final doubled = _feed(OmpLogMapper(), [for (final l in lines) ...[l, l]]);
-        expect(_fingerprint(doubled), once, reason: 'every line twice');
+        expect(transcriptFingerprint(doubled), once, reason: 'every line twice');
 
         // A resume that overlaps: the last few lines come again.
         final m = OmpLogMapper();
         var s = _feed(m, lines);
         s = _feed(m, lines.skip(lines.length > 4 ? lines.length - 4 : 0), s);
-        expect(_fingerprint(s), once, reason: 'overlapping tail');
+        expect(transcriptFingerprint(s), once, reason: 'overlapping tail');
       });
     }
 
@@ -769,14 +746,14 @@ void main() {
     test('reset forgets everything, and the log can be mapped again from the start', () {
       final m = OmpLogMapper();
       final lines = _lines('subagents_irc');
-      final first = _fingerprint(_feed(m, lines));
+      final first = transcriptFingerprint(_feed(m, lines));
       _feed(m, _lines('ask_pending'));
       expect(m.pendingAsk, isNotNull);
       m.reset();
       expect(m.pendingAsk, isNull);
       expect(m.openToolCalls, isEmpty);
       expect(m.subagents, isEmpty);
-      expect(_fingerprint(_feed(m, lines)), first, reason: 'not suppressed as a duplicate');
+      expect(transcriptFingerprint(_feed(m, lines)), first, reason: 'not suppressed as a duplicate');
       // The cwd is forgotten too: a relative path stays relative.
       m.reset();
       final s = _feed(m, [
