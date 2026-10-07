@@ -14,6 +14,8 @@ import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/last_seen.dart';
 import '../../../data/repositories/machine_connection.dart' show LinkState;
+import '../../../data/repositories/sent_phrases.dart';
+import '../../../data/services/dictation.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
@@ -43,6 +45,7 @@ import 'saved_copy.dart';
 import 'session_bar.dart';
 import 'session_select.dart';
 import 'transcript_view.dart';
+import '../dictation/dictation_session.dart';
 
 /// The bottom region (palette, request, composer) never takes more than this
 /// share of the room under the bar; past it, it scrolls.
@@ -105,6 +108,9 @@ class AgentSessionScreen extends StatefulWidget {
 class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBindingObserver {
   final _input = TextEditingController();
   final _focus = FocusNode();
+
+  /// Null without a speech service (tests).
+  DictationSession? _dictation;
   late final ComposerAttachments _attachments = ComposerAttachments(
     session: widget.session,
     picker: widget.picker,
@@ -131,6 +137,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     ),
     strip: BackgroundStrip(session: widget.session),
     composer: Composer(
+      dictation: _dictation,
       session: widget.session,
       controller: _input,
       focusNode: _focus,
@@ -175,6 +182,9 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   void initState() {
     super.initState();
     _announced = widget.session.state.items.length;
+    if (context.read<Dictation?>() case final dictation?) {
+      _dictation = DictationSession(dictation: dictation, input: _input, focus: _focus, onProblem: _dictationProblem);
+    }
     WidgetsBinding.instance.addObserver(this);
     widget.session
       ..acquire()
@@ -212,6 +222,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   void dispose() {
     // Leaving: what the person saw is everything there is now.
     _markLeft();
+    _dictation?.dispose();
     _screens?.left(this, leaving: leavingInForeground());
     _input.removeListener(_keepDraft);
     WidgetsBinding.instance.removeObserver(this);
@@ -352,6 +363,17 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     showToast(context, message, kind: ToastKind.failed);
   }
 
+  /// A dictation that did not start or ended badly: what happened and what to
+  /// do, in one toast. Hearing nothing is not a failure.
+  void _dictationProblem(DictationProblem problem) {
+    if (!mounted) return;
+    showToast(
+      context,
+      problem.message,
+      kind: problem == DictationProblem.silence ? ToastKind.info : ToastKind.failed,
+    );
+  }
+
   /// Sends the draft and what is attached to it. A live session takes it
   /// whatever the agent is doing: an idle one as a prompt, a working one as a
   /// message that waits (or steers the turn, where the agent takes that), see
@@ -380,13 +402,20 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (text.isEmpty && _attachments.isEmpty) return;
     final chips = _attachments.items;
     _input.clear();
-    unawaited(_send(session, text, chips, composePrompt(text, _attachments.take())));
+    unawaited(_send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>()));
   }
 
-  Future<void> _send(AgentSessionView session, String text, List<Attachment> chips, List<ContentBlock> blocks) async {
+  Future<void> _send(
+    AgentSessionView session,
+    String text,
+    List<Attachment> chips,
+    List<ContentBlock> blocks,
+    SentPhrases? learned,
+  ) async {
     final sent = await session.sendBlocks(blocks);
     if (sent) {
       Haptics.sent();
+      if (learned != null) unawaited(learned.learn(text));
       return;
     }
     Haptics.failed();

@@ -18,6 +18,8 @@ import 'data/repositories/machine_repository.dart';
 import 'data/repositories/notification_settings.dart';
 import 'data/repositories/pane_previews.dart';
 import 'data/repositories/quick_phrases.dart';
+import 'data/repositories/sent_phrases.dart';
+import 'data/services/dictation.dart';
 import 'data/repositories/slash_usage.dart';
 import 'data/repositories/observed_sessions.dart';
 import 'data/repositories/terminal_settings.dart';
@@ -80,6 +82,8 @@ class HerdrMobileApp extends StatefulWidget {
     this.connect,
     this.slashUsage,
     this.quickPhrases,
+    this.dictation,
+    this.sentPhrases,
     this.fleet,
     this.agentSessions,
     this.agentSessionSettings,
@@ -126,6 +130,12 @@ class HerdrMobileApp extends StatefulWidget {
 
   /// The one-tap phrases above the composers; the chips are absent without it (tests).
   final QuickPhrases? quickPhrases;
+
+  /// What the person sends most, offered beside the quick phrases; absent without it (tests).
+  final SentPhrases? sentPhrases;
+
+  /// Dictation into the message boxes; absent without a speech service (tests).
+  final Dictation? dictation;
 
   /// Already loaded, so the first frame is in the chosen theme.
   final AppSettings appSettings;
@@ -267,6 +277,8 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
           ChangeNotifierProvider.value(value: widget.terminalSettings),
           if (widget.slashUsage case final usage?) ChangeNotifierProvider.value(value: usage),
           if (widget.quickPhrases case final phrases?) ChangeNotifierProvider.value(value: phrases),
+          if (widget.dictation case final dictation?) ChangeNotifierProvider.value(value: dictation),
+          if (widget.sentPhrases case final sent?) ChangeNotifierProvider.value(value: sent),
           ChangeNotifierProvider.value(value: widget.appSettings),
           ChangeNotifierProvider.value(value: widget.agentScreens),
           if (widget.lastSeen case final seen?) Provider<LastSeen>.value(value: seen),

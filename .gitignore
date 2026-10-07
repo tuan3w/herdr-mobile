@@ -11,3 +11,6 @@ __pycache__/
 
 # Local helper scripts, not part of the project
 /local/
+
+# Private writing the keyboard-prediction eval collects (tool/predict-eval)
+tool/predict-eval/corpus/

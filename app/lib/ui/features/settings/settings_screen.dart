@@ -402,7 +402,8 @@ class _AboutSection extends StatelessWidget {
               const _InfoRow(title: 'herdr mobile', subtitle: 'Version $appVersion'),
               const _InfoRow(
                 title: 'Connection',
-                subtitle: 'Talks to herdr over SSH. Nothing leaves your devices.',
+                subtitle: 'Talks to herdr over SSH and sends nothing anywhere else. '
+                    'Dictation uses your phone\'s own speech service.',
               ),
               _InfoRow(
                 title: 'Source code',

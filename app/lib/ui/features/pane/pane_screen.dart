@@ -11,9 +11,11 @@ import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/observed_sessions.dart';
+import '../../../data/repositories/sent_phrases.dart';
 import '../../../data/repositories/slash_catalog.dart';
 import '../../../data/repositories/slash_usage.dart';
 import '../../../data/repositories/terminal_settings.dart';
+import '../../../data/services/dictation.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/glyphs.dart';
@@ -28,6 +30,8 @@ import '../agents/agent_navigation.dart';
 import '../agents/agent_swipe.dart';
 import '../create/new_agent_session_screen.dart' show openNewAgentSession;
 import '../create/session_prefill.dart' show SessionPrefill;
+import '../dictation/dictation_language_sheet.dart';
+import '../dictation/dictation_session.dart';
 import '../files/files_navigation.dart';
 import 'answer_dock.dart';
 import 'key_modifiers.dart';
@@ -349,6 +353,9 @@ class _PaneViewState extends State<_PaneView> {
   late final AgentScreens? _screens = context.read<AgentScreens?>();
   bool _keysOpen = false;
 
+  /// Dictation into the composer; null without a speech service (tests).
+  DictationSession? _dictation;
+
   /// True while the answer dock shows a question; the dock keeps it.
   final _dockAsking = ValueNotifier(false);
 
@@ -368,10 +375,14 @@ class _PaneViewState extends State<_PaneView> {
     // of its views.
     _input.text = _screens?.draftOf(widget.agent) ?? '';
     _input.addListener(_onInput);
+    if (context.read<Dictation?>() case final dictation?) {
+      _dictation = DictationSession(dictation: dictation, input: _input, focus: _focus, onProblem: _dictationProblem);
+    }
   }
 
   @override
   void dispose() {
+    _dictation?.dispose();
     _input.removeListener(_onInput);
     _input.dispose();
     _focus.dispose();
@@ -466,6 +477,10 @@ class _PaneViewState extends State<_PaneView> {
       Haptics.failed();
     }
     if (sent) _slash.recordSent(text);
+    // A line typed into a shell is a command, not a phrase: only an agent's prompt is learned.
+    if (sent && mounted && context.read<MachineConnection>().paneById(_paneId)?.agent != null) {
+      unawaited(context.read<SentPhrases?>()?.learn(text) ?? Future<void>.value());
+    }
     // Leaving mid-send disposes the controller. What was typed while it was in
     // flight is not ours to wipe: only the text that went out is removed.
     if (sent && mounted) {
@@ -477,6 +492,17 @@ class _PaneViewState extends State<_PaneView> {
         _input.value = TextEditingValue(text: rest, selection: TextSelection.collapsed(offset: rest.length));
       }
     }
+  }
+
+  /// A dictation that did not start or ended badly: what happened and what to
+  /// do, in one toast. Hearing nothing is not a failure.
+  void _dictationProblem(DictationProblem problem) {
+    if (!mounted) return;
+    showToast(
+      context,
+      problem.message,
+      kind: problem == DictationProblem.silence ? ToastKind.info : ToastKind.failed,
+    );
   }
 
   void _retry() {
@@ -539,6 +565,7 @@ class _PaneViewState extends State<_PaneView> {
           focusNode: _focus,
           typing: _typing,
           onSubmit: _submit,
+          dictation: _dictation,
         ),
       );
 }
@@ -857,6 +884,7 @@ class _Composer extends StatelessWidget {
     required this.focusNode,
     required this.typing,
     required this.onSubmit,
+    this.dictation,
   });
 
   final String paneId;
@@ -864,6 +892,11 @@ class _Composer extends StatelessWidget {
   final FocusNode focusNode;
   final TextInputFormatter typing;
   final VoidCallback onSubmit;
+
+  /// Dictation into the field, offered for an agent's prompt only (a line for a
+  /// shell is not something to speak). The mic takes Send's place while the
+  /// field is empty.
+  final DictationSession? dictation;
 
   @override
   Widget build(BuildContext context) {
@@ -945,13 +978,26 @@ class _Composer extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(1),
-            child: ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
-              builder: (context, value, _) => _SendButton(
-                ready: enabled && !sending && value.text.trim().isNotEmpty,
-                sending: sending,
-                onPressed: onSubmit,
-              ),
+            child: ListenableBuilder(
+              listenable: Listenable.merge([controller, ?dictation]),
+              builder: (context, _) {
+                final hasText = controller.text.trim().isNotEmpty;
+                final dictate = agent == null ? null : dictation;
+                if (dictate != null && enabled && (dictate.listening || !hasText)) {
+                  return _MicButton(
+                    listening: dictate.listening,
+                    onPressed: () => unawaited(dictate.toggle()),
+                    onLongPress: dictate.listening
+                        ? null
+                        : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                  );
+                }
+                return _SendButton(
+                  ready: enabled && !sending && hasText,
+                  sending: sending,
+                  onPressed: onSubmit,
+                );
+              },
             ),
           ),
         ],
@@ -1002,6 +1048,46 @@ class _SendButton extends StatelessWidget {
                     size: 18,
                     color: ready ? ds.onAccent : ds.textTertiary,
                   ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The mic in Send's place while the field is empty: the same disc, neutral
+/// at rest and the accent while it listens. A long press picks the language.
+class _MicButton extends StatelessWidget {
+  const _MicButton({required this.listening, required this.onPressed, this.onLongPress});
+
+  final bool listening;
+  final VoidCallback onPressed;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return PressBuilder(
+      onTap: onPressed,
+      onLongPress: onLongPress,
+      scale: 0.92,
+      semanticLabel: listening ? 'Stop dictating' : 'Dictate',
+      builder: (context, pressed) => SizedBox.square(
+        dimension: _sendHit,
+        child: Center(
+          child: AnimatedContainer(
+            duration: Motion.standard,
+            curve: Motion.easeOut,
+            width: _sendSize,
+            height: _sendSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: listening
+                  ? (pressed ? Color.alphaBlend(Colors.black.withValues(alpha: 0.12), ds.accent) : ds.accent)
+                  : (pressed ? ds.fillPressed : ds.fill),
+            ),
+            alignment: Alignment.center,
+            child: Icon(LucideIcons.mic, size: 18, color: listening ? ds.onAccent : ds.text),
           ),
         ),
       ),

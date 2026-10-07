@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 5036: development builds before the public 0.1.0 reached
 # 5036, and a lower code is refused as a downgrade by phones that have one.
-version: 0.1.1+5038
+version: 0.1.2+5039
 
 environment:
   sdk: ^3.13.5
@@ -53,6 +53,10 @@ dependencies:
   flutter_local_notifications: ^22.3.1
   url_launcher: ^6.3.3
   lucide_icons_flutter: ^3.1.21
+  # Dictation into the composers (data/services/dictation.dart): Android's own
+  # speech recognizer, one language per listen. Nothing outside that file
+  # imports it.
+  speech_to_text: ^7.5.0
   # Pure-Dart CommonMark/GFM parser behind the MdDocument seam
   # (ui/core/markdown/md_parser.dart); chosen by the bench-off in
   # tool/md-bench. Nothing outside ui/core/markdown/ imports it.

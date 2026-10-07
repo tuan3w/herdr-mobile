@@ -13,6 +13,8 @@ import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/tap_guard.dart';
 import '../../core/theme.dart';
+import '../dictation/dictation_language_sheet.dart';
+import '../dictation/dictation_session.dart';
 import '../pane/quick_phrases_row.dart';
 import 'attach_chips.dart';
 import 'attach_model.dart';
@@ -81,6 +83,7 @@ class Composer extends StatelessWidget {
     required this.attachments,
     required this.onSubmit,
     this.onStop,
+    this.dictation,
   });
 
   final AgentSessionView session;
@@ -95,6 +98,10 @@ class Composer extends StatelessWidget {
 
   /// The person tapped Stop (called before the session is told to cancel).
   final VoidCallback? onStop;
+
+  /// Dictation into the field; the mic takes Send's place while the field is
+  /// empty. Null without a speech service (tests).
+  final DictationSession? dictation;
 
   @override
   Widget build(BuildContext context) =>
@@ -197,7 +204,7 @@ class Composer extends StatelessWidget {
               ),
             ),
             ListenableBuilder(
-              listenable: Listenable.merge([controller, attachments]),
+              listenable: Listenable.merge([controller, attachments, ?dictation]),
               builder: (context, _) {
                 final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
                 final (sendLabel, sendIcon) = switch (delivery) {
@@ -223,14 +230,30 @@ class Composer extends StatelessWidget {
                           quiet: queuing,
                         ),
                       if (!working || queuing)
-                        _RoundButton(
-                          key: const ValueKey('send'),
-                          label: sendLabel,
-                          icon: sendIcon,
-                          iconSize: 18,
-                          ready: typing && hasContent && attachments.canSend,
-                          onPressed: onSubmit,
-                        ),
+                        if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
+                          // The mic is Send's place while there is nothing to send;
+                          // a long press picks the language.
+                          _RoundButton(
+                            key: const ValueKey('mic'),
+                            label: dictate.listening ? 'Stop dictating' : 'Dictate',
+                            icon: LucideIcons.mic,
+                            iconSize: 18,
+                            ready: true,
+                            quiet: !dictate.listening,
+                            onPressed: () => unawaited(dictate.toggle()),
+                            onLongPress: dictate.listening
+                                ? null
+                                : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                          )
+                        else
+                          _RoundButton(
+                            key: const ValueKey('send'),
+                            label: sendLabel,
+                            icon: sendIcon,
+                            iconSize: 18,
+                            ready: typing && hasContent && attachments.canSend,
+                            onPressed: onSubmit,
+                          ),
                     ],
                   ),
                 );
@@ -452,6 +475,7 @@ class _RoundButton extends StatelessWidget {
     required this.iconSize,
     required this.ready,
     required this.onPressed,
+    this.onLongPress,
     this.busy = false,
     this.quiet = false,
   });
@@ -466,12 +490,14 @@ class _RoundButton extends StatelessWidget {
   /// primary one.
   final bool quiet;
   final VoidCallback onPressed;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
     return PressBuilder(
       onTap: ready ? onPressed : null,
+      onLongPress: ready ? onLongPress : null,
       scale: 0.92,
       semanticLabel: label,
       builder: (context, pressed) => SizedBox.square(

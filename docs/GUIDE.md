@@ -285,7 +285,19 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
   send it. Long-press a command to pin it; pinned and recently sent commands
   come first.
 - **Quick phrases.** Chips above the empty message box. A tap fills the box
-  and never sends. Edit them in Settings > `Quick phrases`.
+  and never sends. Edit them in Settings > `Quick phrases`. Up to three
+  messages you send to an agent at least twice join them, most sent first
+  (before the built-in phrases while you have not edited the list). They are
+  learned and kept on this phone only; turn that off or forget them in the
+  same place.
+- **Dictation.** While the message box of an agent is empty, the mic sits
+  where Send is. Tap it and speak: the words appear in the box as you speak
+  and nothing is sent. Tap again to stop, or pause. A long press picks the
+  language (English, Tiếng Việt, the phone's own, or one you chose before);
+  a listen is one language, so a sentence that mixes two is understood in
+  one. The phone's speech service may send the audio to Google unless an
+  offline language is installed in it. The first tap asks for the
+  microphone.
 - **Answer dock.** When the agent asks a question the app understands, it
   shows above the key row with up to three answers. While it is shown, a bare
   Enter is not sent (`Pick an answer above`), because Enter would pick

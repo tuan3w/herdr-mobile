@@ -390,7 +390,7 @@ void main() {
         height: 1800,
       );
       expect(find.text('Version $appVersion'), findsOneWidget);
-      expect(find.textContaining('Nothing leaves your devices'), findsOneWidget);
+      expect(find.textContaining('sends nothing anywhere else'), findsOneWidget);
       await tester.tap(find.text('Source code'));
       await tester.pump();
       expect(launcher.opened, [appRepositoryUrl]);

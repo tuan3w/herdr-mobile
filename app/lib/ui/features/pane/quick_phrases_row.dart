@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/repositories/quick_phrases.dart';
+import '../../../data/repositories/sent_phrases.dart';
 import '../../core/controls.dart';
 import '../../core/tokens.dart';
 
@@ -56,7 +57,14 @@ class QuickPhrasesRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phrases = context.select<QuickPhrases?, List<String>>((q) => q?.phrases ?? const []);
+    final own = context.select<QuickPhrases?, List<String>>((q) => q?.phrases ?? const []);
+    final untouched = context.select<QuickPhrases?, bool>((q) => q?.untouched ?? false);
+    final sent = context.watch<SentPhrases?>();
+    final phrases = quickChips(
+      phrases: own,
+      untouched: untouched,
+      learned: sent?.chips(except: untouched ? const [] : own) ?? const [],
+    );
     if (phrases.isEmpty) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: Listenable.merge([input, focus]),

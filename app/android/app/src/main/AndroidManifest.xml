@@ -19,6 +19,10 @@
          only when the Gallery tab is first shown, after a one-line reason. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
+    <!-- Dictation in the message box (speech_to_text): the microphone, asked
+         at run time on the first tap of the mic button, after which Android's
+         own speech service listens. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="herdr"
         android:name="${applicationName}"
@@ -97,6 +101,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Dictation: the speech services installed on the phone (Android 11+
+             hides other packages unless asked). -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 </manifest>

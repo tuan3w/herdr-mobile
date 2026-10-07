@@ -14,6 +14,8 @@ import 'data/repositories/notification_settings.dart';
 import 'data/repositories/reviewed_state.dart';
 import 'data/repositories/slash_usage.dart';
 import 'data/repositories/quick_phrases.dart';
+import 'data/repositories/sent_phrases.dart';
+import 'data/services/dictation.dart';
 import 'data/repositories/terminal_settings.dart';
 import 'data/repositories/observed_sessions.dart';
 import 'data/repositories/pane_answerer.dart';
@@ -61,6 +63,12 @@ Future<HerdrMobileApp> bootApp({
   await slashUsage.load();
   final quickPhrases = QuickPhrases(PrefsQuickPhrasesStore());
   await quickPhrases.load();
+  final sentPhrases = SentPhrases(PrefsSentPhrasesStore());
+  await sentPhrases.load();
+  // Which language dictation listens in; the microphone is asked for on the
+  // first tap of the mic, not here.
+  final dictation = Dictation(PluginSpeechEngine(), PrefsDictationStore());
+  await dictation.load();
   // Whether the system confirms a copy itself (Android 13+): the app then does
   // not say `Copied` a second time.
   await SystemClipboard.detect();
@@ -151,6 +159,8 @@ Future<HerdrMobileApp> bootApp({
     terminalSettings: terminalSettings,
     slashUsage: slashUsage,
     quickPhrases: quickPhrases,
+    dictation: dictation,
+    sentPhrases: sentPhrases,
     appSettings: appSettings,
     agentScreens: agentScreens,
     lastSeen: lastSeen,

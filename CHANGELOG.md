@@ -4,6 +4,25 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.2] - 2026-10-07
+
+### Your most sent messages become one-tap chips
+
+- A message you send to an agent twice or more now shows as a chip above the
+  empty message box, most sent first, up to three. Tap it to fill the box; you
+  still press send. Before, only the four built-in phrases were there.
+- It learns on this phone only, never from a line typed into a shell, and never
+  from a message with an address or a long token in it. Turn it off or forget
+  what it learned in Settings > `Quick phrases`.
+
+### Speak instead of typing
+
+- While a message box for an agent is empty, a mic sits where Send is. Tap it
+  and speak; the words fill the box and nothing is sent until you press send.
+  A long press picks the language (English, Tiếng Việt or the phone's own).
+  The first tap asks for the microphone. The phone's speech service may send
+  the audio to Google unless an offline language is installed.
+
 ## [0.1.1] - 2026-10-07
 
 ### Watching from the background costs far less

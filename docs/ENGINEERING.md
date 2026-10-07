@@ -190,6 +190,27 @@ above the navigation bar) and build/raster time of every frame
 Wi-Fi clients (phone to PC and back time out), so the phone is reached over
 Tailscale.
 
+### Dictation
+
+`data/services/dictation.dart` (the only file that imports `speech_to_text`),
+`ui/features/dictation/`. Android's `SpeechRecognizer` through the plugin:
+
+- **One language per listen**, no code-switching: a Vietnamese sentence with
+  English technical words is heard in the language chosen. The person picks it
+  with a long press on the mic.
+- **The audio may leave the phone.** The default recognizer is Google's and
+  uses the network unless an offline language pack is installed in the phone's
+  speech service; the language sheet says so. The app never stores audio.
+- **The microphone is asked for on the first tap**, not at launch
+  (`RECORD_AUDIO`, plus a `queries` entry for `RecognitionService` so Android
+  11+ lets the plugin see the installed services). A refusal says to allow
+  it in Android settings; no service at all says that instead, told apart by
+  `hasPermission`.
+- **A listen ends by itself** after 4 s of silence or 1 min; the words stay.
+- **Unverified on a phone**: the fakes in `test/support/fake_dictation.dart`
+  drive every path, but how the recognizer behaves on a real device
+  (Vietnamese availability, offline packs, latency) has not been measured.
+
 ## Terminal pane
 
 - **Pane width is not ours to set.** herdr's socket API has no size parameter

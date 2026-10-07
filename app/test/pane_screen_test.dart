@@ -13,6 +13,7 @@ import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/services/dictation.dart';
 import 'package:herdr_mobile/ui/core/controls.dart';
 import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
@@ -26,6 +27,7 @@ import 'package:herdr_mobile/ui/features/pane/quick_keys.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import 'support/fake_dictation.dart';
 import 'support/fake_fs.dart';
 import 'support/fake_network.dart';
 import 'support/fake_transport.dart';
@@ -120,6 +122,7 @@ void main() {
   late MemoryTerminalSettingsStore store;
   late TerminalSettings settings;
   late QuickPhrases phrases;
+  Dictation? dictation;
 
   MachineConnection newMachine(String label) => MachineConnection(
         profile: MachineProfile(id: 'm', label: label, host: 'h', username: 'u'),
@@ -134,6 +137,7 @@ void main() {
     store = MemoryTerminalSettingsStore();
     settings = TerminalSettings(store);
     phrases = QuickPhrases(MemoryQuickPhrasesStore());
+    dictation = null;
   });
 
   late FleetRepository fleet;
@@ -164,6 +168,7 @@ void main() {
         providers: [
           ChangeNotifierProvider.value(value: settings),
           ChangeNotifierProvider.value(value: phrases),
+          if (dictation != null) ChangeNotifierProvider.value(value: dictation!),
           ChangeNotifierProvider.value(value: fleet),
           ChangeNotifierProvider.value(value: screens),
           Provider<PanePreviews>.value(value: previews),
@@ -1351,6 +1356,49 @@ void main() {
       expect(rebuilt, contains('${ValueListenableBuilder<PaneTitle?>}'),
           reason: 'the title block follows the pane');
       expect(rebuilt.where({'QuickKeys', '_Composer', '_Banner'}.contains), isEmpty);
+      await teardown(tester);
+    });
+  });
+
+  group('dictation', () {
+    Future<FakeEngine> withMic(WidgetTester tester, {String? agent = 'claude'}) async {
+      final engine = FakeEngine();
+      dictation = Dictation(engine, MemoryDictationStore());
+      await dictation!.load();
+      transport.snapshot = snapshotJson(panes: [(id: _pane, ws: 'w1', agent: agent, status: 'idle')]);
+      await pumpPane(tester);
+      return engine;
+    }
+
+    testWidgets('an agent\'s pane has the mic where Send waits; speaking fills the box and sends nothing', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final engine = await withMic(tester);
+      expect(find.byIcon(LucideIcons.mic), findsOneWidget);
+      expect(send(), findsNothing);
+
+      await tester.tap(find.byIcon(LucideIcons.mic));
+      await tester.pump();
+      engine.hear('run the tests');
+      await tester.pump();
+      expect(tester.widget<TextField>(composer()).controller!.text, 'run the tests');
+      expect(find.byIcon(LucideIcons.mic), findsOneWidget, reason: 'the stop button while it listens');
+      expect(send(), findsNothing);
+      expect(transport.calls.where((c) => c.$1 == 'pane.send_input'), isEmpty);
+
+      await tester.tap(find.byIcon(LucideIcons.mic));
+      await tester.pump();
+      expect(send(), findsOneWidget, reason: 'now there is something to send');
+      expect(find.byIcon(LucideIcons.mic), findsNothing);
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('a pane without an agent is a shell: no mic, Send as before', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await withMic(tester, agent: null);
+      expect(find.byIcon(LucideIcons.mic), findsNothing);
+      expect(send(), findsOneWidget);
+      semantics.dispose();
       await teardown(tester);
     });
   });

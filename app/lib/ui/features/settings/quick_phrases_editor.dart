@@ -1,15 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/repositories/quick_phrases.dart';
+import '../../../data/repositories/sent_phrases.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/form_sections.dart';
 import '../../core/motion.dart';
 import '../../core/rows.dart';
 import '../../core/tokens.dart';
+import 'app_switch.dart';
 
 /// Settings > Quick phrases: the lines offered as chips above the composers.
 /// A row opens the editor sheet (edit, delete); Add opens it empty. Changes
@@ -25,6 +29,7 @@ class QuickPhrasesSection extends StatelessWidget {
     final ds = context.ds;
     final phrases = context.select<QuickPhrases, List<String>>((q) => q.phrases);
     final full = phrases.length >= QuickPhrases.maxCount;
+    final sent = context.watch<SentPhrases?>();
     return FormSection(
       label: 'Quick phrases',
       endsWithField: false,
@@ -57,6 +62,23 @@ class QuickPhrasesSection extends StatelessWidget {
           expand: true,
           onPressed: full ? null : () => showQuickPhraseEditor(context),
         ),
+        if (sent != null) ...[
+          const SizedBox(height: Gap.md),
+          SwitchRow(
+            title: 'Add what I send most',
+            subtitle: 'A message to an agent that you sent at least twice becomes a chip. '
+                'Learned and kept on this phone only.',
+            value: sent.enabled,
+            onChanged: (on) => unawaited(sent.setEnabled(on)),
+          ),
+          if (sent.tracked > 0)
+            AppButton(
+              label: 'Forget ${sent.tracked} remembered ${sent.tracked == 1 ? 'message' : 'messages'}',
+              kind: AppButtonKind.secondary,
+              expand: true,
+              onPressed: () => unawaited(sent.forget()),
+            ),
+        ],
       ],
     );
   }

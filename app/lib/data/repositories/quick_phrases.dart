@@ -115,6 +115,10 @@ class QuickPhrases extends ChangeNotifier {
   /// The chips, in order.
   List<String> get phrases => _phrases;
 
+  /// Whether the person never changed the list: it is still the shipped
+  /// [defaults], which a message they really send may come before.
+  bool get untouched => identical(_phrases, defaults);
+
   /// Whether [text] could be added, or could replace [replacing]; null when it
   /// can. An edit that changes nothing is fine.
   PhraseProblem? problem(String text, {String? replacing}) {

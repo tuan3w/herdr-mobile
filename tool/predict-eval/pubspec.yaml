@@ -1,0 +1,7 @@
+name: predict_eval
+description: Replay harness for typing-prediction ideas in the composer. Not part of the app.
+publish_to: none
+environment:
+  sdk: ^3.13.5
+dev_dependencies:
+  test: ^1.25.0

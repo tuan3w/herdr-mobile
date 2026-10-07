@@ -1003,7 +1003,28 @@ messenger used to be captured).
 - **Quick phrases**: a row of chips above the composers (pane and agent
   session), shown while the field is focused and empty, never in the compact
   layout. A tap fills the field and never sends. Edited in Settings; prefs key
-  `quickPhrases.v1`, 12 phrases of at most 80 characters.
+  `quickPhrases.v1`, 12 phrases of at most 80 characters. Up to 3 learned
+  chips (`SentPhrases`, key `sentPhrases.v1`) follow the person's own list, or
+  lead the shipped defaults while the list is untouched: a message really
+  sent beats a guess, and an edited list never moves. A message is learned
+  only from text sent to an agent (never a line typed into a shell), after
+  its second send, one line, no address, no token of 24+ characters, 300
+  remembered at most. Why: replayed on a year of one person's messages, 14% were
+  exact repeats and these chips finish 5% of messages in one tap, twice the
+  defaults (`tool/predict-eval`); what a person types can hold secrets, hence
+  each limit.
+- **Dictation** (`ui/features/dictation/`): the mic takes Send's place in both
+  composers (agent session, and a pane that has an agent) while the box is
+  empty and the link is live: the same 36 dp disc, neutral at rest, the accent
+  while it listens, and it stays the stop button while it listens although the
+  box now holds the words (the button never turns into Send under the thumb
+  mid-sentence). What is heard goes into the box at the cursor and never
+  sends: the person reads it and presses Send, as with a quick-phrase chip. A
+  long press picks the language: English and Tiếng Việt always have a row, dimmed
+  with the reason when the phone's speech service lacks them; the choice is kept
+  (`dictation.language.v1`). Not offered for a line typed into a shell. Why: a
+  phone is faster to speak to than to type on, one-handed, and a wrong word
+  sent to an agent is worse than a wrong word in the box.
 - **`DrawCheck`** (`ui/core/draw_check.dart`): the success mark that draws
   itself once (320 ms). Rare moments only; today the machine form's connection
   test and the triage sheet's `All clear`.
