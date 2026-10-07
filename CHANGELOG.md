@@ -4,7 +4,7 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## Unreleased
+## [0.1.1] - 2026-10-07
 
 ### Watching from the background costs far less
 
