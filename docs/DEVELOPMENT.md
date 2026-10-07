@@ -113,7 +113,7 @@ app/benchmark/               benchmarks: transfer_bench.dart (bytes on the wire,
                              (virtual time); on a phone:
                              keyboard_device_bench.dart, stream_device_bench.dart
 app/screenshot_test/         demo fleet rendered for docs/screenshots
-autoresearch-radio.sh        battery and network of watching agents (no phone)
+autoresearch.sh              battery and network of watching agents (no phone)
 autoresearch-open.sh         open-a-chat time on slow links, modelled (no phone)
 autoresearch-keyboard.sh     keyboard bench on a phone (adb)
 autoresearch-stream.sh       streaming bench on a phone (adb)

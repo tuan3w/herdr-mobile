@@ -1,67 +1,56 @@
 #!/usr/bin/env bash
-# How long the CI check takes (.github/workflows/ci.yml runs `tool/check.sh`:
-# pub get, analyze, test). This runs that exact script, so every change to
-# check.sh, the tests, analysis_options or pubspec shows up in the number.
+# What watching agents costs the radio and the battery, deterministic, no phone
+# (app/benchmark/background_bench_test.dart). The real fleet, connection, SSH
+# transport, mux and notifier run over an in-memory SSH link and herdr on a
+# virtual clock, and every message that would cross the radio is metered. The
+# header of the bench says what is modelled (radio tail, packet overhead,
+# round trip) and what is real.
 #
-#   ci_wall_s    THE number (lower is better): wall seconds of tool/check.sh
-#   pub_get_s, analyze_s, test_s   its three steps (from the `==>` markers)
-#   cpu_s        user+sys CPU seconds of the whole run (all children). Wall time
-#                on a CI runner is about cpu_s / cores, floored by the longest
-#                test file, so this is the number that survives a different machine
-#   cores        cores here. A GitHub runner has 4 and `flutter test` runs
-#                cores-2 files at once, so CI is 2 wide where a laptop is 6+ wide
+#   bg_score_s_per_h       THE number (lower is better): radio-seconds per hour of
+#                          the turbulent 2 h watch, plus an hour of radio for
+#                          every share of the time a reachable machine was not
+#                          watched and every share of the blocked agents that
+#                          were never announced
+#   bg_*, steady_*         the same run's parts: radio_cost_s_per_h,
+#                          radio_active_s_per_h, wakeups_per_h, wire_kb_per_h,
+#                          packets_per_h, timer_fires_per_h, unwatched_frac,
+#                          attention_{episodes,missed,latency_p95_s,latency_max_s}
+#                          (`steady_` = 1 h with nothing going wrong)
+#   fg_*                   the board in front: kb and packets per minute
+#   resume_*, cold_resume_*  back in front after a watch / after the 90 s
+#                          suspension: ms until the board is true, kb
+#   suspended_*, leave_*   notifications off: what is still sent after the
+#                          grace period (should be 0), what leaving costs
 #
-# Not modelled (unverified, cannot be measured off the runner): checkout, the
-# Flutter SDK and pub-cache restore in subosito/flutter-action, a cold
-# `pub get`, and the 4-core CPU. Slowness the run only shows with a cold cache
-# needs a CI log to see.
-#
-# Flutter >= 3.47: HERDR_FLUTTER_BIN is the SDK's bin directory (defaults to
-# ~/.cache/flutter-3.47.6/bin when that exists and nothing else is set).
-# A run takes about 4 minutes on 8 cores and fails if analyze or any test fails.
+# Lines starting with `#` say which timers of the app woke the CPU most.
+# BENCH_TRACE=1 prints a line per 5 virtual minutes (link states, event
+# subscriptions, wire counts). Needs Flutter >= 3.47 (HERDR_FLUTTER_BIN is
+# the SDK's bin directory); a run takes about 10 s.
 set -euo pipefail
-cd "$(dirname "$0")"
 
-if [ -z "${HERDR_FLUTTER_BIN:-}" ] && [ -d "$HOME/.cache/flutter-3.47.6/bin" ]; then
-  export HERDR_FLUTTER_BIN="$HOME/.cache/flutter-3.47.6/bin"
+if [ -n "${HERDR_FLUTTER_BIN:-}" ]; then
+  export PATH="$HERDR_FLUTTER_BIN:$PATH"
+elif ! flutter --version 2>/dev/null | grep -q "Flutter 3\.\(4[7-9]\|[5-9][0-9]\)"; then
+  # The repo needs Dart 3.13; an older flutter on PATH cannot resolve it.
+  if [ -x "$HOME/.cache/flutter-3.47.6/bin/flutter" ]; then
+    export PATH="$HOME/.cache/flutter-3.47.6/bin:$PATH"
+  fi
 fi
 
-exec python3 - <<'PY'
-import os, resource, subprocess, sys, time
+cd "$(dirname "$0")/app"
+out="$(mktemp -t herdr-bg-bench.XXXXXX)"
+trap 'rm -f "$out"' EXIT
 
-def cpu():
-    r = resource.getrusage(resource.RUSAGE_CHILDREN)
-    return r.ru_utime + r.ru_stime
-
-cpu0, t0 = cpu(), time.monotonic()
-p = subprocess.Popen(["tool/check.sh"], stdout=subprocess.PIPE,
-                     stderr=subprocess.STDOUT, text=True, bufsize=1)
-marks, tail = [], []
-for line in p.stdout:
-    now = time.monotonic()
-    if line.startswith("==> "):
-        marks.append((line[4:].strip(), now))
-    tail.append(line)
-    tail = tail[-40:]
-    sys.stdout.write(line)
-    sys.stdout.flush()
-rc = p.wait()
-end = time.monotonic()
-if rc != 0:
-    sys.stderr.write("tool/check.sh failed (exit %d)\n" % rc)
-    sys.exit(rc)
-
-# Each step lasts until the next marker, the last until the process ends.
-steps = {}
-for i, (name, t) in enumerate(marks):
-    nxt = marks[i + 1][1] if i + 1 < len(marks) else end
-    steps[name] = nxt - t
-names = {"flutter pub get": "pub_get_s", "flutter analyze": "analyze_s",
-         "flutter test": "test_s"}
-print("METRIC ci_wall_s=%.2f" % (end - t0))
-for k, m in names.items():
-    if k in steps:
-        print("METRIC %s=%.2f" % (m, steps[k]))
-print("METRIC cpu_s=%.1f" % (cpu() - cpu0))
-print("METRIC cores=%d" % (os.cpu_count() or 0))
-PY
+# pub get also rewrites ios/ files, so only when the packages are not there.
+if [ ! -f .dart_tool/package_config.json ] || [ pubspec.yaml -nt .dart_tool/package_config.json ]; then
+  flutter pub get >/dev/null
+  git checkout -- ios/Flutter 2>/dev/null || true
+fi
+if ! BENCH_OUT="$out" flutter test --no-pub benchmark/background_bench_test.dart >"$out.log" 2>&1; then
+  tail -40 "$out.log" >&2
+  rm -f "$out.log"
+  echo "background bench failed" >&2
+  exit 1
+fi
+rm -f "$out.log"
+cat "$out"
