@@ -127,7 +127,7 @@ class AcpClient {
   AcpClient(
     AcpTransport transport, {
     required this._handler,
-    this.clientInfo = const AcpImplementation(name: 'herdr-mobile', title: 'herdr mobile', version: '0'),
+    this.clientInfo = herdrMobile,
     this.capabilities = const AcpClientCapabilities(),
     this.requestTimeout = const Duration(seconds: 60),
     this.loadTimeout = const Duration(minutes: 3),
@@ -182,6 +182,11 @@ class AcpClient {
   final void Function(String sessionId)? _onLocalUserTaken;
   late final JsonRpcConnection _rpc;
   final AcpImplementation clientInfo;
+
+  /// What this app calls itself at `initialize`: a keeper tells its other
+  /// clients that `herdr mobile` answered a request.
+  static const herdrMobile = AcpImplementation(name: 'herdr-mobile', title: 'herdr mobile', version: '0');
+
   final AcpClientCapabilities capabilities;
 
   /// For everything but a prompt (which lasts as long as the agent works).

@@ -234,7 +234,13 @@ What the keeper itself does on the host (`docs/AGENT_SESSIONS.md` "The keeper"):
   downloads the package from npm on the host). The agents are listed in
   `agentRoutes` (`app/lib/data/acp/agent_host.dart:44-71`).
 - It listens on a unix socket only. Its state lives in `~/.herdr-mobile/keepers/`
-  (directory 0700, files 0600).
+  (directory 0700, files 0600). Every attached client gets every update; the
+  first answer to a waiting request wins.
+- When herdr runs on the host, it opens a tab in herdr's `Phone sessions`
+  workspace (never focused) that runs `view <id>`: a terminal client of the
+  keeper that reports the session's state to herdr, so herdr on any connected
+  computer lists it. `~/.herdr-mobile/no-panes` turns this off
+  (`docs/AGENT_SESSIONS.md` "Shared sessions").
 - `kill` sends SIGTERM to the agent's process group, then SIGKILL after 3 s. It
   signals only a process whose command line is a keeper script.
 - `follow` streams an agent's `.jsonl` session log. It refuses any path that is
@@ -302,7 +308,7 @@ passed as a single quoted shell word:
 
 Injection tests run the generated commands: `app/test/bridge_command_test.dart`
 (session names such as `$(id)`, and a socket path that tries to `touch` a
-file), `app/test/keeper_test.dart`, `app/test/keeper_history_test.dart`,
+file), `app/test/keeper_*_test.dart`, `app/test/keeper_history_test.dart`,
 `app/test/log_follower_test.dart` (a log name with quotes, `$()` and
 backticks) and `app/test/session_launcher_test.dart`.
 
@@ -642,8 +648,8 @@ system.
   `app/test/support/`: a fake transport, a fake SFTP server, a fake network,
   and a fake ACP agent (`fake_acp_agent.py`).
 - **Real host-side code under test.** The keeper tests run the real keeper
-  script against a scripted agent (`app/test/keeper_test.dart`,
-  `app/test/support/keeper_process_host.dart`). The bridge tests run the
+  script against a scripted agent (`app/test/keeper_*_test.dart` over
+  `app/test/support/keeper_harness.dart`, `keeper_process_host.dart`). The bridge tests run the
   generated shell and python commands against a local unix socket
   (`app/test/bridge_command_test.dart`).
 - **Schema check.** `herdr_api_test.dart` checks the event subscription list

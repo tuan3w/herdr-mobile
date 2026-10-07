@@ -5,6 +5,7 @@ import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/ui/core/hold_confirm.dart';
 import 'package:herdr_mobile/ui/core/tap_guard.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/core/toast.dart' show toastKey;
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:herdr_mobile/ui/features/agent_session/permission_dock.dart';
 import 'package:herdr_mobile/ui/features/agent_session/permission_subject.dart';
@@ -488,6 +489,28 @@ void main() {
       await tester.tap(find.text('Allow once'));
       await tester.pump();
       expect(session.permissionAnswers.map((a) => a.$1), [1, 2]);
+    });
+
+    testWidgets('a request answered on the computer leaves the dock with one toast naming who answered', (tester) async {
+      final session = withPermission(permissionRequest(rawInput: {'command': 'npm test'}));
+      await pumpScreen(tester, session);
+      expect(find.byType(PermissionPanel), findsOneWidget);
+
+      session.answerElsewhere(7, by: 'Terminal on mac-mini', answer: 'Allow once');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(PermissionPanel), findsNothing);
+      expect(find.byKey(toastKey), findsOneWidget);
+      expect(find.textContaining('Terminal on mac-mini'), findsOneWidget);
+      expect(session.permissionAnswers, isEmpty, reason: 'nothing was answered from this phone');
+
+      // Gone after its time, and not told again by the next update.
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump(const Duration(seconds: 1));
+      session.push(session.state.withTurnStarted());
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(toastKey), findsNothing);
     });
   });
 

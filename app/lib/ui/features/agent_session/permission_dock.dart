@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../data/acp/acp_client.dart' show AcpClient;
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
 import '../../../data/acp/subagents/subagent_run.dart' show SubagentOrigin;
@@ -184,6 +185,34 @@ const confirmWindow = Duration(seconds: 4);
 /// Why an allow waits for a hold while the command box has not been read to
 /// its end.
 const unreadReason = 'long command, read it all';
+
+/// The toast that tells why a request left the dock: another client of the
+/// keeper answered it first (`Allowed once in Terminal on mac-mini`).
+String answeredElsewhereText(AnsweredElsewhere a) {
+  final by = visibleText(a.by).trim();
+  final where = by.isEmpty
+      ? 'elsewhere'
+      : by == AcpClient.herdrMobile.title
+          ? 'on another phone'
+          : 'in $by';
+  final verb = a.question
+      ? switch (a.answer) {
+          'accept' => 'Answered',
+          'decline' => 'Declined',
+          'cancel' => 'Cancelled',
+          _ => null,
+        }
+      : switch (a.kind) {
+          PermissionOptionKind.allowOnce => 'Allowed once',
+          PermissionOptionKind.allowAlways => 'Always allowed',
+          PermissionOptionKind.rejectOnce => 'Refused',
+          PermissionOptionKind.rejectAlways => 'Always refused',
+          PermissionOptionKind.other || null => null,
+        };
+  if (verb != null) return '$verb $where';
+  final answer = visibleText(a.answer).trim();
+  return answer.isEmpty ? 'Answered $where' : 'Answered $where \u00b7 $answer';
+}
 
 /// A permission request: what it will run or touch, why to look closely, and
 /// its answers.

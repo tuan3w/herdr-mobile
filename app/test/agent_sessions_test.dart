@@ -757,7 +757,7 @@ void main() {
   });
 
   group('the keeper\'s notices', () {
-    _rigTest('another device attaching ends the session, retries stop, Take over comes back', (r) {
+    _rigTest('a keeper from before shared sessions: another device attaching ends the session, retries stop, Take over comes back', (r) {
       r.connect();
       expect(r.session.evicted, isFalse);
 
@@ -831,6 +831,26 @@ void main() {
       expect(r.host.listCalls, 0, reason: 'the notice says it all');
       r.async.elapse(const Duration(minutes: 5));
       expect(r.host.attachCalls, 1);
+    });
+
+    _rigTest('a request another client answered first leaves, and the session says who answered, once', (r) {
+      r.connect();
+      final request = r.keeper.askPermission();
+      r.pump();
+      expect(r.session.phase, AgentPhase.blockedOnPermission);
+      expect(r.session.answeredElsewhere, isNull);
+
+      r.keeper.answerElsewhere(request, by: 'Terminal on mac-mini', answer: 'Allow');
+      r.pump();
+
+      expect(r.session.state.pending, isEmpty);
+      expect(r.session.phase, AgentPhase.idle);
+      final told = r.session.answeredElsewhere;
+      expect(told?.by, 'Terminal on mac-mini');
+      expect(told?.kind, PermissionOptionKind.allowOnce);
+      expect(request.answer, 'Allow', reason: 'the phone answered nothing of its own');
+      r.pump(200);
+      expect(identical(r.session.answeredElsewhere, told), isTrue, reason: 'one notice, not one per update');
     });
   });
 

@@ -18,10 +18,19 @@ const APP = join(ROOT, "app");
 const EDIT_TOOLS: Record<string, true> = { edit: true, write: true, ast_edit: true };
 const MAX_LINES = 20;
 
-/** Flutter SDK bin dir from HERDR_FLUTTER_BIN; undefined means `dart` from PATH. */
-function flutterBin(): string | undefined {
-  const bin = process.env.HERDR_FLUTTER_BIN;
-  return bin && existsSync(join(bin, "dart")) ? bin : undefined;
+/**
+ * The SDK bin dir `tool/flutter-bin.sh` picks (HERDR_FLUTTER_BIN, else the
+ * first Flutter whose Dart fits app/pubspec.yaml), asked once per process. An
+ * older `dart` on PATH reports the repo's own syntax as errors. Undefined when
+ * none fits: the hook then stays quiet rather than report a wrong SDK's noise.
+ */
+let bin: Promise<string | undefined> | undefined;
+function flutterBin(): Promise<string | undefined> {
+  bin ??= run(join(ROOT, "tool", "flutter-bin.sh"), [], { cwd: ROOT, timeout: 30_000 }).then(
+    ({ stdout }) => stdout.trim() || undefined,
+    () => undefined,
+  );
+  return bin;
 }
 
 /** Paths an edit-ish tool call touched, from derived fields and hashline headers. */
@@ -88,8 +97,12 @@ export default function hook(pi: HookAPI): void {
     const files = analyzable(editedPaths(event.input as Record<string, unknown>));
     if (files.length === 0) return;
 
-    const bin = flutterBin();
-    const env = bin ? { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` } : process.env;
+    const sdk = await flutterBin();
+    if (!sdk) {
+      pi.logger?.warn?.("dart-analyze hook: no Flutter whose Dart fits app/pubspec.yaml (run tool/flutter-bin.sh)");
+      return;
+    }
+    const env = { ...process.env, PATH: `${sdk}:${process.env.PATH ?? ""}` };
     let stdout = "";
     try {
       ({ stdout } = await run("dart", ["analyze", "--format=machine", ...files], {

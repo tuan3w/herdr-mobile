@@ -299,7 +299,7 @@ class _StatusLine extends StatelessWidget {
     final workspaces = snap.workspaces.length;
     final counts = workspaces == 0
         ? 'No workspaces'
-        : '${_plural(workspaces, 'workspace')} · ${_plural(snap.agentPanes.length, 'agent')}';
+        : '${_plural(workspaces, 'workspace')} · ${_plural(machine.agentPanes.length, 'agent')}';
 
     final style = Type.secondary.copyWith(color: ds.textMuted);
     // Only the states that need the person are tinted (with the AA text tone,

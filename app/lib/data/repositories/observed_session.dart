@@ -385,6 +385,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   bool get evicted => false;
 
   @override
+  AnsweredElsewhere? get answeredElsewhere => null;
+
+  @override
   ResumeTarget? get resumeTarget => null;
 
   @override

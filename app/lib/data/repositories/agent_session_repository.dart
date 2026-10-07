@@ -179,8 +179,13 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
       }
       m ??= _machines[id] = _Machine(c, _hostFor(c));
       if (c.isLive) {
+        final appeared = _newAgentPane(m);
         if (!m.live) {
           m.live = true;
+          unawaited(_refreshMachine(m));
+        } else if (appeared && m.viewDue) {
+          // Likely the view pane a keeper just opened: learn it now, not at
+          // the next listing, so it is not shown as a second agent meanwhile.
           unawaited(_refreshMachine(m));
         }
       } else {
@@ -254,8 +259,21 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     }
   }
 
+  /// Whether [m]'s snapshot shows an agent pane it did not show before.
+  /// Cheap on every fleet change: the panes are read only when the snapshot
+  /// itself changed.
+  static bool _newAgentPane(_Machine m) {
+    final snapshot = m.connection.snapshot;
+    if (identical(snapshot, m.snapshot)) return false;
+    m.snapshot = snapshot;
+    final before = m.agentPanes;
+    final now = m.agentPanes = {for (final p in snapshot.agentPanes) p.id};
+    return now.any((id) => !before.contains(id));
+  }
+
   void _apply(_Machine m, List<KeeperInfo> keepers, DateTime listedAt) {
     final id = m.connection.profile.id;
+    m.viewDue = keepers.any((k) => k.state == KeeperState.running && k.paneId == null);
     var changed = false;
     final listed = <String>{};
     for (final k in keepers) {
@@ -288,6 +306,12 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     }
     _rebalance(id);
     if (changed) _changed();
+    // The panes of the keepers' terminal views: the board shows their
+    // sessions, so those panes are not listed as agents of their own.
+    m.connection.setKeeperPanes({
+      for (final k in keepers)
+        if (k.state == KeeperState.running && k.paneId != null) k.paneId!,
+    });
   }
 
   /// The session for [info], made if there is none yet; a known one just
@@ -556,6 +580,8 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
       unawaited(_quietKill(m.host, info.id));
       throw AgentHostException('${m.connection.profile.label} is no longer connected.');
     }
+    // It opens its terminal view once its agent is up.
+    if (info.paneId == null) m.viewDue = true;
     return info;
   }
 
@@ -757,4 +783,12 @@ class _Machine {
   final AgentHost host;
   bool live = false;
   bool listing = false;
+
+  /// The last listing had a running keeper that has no view pane yet: it may
+  /// open one, so a new agent pane on this machine is worth a `list`.
+  bool viewDue = false;
+
+  /// The snapshot whose agent panes [agentPanes] holds.
+  Object? snapshot;
+  Set<String> agentPanes = const {};
 }

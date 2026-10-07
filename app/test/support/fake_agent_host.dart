@@ -40,6 +40,9 @@ class FakeRequest {
   Object? answer;
   bool answered = false;
   bool issued = false;
+
+  /// The agent's call that carries it to the attached client, while issued.
+  JsonRpcCall? call;
 }
 
 /// One session in an agent's own store ([FakeAgentHost.agentStore]): what the
@@ -103,6 +106,9 @@ class FakeKeeper {
   /// The keeper's last sign of life, by the host's clock (ranks which
   /// sessions deserve a channel).
   DateTime? lastEventAt;
+
+  /// The herdr pane of this keeper's terminal view, as `list` reports it.
+  String? viewPane;
 
   /// A prompt is in flight right now.
   bool get turnActive => busy || turn != null;
@@ -228,7 +234,8 @@ class FakeKeeper {
     final agent = _agent;
     if (!attached || id == null || agent == null || r.issued || r.answered) return;
     r.issued = true;
-    agent.ask(r.method, {'sessionId': id, ...r.params}).response.then<void>(
+    final call = r.call = agent.ask(r.method, {'sessionId': id, ...r.params});
+    call.response.then<void>(
       (result) {
         r.answered = true;
         r.answer = result;
@@ -245,6 +252,18 @@ class FakeKeeper {
     for (final r in requests.toList()) {
       _issue(r);
     }
+  }
+
+  /// Another client of the keeper (the terminal view) answered [r] first: the
+  /// attached phone is told who (`_herdr/resolved`), then its copy is
+  /// withdrawn (`$/cancel_request`), as the real keeper does.
+  void answerElsewhere(FakeRequest r, {required String by, required String answer}) {
+    final call = r.call;
+    r.answered = true;
+    r.answer = answer;
+    if (!attached || call == null) return;
+    _agent!.rpc.notify('_herdr/resolved', {'requestId': call.id, 'by': by, 'answer': answer});
+    call.cancel();
   }
 
   /// The phone's link drops (the SSH connection died); the keeper lives on.
@@ -272,7 +291,8 @@ class FakeKeeper {
   }
 
   /// A client attaches. One writer at a time: the one attached before is told
-  /// (`_herdr/evicted`) and hung up on, like the real keeper does. A channel
+  /// (`_herdr/evicted`) and hung up on, like a keeper started before shared
+  /// sessions does (the app still meets those). A channel
   /// its owner already closed cannot be told, which is also what a half-dead
   /// SSH channel looks like to the app.
   MemoryLink attach() {
@@ -515,6 +535,7 @@ class FakeAgentHost implements AgentHost {
     bool? turnActive,
     bool? unseenDone,
     DateTime? lastEventAt,
+    String? paneId,
   }) =>
       KeeperInfo(
         id: i.id,
@@ -531,6 +552,8 @@ class FakeAgentHost implements AgentHost {
         unseenDone: unseenDone ?? i.unseenDone,
         lastEventAt: lastEventAt ?? i.lastEventAt,
         exitReason: exitReason ?? i.exitReason,
+        paneId: paneId ?? i.paneId,
+        clients: i.clients,
       );
 
   @override
@@ -553,6 +576,7 @@ class FakeAgentHost implements AgentHost {
           turnActive: k.turnActive,
           unseenDone: k.unseenDone,
           lastEventAt: k.lastEventAt,
+          paneId: k.viewPane,
         ),
     ];
   }

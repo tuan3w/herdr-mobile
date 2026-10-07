@@ -97,6 +97,8 @@ class KeeperInfo {
     this.exitReason,
     this.turnActive = false,
     this.unseenDone = false,
+    this.paneId,
+    this.clients = 0,
   });
 
   /// Names the keeper on its host; the key of an agent session.
@@ -135,6 +137,14 @@ class KeeperInfo {
   /// when the next client loads the session (`session/load`).
   final bool unseenDone;
 
+  /// The herdr pane of the keeper's terminal view (`view`), which shows this
+  /// session on the computer; null while there is none (no herdr on the
+  /// host, or a keeper older than shared sessions).
+  final String? paneId;
+
+  /// How many clients are attached now (the phone, the terminal view, ...).
+  final int clients;
+
   /// Tolerant: an unknown or missing field never throws. Times are epoch
   /// milliseconds or ISO text.
   factory KeeperInfo.fromJson(Map<String, Object?> j) {
@@ -158,6 +168,8 @@ class KeeperInfo {
       exitReason: j['exit_reason'] as String?,
       turnActive: j['turn_active'] == true,
       unseenDone: j['unseen_done'] == true,
+      paneId: j['pane_id'] is String ? j['pane_id'] as String : null,
+      clients: (j['clients'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -176,6 +188,8 @@ class KeeperInfo {
     if (exitReason != null) 'exit_reason': exitReason,
     'turn_active': turnActive,
     'unseen_done': unseenDone,
+    if (paneId != null) 'pane_id': paneId,
+    'clients': clients,
   };
 }
 

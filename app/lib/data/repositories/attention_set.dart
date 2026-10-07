@@ -142,7 +142,7 @@ class AttentionSet extends ChangeNotifier {
     final review = <AttentionItem>[];
     final reviewOff = <AttentionItem>[];
     for (final c in _fleet.connections) {
-      for (final p in c.snapshot.agentPanes) {
+      for (final p in c.agentPanes) {
         if (p.status != AgentStatus.blocked && p.status != AgentStatus.done) continue;
         final a = FleetAgent(machine: c, pane: p, workspace: c.snapshot.workspace(p.workspaceId));
         final item = PaneAttention(a);

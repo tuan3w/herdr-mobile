@@ -67,6 +67,8 @@ class KeeperProcessHost implements AgentHost {
       'FAKE_ACP_LOG': '${home.path}/agent.jsonl',
       'FAKE_ACP_BUSY_FILE': busy.path,
       'FAKE_ACP_PID_FILE': '${home.path}/agent.pids',
+      // A herdr on this machine must never get a pane from a test.
+      'HERDR_MOBILE_NO_PANE': '1',
     }, busy);
     await host._run(keeperInstallCommand(), input: keeperInstallPayload());
     return host;
