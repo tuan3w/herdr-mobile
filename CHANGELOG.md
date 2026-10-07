@@ -4,6 +4,35 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.4] - 2026-10-07
+
+### Agent sessions show up on the computer
+
+- When herdr runs on the machine, each agent session started from the phone
+  now also gets a tab in a herdr workspace called `Phone sessions`. herdr lists
+  it with your other agents (for example `omp · phone`, working, blocked or
+  idle), on that machine and on every computer connected to it, and notifies
+  you the same way. Before, a session started on the phone was invisible to
+  herdr.
+- The tab shows the conversation. Type a line and press Enter to send it, type
+  an option's number to answer a permission, `/cancel` stops the turn and
+  `/quit` closes the view (the agent keeps running). Questions with a form are
+  still answered on the phone. Ending the session on the phone closes the tab.
+- To keep these tabs off a machine, create the file `~/.herdr-mobile/no-panes`
+  there.
+
+### The phone and the computer share a session
+
+- A session can be open in several places at once: a second phone or the
+  terminal no longer pushes the first one out with `Opened on another device`.
+  A message sent from one shows on the others as it is sent.
+- A permission waits on every screen that has the session open; the first
+  answer counts. The phone then says who answered and how, for example
+  `Allowed once in Terminal on mac-mini`, instead of the request just
+  disappearing.
+- Sessions already running when you update keep the old behaviour (no tab,
+  one device at a time) until they end; new ones get the new one.
+
 ## [0.1.3] - 2026-10-07
 
 ### A refused sign-in says why
