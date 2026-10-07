@@ -103,9 +103,18 @@ void main() {
     final session = newSession(info)..acquire();
     await _until(() => session.attached, 'the first attach');
 
-    // A long turn runs; omp's background work keeps it busy afterwards.
+    // A long turn runs; omp's background work keeps it busy afterwards. The
+    // turn is running when the AGENT has taken the prompt and spoken (its
+    // first chunk), not when `turnActive` flips: that is set the moment the
+    // phone sends, so on a loaded machine the agent could still be starting
+    // when `busy` came on, and refused the turn itself as busy.
     unawaited(session.send('sleep:6'));
-    await _until(() => session.state.turnActive, 'the turn to run');
+    await _until(
+      () => session.state.items.whereType<TranscriptMessage>().any(
+        (m) => m.role != MessageRole.user && m.text.contains('sleeping'),
+      ),
+      'the agent to take the turn',
+    );
     host.busy = true;
 
     // The person types the message: no steering on omp, it queues.

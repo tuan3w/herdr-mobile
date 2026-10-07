@@ -1641,11 +1641,15 @@ void main() {
         'outcome': {'outcome': 'selected', 'optionId': 'allow'},
       });
       await eventually(() => events(h).length == 2, what: 'two hooks');
-      expect(events(h)[0][0], 'blocked');
-      expect(events(h)[0][5], 'Run: ls -la');
-      expect(events(h)[1][0], 'blocked');
-      expect(events(h)[1][5], 'Pick one?');
-      expect(events(h)[1][4], 'Fake title');
+      // Each event runs the hook as a process of its own, started a moment
+      // apart, and the file is appended to by whichever finishes first: its
+      // line order is the order the processes ended, not the order of the
+      // events. So the lines are told apart by what they say.
+      final byLine = {for (final e in events(h)) e[5]: e};
+      expect(byLine.keys, unorderedEquals(['Run: ls -la', 'Pick one?']));
+      expect(byLine['Run: ls -la']![0], 'blocked');
+      expect(byLine['Pick one?']![0], 'blocked');
+      expect(byLine['Pick one?']![4], 'Fake title');
     });
 
     test('fires "done" when a turn ends while nobody is attached', () async {
