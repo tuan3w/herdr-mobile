@@ -95,6 +95,45 @@ abstract final class KeyGenerator {
     }
   }
 
+  static final _privateKeyBlock = RegExp(
+    r'-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----(.*?)-----END \1-----',
+    dotAll: true,
+  );
+  static const _pemWidth = 70;
+
+  /// [text] as pasted into the key field, put back into the shape
+  /// `SSHKeyPair.fromPem` reads.
+  ///
+  /// Copying a key on a phone changes it in ways that are easy to miss and
+  /// that the parser refuses: the line breaks turn into spaces (one long line),
+  /// each line gains an indent, the key is wrapped in quotes, or a few words of
+  /// a chat message come before it. The block between `BEGIN` and `END` is kept,
+  /// and its body is cut into lines again. A protected key from an older PEM
+  /// format carries `Proc-Type:` and `DEK-Info:` header lines that must stay
+  /// lines of their own, so those keep their lines (trimmed). Text that holds no
+  /// private key block is returned as it is, trimmed, and fails to read as
+  /// before.
+  static String cleanPastedPem(String text) {
+    final match = _privateKeyBlock.firstMatch(text);
+    if (match == null) return text.trim();
+    final label = match.group(1)!;
+    final lines = [
+      for (final line in match.group(2)!.split(RegExp(r'[\r\n]+')))
+        if (line.trim().isNotEmpty) line.trim(),
+    ];
+    final List<String> body;
+    if (lines.any((l) => l.contains(':'))) {
+      body = lines;
+    } else {
+      final joined = lines.join().replaceAll(RegExp(r'\s+'), '');
+      body = [
+        for (var i = 0; i < joined.length; i += _pemWidth)
+          joined.substring(i, min(i + _pemWidth, joined.length)),
+      ];
+    }
+    return ['-----BEGIN $label-----', ...body, '-----END $label-----'].join('\n');
+  }
+
   /// [readPublicKey] off the UI thread when the key is protected: unlocking
   /// runs bcrypt, which takes about a second on a phone. An unprotected key is
   /// read in place, as that costs less than the hop.

@@ -79,7 +79,11 @@ On first start the Agents tab shows `Add your first machine`. Later, use the
    - `Tailscale`: Tailscale SSH. Nothing is stored; Tailscale already knows
      the phone. The Tailscale app must be connected. If your tailnet asks for
      an extra check, the app shows `Approve this sign-in` with a link: open
-     it, approve, and come back; the test carries on by itself.
+     it, approve, and come back; the test carries on by itself. The machine
+     must run Tailscale SSH. The Tailscale apps for macOS (App Store and
+     Standalone) cannot, so a Mac answers as its own OpenSSH (Remote Login):
+     pick `Private key` or `Password` for it and use its Tailscale address as
+     `Host`.
 3. Tap `Test connection`. On success it shows `Connected · herdr <version>`,
    the number of workspaces and the host key.
 4. Tap `Add machine` (on an existing machine, `Save`).
@@ -506,9 +510,13 @@ coming back to the app, reconnects at once. Errors that retrying can't fix
 | --- | --- |
 | `Host key changed since it was first trusted` (…) | See "Host keys" in section 3. Find out why before re-adding the machine. |
 | `SSH authentication failed (check username and key/password).` | Check `Username`. For a key, check that its public half is in `~/.ssh/authorized_keys` on the machine. |
-| `Private key could not be read (wrong passphrase or unsupported format).` | Check `Key passphrase (if any)`, or paste the key again in PEM or OpenSSH format. |
-| `Tailscale SSH did not accept this sign-in` (…) | Check that Tailscale is connected on the phone and that your tailnet's SSH policy allows this user on this machine. |
+| `Private key could not be read (wrong passphrase, incomplete paste or unsupported format).` | Check `Key passphrase (if any)`, or paste the whole key again, from the `-----BEGIN` line to the `-----END` line, in PEM or OpenSSH format. The app repairs line breaks and indents lost in a copy, but not a key cut short. |
+| `Tailscale refused the sign-in: <reason>` | Tailscale SSH says why in its own words. `failed to look up <user>`: that user does not exist on the machine, so fix `Username`. `tailnet policy does not permit you to SSH as user "<user>"`: your tailnet's SSH policy has no rule for this user on this machine. Retrying does not help until one of them changes. |
+| `Tailscale SSH did not accept this sign-in` (…) | Tailscale gave no reason. Check that Tailscale is connected on the phone and that your tailnet's SSH policy allows this user on this machine. |
+| `The machine closed the connection before sign-in finished.` | The machine hung up without saying why. Check `Username`, that `sshd` (or Tailscale SSH) runs there, and that it accepts this user. The app keeps retrying. |
+| `The sign-in ended before it was approved. Retry to get a new link.` | The approval link was refused or expired, or the connection dropped while waiting. Tap `Retry` and approve the new link. |
 | `Sign-in was not approved in time. Retry to get a new link.` | Tap `Retry` and approve the new link. |
+| `This machine runs a regular SSH server (<name>), not Tailscale SSH.` | `Tailscale` sign-in needs Tailscale SSH on the machine. A Mac, or any host without it, runs plain OpenSSH: pick `Private key` or `Password`. The Tailscale address still works as `Host`. |
 | `need herdr >= 0.9, socat or python3 on this host` | Install `python3` or `socat`, or update herdr. If herdr 0.9+ is installed but not found, put it on the PATH of a non-interactive SSH login or in `~/.local/bin`. |
 | `no herdr socket at <path> for session <name>` | herdr isn't running for that user and session, or its socket is elsewhere: start herdr, check `herdr session` under `Advanced`, or set `API socket path (optional)`. |
 | `herdr on this host has no remote-api-bridge; set a socket path for session <name>` | A named session on herdr older than 0.9: update herdr or set `API socket path (optional)`. |

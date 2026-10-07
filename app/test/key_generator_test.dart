@@ -237,4 +237,51 @@ void main() {
       }
     }, skip: skip);
   });
+
+  // Copying a key on a phone changes it in ways the parser refuses. The form
+  // repairs what is certain (line breaks, indents, quotes, words around it) and
+  // leaves anything else to fail, so a half-copied key is never saved as good.
+  group('cleanPastedPem', () {
+    final key = KeyGenerator.generate(label: 'box');
+    final lines = key.privateKeyPem.trim().split('\n');
+    final body = lines.sublist(1, lines.length - 1);
+
+    String line(String pem) => KeyGenerator.publicKeyLine(_read(KeyGenerator.cleanPastedPem(pem)));
+
+    test('reads the key back from each way a phone mangles a paste', () {
+      final damaged = <String, String>{
+        'line breaks became spaces': key.privateKeyPem.trim().replaceAll('\n', ' '),
+        'every line indented': lines.map((l) => '    $l').join('\n'),
+        'wrapped in quotes': '"${key.privateKeyPem.trim()}"',
+        'words before it': 'here is the key:\n${key.privateKeyPem}\nthanks',
+        'windows line ends': key.privateKeyPem.trim().replaceAll('\n', '\r\n'),
+        'body on one line': '${lines.first}\n${body.join()}\n${lines.last}',
+      };
+      for (final e in damaged.entries) {
+        expect(line(e.value), key.publicKeyLine, reason: e.key);
+      }
+    });
+
+    test('does not make up a key from a half-copied one', () {
+      final cutShort = [lines.first, ...body.take(body.length - 1), lines.last].join('\n');
+      expect(() => SSHKeyPair.fromPem(KeyGenerator.cleanPastedPem(cutShort)), throwsA(anything));
+      final noEnd = [lines.first, ...body].join('\n');
+      expect(KeyGenerator.cleanPastedPem(noEnd), noEnd, reason: 'no END line: left as pasted');
+    });
+
+    test('leaves a protected key from an older PEM format its header lines', () {
+      const pem = '-----BEGIN RSA PRIVATE KEY-----\n'
+          'Proc-Type: 4,ENCRYPTED\n'
+          'DEK-Info: AES-128-CBC,0123456789ABCDEF0123456789ABCDEF\n'
+          '\n'
+          'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n'
+          '-----END RSA PRIVATE KEY-----';
+      expect(KeyGenerator.cleanPastedPem('  $pem  '), contains('Proc-Type: 4,ENCRYPTED\nDEK-Info:'));
+    });
+
+    test('leaves text that is not a private key alone', () {
+      expect(KeyGenerator.cleanPastedPem('  ssh-ed25519 AAAA key  '), 'ssh-ed25519 AAAA key');
+      expect(KeyGenerator.cleanPastedPem(''), '');
+    });
+  });
 }

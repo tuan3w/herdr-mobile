@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/services/auth_notice.dart';
 
 void main() {
+  _refusalTests();
   group('approvalUrlFrom', () {
     test('finds the link in a real Tailscale SSH check banner', () {
       const banner = '# Tailscale SSH requires an additional check.\n'
@@ -49,6 +50,35 @@ void main() {
     test('returns the first link when several are present', () {
       expect(approvalUrlFrom('https://a.example/1 then https://b.example/2'),
           'https://a.example/1');
+    });
+  });
+}
+
+void _refusalTests() {
+  // Banners captured from real Tailscale SSH servers that refused a login.
+  group('refusalReasonFrom', () {
+    test('reads the reason Tailscale gives for a refused user', () {
+      expect(
+        refusalReasonFrom('tailscale: tailnet policy does not permit you to SSH as user "admin"'),
+        'tailnet policy does not permit you to SSH as user "admin"',
+      );
+      expect(refusalReasonFrom('failed to look up admin\n'), 'failed to look up admin');
+    });
+
+    test('is not the approval prompt, which carries a link', () {
+      expect(
+        refusalReasonFrom('# Tailscale SSH requires an additional check.\n'
+            '# To authenticate, visit: https://login.tailscale.com/a/abc'),
+        isNull,
+      );
+    });
+
+    // The text is the machine's: shown as plain words, never as terminal output.
+    test('drops escape sequences and control characters, and cuts a long text', () {
+      expect(refusalReasonFrom('\x1B[31mAccess\x07 denied\x1B[0m\r\n'), 'Access denied');
+      expect(refusalReasonFrom('\x1B[2J\n  \t'), isNull);
+      expect(refusalReasonFrom(''), isNull);
+      expect(refusalReasonFrom('x' * 500)!.length, 200);
     });
   });
 }

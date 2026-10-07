@@ -270,13 +270,15 @@ class MachineFormViewModel extends ChangeNotifier {
         : await _repo.secretsFor(existing!.id);
     String? pick(String fresh, String? stored) =>
         fresh.isNotEmpty ? fresh : stored;
+    // A key copied on a phone arrives with its line breaks gone or indented.
+    final key = KeyGenerator.cleanPastedPem(v.privateKey);
     return switch (v.auth) {
       SshAuth.key => MachineSecrets(
-          privateKeyPem: pick(v.privateKey, old.privateKeyPem),
+          privateKeyPem: pick(key, old.privateKeyPem),
           // A passphrase protects one particular key. Replacing the key must
           // not carry the old passphrase over: dartssh2 refuses a passphrase
           // for a key that has none, which would lock the machine out.
-          passphrase: v.privateKey.isNotEmpty
+          passphrase: key.isNotEmpty
               ? (v.passphrase.isEmpty ? null : v.passphrase)
               : pick(v.passphrase, old.passphrase),
         ),

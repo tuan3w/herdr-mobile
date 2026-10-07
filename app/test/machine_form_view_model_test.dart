@@ -151,6 +151,19 @@ void main() {
       expect((await repo.secretsFor(saved.id)).privateKeyPem, 'KEY');
     });
 
+    test('a key pasted with its line breaks lost is saved whole, and tested as saved', () async {
+      const mangled = '-----BEGIN OPENSSH PRIVATE KEY----- AAAA BBBB CCCC -----END OPENSSH PRIVATE KEY-----';
+      final attempts = <({MachineProfile profile, MachineSecrets secrets})>[];
+      final vm = form(attempts: attempts);
+
+      await vm.test(_values(privateKey: mangled));
+      await vm.save(_values(privateKey: mangled));
+
+      const whole = '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAABBBBCCCC\n-----END OPENSSH PRIVATE KEY-----';
+      expect(attempts.single.secrets.privateKeyPem, whole);
+      expect((await repo.secretsFor(repo.machines.single.id)).privateKeyPem, whole);
+    });
+
     test('a failed test reports the reason and saves nothing by itself', () async {
       final vm = form(failure: const HerdrTransportException('refused'));
       await vm.test(_values(privateKey: 'KEY'));

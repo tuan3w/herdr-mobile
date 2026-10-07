@@ -21,6 +21,60 @@ const hostKeyChangedMessage =
     'Host key changed since it was first trusted. Re-add the machine if the '
     'change is expected.';
 
+/// The server hung up after showing a sign-in link, so the link was refused,
+/// expired, or the connection dropped while waiting. Fatal: each retry would
+/// issue a new link and another prompt.
+const signInEndedMessage =
+    'The sign-in ended before it was approved. Retry to get a new link.';
+
+/// The server closed the connection during login without saying why.
+const closedBeforeSignInMessage =
+    'The machine closed the connection before sign-in finished. Check the '
+    'username and that SSH is allowed for it.';
+
+/// Whether [profile] asks for Tailscale SSH (no credentials) but the machine
+/// answered as another SSH server. [server] is its identification string
+/// (`SSH-2.0-Tailscale` for Tailscale SSH, `SSH-2.0-OpenSSH_10.3` for a Mac's
+/// Remote Login). No credentials can sign in there, so the cause is the
+/// choice of sign-in, not a policy.
+bool answeredByAnotherServer(MachineProfile profile, String? server) =>
+    profile.auth == SshAuth.none &&
+    server != null &&
+    !server.toLowerCase().contains('tailscale');
+
+/// A refused sign-in. [reason] is what the machine said (see
+/// `refusalReasonFrom`): Tailscale SSH names its cause that way (a tailnet
+/// policy that does not allow the user, a user the machine does not have), and
+/// the person can act on it. Fatal: asking again gets the same answer.
+HerdrTransportException signInRefused(
+  MachineProfile profile,
+  String? reason, {
+  String? server,
+}) {
+  if (answeredByAnotherServer(profile, server)) {
+    // The Tailscale apps for macOS cannot run Tailscale SSH, so a Mac reached
+    // over Tailscale answers as plain OpenSSH. Its name is the machine's text.
+    final name = refusalReasonFrom(server!.replaceFirst(RegExp(r'^SSH-\d\.\d+-'), ''));
+    return HerdrTransportException(
+      'This machine runs a regular SSH server${name == null ? '' : ' ($name)'}, '
+      'not Tailscale SSH. Choose Private key or Password for it.',
+      fatal: true,
+    );
+  }
+  final tailscale = profile.auth == SshAuth.none;
+  final message = switch ((tailscale, reason)) {
+    (true, null) => 'Tailscale SSH did not accept this sign-in. Check that '
+        'Tailscale is connected on this phone and that your tailnet policy '
+        'lets you SSH to this machine as "${profile.username}".',
+    (false, null) => 'SSH authentication failed (check username and key/password).',
+    (true, final r?) => 'Tailscale refused the sign-in: $r. Check the username '
+        'and your tailnet\'s SSH policy.',
+    (false, final r?) => 'The machine refused the sign-in: $r. Check the '
+        'username and key/password.',
+  };
+  return HerdrTransportException(message, fatal: true);
+}
+
 /// Cipher and MAC preference for the SSH connection.
 ///
 /// dartssh2 encrypts in pure Dart on the isolate it runs on, and its default
@@ -146,6 +200,10 @@ class SshTransport implements HerdrTransport {
 
   Future<SSHClient> _connect(LinkLiveness liveness) async {
     var hostKeyMismatch = false;
+    // What the machine said when it refused, and whether it offered a sign-in
+    // link: a failed login says nothing itself, so these name the cause.
+    String? refusal;
+    var approvalOffered = false;
     SSHClient? client;
     final authenticated = Completer<void>();
     Timer? deadline;
@@ -178,7 +236,7 @@ class SshTransport implements HerdrTransport {
           identities = SSHKeyPair.fromPem(pem, secrets.passphrase);
         } on Object {
           throw const HerdrTransportException(
-              'Private key could not be read (wrong passphrase or unsupported format).',
+              'Private key could not be read (wrong passphrase, incomplete paste or unsupported format).',
               fatal: true);
         }
       } else {
@@ -200,6 +258,7 @@ class SshTransport implements HerdrTransport {
         onUserauthBanner: (banner) {
           onNotice?.call(banner);
           if (approvalUrlFrom(banner) != null) {
+            approvalOffered = true;
             expectAuthWithin(
               approvalTimeout,
               const HerdrTransportException(
@@ -207,6 +266,8 @@ class SshTransport implements HerdrTransport {
                 fatal: true,
               ),
             );
+          } else {
+            refusal = refusalReasonFrom(banner) ?? refusal;
           }
         },
         onVerifyHostKey: (type, fingerprint) {
@@ -235,20 +296,23 @@ class SshTransport implements HerdrTransport {
       client?.close();
       rethrow;
     } on SSHAuthFailError {
+      final server = client?.remoteVersion;
       client?.close();
-      throw HerdrTransportException(
-        switch (profile.auth) {
-          SshAuth.none => 'Tailscale SSH did not accept this sign-in. Check that '
-              'Tailscale is connected on this phone and that your tailnet policy '
-              'lets you SSH to this machine as "${profile.username}".',
-          _ => 'SSH authentication failed (check username and key/password).',
-        },
-        fatal: true,
-      );
+      throw signInRefused(profile, refusal, server: server);
     } on Object catch (e) {
+      final server = client?.remoteVersion;
       client?.close();
       if (hostKeyMismatch) {
         throw const HerdrTransportException(hostKeyChangedMessage, fatal: true);
+      }
+      // The machine hung up before the login ended and the socket did not fail:
+      // it said no (a Tailscale policy, a link that was never approved).
+      if (e is SSHAuthAbortError && e.reason == null) {
+        if (approvalOffered) throw const HerdrTransportException(signInEndedMessage, fatal: true);
+        if (refusal != null || answeredByAnotherServer(profile, server)) {
+          throw signInRefused(profile, refusal, server: server);
+        }
+        throw const HerdrTransportException(closedBeforeSignInMessage);
       }
       throw HerdrTransportException('Cannot connect: $e');
     } finally {
