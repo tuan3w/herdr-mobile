@@ -668,7 +668,7 @@ THE BACKGROUND PROFILE (`HerdrTransport.setBackground(true)` +
   machine is retried at most every 5 min.
 - Anything that adds a timer, a subscription or a retry must respect it.
 
-`./autoresearch.sh` measures all of this without a phone
+`./autoresearch-radio.sh` measures all of this without a phone
 (`app/benchmark/background_bench_test.dart`): the real fleet, connection, SSH
 transport, mux and notifier over an in-memory link, on a virtual clock, with
 every message metered. Its radio model (a 10 s high-power tail after any packet,

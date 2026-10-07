@@ -132,7 +132,7 @@ cd app && flutter analyze && flutter test   # Flutter 3.47 on PATH
 `tool/check.sh [--quick]` runs pub get, analyze and the tests in one command; run it
 before yielding (`HERDR_FLUTTER_BIN` points it at another Flutter). On the
 phone, `./autoresearch-keyboard.sh` measures the keyboard and `./autoresearch-stream.sh`
-measures streaming; `./autoresearch.sh` needs no phone and measures what watching
+measures streaming; `./autoresearch-radio.sh` needs no phone and measures what watching
 agents costs the radio (virtual time, modelled). Each script's header says how to run it.
 
 ## Releasing
