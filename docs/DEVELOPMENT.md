@@ -16,8 +16,14 @@ flutter run -d linux         # desktop, handy for iterating
 ```
 
 `tool/check.sh [--quick]` runs pub get, analyze and the tests in one command
-(`--quick` skips the tests); run it before yielding. It uses `flutter` from
-`PATH`; set `HERDR_FLUTTER_BIN` to an SDK's `bin` directory to override.
+(`--quick` skips the tests); run it before yielding. It runs the Flutter that
+`tool/flutter-bin.sh` picks: the first whose Dart fits the `sdk:` constraint
+of `app/pubspec.yaml`, from `flutter` on `PATH`, then `~/.cache/flutter-*`,
+fvm, puro and `~/flutter` (newest first), saying which it skipped and why.
+`HERDR_FLUTTER_BIN` (an SDK's `bin` directory) forces one, and fails loudly
+if its Dart does not fit. The autoresearch scripts and the analyze hook below
+use the same picker. Why: the `flutter` on `PATH` was once Dart 3.10 against
+`^3.13.5`, and pub get failed with a resolver error that never named the SDK.
 The tests run one file per core (`flutter test -j`, whose default is half the
 cores: most files wait on processes and timers, so half left the CPU idle);
 `HERDR_TEST_JOBS` overrides. A keeper test file stays under ~30 s so none of
@@ -126,6 +132,7 @@ docs/ENGINEERING.md          per-subsystem facts
 docs/herdr-api.schema.json   protocol schema, from `herdr api schema` (0.8.2)
 docs/screenshots/            store screenshots (tool/screenshots/run.sh)
 tool/check.sh                analyze + tests
+tool/flutter-bin.sh          the Flutter SDK whose Dart fits pubspec.yaml
 tool/capture-prompt.sh       capture a prompt fixture from a real screen
 tool/capture-trace.sh        capture an agent trace (capture_trace.py)
 tool/trace_cadence.py        rewrites the traces' CADENCE.md
@@ -153,7 +160,8 @@ In `.omp/hooks/`:
 - `post/dart-analyze.ts` — after `edit`/`write`/`ast_edit` touches a `.dart`
   file under `app/`, runs `dart analyze` on it and feeds findings back as
   context. Silent when clean. Never formats (would break edit anchors). Uses
-  `dart` from `HERDR_FLUTTER_BIN` when set, else from `PATH`.
+  the `dart` of the SDK `tool/flutter-bin.sh` picks (asked once per process);
+  logs a warning and reports nothing when no SDK fits.
 
 ## Android release build
 

@@ -28,14 +28,8 @@
 # the SDK's bin directory); a run takes about 10 s.
 set -euo pipefail
 
-if [ -n "${HERDR_FLUTTER_BIN:-}" ]; then
-  export PATH="$HERDR_FLUTTER_BIN:$PATH"
-elif ! flutter --version 2>/dev/null | grep -q "Flutter 3\.\(4[7-9]\|[5-9][0-9]\)"; then
-  # The repo needs Dart 3.13; an older flutter on PATH cannot resolve it.
-  if [ -x "$HOME/.cache/flutter-3.47.6/bin/flutter" ]; then
-    export PATH="$HOME/.cache/flutter-3.47.6/bin:$PATH"
-  fi
-fi
+bin="$("$(dirname "$0")/tool/flutter-bin.sh")"
+export PATH="$bin:$PATH"
 
 cd "$(dirname "$0")/app"
 out="$(mktemp -t herdr-bg-bench.XXXXXX)"

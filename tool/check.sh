@@ -3,8 +3,10 @@
 # Usage: tool/check.sh [--quick]   (--quick skips tests)
 set -euo pipefail
 
-# flutter from PATH; HERDR_FLUTTER_BIN=<sdk>/bin overrides.
-if [ -n "${HERDR_FLUTTER_BIN:-}" ]; then export PATH="$HERDR_FLUTTER_BIN:$PATH"; fi
+# A flutter whose Dart fits app/pubspec.yaml (tool/flutter-bin.sh picks it;
+# HERDR_FLUTTER_BIN=<sdk>/bin forces one).
+bin="$("$(dirname "$0")/flutter-bin.sh")"
+export PATH="$bin:$PATH"
 
 cd "$(dirname "$0")/../app"
 
