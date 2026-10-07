@@ -4,6 +4,34 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.3] - 2026-10-07
+
+### A refused sign-in says why
+
+- Tailscale SSH explains a refusal in its own words, and the app now shows it:
+  `Tailscale refused the sign-in: tailnet policy does not permit you to SSH as
+  user "admin"`, or `failed to look up admin` when the machine has no such
+  user. Before, the first showed `Cannot connect: SSHAuthAbortError(...)`, the
+  second a general "did not accept" text, and the app kept retrying a refusal
+  that cannot succeed. It now stops and says what to check.
+- Choosing `Tailscale` for a Mac (or any machine without Tailscale SSH) now
+  says `This machine runs a regular SSH server (OpenSSH_10.3), not Tailscale
+  SSH. Choose Private key or Password for it.` The Tailscale apps for macOS
+  cannot run Tailscale SSH, so a Mac needs a key or a password.
+- A sign-in link that is refused or expires, and a machine that hangs up
+  without a reason, each have their own message.
+
+### A key pasted on a phone is repaired
+
+- Copying a private key on a phone often turns its line breaks into spaces,
+  indents the lines, adds quotes or puts words before it, and the app answered
+  `Private key could not be read`. The app now puts such a key back together
+  before testing and saving it. A key that was cut short still fails, now with
+  `incomplete paste` among the possible causes.
+
+Checked against two real Tailscale SSH machines and a Mac running OpenSSH. Not
+yet tried on a phone.
+
 ## [0.1.2] - 2026-10-07
 
 ### Your most sent messages become one-tap chips
