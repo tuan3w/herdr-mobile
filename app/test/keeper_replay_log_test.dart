@@ -60,7 +60,6 @@ void main() {
         return (c, load);
       }
 
-      // One at a time: a newer attach evicts the older one.
       final (plain, plainLoad) = await open(zipped: false);
       await plain.close();
       final (zipped, zippedLoad) = await open(zipped: true);

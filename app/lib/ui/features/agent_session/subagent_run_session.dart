@@ -128,6 +128,8 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   @override
   bool get evicted => false;
   @override
+  AnsweredElsewhere? get answeredElsewhere => null;
+  @override
   ResumeTarget? get resumeTarget => null;
   @override
   Future<void> reattach() async {}

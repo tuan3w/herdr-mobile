@@ -134,12 +134,13 @@ class FleetRepository extends ChangeNotifier {
 
   MachineConnection? connection(String machineId) => _connections[machineId];
 
-  /// Every agent pane on every machine, most urgent first, then by machine
+  /// Every agent pane on every machine ([MachineConnection.agentPanes]: not a
+  /// keeper's view of an agent session), most urgent first, then by machine
   /// then pane id for a stable order.
   List<FleetAgent> get agents {
     final out = <FleetAgent>[
       for (final c in connections)
-        for (final p in c.snapshot.agentPanes)
+        for (final p in c.agentPanes)
           FleetAgent(
             machine: c,
             pane: p,

@@ -204,7 +204,8 @@ would delete each other's file and reinstall on every use; one app version per
 host is assumed.
 
 Commands: `probe` (routes runnable on the host), `list`,
-`start --agent ID --cwd DIR`, `attach ID`, `kill ID`. The agent command comes
+`start --agent ID --cwd DIR`, `attach ID`, `kill ID`, `view ID` (the terminal
+client a herdr pane runs, see "Shared sessions"). The agent command comes
 from `agentRoutes`: the binary, else `npx -y <package>`. PATH is widened with
 `~/.local/bin`, the adapters folder, bun/cargo/nvm/homebrew dirs, because a
 non-interactive SSH PATH is poor. Exit codes: 0 done, 64 bad arguments, 65 not
@@ -284,9 +285,9 @@ agent failed `initialize`, 78 python3 missing.
    a later duplicate is logged and ignored; an agent `$/cancel_request` drops
    the entry. Other requests of the agent (`fs/*`, extensions) are forwarded
    to an attached client, and answered `-32000` when none is attached.
-5. `attach ID` bridges stdio to the socket. A connection becomes the writer
+5. `attach ID` bridges stdio to the socket. A connection becomes a client
    with its first valid JSON-RPC line (garbage and a connect-and-close probe
-   never evict). `session/load` for the session the keeper holds is answered
+   never count). `session/load` for the session the keeper holds is answered
    by the keeper: the log for that session, then the cached setup as the
    response (`session/resume` gets the setup only), then `state_update`
    (`running` when a turn is in flight, `idle` + `stopReason` when a turn ended
@@ -294,7 +295,8 @@ agent failed `initialize`, 78 python3 missing.
    kills the live session and others refuse. A `session/load` for another id
    is forwarded, and the first `session/new`/`load`/`resume` response fixes
    the keeper's `sessionId`. A prompt whose client left is orphaned: its end
-   reaches the next client as `state_update idle`.
+   reaches the other clients as `state_update idle`, and the next phone that
+   loads when none was attached.
    **On the wire.** The app attaches with `attach <id> --z`
    (`keeperAttachCommand(zipped: true)`): the relay cuts what the keeper writes
    into complete lines, and a batch of at least 512 bytes goes as ONE line
@@ -331,12 +333,15 @@ agent failed `initialize`, 78 python3 missing.
    new process of the installed file). Turns the keeper trimmed after the
    copy was made stay as the phone has them, fuller, exactly as `withHeld`
    keeps them.
-6. One writer at a time: a new attach evicts the old one with a notification
-   `_herdr/evicted` and a close. Detach is not cancel: `session/cancel` is
-   forwarded only when a client sends it. A client too slow to read (64 MB
-   backlog) is dropped; it re-attaches and replays.
+6. Every client at once (see "Shared sessions" below): every attached client
+   gets every update, may prompt and answer; the first answer to a waiting
+   request wins and the others are told who answered. Keepers started before
+   this evicted the previous client with `_herdr/evicted`. Detach is not
+   cancel: `session/cancel` is forwarded only when a client sends it. A client
+   too slow to read (64 MB backlog) is dropped; it re-attaches and replays.
 7. Alerts: when a request enters the pending table (`KEEPER_EVENT=blocked`),
-   and when a prompt turn ends with no client attached (`done`), the keeper
+   and when a prompt turn ends with no phone attached (`done`; a terminal
+   `view` client does not count), the keeper
    runs the executable named by `HERDR_KEEPER_ON_BLOCKED`, else
    `~/.herdr-mobile/on-blocked` if executable (the ntfy plugin of
    `docs/ALERTS.md`), with `KEEPER_ID KEEPER_AGENT KEEPER_CWD KEEPER_TITLE
@@ -361,9 +366,11 @@ agent failed `initialize`, 78 python3 missing.
 `list` prints `KeeperInfo.toJson` plus `agent_pid`: `session_id`, `title` (from
 `session_info_update`, 300 characters), `pending`, `last_event_at`,
 `turn_active` (a `session/prompt` is in flight; the keeper sees every prompt
-and its answer, so this holds while nobody is attached) and `unseen_done` (a
-turn ended while no client was attached; cleared when a client loads the
-session) are kept current in the record (`pending`, `turn_active` and
+and its answer, so this holds while nobody is attached), `unseen_done` (a
+turn ended while no phone was attached; cleared when a phone loads the
+session; a terminal `view` client counts as neither), `clients` (connections
+that have spoken, viewers included) and `pane_id` (the herdr pane of the
+session's `view`) are kept current in the record (`pending`, `turn_active` and
 `unseen_done` at once, the rest at most one second late). The board shows an
 unattached session as blocked when `pending > 0`, else working when
 `turn_active`, else idle. `state` is `starting` from the moment the keeper
@@ -384,6 +391,128 @@ rebuilds without history). A single update over the byte bound (16 MB) is
 replaced in the log by a stub (a message chunk keeps a head and says how many
 bytes were left out; a tool call keeps title, status and a note; anything else
 is dropped) and never pushes older entries out.
+
+## Shared sessions: every client at once, and herdr on the computer
+
+**Problem.** An agent session lived only in its keeper: a detached process
+behind a unix socket that only the phone's `list` finds. herdr on the computer
+(which lists the agents of every machine it is connected to) never showed it,
+nothing on the computer could watch it or answer it, and one client at a time
+could attach (a new attach evicted the old one with `_herdr/evicted`). A person
+who started an agent from the train sat down at the desk and could not see it.
+
+**What herdr allows (0.9.3, read in its source and docs).** herdr lists only
+agents that occupy a pane: `pane.report_agent`, `report_agent_session` and
+`release_agent` all need a live `pane_id` and fail with `pane_not_found`
+otherwise. A long-lived process in a pane may report itself as an agent
+(`herdr pane report-agent <pane> --source ID --agent LABEL --state
+idle|working|blocked --seq N [--agent-session-id ID] [-- RESUME_ARGV]`), and
+herdr then shows its name and state in the sidebar, the agent list and its
+notifications, on this machine and on every computer connected to it. herdr
+has no typed permission requests (only keystrokes), so answering stays with
+the keeper. herdr declined built-in ACP support, so nothing pane-less is
+coming from its side.
+
+**Decisions.**
+
+1. **The keeper stays the record and the one process per session.** A fault in
+   one session never touches another, and the registry folder already lists
+   them. No host daemon.
+2. **Every attached client is equal.** No eviction, no controller or observer
+   roles: every client gets every update, may prompt, cancel and answer. Why:
+   roles need per-event filtering and a takeover dance; a person has at most a
+   phone and a terminal open, and the first answer settling a request is what
+   they expect.
+3. **The first answer wins, and the others are told who answered.** A waiting
+   permission or question goes to every client. The first answer is
+   forwarded; every other client gets `_herdr/resolved` and then
+   `$/cancel_request` for its copy. The phone says `Allowed once in Terminal
+   on mac-mini` instead of a dock that vanishes (nothing is answered silently,
+   nothing disappears without a reason). It says so once, as a toast, only on
+   the session's screen while it showed that request; elsewhere the request
+   leaving is like any withdrawn one (a toast about a session the person is
+   not looking at, for something done at the desk, is noise). Another phone
+   is named `on another phone`.
+4. **herdr sees the session through a pane the keeper opens.** When the agent
+   has answered `initialize`, the keeper opens a tab in a herdr workspace
+   labelled `Phone sessions` (created when missing, never focused) and runs the
+   keeper's `view` command in it. `view` is a plain line-oriented client of the
+   keeper: it prints the conversation, takes a typed line as a prompt and a
+   number as the answer to a waiting permission, and reports the session's
+   state to herdr with `pane report-agent` (source `herdr-mobile`, agent
+   `<route label> · phone`, e.g. `omp · phone`: herdr treats the bare `omp`,
+   `codex` and `pi` as its own agents, and its docs ask integrations not to
+   reuse those names; `working` while a turn runs, `blocked` while a request
+   waits, `idle` otherwise; the ACP session id; resume command `python3
+   <script> view <id>`; microsecond `--seq`; `release-agent` on exit). Reports
+   run one at a time and only the latest waiting one is sent, so herdr never
+   slows the view. It only reports from inside a herdr pane
+   (`HERDR_ENV=1`, `HERDR_PANE_ID`, `HERDR_BIN_PATH`). No herdr on the host, or
+   no server running: no pane, nothing else changes. The file
+   `~/.herdr-mobile/no-panes` (or `HERDR_MOBILE_NO_PANE=1`) turns panes off on
+   a host (`HERDR_MOBILE_HERDR` names another herdr binary, for tests). The
+   herdr calls are non-blocking subprocesses polled from the keeper's loop
+   (3 s probe, 10 s per call): `workspace list`, then `tab create` in the
+   existing workspace or `workspace create` (its root pane hosts the session),
+   then `pane run`. Ending the session from a client (`kill`) closes the tab
+   (3 s); an agent that exits on its own leaves it, showing why.
+5. **The phone does not show that pane twice.** The keeper records the pane id
+   `view` announces; `list` carries it (`pane_id`), and the phone leaves that
+   pane out of everything that counts terminal agents (board rows, `Needs
+   you`/`Done`, the badge, triage, pane notifications, the Machines count:
+   `MachineConnection.agentPanes`). Right after the phone starts a keeper, a
+   new agent pane on that machine triggers one `list`, so the pane is not
+   shown twice until the next 30 s listing.
+6. **Prompts from another client are shown live.** A prompt from one client
+   reaches the others as the same `user_message_chunk` the replay shows, then
+   `state_update running`; its end reaches them as `state_update idle` with the
+   stop reason. The phone's queue already waits for an idle state.
+7. **"Seen" and alerts count only the phone.** `unseen_done` (the board's
+   review mark) and the `done` alert mean "the phone missed it". A `view`
+   client says so at `initialize` (`_meta.herdr.viewer = true`) and does not
+   count as having seen a turn end.
+
+**Wire (keeper to client).** Additions only; a client that ignores them works
+as before.
+
+- `initialize` params: `clientInfo.title` (else `name`) is the label others are
+  told (`herdr mobile`, `Terminal on <host>`); `_meta.herdr.viewer` (bool);
+  `_meta.herdr.pane` (the herdr pane id of a `view` client).
+- `_herdr/resolved {requestId, by, answer}`: the request `requestId` (the
+  keeper's `kp<n>` id this client was given) was answered by the client `by`;
+  `answer` is the chosen option's name, or the question's action (`accept`,
+  `decline`, `cancel`). Always followed by `$/cancel_request` for the same id.
+- `list` adds `pane_id` (string or absent) and `clients` (attached clients).
+
+**Not built, and why.**
+
+- *The log on disk.* The keeper's replay log lives in memory. Writing it to
+  disk would let an exited keeper still show its conversation, but every
+  agent's own store already holds it and `Continue` reloads it
+  (`session/load`), and the phone keeps its saved copy. Revisit if a keeper
+  crash ever loses a conversation the agent did not keep.
+- *A read-only attach.* Every client a person uses should steer; nothing asked
+  for watch-only.
+- *Answering questions (forms) in the terminal.* `view` shows a waiting
+  question and says to answer it on the phone; forms are the phone's job.
+- *Moving a session between the phone and the agent's own TUI.* Two processes
+  on one session store interleave their writes (Claude says so of `--resume`
+  in two terminals); a hand-over must end the keeper first. Not needed while
+  the terminal can attach to the keeper.
+- *Keepers started before this.* A running keeper keeps the script it started
+  with: it still evicts, and opens no pane. The phone keeps handling
+  `_herdr/evicted` until those are gone.
+
+**Known edges.** If the agent streams part of its own turn before refusing a
+prompt with `-32003`, the other clients have already seen that prompt's
+message; the log takes it back, their screens do not. Two keepers starting at
+the same instant can each create a `Phone sessions` workspace. Unverified:
+how herdr's TUI sidebar draws the reported agent (`herdr agent list` was
+checked: `omp · phone`, idle, then blocked on a permission, then idle), the
+resume command after a herdr server restart, and
+python 3.6 (only macOS python3 ran it). Checked against a scratch herdr 0.9.3
+server: both clients get every update, the first answer wins from either
+side, a number typed in the pane answers, `kill` closes the tab.
 
 ## Session lifecycle in the app
 
@@ -438,12 +567,14 @@ session per keeper of every online machine.
 - **Exit.** `_herdr/agent_exited` ends the session at once with the keeper's
   reason; the same ending comes from `list` (`state: exited`, `exit_reason`,
   else "`<agent>` exited with code N."). No retry.
-- **Evicted.** `_herdr/evicted` on the client the session holds now means
-  another device took the keeper: `link = ended`, "Opened on another device.",
-  `evicted = true`, no automatic attach (two phones would evict each other for
-  ever). `reattach()` ("Take over") attaches again on purpose. The keeper also
+- **Evicted.** Only a keeper started before shared sessions evicts: then
+  `_herdr/evicted` on the client the session holds means another device took
+  the keeper: `link = ended`, "Opened on another device.", `evicted = true`,
+  no automatic attach (two phones would evict each other for ever).
+  `reattach()` ("Take over") attaches again on purpose. Such a keeper also
   evicts this session's own half-dead channel when its new one attaches; that
-  notice reaches a client the session already dropped and is ignored.
+  notice reaches a client the session already dropped and is ignored. A
+  current keeper never evicts: two phones and a terminal share it.
 - **Background.** 90 s after `hidden`/`paused` the transport is closed (the
   keeper keeps the agent); nothing runs, no timer, until `resumed`, which
   attaches what is wanted at once and lists the hosts. The repository lists

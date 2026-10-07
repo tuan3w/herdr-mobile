@@ -195,6 +195,13 @@ abstract interface class AgentSessionView implements Listenable {
   /// Answers the agent's question [requestId] (a `PendingQuestion.id`).
   void answerQuestion(Object requestId, ElicitationResponse response);
 
+  /// The last request this session showed that another client of its keeper
+  /// answered first (the terminal on the computer, another phone); null until
+  /// one was. A new object each time, so a screen tells the person about each
+  /// one once (by identity). The request itself leaves [state] as a withdrawn
+  /// one does.
+  AnsweredElsewhere? get answeredElsewhere;
+
   /// Ends the session on the host (kills its keeper and agent), then [link]
   /// is [AgentLink.ended]. Detaching, by leaving the screen, does not. Throws
   /// `AgentHostException` (words for the person) when the host could not kill
@@ -203,8 +210,10 @@ abstract interface class AgentSessionView implements Listenable {
 
   /// Another device attached to the keeper and took the session over: [link]
   /// is [AgentLink.ended] with that reason, and the session does not attach
-  /// again by itself (two phones would evict each other for ever). The screen
-  /// offers "Take over", which calls [reattach]. False in every other state.
+  /// again by itself (two phones would evict each other for ever). Only a
+  /// keeper started before shared sessions evicts; a newer one keeps every
+  /// client attached. The screen offers "Take over", which calls [reattach].
+  /// False in every other state.
   bool get evicted;
 
   /// What [AgentSessions.resume] needs to bring this session back when it
@@ -313,6 +322,34 @@ abstract interface class AgentSessionView implements Listenable {
 
   /// Stops every running task that has a stop route.
   Future<BackgroundStopResult> stopAllBackground();
+}
+
+/// A request ([requestId]) answered by another client of the keeper before
+/// this phone did (`_herdr/resolved`).
+class AnsweredElsewhere {
+  const AnsweredElsewhere({
+    required this.requestId,
+    required this.by,
+    required this.answer,
+    this.kind,
+    this.question = false,
+  });
+
+  final Object requestId;
+
+  /// The name that client gave the keeper (`Terminal on mac-mini`); empty
+  /// when it gave none.
+  final String by;
+
+  /// The name of the option chosen; for a question its action (`accept`,
+  /// `decline`, `cancel`).
+  final String answer;
+
+  /// The kind of the option chosen, when it is one the request offered.
+  final PermissionOptionKind? kind;
+
+  /// The request was a question (a form), not a permission.
+  final bool question;
 }
 
 /// Where a subagent stands: the log said [waiting], [running], [finished] or

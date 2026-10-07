@@ -117,21 +117,7 @@ void main() {
       expect(c.seen.where(isUpdate('state_update')), isEmpty);
     });
 
-    test('a newer attach evicts the older one with a clear close', () async {
-      final h = await newHost();
-      final info = await h.start();
-      final a = await h.attach(info.id);
-      await a.initialize();
-      final b = await h.attach(info.id);
-      await b.initialize();
-      final evicted = await a.next(isMethod('_herdr/evicted'));
-      expect(asJson(evicted['params'])['reason'], contains('Another device'));
-      expect(await a.exit.timeout(const Duration(seconds: 30)), 0);
-      final listed = await b.request('session/list');
-      expect(listed['result'], isNotNull);
-    });
-
-    test('garbage, partial lines and probes neither evict nor hurt', () async {
+    test('garbage, partial lines and probes are no clients and do not hurt', () async {
       final h = await newHost();
       final info = await h.start();
       final a = await h.attach(info.id);
@@ -146,7 +132,7 @@ void main() {
 
       final listed = await a.request('session/list');
       expect(listed['result'], isNotNull);
-      expect(a.seen.where(isMethod('_herdr/evicted')), isEmpty);
+      await eventually(() async => (await h.rawList()).single['clients'] == 1, what: 'one client counted');
       final log = File('${h.keepers}/${info.id}.log').readAsStringSync();
       expect(log, contains('not JSON'));
     });

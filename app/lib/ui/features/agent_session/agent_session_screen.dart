@@ -182,6 +182,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   void initState() {
     super.initState();
     _announced = widget.session.state.items.length;
+    _toldAnswered = widget.session.answeredElsewhere;
     if (context.read<Dictation?>() case final dictation?) {
       _dictation = DictationSession(dictation: dictation, input: _input, focus: _focus, onProblem: _dictationProblem);
     }
@@ -310,6 +311,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     _markShown();
     _checkSettled();
     _checkStopped();
+    _checkAnsweredElsewhere();
     final state = session.state;
     final count = state.items.length;
     if (count < _announced) _announced = count;
@@ -318,6 +320,22 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       _announced = count;
       if (announcesDanger(state, from)) Haptics.armed();
     }
+  }
+
+  /// The last request answered elsewhere that this screen has dealt with: one
+  /// from before it opened is not news (set in [initState]).
+  AnsweredElsewhere? _toldAnswered;
+
+  /// A request in the dock was answered by another client first (the terminal
+  /// on the computer): say who and how, once, so the dock does not just
+  /// vanish. Not while the app is away, where nobody would read it: the
+  /// transcript shows what the agent did next.
+  void _checkAnsweredElsewhere() {
+    final answered = widget.session.answeredElsewhere;
+    if (answered == null || identical(answered, _toldAnswered)) return;
+    _toldAnswered = answered;
+    if (!mounted || !_foreground) return;
+    showToast(context, answeredElsewhereText(answered));
   }
 
   /// The person asked to end the turn and it has not ended yet (or the agent

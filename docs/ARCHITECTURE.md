@@ -234,7 +234,13 @@ What the keeper itself does on the host (`docs/AGENT_SESSIONS.md` "The keeper"):
   downloads the package from npm on the host). The agents are listed in
   `agentRoutes` (`app/lib/data/acp/agent_host.dart:44-71`).
 - It listens on a unix socket only. Its state lives in `~/.herdr-mobile/keepers/`
-  (directory 0700, files 0600).
+  (directory 0700, files 0600). Every attached client gets every update; the
+  first answer to a waiting request wins.
+- When herdr runs on the host, it opens a tab in herdr's `Phone sessions`
+  workspace (never focused) that runs `view <id>`: a terminal client of the
+  keeper that reports the session's state to herdr, so herdr on any connected
+  computer lists it. `~/.herdr-mobile/no-panes` turns this off
+  (`docs/AGENT_SESSIONS.md` "Shared sessions").
 - `kill` sends SIGTERM to the agent's process group, then SIGKILL after 3 s. It
   signals only a process whose command line is a keeper script.
 - `follow` streams an agent's `.jsonl` session log. It refuses any path that is

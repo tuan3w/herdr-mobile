@@ -44,6 +44,7 @@ String keeperScript() => keeperPython.replaceFirst(
     for (final r in agentRoutes)
       {
         'id': r.id,
+        'label': r.label,
         'binary': r.binary,
         'args': r.args,
         if (r.npxPackage != null) 'npx': r.npxPackage,
@@ -195,9 +196,12 @@ String keeperHistoryCommand({required String agent, String? cwd}) {
 }
 
 /// Bridges the channel's stdin/stdout to the keeper's socket: lines of ACP
-/// JSON-RPC both ways. Closing stdin detaches (the agent keeps running). A
-/// newer attach evicts this one: the keeper first writes
-/// `{"method":"_herdr/evicted","params":{"reason":...}}`, then closes. When the
+/// JSON-RPC both ways. Closing stdin detaches (the agent keeps running). Every
+/// attached client is equal (`docs/AGENT_SESSIONS.md`, "Shared sessions"):
+/// each gets every update, a waiting request goes to all of them, and the
+/// others are told who answered first (`_herdr/resolved`, then
+/// `$/cancel_request`). Keepers started by older scripts still evict an older
+/// attach with `{"method":"_herdr/evicted","params":{"reason":...}}`. When the
 /// agent exits while attached the keeper writes
 /// `{"method":"_herdr/agent_exited","params":{"exitCode":n,"reason":...}}`, then
 /// closes. Exit codes: 66 no such keeper, 67 its agent has exited (stderr says

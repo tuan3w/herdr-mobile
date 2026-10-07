@@ -4,8 +4,9 @@
 /// as `~/.herdr-mobile/keeper-<version>.py`.
 ///
 /// Subcommands: `probe`, `list`, `start --agent ID --cwd DIR`, `attach ID`,
-/// `kill ID`, `follow PATH [--from N]`, `history AGENT [CWD]`. It is plain python:
-/// `python3 keeper-<version>.py list`.
+/// `kill ID`, `view ID`, `follow PATH [--from N]`, `history AGENT [CWD]`. It
+/// is plain python: `python3 keeper-<version>.py list`. `view` runs only on
+/// the host, in the herdr pane a keeper opens for its session.
 library;
 
 /// Where `keeper_command.dart` puts the JSON route table.
@@ -15,7 +16,7 @@ const keeperPython = r'''
 """herdr-keeper: owns one ACP agent process so it outlives the phone's SSH link.
 
 Subcommands: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID
-| follow PATH [--from N] | history AGENT [CWD].
+| view ID | follow PATH [--from N] | history AGENT [CWD].
 Single file, python 3.6+, standard library only. Design: docs/AGENT_SESSIONS.md.
 """
 import base64
@@ -68,6 +69,19 @@ HELD = ("session/request_permission", "elicitation/create")
 SESSION_BUSY = -32003
 CHUNKS = ("agent_message_chunk", "agent_thought_chunk", "user_message_chunk")
 INIT_ID = "keeper-init"
+
+# Shared sessions (docs/AGENT_SESSIONS.md): the keeper's own file, which herdr
+# runs as `view` in the pane the keeper opens for the session.
+SCRIPT = os.path.abspath(globals().get("__file__") or sys.argv[0])
+PANE_WORKSPACE = "Phone sessions"
+# Seconds a herdr command may take; the first one is also the "is a server
+# running" probe, and the tab close runs while `kill` waits.
+HERDR_TIMEOUT = 10
+HERDR_PROBE_TIMEOUT = 3
+HERDR_OUT_MAX = 4 * 1024 * 1024
+# `view` in herdr's agent list: the source of its reports.
+HERDR_SOURCE = "herdr-mobile"
+VIEW_CLIENT = "herdr-mobile-view"
 
 # `history`: what the agent remembers (session/list), bounded so the line stays small.
 HISTORY_PAGES = 5
@@ -288,6 +302,7 @@ def mark_stale(info):
     info["state"] = "exited"
     info["pending"] = 0
     info["turn_active"] = False
+    info["clients"] = 0
     info.setdefault("exit_reason", "The keeper process is gone (killed, or the host restarted).")
     info["exited_at"] = now_ms()
     try:
@@ -795,6 +810,45 @@ class ReplayLog(object):
 # -- the keeper daemon -----------------------------------------------------
 
 
+def answer_of(info, msg):
+    """What a client answered to the held request `info`, in words for the
+    other clients (`_herdr/resolved`): the chosen option's name ('cancelled'
+    when none was chosen), or a question's action."""
+    res = None if "error" in msg else msg.get("result")
+    res = res if isinstance(res, dict) else {}
+    if info["method"] == "elicitation/create":
+        a = res.get("action")
+        return a if isinstance(a, str) and a else "cancel"
+    out = res.get("outcome")
+    out = out if isinstance(out, dict) else {}
+    oid = out.get("optionId")
+    if out.get("outcome") != "selected" or not isinstance(oid, str):
+        return "cancelled"
+    p = info.get("params")
+    options = p.get("options") if isinstance(p, dict) else None
+    for o in options if isinstance(options, list) else []:
+        if isinstance(o, dict) and o.get("optionId") == oid and isinstance(o.get("name"), str):
+            return o["name"]
+    return oid
+
+
+def herdr_result(out):
+    """`.result` of what a herdr CLI command printed ({} when it is not that)."""
+    try:
+        d = json.loads(out.decode("utf-8", "replace"))
+    except ValueError:
+        return {}
+    r = d.get("result") if isinstance(d, dict) else None
+    return r if isinstance(r, dict) else {}
+
+
+def view_runnable(path):
+    """True when `python3 '<path>' view ID` is safe to type into a shell: the
+    path is one single-quoted word."""
+    return bool(path) and os.path.isabs(path) and "'" not in path and not any(ord(c) < 0x20 or ord(c) == 0x7F for c in path)
+
+
+
 class Chan(object):
     """A file descriptor the selector watches, with a write buffer."""
 
@@ -808,10 +862,19 @@ class Chan(object):
         self.wbuf = bytearray()
         self.discard = False
         self.closed = False
-        self.closing = 0.0
         self.born = time.time()
+        # A client connection: `active` once it sent a JSON-RPC line, `live`
+        # once it gets the session's events (after its load).
         self.active = False
         self.live = False
+        # Who it is (its `initialize`): the name the other clients are told
+        # when it answers a request, and whether it is a `view` (a terminal,
+        # which does not count as having seen a turn end).
+        self.label = "another client"
+        self.viewer = False
+        # When it last sent something (Keeper.touches): a request only one
+        # client can answer goes to the one used last.
+        self.touched = 0
 
 
 class Keeper(object):
@@ -834,7 +897,7 @@ class Keeper(object):
         self.logsize = 0
         self.err_tail = collections.deque(maxlen=20)
         self.conns = set()
-        self.client = None
+        self.touches = 0
         self.next_out = 1
         self.next_kid = 1
         self.routes = {}
@@ -852,6 +915,13 @@ class Keeper(object):
         self.sent = {}
         self.unseen_end = None
         self.bg_level = None
+        # The herdr pane a `view` client said it shows this session in.
+        self.pane_id = None
+        # The pane the keeper opens in herdr (open_pane): the herdr binary,
+        # the command in flight and the tab, closed when the session is ended.
+        self.herdr = None
+        self.herdr_job = None
+        self.pane_tab = None
         self.init_result = None
         self.init_deadline = time.time() + INIT_TIMEOUT
         self.state = "starting"
@@ -927,6 +997,7 @@ class Keeper(object):
             "pending": len(self.pending),
             "turn_active": self.state != "exited" and self.busy(),
             "unseen_done": self.unseen_end is not None,
+            "clients": sum(1 for c in self.conns if c.active and not c.closed),
         }
         if self.proc is not None:
             d["agent_pid"] = self.proc.pid
@@ -934,6 +1005,8 @@ class Keeper(object):
             d["session_id"] = self.session_id
         if self.title:
             d["title"] = self.title
+        if self.pane_id:
+            d["pane_id"] = self.pane_id
         if self.last_event_at:
             d["last_event_at"] = self.last_event_at
         if self.exit_code is not None:
@@ -1009,7 +1082,7 @@ class Keeper(object):
         ch.ev = ev
 
     def put(self, ch, data):
-        if ch is None or ch.closed or ch.closing:
+        if ch is None or ch.closed:
             return
         if not ch.wbuf:
             try:
@@ -1038,9 +1111,6 @@ class Keeper(object):
             return
         except OSError:
             self.drop(ch, "write failed")
-            return
-        if not ch.wbuf and ch.closing:
-            self.drop(ch, "closed")
             return
         self.update_reg(ch)
 
@@ -1122,11 +1192,10 @@ class Keeper(object):
         except OSError:
             pass
         self.conns.discard(ch)
-        if self.client is ch:
-            self.client = None
+        if ch.active:
+            self.dirty = True
         for info in self.pending.values():
-            if info.get("conn") is ch:
-                info["conn"] = None
+            info["conns"].discard(ch)
         for kid in [k for k, v in self.fwd.items() if v["conn"] is ch]:
             v = self.fwd.pop(kid)
             self.send_agent({
@@ -1134,27 +1203,48 @@ class Keeper(object):
                 "error": {"code": -32000, "message": "The client went away before it answered."},
             })
 
-    def evict(self, old, reason):
-        self.put(old, enc({"jsonrpc": "2.0", "method": "_herdr/evicted", "params": {"reason": reason}}))
-        if old.closed:
-            return
-        old.reads = False
-        old.closing = time.time()
-        if old.ev & selectors.EVENT_READ:
-            self.update_reg(old)
-        if not old.wbuf:
-            self.close_conn(old, "evicted")
-        if self.client is old:
-            self.client = None
+    def clients(self):
+        """The clients that get the session's events: attached and loaded.
+        Every one is equal (docs/AGENT_SESSIONS.md, "Shared sessions")."""
+        return [c for c in self.conns if c.live and not c.closed]
 
-    def adopt(self, conn):
-        if self.client is conn:
+    def broadcast(self, data, skip=None):
+        for c in self.clients():
+            if c is not skip:
+                self.put(c, data)
+
+    def answerer(self):
+        """The client a request only one can answer goes to (`fs/*`, an
+        extension): the phone used last, else any client; None when none is
+        there."""
+        cs = self.clients()
+        if not cs:
+            return None
+        return max(cs, key=lambda c: (not c.viewer, c.touched))
+
+    def introduce(self, conn, params):
+        """Who a client is, from its `initialize`: the label the others are
+        told when it answers (`clientInfo.title`, else `name`), whether it is a
+        `view` (`_meta.herdr.viewer`) and the herdr pane it shows the session
+        in (`_meta.herdr.pane`, kept until another `view` names one)."""
+        if not isinstance(params, dict):
             return
-        if self.client is not None:
-            self.evict(self.client, "Another device attached to this session.")
-        self.client = conn
-        conn.active = True
-        conn.live = False
+        ci = params.get("clientInfo")
+        if isinstance(ci, dict):
+            for key in ("title", "name"):
+                v = ci.get(key)
+                if isinstance(v, str) and v.strip():
+                    conn.label = trunc(v.strip(), 80)
+                    break
+        m = params.get("_meta")
+        h = m.get("herdr") if isinstance(m, dict) else None
+        if not isinstance(h, dict):
+            return
+        conn.viewer = h.get("viewer") is True
+        pane = h.get("pane")
+        if conn.viewer and isinstance(pane, str) and pane and pane != self.pane_id:
+            self.pane_id = pane[:200]
+            self.dirty = True
 
     def on_client_line(self, conn, line):
         line = line.strip()
@@ -1168,8 +1258,13 @@ class Keeper(object):
         if not isinstance(msg, dict) or not ("method" in msg or "id" in msg):
             self.dlog("client sent a JSON line that is not a JSON-RPC message")
             return
-        if self.client is not conn:
-            self.adopt(conn)
+        # A connection counts with its first valid line: garbage and a
+        # connect-and-close probe never do.
+        if not conn.active:
+            conn.active = True
+            self.dirty = True
+        self.touches += 1
+        conn.touched = self.touches
         method = msg.get("method")
         has_id = "id" in msg
         if isinstance(method, str):
@@ -1183,6 +1278,8 @@ class Keeper(object):
     def on_client_request(self, conn, msg):
         method = msg["method"]
         params = msg.get("params")
+        if method == "initialize":
+            self.introduce(conn, params)
         if method == "initialize" and self.init_result is not None:
             self.put(conn, enc({"jsonrpc": "2.0", "id": msg["id"], "result": self.init_result}))
             return
@@ -1202,7 +1299,7 @@ class Keeper(object):
             conn.live = True
         if method == "session/prompt":
             route["prompt"] = True
-            self.begin_turn(params, oid)
+            self.begin_turn(params, oid, conn)
         out = dict(msg)
         out["jsonrpc"] = "2.0"
         out["id"] = oid
@@ -1226,9 +1323,11 @@ class Keeper(object):
     def on_client_answer(self, conn, msg):
         rid = msg.get("id")
         info = None
+        held = False
         if isinstance(rid, str):
             info = self.pending.pop(rid, None)
             if info is not None:
+                held = True
                 self.save()
             else:
                 info = self.fwd.pop(rid, None)
@@ -1241,6 +1340,25 @@ class Keeper(object):
         else:
             out["result"] = msg.get("result")
         self.send_agent(out)
+        if held:
+            self.settle(info, conn, msg)
+
+    def settle(self, info, by, msg):
+        """The first answer won: every other client given the request is told
+        who answered and what (`_herdr/resolved`), then its copy is taken back
+        (`$/cancel_request`), so nothing vanishes without a reason."""
+        others = [c for c in list(info["conns"]) if c is not by and not c.closed]
+        if not others:
+            return
+        kid = info["kid"]
+        note = enc({
+            "jsonrpc": "2.0", "method": "_herdr/resolved",
+            "params": {"requestId": kid, "by": by.label, "answer": answer_of(info, msg)},
+        })
+        cancel = enc({"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": kid}})
+        for c in others:
+            self.put(c, note)
+            self.put(c, cancel)
 
     def replay_since(self, msg):
         """The turn a `session/load` asks the replay to start from
@@ -1259,8 +1377,9 @@ class Keeper(object):
 
     def serve_held(self, conn, msg):
         # A prompt just sent has no update yet: the replay must still show it
-        # (a refusal takes it back out of the log, see end_turn).
-        self.flush_stash()
+        # (a refusal takes it back out of the log, see end_turn). The replay
+        # brings it to this client; the others get it live.
+        self.flush_stash(skip=conn)
         replay = msg["method"] == "session/load"
         sid = self.session_id
         if replay:
@@ -1302,14 +1421,15 @@ class Keeper(object):
             self.put(conn, self.state_update(sid, "running", None))
         elif self.unseen_end is not None:
             self.put(conn, self.state_update(sid, "idle", self.unseen_end.get("stop")))
-        if self.unseen_end is not None:
+        # "Seen" means a phone saw it: a `view` client does not count.
+        if self.unseen_end is not None and not conn.viewer:
             self.unseen_end = None
             self.save()
         for info in list(self.pending.values()):
             self.issue(conn, info)
 
     def issue(self, conn, info):
-        info["conn"] = conn
+        info["conns"].add(conn)
         self.put(conn, enc({"jsonrpc": "2.0", "id": info["kid"], "method": info["method"], "params": info["params"]}))
 
     @staticmethod
@@ -1355,11 +1475,9 @@ class Keeper(object):
 
     def on_agent_notification(self, msg, raw):
         method = msg["method"]
-        c = self.client
         if method == "session/update":
             self.note_update(msg, len(raw))
-            if c is not None and c.live:
-                self.put(c, raw + b"\n")
+            self.broadcast(raw + b"\n")
         elif method == "$/cancel_request":
             p = msg.get("params")
             target = p.get("requestId") if isinstance(p, dict) else None
@@ -1367,39 +1485,42 @@ class Keeper(object):
                 if info["aid"] == target and type(info["aid"]) is type(target):
                     del self.pending[kid]
                     self.save()
-                    if info.get("conn") is not None and not info["conn"].closed:
-                        self.put(info["conn"], enc({"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": kid}}))
+                    data = enc({"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": kid}})
+                    for c in list(info["conns"]):
+                        self.put(c, data)
                     return
             for kid, v in list(self.fwd.items()):
                 if v["aid"] == target and type(v["aid"]) is type(target):
                     del self.fwd[kid]
                     self.put(v["conn"], enc({"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": kid}}))
                     return
-        elif method == "_claude/sdkMessage":
+        else:
             # Claude's live background tasks are a level, not a log entry: the
             # last one is kept so a client that attaches later still gets it.
-            if b"background_tasks_changed" in raw:
+            if method == "_claude/sdkMessage" and b"background_tasks_changed" in raw:
                 self.bg_level = raw
-            if c is not None and c.live:
-                self.put(c, raw + b"\n")
-        elif c is not None and c.live:
-            self.put(c, raw + b"\n")
+            self.broadcast(raw + b"\n")
 
     def on_agent_request(self, msg):
         method = msg["method"]
         aid = msg["id"]
-        c = self.client
+        # The prompt this request is about comes first, for the clients that
+        # did not send it (an agent may ask before it says anything).
+        self.flush_stash()
         kid = "kp%d" % self.next_kid
         self.next_kid += 1
         if method in HELD:
-            info = {"kid": kid, "aid": aid, "method": method, "params": msg.get("params"), "conn": None}
+            # Every client gets it under the same id; the first answer wins
+            # (settle). `conns`: the clients that were given it.
+            info = {"kid": kid, "aid": aid, "method": method, "params": msg.get("params"), "conns": set()}
             self.pending[kid] = info
             self.save()
             self.hook("blocked", self.summarize(msg))
-            if c is not None and c.live:
+            for c in self.clients():
                 self.issue(c, info)
             return
-        if c is not None and c.live:
+        c = self.answerer()
+        if c is not None:
             self.fwd[kid] = {"aid": aid, "conn": c}
             out = dict(msg)
             out["id"] = kid
@@ -1436,7 +1557,7 @@ class Keeper(object):
         if route.get("prompt"):
             self.end_turn(route, msg)
             self.save()
-        if not conn.closed and conn is self.client:
+        if not conn.closed:
             out = dict(msg)
             out["id"] = route["id"]
             self.put(conn, enc(out))
@@ -1477,8 +1598,13 @@ class Keeper(object):
                 self.flush_stash()
         self.log_add(msg, size)
 
-    def begin_turn(self, params, oid):
+    def begin_turn(self, params, oid, conn):
         self.flush_stash()
+        sid = params.get("sessionId") if isinstance(params, dict) else None
+        if isinstance(sid, str):
+            # The other clients see the prompt start; its message follows
+            # when it is logged (flush_stash), its end in end_turn.
+            self.broadcast(self.state_update(sid, "running", None), skip=conn)
         if not isinstance(params, dict) or not isinstance(params.get("prompt"), list):
             return
         blocks = []
@@ -1488,11 +1614,13 @@ class Keeper(object):
             if b.get("type") != "text" and len(json.dumps(b)) > 20000:
                 b = {"type": "text", "text": "[%s omitted]" % b.get("type", "attachment")}
             blocks.append(b)
-        sid = params.get("sessionId")
         if blocks and isinstance(sid, str):
-            self.stash = {"sid": sid, "blocks": blocks, "mid": "keeper-" + secrets.token_hex(6), "oid": oid}
+            self.stash = {"sid": sid, "blocks": blocks, "mid": "keeper-" + secrets.token_hex(6), "oid": oid, "conn": conn}
 
-    def flush_stash(self):
+    def flush_stash(self, skip=None):
+        """Logs the message of the prompt just sent and shows it to the other
+        clients (the one that sent it shows its own; [skip] gets it from a
+        replay)."""
         st = self.stash
         if st is None:
             return
@@ -1501,9 +1629,13 @@ class Keeper(object):
         for b in st["blocks"]:
             upd = {"sessionUpdate": "user_message_chunk", "content": b, "messageId": st["mid"]}
             m = {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": st["sid"], "update": upd}}
-            e = self.log_add(m, len(json.dumps(m)))
+            data = enc(m)
+            e = self.log_add(m, len(data) - 1)
             if e is not None and not any(x is e for x in logged):
                 logged.append(e)
+            for c in self.clients():
+                if c is not st["conn"] and c is not skip:
+                    self.put(c, data)
 
     def shrink(self, msg, size):
         """A session/update too big for the log, cut to what a replay needs: a
@@ -1572,7 +1704,8 @@ class Keeper(object):
 
     def end_turn(self, route, msg):
         err = msg.get("error")
-        if isinstance(err, dict) and err.get("code") == SESSION_BUSY:
+        refused = isinstance(err, dict) and err.get("code") == SESSION_BUSY
+        if refused:
             # The agent took nothing (it runs a turn of its own): the message
             # must not be in the log, or a replay shows it once per attempt.
             self.retract(route.get("oid"))
@@ -1584,18 +1717,24 @@ class Keeper(object):
         if not isinstance(stop, str):
             stop = None
         conn = route["conn"]
-        if not conn.closed and conn is self.client:
-            self.unseen_end = None
-            return
         params = route.get("params")
         sid = params.get("sessionId") if isinstance(params, dict) else None
-        c = self.client
-        if c is not None and c.live and isinstance(sid, str):
-            self.put(c, self.state_update(sid, "idle", stop))
+        if isinstance(sid, str):
+            # The other clients saw this prompt start (begin_turn): they see it
+            # end. A refused prompt never ran: they see the state as it is.
+            if not refused:
+                self.broadcast(self.state_update(sid, "idle", stop), skip=conn)
+            if self.busy():
+                self.broadcast(self.state_update(sid, "running", None), skip=conn)
+            elif refused:
+                self.broadcast(self.state_update(sid, "idle", None), skip=conn)
+        # "Seen" and the `done` alert are about the phone: a `view` client
+        # (a terminal) does not count as having seen the end.
+        if any(not c.viewer for c in self.clients()):
             self.unseen_end = None
-        else:
-            self.unseen_end = {"stop": stop}
-        if c is None:
+            return
+        self.unseen_end = {"stop": stop}
+        if not any(c.active and not c.viewer and not c.closed for c in self.conns):
             self.hook("done", ("Turn finished (%s)" % stop) if stop else "Turn finished")
 
     # -- alerts
@@ -1670,6 +1809,134 @@ class Keeper(object):
         self.update_reg(self.listener)
         self.save()
         self.report({"ok": True, "info": self.info()})
+        self.open_pane()
+
+    # -- the herdr pane
+
+    def open_pane(self):
+        """Shows the session in herdr on this computer (docs/AGENT_SESSIONS.md,
+        "Shared sessions"): a tab in the workspace `Phone sessions` (made when
+        missing, never focused) running `view`, which reports the session to
+        herdr. A chain of herdr commands that tick polls, never waited for; no
+        herdr, no server or any failure: logged, and nothing else changes."""
+        if os.environ.get("HERDR_MOBILE_NO_PANE") == "1" or os.path.exists(os.path.join(home_dir(), ".herdr-mobile", "no-panes")):
+            return
+        herdr = os.environ.get("HERDR_MOBILE_HERDR") or which("herdr", self.dirs)
+        if not herdr:
+            return
+        if not view_runnable(SCRIPT):
+            self.dlog("no herdr pane: the script path cannot be typed into a shell: %r" % SCRIPT)
+            return
+        self.herdr = herdr
+        # Also the probe: a herdr with no server running fails here, at once.
+        self.herdr_call(["workspace", "list"], self.pane_workspaces, HERDR_PROBE_TIMEOUT)
+
+    def pane_label(self):
+        route = route_by_id(self.agent) or {}
+        return "%s \u00b7 %s" % (route.get("label") or self.agent, os.path.basename(self.cwd.rstrip("/")) or self.cwd)
+
+    def pane_workspaces(self, out):
+        res = herdr_result(out)
+        for w in (res.get("workspaces") if isinstance(res.get("workspaces"), list) else []):
+            if isinstance(w, dict) and w.get("label") == PANE_WORKSPACE and isinstance(w.get("workspace_id"), str):
+                self.herdr_call(
+                    ["tab", "create", "--workspace", w["workspace_id"], "--cwd", self.cwd, "--label", self.pane_label(), "--no-focus"],
+                    lambda o: self.pane_made(o, False),
+                )
+                return
+        # A new workspace comes with a tab and a pane: this session takes them.
+        self.herdr_call(
+            ["workspace", "create", "--label", PANE_WORKSPACE, "--cwd", self.cwd, "--no-focus"],
+            lambda o: self.pane_made(o, True),
+        )
+
+    def pane_made(self, out, rename):
+        res = herdr_result(out)
+        tab = res.get("tab") if isinstance(res.get("tab"), dict) else {}
+        pane = res.get("root_pane") if isinstance(res.get("root_pane"), dict) else {}
+        tid, pid = tab.get("tab_id"), pane.get("pane_id")
+        if not (isinstance(tid, str) and tid and isinstance(pid, str) and pid):
+            self.dlog("no herdr pane: herdr named no tab and pane: %s" % trunc(out.decode("utf-8", "replace"), 300))
+            return
+        self.pane_tab = tid
+        after = (lambda _o: self.herdr_call(["tab", "rename", tid, self.pane_label()], None)) if rename else None
+        self.herdr_call(["pane", "run", pid, "python3 '%s' view %s" % (SCRIPT, self.id)], after)
+        self.dlog("herdr pane %s (tab %s) shows the session" % (pid, tid))
+
+    def herdr_call(self, args, then, timeout=HERDR_TIMEOUT):
+        """Starts one herdr command; tick calls [then] with its stdout when it
+        exits 0 (herdr_poll)."""
+        try:
+            p = subprocess.Popen(
+                [self.herdr] + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                close_fds=True, start_new_session=True,
+            )
+        except (OSError, ValueError) as e:  # ValueError: an argument the locale cannot encode
+            self.dlog("herdr %s did not start: %s" % (" ".join(args[:2]), e))
+            return
+        for f in (p.stdout, p.stderr):
+            os.set_blocking(f.fileno(), False)
+        self.herdr_job = {"p": p, "args": args, "then": then, "out": bytearray(), "err": bytearray(), "deadline": time.time() + timeout}
+
+    def herdr_poll(self):
+        job = self.herdr_job
+        if job is None:
+            return
+        p = job["p"]
+        rc = p.poll()
+        for f, buf in ((p.stdout, job["out"]), (p.stderr, job["err"])):
+            while len(buf) < HERDR_OUT_MAX:
+                try:
+                    data = os.read(f.fileno(), 65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                buf += data
+        if rc is None:
+            if time.time() < job["deadline"]:
+                return
+            self.herdr_stop()
+        else:
+            self.herdr_job = None
+            p.stdout.close()
+            p.stderr.close()
+        name = "herdr " + " ".join(job["args"][:2])
+        if rc is None:
+            self.dlog("%s did not answer in time" % name)
+        elif rc != 0:
+            self.dlog("%s failed (%d): %s" % (name, rc, trunc(bytes(job["err"]).decode("utf-8", "replace").strip(), 300)))
+        elif job["then"] is not None:
+            job["then"](bytes(job["out"]))
+
+    def herdr_stop(self):
+        """Ends the herdr command in flight (it was started by this keeper)."""
+        job = self.herdr_job
+        if job is None:
+            return
+        self.herdr_job = None
+        p = job["p"]
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        p.wait()
+        p.stdout.close()
+        p.stderr.close()
+
+    def close_pane(self):
+        """The session was ended on request: its tab goes too. (An agent that
+        exits on its own leaves it: the terminal says why.)"""
+        self.herdr_stop()
+        if not (self.herdr and self.pane_tab):
+            return
+        try:
+            subprocess.run(
+                [self.herdr, "tab", "close", self.pane_tab], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True, timeout=HERDR_PROBE_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            self.dlog("herdr tab close failed: %s" % e)
 
     def fail_start(self, text, code):
         tail = "\n".join(self.err_tail)
@@ -1689,7 +1956,7 @@ class Keeper(object):
             pass
 
     def finish(self, code, reason):
-        """The agent is gone: record why, tell the client, leave."""
+        """The agent is gone: record why, tell the clients, leave."""
         self.state = "exited"
         self.exit_code = code
         self.exit_reason = reason
@@ -1699,20 +1966,25 @@ class Keeper(object):
         self.pending.clear()
         self.fwd.clear()
         self.routes.clear()
-        c = self.client
-        if c is not None and not c.closed:
-            data = bytes(c.wbuf) + enc({
-                "jsonrpc": "2.0", "method": "_herdr/agent_exited",
-                "params": {"exitCode": code, "reason": reason},
-            })
+        note = enc({
+            "jsonrpc": "2.0", "method": "_herdr/agent_exited",
+            "params": {"exitCode": code, "reason": reason},
+        })
+        for c in list(self.conns):
+            if c.closed or not c.active:
+                continue
             try:
                 c.sock.setblocking(True)
                 c.sock.settimeout(2)
-                c.sock.sendall(data)
+                c.sock.sendall(bytes(c.wbuf) + note)
             except OSError:
                 pass
         for ch in list(self.conns):
             self.close_conn(ch, "agent exited")
+        if self.terminating:
+            self.close_pane()
+        else:
+            self.herdr_stop()
         self.save()
         unlink(self.id + ".sock")
         self.done = True
@@ -1774,10 +2046,9 @@ class Keeper(object):
     def tick(self):
         t = time.time()
         self.reap_hooks()
+        self.herdr_poll()
         for ch in list(self.conns):
-            if ch.closing and t - ch.closing > 5:
-                self.close_conn(ch, "did not drain")
-            elif not ch.active and not ch.closing and t - ch.born > 30:
+            if not ch.active and t - ch.born > 30:
                 self.close_conn(ch, "idle")
         if self.got_signal and not self.terminating:
             self.terminating = True
@@ -2047,6 +2318,484 @@ def cmd_kill(kid):
                 pass
     remove_keeper(kid)
     print(dumps({"ok": True}))
+
+
+# -- view: the session in a terminal ------------------------------------------
+
+# What a terminal must not be sent from an agent's text: control characters
+# (escape sequences could rewrite the screen); newlines and tabs stay.
+VIEW_CONTROL = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+VIEW_NUMBER = re.compile(r"^[0-9]{1,4}$")
+
+
+def short_host():
+    return socket.gethostname().split(".")[0] or "this computer"
+
+
+def one_line(text, n=200):
+    """The first line of [text], without control characters, cut to [n]."""
+    if not isinstance(text, str):
+        return ""
+    for line in text.splitlines():
+        line = VIEW_CONTROL.sub("", line).strip()
+        if line:
+            return trunc(line, n)
+    return ""
+
+
+def permission_options(params):
+    options = params.get("options") if isinstance(params, dict) else None
+    return [o for o in (options if isinstance(options, list) else []) if isinstance(o, dict) and isinstance(o.get("optionId"), str)]
+
+
+class HerdrReport(object):
+    """`view` in herdr's agent list (`pane report-agent`): only from inside a
+    herdr pane, only on a change, never waited for. One command runs at a
+    time; a state that changes while it runs replaces the one waiting to go
+    (the ones in between are stale)."""
+
+    def __init__(self, agent, resume):
+        env = os.environ
+        self.bin = env.get("HERDR_BIN_PATH")
+        self.pane = env.get("HERDR_PANE_ID")
+        self.on = env.get("HERDR_ENV") == "1" and bool(self.bin) and bool(self.pane)
+        self.agent = agent
+        self.resume = resume
+        self.last = None
+        self.want = None
+        self.proc = None
+        self.t0 = 0.0
+        self.seq = 0
+
+    def next_seq(self):
+        # herdr ignores a report whose number is not above the last one it
+        # took from this source, across restarts of `view` too: the clock.
+        self.seq = max(int(time.time() * 1000000), self.seq + 1)
+        return str(self.seq)
+
+    def busy(self):
+        return self.proc is not None or self.want is not None
+
+    def set(self, state, sid):
+        if not self.on or (state, sid) == self.last:
+            return
+        self.last = (state, sid)
+        self.want = self.last
+        self.poll()
+
+    def poll(self):
+        if self.proc is not None:
+            if self.proc.poll() is None:
+                if time.time() - self.t0 < HERDR_PROBE_TIMEOUT:
+                    return
+                self.stop()
+            self.proc = None
+        if self.want is None:
+            return
+        state, sid = self.want
+        self.want = None
+        argv = [
+            self.bin, "pane", "report-agent", self.pane, "--source", HERDR_SOURCE, "--agent", self.agent,
+            "--state", state, "--seq", self.next_seq(),
+        ]
+        if sid:
+            argv += ["--agent-session-id", sid]
+        if self.resume:
+            argv += ["--"] + self.resume
+        self.proc = self.spawn(argv)
+
+    def spawn(self, argv):
+        self.t0 = time.time()
+        try:
+            return subprocess.Popen(
+                argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True, start_new_session=True,
+            )
+        except (OSError, ValueError):
+            return None
+
+    def stop(self):
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        self.proc.wait()
+
+    def settle(self):
+        if self.proc is None:
+            return
+        try:
+            self.proc.wait(timeout=HERDR_PROBE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.stop()
+        self.proc = None
+
+    def release(self):
+        """`view` leaves: the pane is no agent any more."""
+        if not self.on or self.last is None:
+            return
+        self.settle()
+        self.proc = self.spawn([
+            self.bin, "pane", "release-agent", self.pane, "--source", HERDR_SOURCE, "--agent", self.agent,
+            "--seq", self.next_seq(),
+        ])
+        self.settle()
+
+
+class View(object):
+    """`view ID`: the session in a terminal, the keeper's own client in the
+    herdr pane it opens (Keeper.open_pane; docs/AGENT_SESSIONS.md, "Shared
+    sessions"). Line by line, no curses: it prints the conversation (thoughts
+    left out, a tool call as a line), sends a typed line as a prompt, answers
+    a waiting permission by its number, says that a question is answered on
+    the phone, and reports the session's state to herdr. It answers no request
+    the person did not pick."""
+
+    def __init__(self, kid):
+        self.kid = kid
+        self.sock = None
+        self.rbuf = b""
+        self.ibuf = b""
+        self.next_id = 0
+        self.calls = {}
+        self.sid = None
+        self.loaded = False
+        self.t0 = time.time()
+        self.load_at = 0.0
+        self.waited = False
+        self.running = False
+        self.mine = None
+        self.waiting = collections.OrderedDict()
+        self.resolved = set()
+        self.tools = {}
+        self.tools_done = set()
+        self.cur = None
+        self.open = False
+        self.done = False
+        info = read_info(kid) or {}
+        route = route_by_id(info.get("agent") or "") or {}
+        resume = ["python3", SCRIPT, "view", kid] if view_runnable(SCRIPT) else None
+        # Not the bare agent name: herdr knows `omp`, `codex` and `pi` as its
+        # own agents, and its guide asks integrations not to use their names.
+        label = route.get("label") or info.get("agent") or "agent"
+        self.herdr = HerdrReport(label + " \u00b7 phone", resume)
+
+    # -- the terminal
+
+    def write(self, text):
+        if not text or self.done:
+            return
+        try:
+            sys.stdout.buffer.write(text.encode("utf-8", "replace"))
+            sys.stdout.flush()
+        except OSError:
+            self.done = True
+            return
+        self.open = not text.endswith("\n")
+
+    def say(self, text):
+        """[text] as a line of its own."""
+        if self.open:
+            self.write("\n")
+        self.cur = None
+        self.write(text + "\n")
+
+    def end(self, reason):
+        if reason is None:
+            info = read_info(self.kid) or {}
+            reason = info.get("exit_reason") if info.get("state") == "exited" else None
+        reason = one_line(reason, 300).rstrip(". ") or "the keeper closed the connection"
+        self.say("Session ended: %s." % reason)
+        self.done = True
+
+    # -- the keeper
+
+    def send(self, obj):
+        try:
+            self.sock.sendall(enc(obj))
+        except OSError:
+            self.end(None)
+
+    def call(self, method, params, what):
+        self.next_id += 1
+        self.calls[self.next_id] = what
+        self.send({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params})
+        return self.next_id
+
+    def try_load(self):
+        """Loads the keeper's session once it has one (the phone opens it just
+        after the start)."""
+        self.load_at = 0.0
+        info = read_info(self.kid) or {}
+        if info.get("state") == "exited":
+            self.end(info.get("exit_reason") or "the agent exited")
+            return
+        sid = info.get("session_id")
+        if isinstance(sid, str) and sid:
+            self.sid = sid
+            self.call("session/load", {"sessionId": sid, "cwd": info.get("cwd") or "/", "mcpServers": []}, "load")
+            return
+        if not self.waited and time.time() - self.t0 >= 3:
+            self.waited = True
+            self.say("Waiting for the phone to open the session.")
+        self.load_at = time.time() + (1.0 if self.waited else 0.5)
+
+    def feed(self, data):
+        self.rbuf += data
+        lines = self.rbuf.split(b"\n")
+        self.rbuf = lines.pop()
+        for ln in lines:
+            if self.done:
+                return
+            try:
+                msg = json.loads(ln.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            if not isinstance(msg, dict):
+                continue
+            method = msg.get("method")
+            if isinstance(method, str):
+                if "id" in msg:
+                    self.on_request(msg)
+                else:
+                    p = msg.get("params")
+                    self.on_notification(method, p if isinstance(p, dict) else {})
+            elif "id" in msg:
+                self.on_response(msg)
+
+    def on_response(self, msg):
+        what = self.calls.pop(msg.get("id"), None)
+        err = msg.get("error")
+        text = one_line(err.get("message") if isinstance(err, dict) else "") or "an error"
+        if what == "init":
+            if err is not None:
+                self.end("the keeper refused this terminal (%s)" % text)
+            else:
+                self.try_load()
+        elif what == "load":
+            if err is not None:
+                self.end("the session did not open (%s)" % text)
+                return
+            self.loaded = True
+            self.say("Type a message and Enter to send it. /cancel stops the agent, /quit leaves.")
+        elif what == "prompt":
+            self.mine = None
+            if isinstance(err, dict) and err.get("code") == SESSION_BUSY:
+                self.say("The agent is busy; not sent.")
+            elif err is not None:
+                self.say("Not sent: %s." % text.rstrip("."))
+            else:
+                res = msg.get("result")
+                self.turn_end(res.get("stopReason") if isinstance(res, dict) else None)
+
+    def on_notification(self, method, p):
+        if method == "session/update":
+            u = p.get("update")
+            if p.get("sessionId") == self.sid and isinstance(u, dict):
+                self.on_update(u)
+        elif method == "_herdr/resolved":
+            kid = p.get("requestId")
+            if isinstance(kid, str):
+                self.resolved.add(kid)
+            self.say("Answered in %s: %s." % (one_line(p.get("by")) or "another client", one_line(p.get("answer")) or "?"))
+        elif method == "$/cancel_request":
+            kid = p.get("requestId")
+            if isinstance(kid, str) and self.waiting.pop(kid, None) is not None and kid not in self.resolved:
+                self.say("The agent withdrew its request.")
+        elif method == "_herdr/agent_exited":
+            self.end(p.get("reason") or "the agent exited")
+
+    def on_update(self, u):
+        kind = u.get("sessionUpdate")
+        if kind == "agent_message_chunk":
+            self.chunk("agent", u)
+        elif kind == "user_message_chunk":
+            self.chunk("user", u)
+        elif kind in ("tool_call", "tool_call_update"):
+            self.tool(u, kind == "tool_call")
+        elif kind == "state_update":
+            if u.get("state") == "running":
+                self.running = True
+            elif u.get("state") == "idle":
+                self.turn_end(u.get("stopReason"))
+
+    def chunk(self, kind, u):
+        c = u.get("content")
+        if not isinstance(c, dict):
+            return
+        text = c.get("text") if c.get("type") == "text" else None
+        text = VIEW_CONTROL.sub("", text) if isinstance(text, str) else "[%s]" % one_line(c.get("type"), 40)
+        key = (kind, u.get("messageId"))
+        if key != self.cur:
+            if self.open:
+                self.write("\n")
+            if kind == "user":
+                self.write("\n> ")
+            self.cur = key
+        if kind == "user":
+            text = text.replace("\n", "\n> ")
+        self.write(text)
+
+    def tool(self, u, new):
+        tid = u.get("toolCallId")
+        if not isinstance(tid, str):
+            return
+        title = one_line(u.get("title"))
+        if new or tid not in self.tools:
+            self.tools[tid] = title or self.tools.get(tid) or one_line(u.get("kind")) or "tool"
+            self.say("\u2022 " + self.tools[tid])
+            self.cur = ("tool", tid)
+        elif title:
+            self.tools[tid] = title
+        status = u.get("status")
+        if status in ("completed", "failed") and tid not in self.tools_done:
+            self.tools_done.add(tid)
+            word = "done" if status == "completed" else "failed"
+            self.say(("  " + word) if self.cur == ("tool", tid) else "  %s: %s" % (word, self.tools[tid]))
+
+    def turn_end(self, stop):
+        self.running = False
+        if self.open:
+            self.write("\n")
+        self.cur = None
+        if isinstance(stop, str) and stop and stop != "end_turn":
+            self.say("Turn ended: %s." % one_line(stop.replace("_", " "), 60))
+
+    def on_request(self, msg):
+        method, kid = msg["method"], msg["id"]
+        p = msg.get("params")
+        if method in HELD and isinstance(kid, str) and isinstance(p, dict):
+            if kid in self.waiting:
+                return
+            self.waiting[kid] = (method, p)
+            if method == "elicitation/create":
+                self.say("Question: " + (one_line(p.get("message"), 300) or "(no text)"))
+                self.say("Answer this on the phone.")
+                return
+            tc = p.get("toolCall") if isinstance(p.get("toolCall"), dict) else {}
+            self.say("Permission: " + (one_line(tc.get("title"), 300) or one_line(tc.get("kind")) or "(no title)"))
+            for i, o in enumerate(permission_options(p), 1):
+                self.say("  %d. %s" % (i, one_line(o.get("name")) or one_line(o["optionId"])))
+            if len(self.permissions()) == 1:
+                self.say("Type a number and Enter to answer.")
+            else:
+                self.say("More than one request waits: answer them on the phone.")
+            return
+        self.send({"jsonrpc": "2.0", "id": kid, "error": {"code": -32601, "message": "A terminal view does not answer %s." % method}})
+
+    def permissions(self):
+        return [(k, w[1]) for k, w in self.waiting.items() if w[0] == "session/request_permission"]
+
+    # -- the person
+
+    def on_line(self, text):
+        text = text.strip()
+        if not text:
+            return
+        self.open = False  # the terminal ended the line the person typed
+        if text == "/quit":
+            self.done = True
+            return
+        if text == "/cancel":
+            if self.sid:
+                self.send({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": self.sid}})
+                self.say("Asked the agent to stop.")
+            return
+        perms = self.permissions()
+        if VIEW_NUMBER.match(text) and len(perms) == 1:
+            kid, p = perms[0]
+            options = permission_options(p)
+            n = int(text)
+            if not 1 <= n <= len(options):
+                self.say("There is no option %d." % n)
+                return
+            o = options[n - 1]
+            self.send({"jsonrpc": "2.0", "id": kid, "result": {"outcome": {"outcome": "selected", "optionId": o["optionId"]}}})
+            del self.waiting[kid]
+            self.say("Answered: %s." % (one_line(o.get("name")) or o["optionId"]))
+            return
+        if not self.loaded:
+            self.say("The session is not open yet; not sent.")
+            return
+        self.mine = self.call("session/prompt", {"sessionId": self.sid, "prompt": [{"type": "text", "text": text}]}, "prompt")
+        self.cur = None
+
+    def report(self):
+        if not self.loaded:
+            return
+        if self.waiting:
+            state = "blocked"
+        elif self.running or self.mine is not None:
+            state = "working"
+        else:
+            state = "idle"
+        self.herdr.set(state, self.sid)
+
+    def run(self):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.connect(self.kid + ".sock")
+        except OSError:
+            s.close()
+            self.end(None)
+            return
+        self.sock = s
+        meta = {"viewer": True}
+        if os.environ.get("HERDR_PANE_ID"):
+            meta["pane"] = os.environ["HERDR_PANE_ID"]
+        self.call("initialize", {
+            "protocolVersion": 1,
+            "clientCapabilities": {},
+            "clientInfo": {"name": VIEW_CLIENT, "title": "Terminal on " + short_host(), "version": "1"},
+            "_meta": {"herdr": meta},
+        }, "init")
+        stdin_open = True
+        try:
+            while not self.done:
+                fds = [s, 0] if stdin_open else [s]
+                timeout = 0.2 if (self.load_at or self.herdr.busy()) else None
+                ready, _, _ = select.select(fds, [], [], timeout)
+                if s in ready:
+                    try:
+                        data = s.recv(262144)
+                    except OSError:
+                        data = b""
+                    if not data:
+                        self.end(None)
+                        break
+                    self.feed(data)
+                if 0 in ready and not self.done:
+                    data = os.read(0, 65536)
+                    if not data:
+                        # stdin closed (Ctrl-D): leave the session running.
+                        stdin_open = False
+                        self.done = True
+                    self.ibuf += data
+                    lines = self.ibuf.split(b"\n")
+                    self.ibuf = lines.pop()
+                    for ln in lines:
+                        if not self.done:
+                            self.on_line(ln.decode("utf-8", "replace"))
+                if self.load_at and time.time() >= self.load_at and not self.done:
+                    self.try_load()
+                self.report()
+                self.herdr.poll()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            s.close()
+            self.herdr.release()
+
+
+def cmd_view(kid):
+    check_id(kid)
+    os.chdir(state_dir())
+    if read_info(kid) is None:
+        fail(EX_GONE, "no such keeper: " + kid)
+    # A closed pane (SIGHUP) or a kill still tells herdr the agent left.
+    for sig in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(sig, lambda signum, frame: sys.exit(128 + signum))
+    View(kid).run()
 
 
 # -- history -----------------------------------------------------------------
@@ -2615,7 +3364,7 @@ def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL, zippe
 
 def main(argv):
     if not argv:
-        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
+        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | view ID | follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
     cmd, rest = argv[0], argv[1:]
     if cmd != "follow":
         load_daemon_modules()
@@ -2657,6 +3406,8 @@ def main(argv):
             cmd_attach(rest[0], len(rest) == 2)
         elif cmd == "kill" and len(rest) == 1:
             cmd_kill(rest[0])
+        elif cmd == "view" and len(rest) == 1:
+            cmd_view(rest[0])
         else:
             fail(EX_USAGE, "unknown command: " + cmd)
     except OSError as e:

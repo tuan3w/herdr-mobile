@@ -217,6 +217,27 @@ class MachineConnection extends ChangeNotifier {
     return null;
   }
 
+  /// The panes in which a keeper of this machine shows its agent session on
+  /// the computer (the keeper's `view`, which reports itself to herdr as an
+  /// agent). Set from each `list` by the agent sessions; see [agentPanes].
+  Set<String> get keeperPanes => _keeperPanes;
+  Set<String> _keeperPanes = const {};
+
+  void setKeeperPanes(Set<String> panes) {
+    if (_disposed || setEquals(panes, _keeperPanes)) return;
+    _keeperPanes = panes;
+    notifyListeners();
+  }
+
+  /// The terminal agents of [snapshot]: its agent panes but a keeper's view
+  /// pane, whose session the board, the counts and the notifications already
+  /// carry as an agent session (it would be the same agent twice).
+  List<Pane> get agentPanes {
+    final all = _snapshot.agentPanes;
+    if (_keeperPanes.isEmpty) return all;
+    return [for (final p in all) if (!_keeperPanes.contains(p.id)) p];
+  }
+
   /// Whether input can reach pane [id]: the machine is live and the pane exists.
   bool acceptsInput(String id) => isLive && paneById(id) != null;
 

@@ -341,6 +341,17 @@ when it can.
 `Past sessions` lists conversations an agent kept on a machine, to continue
 one.
 
+**At the computer.** When herdr runs on the machine, each agent session also
+gets a tab in a herdr workspace called `Phone sessions`. herdr lists it with
+the other agents (working, blocked or idle), on that machine and on any
+computer connected to it. The tab shows the conversation: type a line and
+press Enter to send it, type the number of an option to answer a permission,
+`/cancel` stops the turn and `/quit` closes the view (the agent keeps
+running). Questions with a form are answered on the phone. The phone and the
+terminal share the session: whichever answers first wins, and the other says
+who answered. Ending the session on the phone closes the tab. To turn the
+tabs off on a machine, create the file `~/.herdr-mobile/no-panes` there.
+
 How well each agent is tested:
 
 | Agent | Status |

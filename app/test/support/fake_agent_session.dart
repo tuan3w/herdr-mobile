@@ -390,6 +390,25 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   @override
   bool get evicted => _evicted;
 
+  @override
+  AnsweredElsewhere? answeredElsewhere;
+
+  /// Another client answered the request [requestId] first (the keeper's
+  /// `_herdr/resolved`), then withdrew it here (its `$/cancel_request`).
+  void answerElsewhere(Object requestId, {required String by, required String answer}) {
+    final pending = _state.pendingById(requestId);
+    answeredElsewhere = AnsweredElsewhere(
+      requestId: requestId,
+      by: by,
+      answer: answer,
+      kind: pending is PendingPermission
+          ? pending.request.options.where((o) => o.name == answer).firstOrNull?.kind
+          : null,
+      question: pending is PendingQuestion,
+    );
+    push(_state.withoutPending(requestId));
+  }
+
   /// What [resumeTarget] answers (an ended session a test can continue).
   ResumeTarget? resumeTargetValue;
 

@@ -303,18 +303,23 @@ print(json.dumps(out))
 typedef RunResult = ({String out, String err, int code});
 
 class KeeperHost {
-  KeeperHost._(this.home, this.env);
+  KeeperHost._(this.home, this.env, this._root);
 
   final Directory home;
+  final Directory _root;
   final Map<String, String> env;
   final clients = <KeeperAttach>[];
+  final views = <KeeperView>[];
 
   String get work => '${home.path}/work';
   String get keepers => '${home.path}/.herdr-mobile/keepers';
   String get hookOut => '${home.path}/hook.out';
 
-  static Future<KeeperHost> create(Map<String, String> extra) async {
-    final home = Directory.systemTemp.createTempSync('keeper_test_');
+  /// [homeLeaf] names the home folder inside the temp directory (a hostile
+  /// name, for the paths the keeper types into a shell).
+  static Future<KeeperHost> create(Map<String, String> extra, {String? homeLeaf}) async {
+    final temp = Directory.systemTemp.createTempSync('keeper_test_');
+    final home = homeLeaf == null ? temp : (Directory('${temp.path}/$homeLeaf')..createSync());
     final bin = Directory('${home.path}/bin')..createSync();
     Directory('${home.path}/work').createSync();
     final fake = File('test/support/fake_acp_agent.py').absolute.path;
@@ -329,8 +334,60 @@ class KeeperHost {
       'PATH': '${bin.path}:$py:/usr/bin:/bin',
       'FAKE_ACP_LOG': '${home.path}/agent.jsonl',
       'HERDR_KEEPER_ON_BLOCKED': '${home.path}/hook.sh',
+      // A herdr on this machine must never get a pane from a test.
+      'HERDR_MOBILE_NO_PANE': '1',
       ...extra,
-    });
+    }, temp);
+  }
+
+  /// The installed script, as `view` runs it.
+  String get script => '${home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py';
+
+  String get herdrLog => '${home.path}/herdr.calls';
+  String get fakeHerdr => '${home.path}/fake-herdr';
+
+  /// Writes a fake herdr (once) and returns its path: it logs every argv to
+  /// [herdrLog] and answers `workspace list`, `workspace create` and `tab
+  /// create` with JSON shaped like herdr 0.9.3's (`src/api/schema`), keeping
+  /// its workspaces in a file; any other command prints nothing and exits 0.
+  Future<String> writeFakeHerdr() async {
+    final f = File(fakeHerdr);
+    if (!f.existsSync()) {
+      f.writeAsStringSync(_fakeHerdr(herdrLog, '${home.path}/herdr.state'));
+      await Process.run('chmod', ['755', f.path]);
+    }
+    return f.path;
+  }
+
+  /// Points the keeper at the fake herdr (before `start`), panes allowed.
+  Future<void> useFakeHerdr() async {
+    env['HERDR_MOBILE_HERDR'] = await writeFakeHerdr();
+    env['HERDR_MOBILE_NO_PANE'] = '';
+  }
+
+  /// Every command the fake herdr ran, in order.
+  List<List<String>> herdrCalls() {
+    final f = File(herdrLog);
+    if (!f.existsSync()) return [];
+    return [
+      for (final l in f.readAsLinesSync())
+        if (l.trim().isNotEmpty) (jsonDecode(l) as List).cast<String>(),
+    ];
+  }
+
+  /// `view ID` as herdr runs it in a pane, with [env] on top (HERDR_ENV,
+  /// HERDR_PANE_ID, HERDR_BIN_PATH).
+  Future<KeeperView> view(String id, {Map<String, String> env = const {}}) async {
+    final p = await Process.start(
+      'python3',
+      [script, 'view', id],
+      environment: {...this.env, ...env},
+      includeParentEnvironment: false,
+      workingDirectory: home.path,
+    );
+    final v = KeeperView(p);
+    views.add(v);
+    return v;
   }
 
   Future<RunResult> run(String command, {String input = ''}) async {
@@ -419,6 +476,9 @@ class KeeperHost {
     for (final a in clients) {
       a.process.kill();
     }
+    for (final v in views) {
+      v.process.kill();
+    }
     try {
       for (final j in await rawList()) {
         await run(keeperKillCommand(j['id']! as String));
@@ -427,7 +487,7 @@ class KeeperHost {
       // best effort: the temp home goes away next
     }
     try {
-      home.deleteSync(recursive: true);
+      _root.deleteSync(recursive: true);
     } on Object {
       // a keeper still writing its record: the OS temp cleaner takes it
     }
@@ -507,7 +567,15 @@ class KeeperAttach {
 
   void reply(Object? id, Json result) => write({'id': id, 'result': result});
 
-  Future<Json> initialize() => request('initialize', {'protocolVersion': 1, 'clientCapabilities': <String, Object?>{}});
+  Future<Json> initialize({String? title, bool viewer = false, String? pane}) => request('initialize', {
+    'protocolVersion': 1,
+    'clientCapabilities': <String, Object?>{},
+    if (title != null) 'clientInfo': {'name': 'test-client', 'title': title, 'version': '1'},
+    if (viewer || pane != null)
+      '_meta': {
+        'herdr': {'viewer': viewer, 'pane': ?pane},
+      },
+  });
 
   Future<Json> newSession(KeeperHost h) => request('session/new', {'cwd': h.work, 'mcpServers': <Object?>[]});
 
@@ -528,3 +596,67 @@ class KeeperAttach {
   }
 }
 
+/// `view` in a terminal: what it printed, and lines typed into it.
+class KeeperView {
+  KeeperView(this.process) {
+    process.stdout.transform(utf8.decoder).listen(out.write);
+    process.stderr.transform(utf8.decoder).listen(err.write);
+  }
+
+  final Process process;
+  final out = StringBuffer();
+  final err = StringBuffer();
+
+  /// Waits until the output, from [from] on, contains [text]; returns where
+  /// it ends, for the next wait.
+  Future<int> waitFor(String text, {int from = 0}) async {
+    final end = DateTime.now().add(const Duration(seconds: 30));
+    while (true) {
+      final i = out.toString().indexOf(text, from);
+      if (i >= 0) return i + text.length;
+      if (DateTime.now().isAfter(end)) {
+        throw TimeoutException('view never printed "$text"; it printed:\n$out\nstderr: $err');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  void type(String line) => process.stdin.writeln(line);
+}
+
+String _fakeHerdr(String log, String state) => '''
+#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+with open(${jsonEncode(log)}, "a") as f:
+    f.write(json.dumps(args) + "\\n")
+try:
+    with open(${jsonEncode(state)}) as f:
+        st = json.load(f)
+except (OSError, ValueError):
+    st = {"workspaces": [], "tabs": 0}
+def arg(name):
+    return args[args.index(name) + 1] if name in args else None
+def tab(wid, label):
+    st["tabs"] += 1
+    t = "%s:t%d" % (wid, st["tabs"])
+    return ({"tab_id": t, "workspace_id": wid, "number": st["tabs"], "label": label, "focused": False, "pane_count": 1, "agent_status": "unknown"},
+            {"pane_id": "%s:p%d" % (wid, st["tabs"]), "terminal_id": "term", "workspace_id": wid, "tab_id": t, "focused": False, "cwd": arg("--cwd"), "agent_status": "unknown"})
+out = None
+if args[:2] == ["workspace", "list"]:
+    out = {"type": "workspace_list", "workspaces": st["workspaces"]}
+elif args[:2] == ["workspace", "create"]:
+    wid = "w%d" % (len(st["workspaces"]) + 1)
+    ws = {"workspace_id": wid, "number": len(st["workspaces"]) + 1, "label": arg("--label") or "", "focused": False,
+          "pane_count": 1, "tab_count": 1, "active_tab_id": wid + ":t1", "agent_status": "unknown"}
+    st["workspaces"].append(ws)
+    t, p = tab(wid, "1")
+    out = {"type": "workspace_created", "workspace": ws, "tab": t, "root_pane": p}
+elif args[:2] == ["tab", "create"]:
+    t, p = tab(arg("--workspace"), arg("--label") or "")
+    out = {"type": "tab_created", "tab": t, "root_pane": p}
+with open(${jsonEncode(state)}, "w") as f:
+    json.dump(st, f)
+if out is not None:
+    print(json.dumps({"id": "cli", "result": out}))
+''';

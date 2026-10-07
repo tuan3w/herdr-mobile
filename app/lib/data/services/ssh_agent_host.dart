@@ -376,9 +376,9 @@ class _Output {
 /// When the attach ends with a failure (the keeper is unknown or its agent has
 /// exited) [lines] reports an [AgentHostException] and then ends, and
 /// [endReason] holds the same exception. A clean end (evicted by a newer
-/// attach, the agent exited while attached, the connection dropped) has no
-/// reason here: the keeper's own notifications and the connection state say
-/// why.
+/// attach, which only a keeper started before shared sessions does; the agent
+/// exited while attached; the connection dropped) has no reason here: the
+/// keeper's own notifications and the connection state say why.
 class KeeperAttachment implements AcpTransport {
   KeeperAttachment._(this._channel) {
     _channel.lines.listen(

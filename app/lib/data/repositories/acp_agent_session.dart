@@ -896,8 +896,9 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   }
 
   /// The keeper's own notifications. Only the client this session holds now
-  /// counts: the keeper also evicts the half-dead channel of this very session
-  /// when its new one attaches, and that must not end anything.
+  /// counts: a keeper started before shared sessions also evicts the
+  /// half-dead channel of this very session when its new one attaches, and
+  /// that must not end anything.
   void _onExtension(AcpClient client, String method, Object? params) {
     if (!identical(client, _client) || _disposed) return;
     final p = params is Map ? params : const {};
@@ -905,6 +906,8 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       case '_herdr/evicted':
         _evicted = true;
         _stop(AgentLink.ended, 'Opened on another device.');
+      case '_herdr/resolved':
+        _resolvedElsewhere(p);
       case '_herdr/agent_exited':
         final reason = p['reason'];
         final code = p['exitCode'];
@@ -918,6 +921,34 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         );
     }
   }
+
+  /// Another client answered a request first. Told only when this session
+  /// shows that request now (a live attach, not a saved copy); the
+  /// `$/cancel_request` that follows takes it away.
+  void _resolvedElsewhere(Map<dynamic, dynamic> p) {
+    final id = p['requestId'];
+    if (id == null || _cachedAsOf != null) return;
+    final pending = _state.pendingById(id);
+    if (pending == null) return;
+    final by = p['by'];
+    final answer = p['answer'];
+    final name = answer is String ? answer : '';
+    _answeredElsewhere = AnsweredElsewhere(
+      requestId: id,
+      by: by is String ? by.trim() : '',
+      answer: name,
+      kind: switch (pending) {
+        PendingPermission(:final request) => request.options.where((o) => o.name == name).firstOrNull?.kind,
+        _ => null,
+      },
+      question: pending is PendingQuestion,
+    );
+    _changed();
+  }
+
+  @override
+  AnsweredElsewhere? get answeredElsewhere => _answeredElsewhere;
+  AnsweredElsewhere? _answeredElsewhere;
 
   @override
   bool get evicted => _evicted && _link == AgentLink.ended;

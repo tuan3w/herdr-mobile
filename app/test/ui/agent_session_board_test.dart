@@ -178,6 +178,23 @@ void main() {
       await _teardown(tester, e);
     });
 
+    testWidgets('the pane a keeper shows its session in on the computer is not a second agent', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final e = await _env(panes: [_pane(1, 'blocked'), _pane(2, 'blocked')]);
+      final keeper = e.host.add(id: 'k1', title: 'Deploy')..viewPane = 'w1:p2';
+      await _pump(tester, e);
+      keeper.askPermission();
+      await _settle(tester);
+
+      expect(_row('Deploy'), findsOneWidget);
+      expect(find.text('terminal 1'), findsOneWidget, reason: 'an ordinary pane is still an agent');
+      expect(find.text('terminal 2'), findsNothing, reason: 'the session is already on the board');
+      expect(tester.widget<SectionLabel>(_section('Needs you')).count, 2);
+      expect(_badge(tester), 'Agents, 2 need you');
+      semantics.dispose();
+      await _teardown(tester, e);
+    });
+
     testWidgets('the tab badge counts what needs you, panes and sessions; the pill adds what is to review', (tester) async {
       final semantics = tester.ensureSemantics();
       final e = await _env(panes: [_pane(1, 'blocked'), _pane(2, 'done')]);
