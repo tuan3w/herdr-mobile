@@ -739,8 +739,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       cancelOnError: true,
     );
     _sub = sub;
-    // The follower says nothing until the file has a line: an empty log, or a
-    // resume at its end, is live once the channel has been quiet a moment.
+    // The helper says `caught up` after its first read to the end, which is how
+    // an empty log or a resume at its end becomes live. This is the fallback for
+    // a channel that stays quiet without failing: live once it has been quiet a
+    // moment.
     final ready = Timer(readyAfter, () {
       if (!_alive(epoch) || _ready) return;
       _ready = true;
@@ -776,6 +778,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     _batching = false;
     _offset = batch.endOffset;
     final first = !_ready;
+    if (first) _toldSinceFirstBatch = false;
     _ready = true;
     _failure = null;
     if (first) _setLink(AgentLink.live);
@@ -1504,11 +1507,18 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   // -- notifying --------------------------------------------------------------------
 
-  /// Notifies once per [notifyEvery] however many changes came. In the
-  /// background with the session kept alive the text that streams in notifies
-  /// at most once per [backgroundNotifyEvery]; an [urgent] change (link, phase,
-  /// a request, an error) still goes out within [notifyEvery]. Nothing is told
-  /// while a big batch is being applied.
+  /// Whether listeners were told anything since the first batch of this follow
+  /// was applied.
+  bool _toldSinceFirstBatch = false;
+
+  /// Notifies once per [notifyEvery] however many changes came, except that the
+  /// change that shows the first batch of a follow goes out on the next turn of
+  /// the event loop: an open does not wait a frame for its first paint (never
+  /// synchronously: `acquire()` runs in `initState`). In the background with the
+  /// session kept alive the text that streams in notifies at most once per
+  /// [backgroundNotifyEvery]; an [urgent] change (link, phase, a request, an
+  /// error) still goes out within [notifyEvery]. Nothing is told while a big
+  /// batch is being applied.
   void _changed({bool urgent = true}) {
     if (_disposed || _batching) return;
     _dirty = true;
@@ -1516,10 +1526,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     if (_flushTimer != null && (slow || !_flushSlow)) return;
     _flushTimer?.cancel();
     _flushSlow = slow;
-    _flushTimer = Timer(slow ? backgroundNotifyEvery : notifyEvery, () {
+    final wait = slow
+        ? backgroundNotifyEvery
+        : (_toldSinceFirstBatch ? notifyEvery : Duration.zero);
+    _flushTimer = Timer(wait, () {
       _flushTimer = null;
       if (_disposed || !_dirty) return;
       _dirty = false;
+      _toldSinceFirstBatch = true;
       _log.liveMessage?.live?.flush();
       notifyListeners();
     });

@@ -133,27 +133,39 @@ class SshAgentHost implements AgentHost {
   /// Opens the long-lived channel of a keeper [command] (`keeperAttachCommand`,
   /// `keeperFollowCommand`) and returns it running. When the host says the
   /// script is not installed (65) it is installed and the command opened once
-  /// more. [recheck] is for a caller whose channel just ended with 65 after it
-  /// had been opened: the host is then not trusted to still have the script,
-  /// so the open watches for a 65 again. With [zipped] the command is
-  /// `keeper attach --z`, read back by the transport. Everything that goes wrong is an
-  /// [AgentHostException] (a link problem a non-fatal one).
-  Future<ExecChannel> openKeeperChannel(String command, {bool recheck = false, bool zipped = false}) {
-    if (recheck) _present = false;
-    return _withInstall(() => _openAttach(command, zipped: zipped));
+  /// more. [missing] is for a caller whose channel just ended with 65: the
+  /// host has said so, so the script is installed first and no channel is
+  /// opened to find that out again. With [zipped] the command is
+  /// `keeper attach --z`, read back by the transport. With [verify] false the
+  /// channel is handed over at once instead of after [attachCheck]: for a
+  /// caller that reads the exit status itself and comes back with [missing]
+  /// on a 65 (the log follow does), so that the open does not wait a fixed
+  /// 2 s for a channel that is going to keep running. Everything that goes
+  /// wrong is an [AgentHostException] (a link problem a non-fatal one).
+  Future<ExecChannel> openKeeperChannel(
+    String command, {
+    bool missing = false,
+    bool zipped = false,
+    bool verify = true,
+  }) async {
+    if (missing) {
+      _present = false;
+      await _install();
+    }
+    return _withInstall(() => _openAttach(command, zipped: zipped, verify: verify));
   }
 
   /// Opens the long-lived attach channel. While the script is not known to be
   /// on the host the channel is watched for [attachCheck]: the short command
   /// checks for the script before anything else, so a 65 shows at once.
-  Future<ExecChannel> _openAttach(String command, {bool zipped = false}) async {
+  Future<ExecChannel> _openAttach(String command, {bool zipped = false, bool verify = true}) async {
     final ExecChannel channel;
     try {
       channel = await _transport.openExec(command, zipped: zipped);
     } on HerdrTransportException catch (e) {
       throw AgentHostException(e.message, fatal: e.fatal);
     }
-    if (_present) return channel;
+    if (_present || !verify) return channel;
     final early = await channel.exitCode.then<int?>((c) => c).timeout(
           attachCheck,
           onTimeout: () => -1,

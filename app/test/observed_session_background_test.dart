@@ -196,6 +196,29 @@ void main() {
       assistantLine('a9', 'bg_6 runs; I will wait.'),
     ];
 
+    test('the first batch of an open reaches the screen at once, whatever the notify interval', () async {
+      final rig = await ObservedRig.create(status: 'idle');
+      addTearDown(rig.dispose);
+      rig.source.write(waitingLog);
+      // With the old trailing timer nothing could be told before 5 s.
+      final session = ObservedAgentSession(
+        machine: rig.machine,
+        paneId: 'w1:p1',
+        agent: 'omp',
+        source: rig.source,
+        mapper: OmpLogMapper(),
+        previews: rig.previews,
+        notifyEvery: const Duration(seconds: 5),
+      );
+      addTearDown(session.dispose);
+      var shown = 0;
+      session.addListener(() {
+        if (session.state.items.isNotEmpty && session.link == AgentLink.live) shown++;
+      });
+      session.acquire();
+      await eventually(() => shown > 0, timeout: const Duration(seconds: 2), reason: 'the transcript told to the screen');
+    });
+
     test('herdr working, turn over, bg_6 running: waiting, phase still working, wakes', () async {
       final (_, s) = await open(waitingLog);
       expect(s.phase, AgentPhase.working, reason: 'phase stays herdr-derived');

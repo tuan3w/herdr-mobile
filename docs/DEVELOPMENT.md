@@ -102,12 +102,15 @@ app/benchmark/               benchmarks: transfer_bench.dart (bytes on the wire,
                              session_open_bench.dart (+ session_open_aot.dart,
                              open_cache_bench_test.dart,
                              session_open_wire_bench_test.dart: bytes and round
-                             trips of an open, any desktop), upload_bench.dart,
+                             trips of an open, any desktop;
+                             observed_open_bench_test.dart: the same for a chat
+                             of an agent in a herdr pane), upload_bench.dart,
                              upload_real_bench.dart, background_bench_test.dart
                              (virtual time); on a phone:
                              keyboard_device_bench.dart, stream_device_bench.dart
 app/screenshot_test/         demo fleet rendered for docs/screenshots
 autoresearch.sh              battery and network of watching agents (no phone)
+autoresearch-open.sh         open-a-chat time on slow links, modelled (no phone)
 autoresearch-keyboard.sh     keyboard bench on a phone (adb)
 autoresearch-stream.sh       streaming bench on a phone (adb)
 docs/GUIDE.md                using the app

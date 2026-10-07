@@ -9,7 +9,9 @@ import '../acp/background/background_work.dart' show BackgroundTask;
 /// answering a dialog), checked against the log afterwards. The terminal stays
 /// one tap away as the fallback.
 
-/// Complete lines appended to a session log on the host.
+/// Complete lines appended to a session log on the host. A batch with no lines
+/// and no [reset] says the follower has sent everything the file held (the log
+/// is empty, or a resume found nothing after its offset).
 class LogBatch {
   const LogBatch(this.lines, this.endOffset, {this.reset = false});
 

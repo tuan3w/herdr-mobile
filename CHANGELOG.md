@@ -32,8 +32,17 @@ release.
   old way, compressed but whole, until it ends. The copy shown at once is
   still not live, and answering still waits for the machine to confirm.
 - An open waits one round trip less.
-- All figures are from a desktop benchmark with a modelled link
-  (`session_open_wire_bench_test.dart`); a phone was not measured.
+- A chat of an agent that runs in a terminal pane starts loading at once.
+  Before, it waited a fixed 2 seconds on the first open, and coming back to one
+  you had just left waited another 2.5 seconds before it said it was up to
+  date. Its history also crosses the link compressed and without the
+  bookkeeping omp keeps for itself. In the benchmark the open on the slowest
+  modelled link went from 2.6 s to 0.9 s, and coming back to the chat from
+  3.1 s to 0.7 s. This needs the new helper on the machine; it installs itself
+  the first time you open a chat after updating.
+- All figures are from desktop benchmarks with a modelled link
+  (`session_open_wire_bench_test.dart`, `observed_open_bench_test.dart`); a
+  phone was not measured.
 
 ## [0.1.0] - 2026-10-06
 

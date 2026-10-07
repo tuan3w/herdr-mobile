@@ -7,7 +7,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/acp/session_state.dart';
+import 'package:herdr_mobile/data/acp/zipped_lines.dart';
+import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
+
+import 'support/transcript_fingerprint.dart';
+
 
 // Runs the real keeper script (python3) `follow` against files in a temp HOME,
 // the way an SSH server would run it (`sh -c`).
@@ -63,6 +69,7 @@ class _Rec {
   final String text;
 
   bool get isReset => text.startsWith('R\t');
+  bool get isCaughtUp => text.startsWith('C\t');
   bool get isError => text.startsWith('E\t');
   int get offset => int.parse(text.substring(0, text.indexOf('\t')));
   int get resetOffset => int.parse(text.substring(2));
@@ -77,7 +84,9 @@ class _Follow {
   _Follow(this.process) {
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
       (l) {
-        _records.add(_Rec(l));
+        final r = _Rec(l);
+        // The caught-up record is a note about the stream, not a record of the log.
+        (r.isCaughtUp ? caughtUp : _records).add(r);
         _wake();
       },
       onDone: () {
@@ -90,6 +99,9 @@ class _Follow {
 
   final Process process;
   final _records = <_Rec>[];
+
+  /// The `C` records, in order (the follower sends one, after its first read to the end).
+  final caughtUp = <_Rec>[];
   final _err = StringBuffer();
   var _done = false;
   Completer<void>? _waiting;
@@ -919,6 +931,166 @@ void main() {
       expect(r.code, 64);
       final bad = await host.runToEnd('python3 ${host.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py follow /x.jsonl --from x');
       expect(bad.code, 64);
+    });
+  });
+
+  group('follow says it is up to date', skip: hasPython ? false : 'python3 is not installed', () {
+    test('once, with the offset it has reached: an empty file, a tail, and a resume at the end', () async {
+      final empty = File(host.path())..writeAsStringSync('');
+      final a = await host.follow(empty.path);
+      await a.settle();
+      expect([for (final c in a.caughtUp) c.text], ['C\t0']);
+      await a.stop();
+
+      final f = File(host.path());
+      final offsets = _write(f, [_json(1), _json(2)]);
+      final b = await host.follow(f.path);
+      expect([for (final r in await b.take(2)) r.offset], offsets);
+      await b.settle();
+      expect([for (final c in b.caughtUp) c.text], ['C\t${offsets.last}']);
+      _write(f, [_json(3)], mode: FileMode.append);
+      expect((await b.next()).json['n'], 3);
+      await b.expectQuiet();
+      expect(b.caughtUp, hasLength(1), reason: 'said once, not after every line');
+      await b.stop();
+
+      final c = await host.follow(f.path, from: offsets.first);
+      expect((await c.next()).json['n'], 2);
+      await c.settle();
+      expect(c.caughtUp.single.text, 'C\t${f.lengthSync()}', reason: 'the offset of the end it has sent up to');
+      await c.stop();
+
+      final d = await host.follow(f.path, from: f.lengthSync());
+      await d.settle();
+      expect(d.caughtUp.single.text, 'C\t${f.lengthSync()}', reason: 'a resume at the end has no record to say it by');
+      await d.stop();
+    });
+  });
+
+  group('follow --z', skip: hasPython ? false : 'python3 is not installed', () {
+    /// The lines `follow` prints for [f] until it has been quiet for a second, as the phone reads them.
+    Future<({List<String> raw, List<String> read})> output(File f, {required bool zipped}) async {
+      final r = await host.runToEnd(keeperFollowCommand(f.path, pollMs: 40, idleExit: 1, zipped: zipped));
+      expect(r.code, 0, reason: r.err);
+      final raw = const LineSplitter().convert(r.out);
+      return (raw: raw, read: await zippedLines(Stream.fromIterable(raw)).toList());
+    }
+
+    test('a big tail travels as Z lines that read back to exactly the plain records', () async {
+      final f = File(host.path());
+      _write(f, [for (var i = 0; i < 3000; i++) jsonEncode({'n': i, 'text': 'line $i of the log, with words that repeat ${i % 7}'})]);
+      final plain = await output(f, zipped: false);
+      final zipped = await output(f, zipped: true);
+
+      expect(zipped.read, plain.read);
+      expect(zipped.raw.any((l) => l.startsWith('Z')), isTrue);
+      final wire = zipped.raw.join('\n').length;
+      expect(wire, lessThan(plain.raw.join('\n').length ~/ 3), reason: 'the wire shrinks');
+    });
+
+    test('a later batch continues the same zlib stream, and the phone reads both', () async {
+      final f = File(host.path());
+      String row(int i) => jsonEncode({'n': i, 'text': 'line $i with words that repeat ${i % 5}'});
+      _write(f, [for (var i = 0; i < 300; i++) row(i)]);
+      final run = await host.startCommand(keeperFollowCommand(f.path, pollMs: 40, zipped: true));
+      final first = await run.settle();
+      _write(f, [for (var i = 300; i < 340; i++) row(i)], mode: FileMode.append);
+      final later = await run.settle();
+
+      expect(first.single.text, startsWith('Z'));
+      expect(later.single.text, startsWith('Z'), reason: 'its own line, not part of the first');
+      final read = await zippedLines(Stream.fromIterable([for (final r in [...first, ...later]) r.text])).toList();
+      expect([for (final l in read) jsonDecode(l.substring(l.indexOf('\t') + 1))['n']], [for (var i = 0; i < 340; i++) i]);
+      await run.stop();
+    });
+  });
+
+  group('follow leaves out what omp keeps for itself', skip: hasPython ? false : 'python3 is not installed', () {
+    test('token accounting, the envelope, signatures and the copy of a file read are not sent; a credential_pin is skipped', () async {
+      final f = File(host.path());
+      final assistant = {
+        'type': 'message',
+        'id': 'a1',
+        'message': {
+          'role': 'assistant',
+          'content': [
+            {'type': 'thinking', 'thinking': 'hm', 'thinkingSignature': 'x' * 900},
+            {'type': 'text', 'text': 'done'},
+          ],
+          'usage': {'input': 3},
+          'contextSnapshot': {'promptTokens': 9},
+          'responseId': 'msg_1',
+          'api': 'anthropic-messages',
+          'provider': 'anthropic',
+          'model': 'claude',
+          'stopReason': 'stop',
+          'timestamp': 5,
+        },
+      };
+      final result = {
+        'type': 'message',
+        'id': 'r1',
+        'message': {
+          'role': 'toolResult',
+          'toolCallId': 'c1',
+          'content': [
+            {'type': 'text', 'text': '1:alpha'},
+          ],
+          'details': {
+            'totalLines': 1,
+            'displayContent': {'text': 'alpha'},
+          },
+        },
+      };
+      final foreign = {'type': 'assistant', 'usage': {'input': 3}, 'message': {'usage': 1}};
+      final offsets = _write(f, [
+        jsonEncode(assistant),
+        jsonEncode({'type': 'credential_pin', 'id': 'p1', 'hash': '0' * 64}),
+        jsonEncode(result),
+        jsonEncode(foreign),
+      ]);
+      final run = await host.follow(f.path);
+      final got = await run.take(3);
+
+      final m = got[0].json['message']! as Map;
+      expect(m.keys.toSet(), {'role', 'content', 'model', 'stopReason', 'timestamp'});
+      expect((m['content']! as List).first, {'type': 'thinking', 'thinking': 'hm'});
+      expect(got[0].offset, offsets[0]);
+      final d = ((got[1].json['message']! as Map)['details']! as Map);
+      expect(d, {'totalLines': 1});
+      expect(got[1].offset, offsets[2], reason: 'the skipped entry is still counted in the offsets');
+      expect(got[2].json, foreign, reason: 'what is not shaped like an omp message is left alone');
+      await run.expectQuiet();
+      await run.stop();
+    });
+
+    test('every fixture log reads the same on the phone with and without it', () async {
+      final fixtures = Directory('test/fixtures/omp_logs').listSync().whereType<File>().where((f) => f.path.endsWith('.jsonl')).toList();
+      expect(fixtures, isNotEmpty);
+      for (final fixture in fixtures) {
+        final name = fixture.uri.pathSegments.last;
+        final raw = fixture.readAsLinesSync().where((l) => l.isNotEmpty).toList();
+        final f = File(host.path())..writeAsStringSync('${raw.join('\n')}\n');
+        final r = await host.runToEnd(keeperFollowCommand(f.path, pollMs: 40, idleExit: 1, tailBytes: 8 * 1024 * 1024));
+        expect(r.code, 0, reason: '$name: ${r.err}');
+        final sent = [
+          for (final l in const LineSplitter().convert(r.out))
+            if (!l.startsWith('C\t')) l.substring(l.indexOf('\t') + 1),
+        ];
+
+        String read(List<String> lines) {
+          final mapper = OmpLogMapper();
+          var s = const AgentSessionState('s');
+          for (final line in lines) {
+            for (final u in mapper.map(line)) {
+              s = s.apply(u);
+            }
+          }
+          return transcriptFingerprint(s);
+        }
+
+        expect(read(sent), read(raw), reason: name);
+      }
     });
   });
 }

@@ -21,21 +21,29 @@ Single file, python 3.6+, standard library only. Design: docs/AGENT_SESSIONS.md.
 import base64
 import collections
 import errno
-import glob
 import json
 import os
 import re
-import secrets
-import selectors
 import select
-import signal
-import socket
 import stat
-import subprocess
 import sys
 import time
-import traceback
 import zlib
+
+
+def load_daemon_modules():
+    """Imports what every command but `follow` uses. `follow` (the chat of an
+    agent in a pane) is waited for on every open and uses none of them;
+    `traceback` alone pulls in a dozen modules, about 30 ms of a start on the
+    machine this was measured on (python 3.14, desktop)."""
+    global glob, secrets, selectors, signal, socket, subprocess, traceback
+    import glob
+    import secrets
+    import selectors
+    import signal
+    import socket
+    import subprocess
+    import traceback
 
 ROUTES = json.loads(r"""@@ROUTES@@""")
 
@@ -2347,16 +2355,52 @@ def scrub(v):
     return out
 
 
+# What omp writes into an assistant message for itself, which `OmpLogMapper`
+# never reads: the token accounting and the provider's answer envelope (a base64
+# `thinkingSignature` of 0.5-2 KB does not deflate at all). A key the mapper
+# starts to read MUST leave this list.
+FOLLOW_MESSAGE_NOISE = ("usage", "contextSnapshot", "responseId", "credentialId", "duration", "ttft", "completedAt", "api", "provider", "errorId")
+
+
+def slim(o):
+    """[o], an omp log entry as parsed, without what the phone never reads
+    (see FOLLOW_MESSAGE_NOISE), or None for an entry that is only bookkeeping
+    (`credential_pin`). Anything that is not shaped like omp's is left as it is.
+    Only assistant messages lose the envelope keys: other roles may carry keys
+    of the same names."""
+    if not isinstance(o, dict):
+        return o
+    t = o.get("type")
+    if t == "credential_pin":
+        return None
+    m = o.get("message") if t == "message" else None
+    if isinstance(m, dict):
+        if m.get("role") == "assistant":
+            for k in FOLLOW_MESSAGE_NOISE:
+                m.pop(k, None)
+            c = m.get("content")
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "thinking":
+                        b.pop("thinkingSignature", None)
+        d = m.get("details")
+        if isinstance(d, dict):
+            # a second copy of the text of a file read, for omp's own screen
+            d.pop("displayContent", None)
+    return o
+
+
 def follow_record(raw):
     """One log line (bytes) as the compact UTF-8 JSON the phone gets, or None
-    for a blank line. Whatever is not JSON becomes {"raw": first 2 KB}."""
+    for a blank line or a line the phone has no use for (see slim). Whatever is
+    not JSON becomes {"raw": first 2 KB}."""
     if not raw.strip():
         return None
     try:
-        out = json.dumps(
-            scrub(json.loads(raw.decode("utf-8"))),
-            ensure_ascii=False, separators=(",", ":"), allow_nan=False,
-        )
+        obj = slim(json.loads(raw.decode("utf-8")))
+        if obj is None:
+            return None
+        out = json.dumps(scrub(obj), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     except (ValueError, RecursionError):
         out = json.dumps(
             {"raw": raw[:FOLLOW_RAW].decode("utf-8", "replace")},
@@ -2370,7 +2414,7 @@ class Follower(object):
     records. `pos` is the offset after the last line consumed; the bytes of a
     line still waiting for its newline are held in `buf`, never printed."""
 
-    def __init__(self, path, frm, poll=FOLLOW_POLL, idle_exit=0, clock=time.monotonic, tail=FOLLOW_TAIL):
+    def __init__(self, path, frm, poll=FOLLOW_POLL, idle_exit=0, clock=time.monotonic, tail=FOLLOW_TAIL, zipped=False):
         self.path = path
         self.frm = frm
         self.tail = tail
@@ -2387,6 +2431,16 @@ class Follower(object):
         self.skip = False
         self.out = []
         self.watch = True
+        # `--z`: what is sent is cut into whole records and a batch of at least
+        # ATTACH_ZIP_MIN bytes travels as one `Z<base64 of zlib data>` line of
+        # one zlib stream, as in `attach --z` (the log of a long chat shrinks
+        # ~3x; a record or two stays as it is).
+        self.z = zlib.compressobj(6) if zipped else None
+
+    def emit(self, data):
+        if self.z is not None and len(data) >= ATTACH_ZIP_MIN:
+            data = zip_batch(self.z, data)
+        put(data)
 
     def byte_at(self, offset):
         return os.pread(self.fd, 1, offset)
@@ -2400,7 +2454,7 @@ class Follower(object):
         self.pos = self.read_pos = start
         self.restart_line()
         if marker:
-            put(b"R\t%d\n" % start)
+            self.emit(b"R\t%d\n" % start)
 
     def restart_line(self):
         self.buf = bytearray()
@@ -2446,7 +2500,7 @@ class Follower(object):
             self.last_growth = self.clock()
             self.feed(data)
             if self.out:
-                put(b"".join(self.out))
+                self.emit(b"".join(self.out))
                 self.out = []
 
     def feed(self, data):
@@ -2508,6 +2562,10 @@ class Follower(object):
     def run(self):
         self.begin()
         self.pump()
+        # Everything the file held is sent: the phone is up to date (an empty
+        # log or a resume at its end sends no record, and would otherwise have
+        # to guess from the silence).
+        self.emit(b"C\t%d\n" % self.pos)
         while self.wait(self.interval()):
             if self.idle_exit and self.clock() - self.last_growth >= self.idle_exit:
                 return
@@ -2533,17 +2591,18 @@ def follow_target(path):
     return real
 
 
-def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL):
+def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL, zipped=False):
     """Prints the tail of the log (or what follows byte [frm]), then every
     complete line appended later, one record per line: `<endOffset>\t<json>`
     (long strings and binary payloads cut), `R\t<offset>` when the file
-    shrank or was replaced (what follows starts at that offset), or
+    shrank or was replaced (what follows starts at that offset), `C\t<offset>`
+    once, when the file's content up to that offset has been sent, or
     `E\t<message>` before exiting 70 when reading fails. Ends when stdout or
     stdin closes, or after [idle_exit] seconds (0: never) without growth.
     The file is looked at every [poll] seconds, less often while it is quiet."""
     real = follow_target(path)
     try:
-        Follower(real, frm, poll, idle_exit, tail=tail).run()
+        Follower(real, frm, poll, idle_exit, tail=tail, zipped=zipped).run()
     except Gone:
         pass
     except OSError as e:
@@ -2556,8 +2615,10 @@ def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL):
 
 def main(argv):
     if not argv:
-        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
+        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
     cmd, rest = argv[0], argv[1:]
+    if cmd != "follow":
+        load_daemon_modules()
     try:
         if cmd == "probe":
             cmd_probe()
@@ -2577,14 +2638,21 @@ def main(argv):
         elif cmd == "follow" and rest:
             opts = {}
             i = 1
-            while i + 1 < len(rest) and rest[i] in ("--from", "--poll-ms", "--idle-exit", "--tail-bytes") and rest[i + 1].isdigit():
-                opts[rest[i]] = int(rest[i + 1])
-                i += 2
+            zipped = False
+            while i < len(rest):
+                if rest[i] == "--z":
+                    zipped = True
+                    i += 1
+                elif i + 1 < len(rest) and rest[i] in ("--from", "--poll-ms", "--idle-exit", "--tail-bytes") and rest[i + 1].isdigit():
+                    opts[rest[i]] = int(rest[i + 1])
+                    i += 2
+                else:
+                    break
             if i != len(rest):
-                fail(EX_USAGE, "usage: follow PATH [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N]")
+                fail(EX_USAGE, "usage: follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N]")
             poll = max(20, min(opts.get("--poll-ms", int(FOLLOW_POLL * 1000)), 60000)) / 1000.0
             tail = max(FOLLOW_TAIL_MIN, min(opts.get("--tail-bytes", FOLLOW_TAIL), FOLLOW_TAIL_MAX))
-            cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail)
+            cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail, zipped)
         elif cmd == "attach" and len(rest) in (1, 2) and (len(rest) == 1 or rest[1] == "--z"):
             cmd_attach(rest[0], len(rest) == 2)
         elif cmd == "kill" and len(rest) == 1:

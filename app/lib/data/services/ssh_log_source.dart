@@ -55,8 +55,12 @@ class _Follow {
   StreamSubscription<String>? _sub;
   var _stopped = false;
   var _finished = false;
-  var _gotRecords = false;
   var _rechecked = false;
+
+  // A batch (lines, a reset or the caught-up note) has gone to the listener:
+  // the channel works, so the helper is there, and a later caught-up note adds
+  // nothing.
+  var _delivered = false;
 
   // Lines that arrived in this turn of the event loop, not yet handed on.
   var _pending = <String>[];
@@ -66,18 +70,18 @@ class _Follow {
   void _start() {
     final String command;
     try {
-      command = keeperFollowCommand(_path, from: _from, tailBytes: _tailBytes);
+      command = keeperFollowCommand(_path, from: _from, tailBytes: _tailBytes, zipped: true);
     } on ArgumentError {
       _fail(const AgentHostException('That session log has a name the app cannot use.', fatal: true));
       return;
     }
-    unawaited(_open(command, recheck: false));
+    unawaited(_open(command, missing: false));
   }
 
-  Future<void> _open(String command, {required bool recheck}) async {
+  Future<void> _open(String command, {required bool missing}) async {
     final ExecChannel channel;
     try {
-      channel = await _host.openKeeperChannel(command, recheck: recheck);
+      channel = await _host.openKeeperChannel(command, missing: missing, verify: false, zipped: true);
     } on AgentHostException catch (e) {
       // A link problem or a half-finished install is worth another try; a host
       // that cannot do it at all is not.
@@ -110,10 +114,23 @@ class _Follow {
       // R: the file shrank or was replaced; what follows is its new content.
       final offset = int.tryParse(line.substring(2));
       if (offset == null) return;
-      _gotRecords = true;
       _flush();
       _end = offset;
+      _delivered = true;
       _out.add(LogBatch(const [], offset, reset: true));
+      return;
+    }
+    if (tab == 1 && line.codeUnitAt(0) == 0x43) {
+      // C: the helper sent everything the file held. With nothing delivered
+      // yet (an empty log, a resume at its end) this is the only word the
+      // session gets, and it is up to date now instead of after a quiet wait.
+      final offset = int.tryParse(line.substring(2));
+      if (offset == null) return;
+      _flush();
+      if (!_delivered) {
+        _delivered = true;
+        _out.add(LogBatch(const [], offset));
+      }
       return;
     }
     if (tab == 1 && line.codeUnitAt(0) == 0x45) {
@@ -126,7 +143,6 @@ class _Follow {
     }
     final offset = int.tryParse(line.substring(0, tab));
     if (offset == null) return;
-    _gotRecords = true;
     _pending.add(line.substring(tab + 1));
     _end = offset;
     if (_pending.length >= _maxBatchLines) {
@@ -144,6 +160,7 @@ class _Follow {
     if (_pending.isEmpty || _finished) return;
     final lines = _pending;
     _pending = <String>[];
+    _delivered = true;
     _out.add(LogBatch(lines, _end));
   }
 
@@ -160,12 +177,12 @@ class _Follow {
     _flush();
     if (code == 0) {
       _finish();
-    } else if (code == 65 && !_gotRecords && !_rechecked) {
+    } else if (code == 65 && !_delivered && !_rechecked) {
       _rechecked = true;
       // The helper vanished from the host after it had been seen: install again.
       _closeChannel(channel);
       _channel = null;
-      await _open(command, recheck: true);
+      await _open(command, missing: true);
     } else if (code == null) {
       _fail(const HerdrTransportException('The connection to the machine dropped.'));
     } else {
