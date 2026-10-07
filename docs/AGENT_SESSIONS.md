@@ -183,7 +183,7 @@ string; `keeper_command.dart` installs it once per host, below). One keeper per
 agent process, state in
 `~/.herdr-mobile/keepers/` (directory 0700; `<id>.json`, `<id>.sock` and
 `<id>.log`, files 0600; ids are six unambiguous random characters). Tests run
-the real script against a scripted agent (`app/test/keeper_test.dart`,
+the real script against a scripted agent (`app/test/keeper_*_test.dart`,
 `app/test/support/fake_acp_agent.py`).
 
 Installed once per host, not shipped per command (it is ~22 KB deflated; `list`

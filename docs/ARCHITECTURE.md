@@ -302,7 +302,7 @@ passed as a single quoted shell word:
 
 Injection tests run the generated commands: `app/test/bridge_command_test.dart`
 (session names such as `$(id)`, and a socket path that tries to `touch` a
-file), `app/test/keeper_test.dart`, `app/test/keeper_history_test.dart`,
+file), `app/test/keeper_*_test.dart`, `app/test/keeper_history_test.dart`,
 `app/test/log_follower_test.dart` (a log name with quotes, `$()` and
 backticks) and `app/test/session_launcher_test.dart`.
 
@@ -642,8 +642,8 @@ system.
   `app/test/support/`: a fake transport, a fake SFTP server, a fake network,
   and a fake ACP agent (`fake_acp_agent.py`).
 - **Real host-side code under test.** The keeper tests run the real keeper
-  script against a scripted agent (`app/test/keeper_test.dart`,
-  `app/test/support/keeper_process_host.dart`). The bridge tests run the
+  script against a scripted agent (`app/test/keeper_*_test.dart` over
+  `app/test/support/keeper_harness.dart`, `keeper_process_host.dart`). The bridge tests run the
   generated shell and python commands against a local unix socket
   (`app/test/bridge_command_test.dart`).
 - **Schema check.** `herdr_api_test.dart` checks the event subscription list

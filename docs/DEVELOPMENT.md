@@ -18,6 +18,10 @@ flutter run -d linux         # desktop, handy for iterating
 `tool/check.sh [--quick]` runs pub get, analyze and the tests in one command
 (`--quick` skips the tests); run it before yielding. It uses `flutter` from
 `PATH`; set `HERDR_FLUTTER_BIN` to an SDK's `bin` directory to override.
+The tests run one file per core (`flutter test -j`, whose default is half the
+cores: most files wait on processes and timers, so half left the CPU idle);
+`HERDR_TEST_JOBS` overrides. A keeper test file stays under ~30 s so none of
+them ends the run waiting alone: split a file that grows past that.
 
 ## Code layout
 
