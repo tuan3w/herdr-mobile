@@ -7,6 +7,7 @@ import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/path_finder.dart';
 import '../../core/motion.dart';
 import '../../core/toast.dart';
+import '../../core/tokens.dart';
 import 'file_browser_screen.dart';
 import 'file_viewer_screen.dart';
 import 'file_widgets.dart';
@@ -208,7 +209,9 @@ PathResolution _choose(List<PathCandidate> found, int? line) {
 /// the host has been asked, and a second tap while it is being found does
 /// nothing. A failure (not found, permission, unreachable, ...) is shown on
 /// that screen, with what to do; a machine with no file access is a quiet
-/// toast and nothing is pushed.
+/// toast and nothing is pushed. Whatever text field had the focus lets go of
+/// it first: Flutter hands the focus back when the route comes off, and the
+/// keyboard with it, to a person who went to read.
 Future<void> openRemoteFile(
   BuildContext context,
   MachineConnection machine,
@@ -221,6 +224,8 @@ Future<void> openRemoteFile(
     Toaster.of(context).show('Files are not available on this machine.', kind: ToastKind.failed);
     return;
   }
+  // The keyboard would come back with Back, over the history someone is reading.
+  FocusManager.instance.primaryFocus?.unfocus();
   final key = (navigator, 'path\u0000${cwd ?? ''}\u0000$path');
   if (!_opening.add(key)) return;
   try {
@@ -425,9 +430,16 @@ class _OpenPathScreenState extends State<_OpenPathScreen> {
         note: _looking,
       );
     }
-    return AnimatedSwitcher(
-      duration: Motion.reduced(context) ? Duration.zero : Motion.fade,
-      child: page,
+    // The pages cross-fade over their own background. Faded over nothing, each
+    // is see-through for a moment and shows what is under the route (the chat,
+    // shifted by the slide, and the dark backdrop where it left a gap on the
+    // right): a dark flash as the file opens.
+    return ColoredBox(
+      color: context.ds.bg,
+      child: AnimatedSwitcher(
+        duration: Motion.reduced(context) ? Duration.zero : Motion.fade,
+        child: page,
+      ),
     );
   }
 }

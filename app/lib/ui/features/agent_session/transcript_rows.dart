@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import '../../core/controls.dart';
 import '../../core/markdown/markdown.dart';
 import '../../core/theme.dart';
@@ -59,9 +60,11 @@ class UserRow extends StatelessWidget {
     final ds = context.ds;
     final full = message.text;
     final collapsible = full.length > 600 || '\n'.allMatches(full).length >= _collapsedLines;
-    final text = !collapsible || open
-        ? (full.length > panelTextLimit ? full.substring(0, panelTextLimit) : full)
-        : full.substring(0, full.length > _collapsedChars ? _collapsedChars : full.length);
+    final text = proseText(
+      !collapsible || open
+          ? (full.length > panelTextLimit ? full.substring(0, safeEnd(full, panelTextLimit)) : full)
+          : full.substring(0, safeEnd(full, full.length > _collapsedChars ? _collapsedChars : full.length)),
+    );
     return _gap(
       gap,
       MessageCopyTarget(

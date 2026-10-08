@@ -80,6 +80,8 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   @override
   DateTime? get phaseSince => run?.startedAt;
   @override
+  DateTime? get lastActivity => run?.startedAt;
+  @override
   DateTime? get turnStartedAt => (run?.isActive ?? false) ? run?.startedAt : null;
   @override
   Listenable? liveTextOf(String messageKey) => run?.liveTextOf(messageKey);

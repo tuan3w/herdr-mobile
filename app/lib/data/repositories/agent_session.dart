@@ -80,6 +80,11 @@ abstract interface class AgentSessionView implements Listenable {
   /// When [phase] last changed, as far as this app knows.
   DateTime? get phaseSince;
 
+  /// When the agent last did anything, by the host's own clock (comparable
+  /// across sessions and across launches, which [phaseSince] is not: that is
+  /// "since this app saw it"). Null when the session has no such time.
+  DateTime? get lastActivity;
+
   /// When the turn that runs now started, by this phone's clock: the instant
   /// of [send] for a turn this phone started (the elapsed clock of the status
   /// line counts from there, whatever the agent takes to answer), else when
@@ -156,8 +161,8 @@ abstract interface class AgentSessionView implements Listenable {
 
   /// What waits to be sent, oldest first; a new list whenever it changes. A
   /// message is [QueuedState.waiting] (goes out when the turn ends) or
-  /// [QueuedState.held] (the person stopped the turn, it failed, or the agent
-  /// refused: it stays until edited, removed or resumed). Kept in memory for
+  /// [QueuedState.held] (the turn failed or was stopped from elsewhere, or the
+  /// agent refused: it stays until edited, removed or resumed). Kept in memory for
   /// the life of this session object: it survives a dropped link and a
   /// re-attach, not the app being killed.
   List<QueuedMessage> get queued;
@@ -180,8 +185,9 @@ abstract interface class AgentSessionView implements Listenable {
   AuthNeeded? get authNeeded;
 
   /// Stops the turn in flight (`session/cancel`); pending requests are
-  /// answered as cancelled. Queued messages are kept, held: the person
-  /// decides.
+  /// answered as cancelled. Queued messages are not held: once the turn has
+  /// stopped they go out together as one message (the person queued them to
+  /// follow it; stopping it is going on with them).
   void cancel();
 
   Future<void> setMode(String modeId);

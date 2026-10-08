@@ -546,6 +546,10 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
     _plan.refresh(id);
     if (!_open.remove(id)) _open.add(id);
     _replan();
+    // Opening a fold can bring the live message's row into the plan (a
+    // message that is streaming but is not the answer sits in the log); its
+    // model is made here, or the row has none to build from.
+    _syncLive();
     if (opening) {
       // The rows this fold brought are revealed; the others stay as they are.
       _entering

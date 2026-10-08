@@ -453,7 +453,7 @@ class StateTime extends StatelessWidget {
         ),
       );
     }
-    final time = agent.machine.statusTime(agent.paneId);
+    final time = agent.since;
     if (time == null) return const SizedBox.shrink();
     return MinuteBuilder(
       builder: (context, now) {

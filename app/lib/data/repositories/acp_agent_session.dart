@@ -260,6 +260,21 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// re-attach, never the app being killed (nothing is written to disk).
   final _queue = PromptQueue();
 
+  /// The person pressed Stop with messages waiting: when the turn has stopped
+  /// they go out together (see [cancel]). Cleared when that turn ends or the
+  /// next one starts.
+  bool _stopSendsQueue = false;
+
+  /// The prompt that runs now is the app's own errand, not the person's (the
+  /// `/rename` of [_maybeNameIt]): its end is no result to review, and its
+  /// silence is no failure.
+  bool _housekeeping = false;
+
+  /// This session has been asked to name itself, so one that cannot be named
+  /// (omp skips a first message like "hi") costs one model call for as long as
+  /// this object lives (the app run), not one per attach.
+  bool _nameAsked = false;
+
   /// Learned from the agent's `initialize` answer at the last attach.
   bool _canSteer = false;
   bool _acceptsImages = false;
@@ -330,6 +345,9 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   DateTime get phaseSince => _phaseSince;
+
+  @override
+  DateTime? get lastActivity => activityAt;
 
   @override
   DateTime? get turnStartedAt => _turnStartedAt;
@@ -1369,7 +1387,13 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// [AgentSessionView.sendBlocks]): true at once when the turn has started,
   /// else, when the prompt has failed, true if it waits held. The turn itself
   /// is not waited for.
-  Future<bool> _promptNow(AcpClient client, String sid, List<ContentBlock> blocks, {String? fromQueue}) {
+  Future<bool> _promptNow(
+    AcpClient client,
+    String sid,
+    List<ContentBlock> blocks, {
+    String? fromQueue,
+    bool errand = false,
+  }) {
     final before = client.state(sid);
     var started = false;
     var kept = false;
@@ -1379,7 +1403,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         final result = await client.prompt(sid, blocks);
         kept = true;
         if (_disposed || !identical(client, _client)) return null;
-        if (result.stopReason == StopReason.endTurn && !_answered(before, client.state(sid))) {
+        if (result.stopReason == StopReason.endTurn && !_housekeeping && !_answered(before, client.state(sid))) {
           _setProblem(_silentTurn);
         }
         return null;
@@ -1387,12 +1411,17 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         if (_disposed || !identical(client, _client)) return null;
         // Nothing was taken and nothing shows (the client took the row back):
         // the message waits, held.
-        _queue.add(blocks, at: _clock(), state: QueuedState.held, heldReason: _busyReason, first: true);
+        if (!_housekeeping) {
+          _queue.add(blocks, at: _clock(), state: QueuedState.held, heldReason: _busyReason, first: true);
+        }
         kept = true;
         _setState(client.state(sid));
         _changed();
         return null;
       } on Object catch (e) {
+        // The app's own errand failing (omp has no model to name with, say) is
+        // not the person's to deal with: not held, not an error.
+        if (_housekeeping) return null;
         if (!started && !_disposed && identical(client, _client)) {
           // It never started (the agent takes no pictures, say): the text is
           // not lost, it waits held for the person to edit or drop.
@@ -1408,6 +1437,9 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         rethrow;
       }
     });
+    // The prompt call returns when the turn *starts*; the errand lasts until
+    // the turn is over, whatever ended it (an answer, a failure, a dropped link).
+    if (errand) unawaited(turn.whenComplete(() => _housekeeping = false));
     // The client's `prompt` has run up to its first await: the local row and
     // the running turn are in its state already. Take them now, so the next
     // flush (the next frame) shows the row and `working`, instead of waiting
@@ -1494,6 +1526,40 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       !_state.disconnected &&
       _state.phase == AgentPhase.idle;
 
+  /// Names a session whose agent never does. omp's ACP mode starts no title of
+  /// its own (its terminal UI and command line do: `maybeStartTitleGeneration`
+  /// in `main.ts` and the input controller, not in the ACP prompt path), it
+  /// sends a title only after `/rename`, and ACP has no request to set or
+  /// generate one (the schema's methods end at `session/set_model`; Zed has
+  /// none either, and shows what the agent sends). So a conversation that has
+  /// had an answer and still has no title asks omp for its own: `/rename`
+  /// without an argument makes omp generate one and announce it in a
+  /// `session_info_update`. Once per session per app run, because omp declines
+  /// a first message like "hi" and would be asked again at every attach; only
+  /// when the agent lists `rename` (an older omp is left alone) and nothing of
+  /// the person's runs or waits. It is a prompt of the app's own: no review,
+  /// no failure shown, never held in the queue ([_housekeeping]).
+  void _maybeNameIt() {
+    if (_info.agent != 'omp' || _housekeeping || !_canDispatch || _queue.hasWaiting) return;
+    if (_state.title?.trim().isNotEmpty == true || _info.title?.trim().isNotEmpty == true) return;
+    if (!_state.commands.any((c) => c.name == 'rename')) return;
+    var asked = false;
+    var answered = false;
+    for (final item in _state.items) {
+      if (item is TranscriptMessage) {
+        if (item.role == MessageRole.user) {
+          asked = true;
+        } else {
+          answered = true;
+        }
+      }
+    }
+    if (!asked || !answered || _nameAsked) return;
+    _nameAsked = true;
+    _housekeeping = true;
+    unawaited(_promptNow(_client!, _sessionId!, const [TextBlock('/rename')], errand: true));
+  }
+
   static const _silentTurn = 'The agent ended the turn without an answer. '
       'If this keeps happening, its login on the host may have expired.';
 
@@ -1521,8 +1587,11 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   void cancel() {
-    // What waits stays, held: the person decides whether it still makes sense.
-    if (_queue.holdAll('Held because you stopped the turn. Resume to send it.')) _changed();
+    // What waits was queued for after this turn. Stopping it is the person
+    // saying "go on with these", so when the turn has stopped they all go out
+    // as one message (`_setState`), not held for a tap on Resume. A stop that
+    // is not the person's (another client, the host) still holds them.
+    if (_queue.hasWaiting && (_state.turnActive || phase != AgentPhase.idle)) _stopSendsQueue = true;
     final client = _client;
     final sid = _sessionId;
     if (client == null || sid == null) return;
@@ -1562,7 +1631,12 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// [authNeeded].
   String _failure(Object e, AcpClient? client) {
     if (e is JsonRpcException && isAuthRequired(e)) {
-      final need = authNeededFrom(e, agentLabel: agentLabel, advertised: client?.agent?.raw['authMethods']);
+      final need = authNeededFrom(
+        e,
+        agentLabel: agentLabel,
+        advertised: client?.agent?.raw['authMethods'],
+        keychain: _info.loginInKeychain,
+      );
       _setAuth(need);
       return need.message;
     }
@@ -1683,23 +1757,36 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _turnStartedAt = null;
     } else {
       _turnStartedAt ??= _sentAt ?? _clock();
+      if (!prev.turnActive) _stopSendsQueue = false; // a new turn: an old Stop is history
     }
     final finished = prev.turnActive && !next.turnActive || prev.lastStopReason == null && next.lastStopReason != null;
-    if (finished && !next.turnActive && !next.disconnected && !_replaying) {
+    if (finished && !next.turnActive && !next.disconnected && !_replaying && _housekeeping) {
+      // Nothing to review and nothing queued behind it (it only starts when
+      // the queue is empty): the person's own turns are not touched.
+    } else if (finished && !next.turnActive && !next.disconnected && !_replaying) {
       _turnEnded(next.lastStopReason);
-      // A stopped or failed turn is not the end of a conversation to carry on
-      // with whatever was queued behind it: the person decides.
-      final held = switch (next.lastStopReason) {
-        StopReason.cancelled => 'Held because the turn was stopped. Resume to send it.',
-        StopReason.error => 'Held because the turn failed. Resume to send it.',
-        _ => null,
-      };
-      if (held != null) _queue.holdAll(held);
+      final stoppedByMe = _stopSendsQueue;
+      _stopSendsQueue = false;
+      if (stoppedByMe && next.lastStopReason != StopReason.error) {
+        // The person's own Stop: what they had queued goes out now, together.
+        _queue.mergeWaiting();
+      } else {
+        // A turn stopped by someone else, or one that failed, is not the end of
+        // a conversation to carry on with whatever was queued behind it: the
+        // person decides.
+        final held = switch (next.lastStopReason) {
+          StopReason.cancelled => 'Held because the turn was stopped. Resume to send it.',
+          StopReason.error => 'Held because the turn failed. Resume to send it.',
+          _ => null,
+        };
+        if (held != null) _queue.holdAll(held);
+      }
     }
     final requests = prev.pending.length != next.pending.length ||
         (next.pending.isNotEmpty && prev.pending.first.id != next.pending.first.id);
     _changed(urgent: _shownPhase != before || requests || finished || prev.disconnected != next.disconnected);
     _pump();
+    _maybeNameIt();
   }
 
   /// [phaseSince] follows the phase that is shown, whatever it comes from (by
@@ -1721,6 +1808,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _syncPhase();
       _changed();
       _pump();
+      _maybeNameIt();
     });
   }
 

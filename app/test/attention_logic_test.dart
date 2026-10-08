@@ -1219,16 +1219,48 @@ void main() {
       expect(keys(g, AgentStatus.working), ['a/p2', 'a/p4', 'a/p1', 'a/p3']);
     });
 
-    test('Idle and Unknown keep machine then pane', () {
+    test('Idle: stopped within a day newest first, then no known time, then older (newest first)', () {
       final a = machine('a');
       final b = machine('b');
-      final g = groupByStatus([
-        row(b, 'p1', AgentStatus.idle),
-        row(a, 'p9', AgentStatus.idle),
-        row(a, 'p2', AgentStatus.unknown),
+      final g = groupByStatus(now: noon, [
+        row(a, 'p1', AgentStatus.idle, since: StatusTime.exact(noon.subtract(const Duration(days: 3)))),
+        row(b, 'p1', AgentStatus.idle, since: StatusTime.exact(noon.subtract(const Duration(minutes: 12)))),
+        row(a, 'p2', AgentStatus.idle),
+        row(a, 'p3', AgentStatus.idle, since: StatusTime.after(noon.subtract(const Duration(hours: 5)))),
+        row(a, 'p4', AgentStatus.idle, since: StatusTime.exact(noon.subtract(const Duration(minutes: 47)))),
+        row(b, 'p2', AgentStatus.idle, since: StatusTime.exact(noon.subtract(const Duration(days: 9)))),
       ]);
-      expect(keys(g, AgentStatus.idle), ['a/p9', 'b/p1']);
-      expect(keys(g, AgentStatus.unknown), ['a/p2']);
+
+      expect(keys(g, AgentStatus.idle), ['b/p1', 'a/p4', 'a/p3', 'a/p2', 'a/p1', 'b/p2'],
+          reason: '12 min, 47 min, at most 5 h; then the one nobody dated, '
+              'which may be an hour old or a month, so it is not put under 3 days; then 3 days, 9 days');
+    });
+
+    test('Idle with equal or unknown times, and Unknown, keep machine then pane', () {
+      final a = machine('a');
+      final b = machine('b');
+      final same = StatusTime.exact(noon);
+      final g = groupByStatus(now: noon, [
+        row(b, 'p1', AgentStatus.idle, since: same),
+        row(a, 'p9', AgentStatus.idle, since: same),
+        row(b, 'p0', AgentStatus.idle),
+        row(a, 'p8', AgentStatus.idle),
+        row(a, 'p2', AgentStatus.unknown, since: same),
+        row(a, 'p1', AgentStatus.unknown),
+      ]);
+      expect(keys(g, AgentStatus.idle), ['a/p9', 'b/p1', 'a/p8', 'b/p0']);
+      expect(keys(g, AgentStatus.unknown), ['a/p1', 'a/p2'],
+          reason: 'Unknown has no state to date: machine, then pane');
+    });
+
+    test('how recent is recent: the day is measured from now', () {
+      final a = machine('a');
+      final stopped = StatusTime.exact(noon.subtract(const Duration(hours: 23, minutes: 59)));
+      expect(keys(groupByStatus(now: noon, [row(a, 'p1', AgentStatus.idle), row(a, 'p2', AgentStatus.idle, since: stopped)]), AgentStatus.idle),
+          ['a/p2', 'a/p1'], reason: 'just inside the day: above the undated one');
+      final later = noon.add(const Duration(minutes: 2));
+      expect(keys(groupByStatus(now: later, [row(a, 'p1', AgentStatus.idle), row(a, 'p2', AgentStatus.idle, since: stopped)]), AgentStatus.idle),
+          ['a/p1', 'a/p2'], reason: 'two minutes on it is a day old: below it');
     });
 
     test('the sections: Needs you, Done, Working, Idle, Unknown; the enum is not reordered', () {

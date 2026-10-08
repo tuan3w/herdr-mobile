@@ -194,11 +194,16 @@ class TranscriptPlan {
   /// How many items those turns held (tests).
   int plannedItems = 0;
 
-  /// The index of the live row, or -1.
+  /// The index of the live row, or -1. Not always the last row: a call that
+  /// failed or was cancelled earlier in the turn breaks out of its fold and is
+  /// planned after the answer, and text can still arrive after Stop or from a
+  /// turn the agent started itself (the turn is then not live). The view makes
+  /// its streaming model for this row, so it must find it.
   int get liveRow {
-    if (rows.isEmpty) return -1;
-    final last = rows.length - 1;
-    return rows[last].live ? last : -1;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].live) return i;
+    }
+    return -1;
   }
 
   /// The index of the divider row, or -1.

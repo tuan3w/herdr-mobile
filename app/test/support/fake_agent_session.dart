@@ -92,21 +92,39 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   DateTime? phaseSinceValue;
   @override
   DateTime? get phaseSince => phaseSinceValue;
+
+  /// What [lastActivity] says; tests set it.
+  @override
+  DateTime? lastActivity;
   @override
   bool get unseenDone => _unseenDone;
 
   /// Replaces the state and notifies once. Like the real session's flush, the
   /// live message's text is announced first, then the listeners.
   void push(AgentSessionState state) {
+    final ended = _state.turnActive && !state.turnActive;
     _state = state;
     if (!state.turnActive) {
       turnStart = null;
     } else {
       turnStart ??= DateTime.now();
     }
+    // Like the real session: after the person's Stop, what waits goes out as one.
+    if (ended) {
+      if (_stopSendsQueue) _queue.mergeWaiting();
+      _stopSendsQueue = false;
+    }
     state.liveMessage?.live?.flush();
     notifyListeners();
     _pump();
+  }
+
+  bool _stopSendsQueue = false;
+
+  /// Holds what waits, as a failed or foreign-stopped turn does in the real
+  /// session.
+  void holdQueue(String reason) {
+    if (_queue.holdAll(reason)) notifyListeners();
   }
 
   /// What [turnStartedAt] says; follows [push]: set when a turn runs, cleared
@@ -338,7 +356,7 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   @override
   void cancel() {
     cancelCount++;
-    _queue.holdAll('Held because the turn was stopped. Resume to send it.');
+    if (_queue.hasWaiting && _state.turnActive) _stopSendsQueue = true;
     push(_state.withCancelRequested());
   }
 

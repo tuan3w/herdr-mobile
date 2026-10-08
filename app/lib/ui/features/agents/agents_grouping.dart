@@ -161,16 +161,28 @@ class AgentsOverview {
 AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
   final pane = a.pane;
   final kind = pane.agent ?? 'terminal';
-  final hasTitle = pane.title.isNotEmpty;
+  // A pane whose own title says nothing (omp's `π > <folder>`) is named by what
+  // its session log says, when that was read (`PaneSessionNames`).
+  final named = a.betterTitle;
+  final hasTitle = named != null || pane.title.isNotEmpty;
   final workspace = a.workspace?.label ?? '';
   final path = cwdTail(pane.cwd);
+  // herdr gives no status timestamps, so a pane that was already idle when the
+  // app first looked has no time of its own, or only a bound. The file its agent
+  // writes says when it last did: the end of its last turn, the moment it went
+  // idle (`PaneSessionNames`).
+  var since = a.machine.statusTime(pane.id);
+  final active = a.lastActive;
+  if (pane.status == AgentStatus.idle && active != null && (since == null || !since.exact)) {
+    since = StatusTime.exact(active);
+  }
   return (
     key: '${a.machine.profile.id}/${pane.id}',
     machine: a.machine,
     paneId: pane.id,
     status: pane.status,
     // A pane with no title is named after its agent.
-    title: hasTitle ? pane.title : kind,
+    title: named ?? (pane.title.isNotEmpty ? pane.title : kind),
     subtitle: [
       if (hasTitle) kind,
       if (showMachine) a.machine.profile.label,
@@ -178,29 +190,36 @@ AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
       if (path.isNotEmpty && path != workspace) path,
     ].join(' · '),
     stale: a.stale,
-    since: a.machine.statusTime(pane.id),
+    since: since,
     quietMinutes: pane.status == AgentStatus.working ? a.machine.quietMinutes(pane.id) : 0,
   );
 }
 
 /// Agents by status in [boardOrder], empty groups left out. Inside a group:
 /// Needs you and Done by how long they have waited (a bound counts as when it
-/// begins; unknown last), Working quietest first, then machine, then pane.
-Map<AgentStatus, List<AgentRowData>> groupByStatus(Iterable<AgentRowData> agents) {
+/// begins; unknown last), Working quietest first, Idle by recency (see
+/// [compareIdleTimes]), then machine, then pane. [now] is the moment recency is
+/// measured from.
+Map<AgentStatus, List<AgentRowData>> groupByStatus(Iterable<AgentRowData> agents, {DateTime? now}) {
+  final at = now ?? DateTime.now();
   final groups = <AgentStatus, List<AgentRowData>>{};
   for (final a in agents) {
     groups.putIfAbsent(a.status, () => []).add(a);
   }
   return {
     for (final s in boardOrder)
-      if (groups[s] case final list?) s: list..sort(_within(s)),
+      if (groups[s] case final list?) s: list..sort(_within(s, at)),
   };
 }
 
-Comparator<AgentRowData> _within(AgentStatus status) => switch (status) {
+Comparator<AgentRowData> _within(AgentStatus status, DateTime now) => switch (status) {
       AgentStatus.blocked || AgentStatus.done => _longestWaiting,
       AgentStatus.working => _quietest,
-      AgentStatus.idle || AgentStatus.unknown => _byPlace,
+      AgentStatus.idle => (a, b) {
+          final byTime = compareIdleTimes(a.since?.at, b.since?.at, now);
+          return byTime != 0 ? byTime : _byPlace(a, b);
+        },
+      AgentStatus.unknown => _byPlace,
     };
 
 int _byPlace(AgentRowData a, AgentRowData b) {
@@ -220,6 +239,29 @@ int _longestWaiting(AgentRowData a, AgentRowData b) {
     return x != null ? -1 : 1;
   }
   return _byPlace(a, b);
+}
+
+/// What counts as recent for Idle, and so what is not: past it an agent is
+/// inventory.
+const idleRecent = Duration(hours: 24);
+
+/// Idle, recency first, in three groups: stopped within [idleRecent] (newest
+/// first), then those with no known time, then those that stopped longer ago
+/// (newest first). An agent the app has no date for was idle before it first
+/// looked, and may be 3 minutes old or 3 months; it cannot be placed among the
+/// dated ones, so it sits between "known recent" and "known old": above the
+/// agent whose file says 3 days, below the one that stopped an hour ago. Put
+/// last, as it was first, it buried the person's own recent agents under other
+/// machines' dated old ones. 0 for two agents the same time does not tell apart.
+int compareIdleTimes(DateTime? a, DateTime? b, DateTime now) {
+  int bucket(DateTime? t) => t == null
+      ? 1
+      : now.difference(t) < idleRecent
+          ? 0
+          : 2;
+  final byBucket = bucket(a).compareTo(bucket(b));
+  if (byBucket != 0) return byBucket;
+  return a != null && b != null ? b.compareTo(a) : 0;
 }
 
 int _quietest(AgentRowData a, AgentRowData b) {
@@ -281,6 +323,30 @@ class AgentFolding extends AgentEntry {
   Key get key => ValueKey('folding/$agentKey');
 }
 
+/// How many Idle rows show before the rest fold behind [AgentMore]. Idle is
+/// inventory, not a decision: a board with 27 of them buried everything else.
+const idleShown = 5;
+
+/// The line that stands for the rows of a section that are folded away ("22
+/// more idle", with the names of the first two, so what is inside is not a
+/// guess) and opens them in place. Open, it sits after the last row and reads
+/// "Show fewer".
+class AgentMore extends AgentEntry {
+  const AgentMore(this.status, this.hidden, this.names, {required this.open});
+
+  final AgentStatus status;
+
+  /// How many rows the fold holds.
+  final int hidden;
+
+  /// The titles of the first rows it holds, to say what is inside.
+  final List<String> names;
+  final bool open;
+
+  @override
+  Key get key => ValueKey('more/${status.name}');
+}
+
 /// A session's line: the same section as a terminal agent of its status. The
 /// board only tells about it (answers are given in the session).
 class SessionLine extends AgentEntry {
@@ -334,14 +400,18 @@ class BoardSection {
 /// what can be reached first, longest waiting first, panes and sessions
 /// mixed (the order the triage sheet walks), then what is out of reach.
 /// Working: the terminal agents quietest first, then the sessions as
-/// [sessions] lists them; Idle: the terminal agents by place, then the
-/// sessions.
+/// [sessions] lists them; Idle: panes and sessions mixed by recency
+/// ([compareIdleTimes]: a pane by when it stopped, a session by when it last
+/// did anything), the ones with no known time after the terminal agents. [now]
+/// is the moment recency is measured from.
 List<BoardSection> boardSections(
   List<AgentRowData> rows,
   List<AgentSessionView> sessions,
-  AttentionSet attention,
-) {
-  final panes = groupByStatus(rows);
+  AttentionSet attention, {
+  DateTime? now,
+}) {
+  final at = now ?? DateTime.now();
+  final panes = groupByStatus(rows, now: at);
   final bySession = <AgentStatus, List<AgentSessionView>>{};
   for (final s in sessions) {
     bySession.putIfAbsent(boardStatus(s), () => []).add(s);
@@ -385,6 +455,7 @@ List<BoardSection> boardSections(
             count: attention.toReview.length,
             offline: attention.offlineToReview.length,
           ),
+        AgentStatus.idle => everyRow(status, _idleInOrder(itemsOf(status), at)),
         _ => everyRow(status, itemsOf(status)),
       };
 
@@ -394,14 +465,39 @@ List<BoardSection> boardSections(
   ];
 }
 
+/// Idle [items] (panes by place, then sessions) by [compareIdleTimes], keeping
+/// that order for those it does not tell apart.
+List<BoardItem> _idleInOrder(List<BoardItem> items, DateTime now) {
+  DateTime? timeOf(BoardItem b) => switch (b) {
+        PaneItem(:final row) => row.since?.at,
+        SessionItem(:final session) => session.lastActivity,
+      };
+  final indexed = items.indexed.toList()
+    ..sort((a, b) {
+      final byTime = compareIdleTimes(timeOf(a.$2), timeOf(b.$2), now);
+      return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
+    });
+  return [for (final (_, item) in indexed) item];
+}
+
 /// The lines to list: a header per section, then its rows. With [filter] set
 /// only that section shows; a filter whose section is gone shows everything.
+///
+/// Idle shows its first [idleShown] rows and folds the rest behind one
+/// [AgentMore] line (opened by [idleOpen]), unless it is the filtered section
+/// (the person asked for exactly those) or folding would hide a single row. The
+/// rows are in the list either way, closed, so that they animate away.
 List<AgentEntry> agentEntries(
   List<BoardSection> sections, {
   AgentStatus? filter,
   Set<AgentStatus> collapsed = const {},
+  bool idleOpen = false,
 }) {
   final only = sections.any((s) => s.status == filter) ? filter : null;
+  String titleOf(BoardItem item) => switch (item) {
+        PaneItem(:final row) => row.title,
+        SessionItem(:final session) => session.title,
+      };
   return [
     for (final section in sections)
       if (only == null || only == section.status) ...[
@@ -411,20 +507,52 @@ List<AgentEntry> agentEntries(
           offline: section.offline,
           expanded: !collapsed.contains(section.status),
         ),
-        for (final (i, item) in section.items.indexed)
-          switch (item) {
-            PaneItem(:final row) => AgentLine(
-                row,
-                open: !collapsed.contains(section.status),
-                last: i == section.items.length - 1,
-              ),
-            SessionItem(:final session) => SessionLine(
-                session,
-                open: !collapsed.contains(section.status),
-                last: i == section.items.length - 1,
-              ),
-          },
+        ..._lines(
+          section,
+          sectionOpen: !collapsed.contains(section.status),
+          foldable: only == null &&
+              section.status == AgentStatus.idle &&
+              section.items.length > idleShown + 1,
+          idleOpen: idleOpen,
+          titleOf: titleOf,
+        ),
       ],
+  ];
+}
+
+List<AgentEntry> _lines(
+  BoardSection section, {
+  required bool sectionOpen,
+  required bool foldable,
+  required bool idleOpen,
+  required String Function(BoardItem) titleOf,
+}) {
+  final items = section.items;
+  final folded = foldable && !idleOpen;
+  AgentEntry line(int i) {
+    final open = sectionOpen && (!folded || i < idleShown);
+    final last = i == items.length - 1;
+    return switch (items[i]) {
+      PaneItem(:final row) => AgentLine(row, open: open, last: last),
+      SessionItem(:final session) => SessionLine(session, open: open, last: last),
+    };
+  }
+
+  AgentMore more() => AgentMore(
+        section.status,
+        items.length - idleShown,
+        [for (final item in items.skip(idleShown).take(2)) titleOf(item)],
+        open: idleOpen,
+      );
+
+  return [
+    for (var i = 0; i < items.length; i++) ...[
+      line(i),
+      // Closed, the fold comes right after the rows that show.
+      if (folded && sectionOpen && i == idleShown - 1) more(),
+    ],
+    // Open, it comes last: "Show fewer" where the list ends.
+    if (foldable && idleOpen && sectionOpen) more(),
   ];
 }
 

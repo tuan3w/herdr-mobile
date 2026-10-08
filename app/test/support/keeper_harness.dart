@@ -336,6 +336,9 @@ class KeeperHost {
       'HERDR_KEEPER_ON_BLOCKED': '${home.path}/hook.sh',
       // A herdr on this machine must never get a pane from a test.
       'HERDR_MOBILE_NO_PANE': '1',
+      // A test keeper stays a child of its starter: no launchd job on the
+      // machine running the tests (one test turns this on).
+      'HERDR_MOBILE_NO_LAUNCHD': '1',
       ...extra,
     }, temp);
   }

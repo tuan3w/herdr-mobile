@@ -150,6 +150,38 @@ class PromptQueue {
     return true;
   }
 
+  /// Joins everything that waits into one message, at the place of the first:
+  /// the person stopped the turn, and what they had queued for after it goes
+  /// out together instead of one turn at a time. Text is joined by a blank
+  /// line, in the order sent; images and file links follow, in the same order.
+  /// The first message keeps its id, so a screen sees one row become one.
+  /// Returns whether anything changed (nothing, with fewer than two waiting).
+  bool mergeWaiting() {
+    final waiting = [for (final e in _entries) if (!e.held) e];
+    if (waiting.length < 2) return false;
+    final first = waiting.first;
+    final text = [
+      for (final e in waiting)
+        if (e.text.trim().isNotEmpty) e.text.trim(),
+    ].join('\n\n');
+    final merged = QueuedMessage(
+      id: first.id,
+      blocks: [
+        if (text.isNotEmpty) TextBlock(text),
+        for (final e in waiting) ...e.attachments,
+      ],
+      at: first.at,
+    );
+    _entries = [
+      for (final e in _entries)
+        if (identical(e, first))
+          merged
+        else if (e.held)
+          e,
+    ];
+    return true;
+  }
+
   /// Lets every held message go out again, in order. Returns whether anything
   /// changed.
   bool release() {

@@ -104,13 +104,20 @@ class _AuthPanelState extends State<AuthPanel> {
     return StatusPanel(
       color: ds.blocked,
       icon: LucideIcons.keyRound,
-      title: 'Sign in on the host',
+      title: need.keychain ? '${visibleText(_session.agentLabel)} needs a token' : 'Sign in on the host',
       message: [
         visibleText(need.message),
-        if (names.isNotEmpty) 'Ways to sign in: ${names.join(' \u00b7 ')}.',
+        // Signing in again stores the login in the Keychain again, so the
+        // ways the agent lists would lead back here.
+        if (need.keychain) ...[
+          '1. In a terminal, run $_setupToken and sign in.',
+          '2. Add export $_tokenVariable=<the token> to ~/.zshenv.',
+          '3. Start a new session.',
+        ] else if (names.isNotEmpty)
+          'Ways to sign in: ${names.join(' \u00b7 ')}.',
         if (large) 'Terminal on $machine.',
       ].join('\n'),
-      messageMaxLines: 7,
+      messageMaxLines: need.keychain ? 12 : 7,
       footer: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -160,8 +167,15 @@ class _AuthPanelState extends State<AuthPanel> {
     );
   }
 
-  /// The login command the agent hinted, to show and copy; null when none did.
+  /// What a Claude Code token is made with, and the variable it is read
+  /// from (`claude setup-token`; Claude Code docs, "Authentication").
+  static const _setupToken = 'claude setup-token';
+  static const _tokenVariable = 'CLAUDE_CODE_OAUTH_TOKEN';
+
+  /// The command to show and copy: the token one when the login is out of
+  /// reach in the Keychain, else the login the agent hinted; null when none.
   static String? _command(AuthNeeded need) {
+    if (need.keychain) return _setupToken;
     for (final m in need.methods) {
       final c = m.terminalCommand;
       if (m.terminal && c != null && c.trim().isNotEmpty) return visibleText(c.trim());

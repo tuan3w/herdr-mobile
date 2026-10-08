@@ -341,6 +341,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       _recentlyActive || _mapper.openToolCalls.isNotEmpty || parent!._stateOf(subagentName!) == SubagentState.running;
 
   @override
+  DateTime? get lastActivity => null;
+
+  @override
   DateTime? get phaseSince {
     if (!_isSub) {
       final pane = _pane;

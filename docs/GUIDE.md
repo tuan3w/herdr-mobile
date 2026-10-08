@@ -145,10 +145,35 @@ holds both kinds of agent:
 - `Needs you`: blocked on a question or a permission. Longest waiting first.
 - `Working`
 - `Done`: finished and not yet reviewed. Longest waiting first.
-- `Idle`
+- `Idle`: agents and phone sessions together, by recency: those that stopped
+  within the last day, newest first; then those the app has no date for; then
+  the older ones, newest first. The first five show; the rest sit behind one
+  line (`22 more idle`, with the names of the first two under it) that opens
+  them in place and then reads `Show fewer`. The `Idle` chip shows them all.
 
 Tap a section header to fold it. The chips under the title filter the board
 to one status.
+
+**When an idle agent stopped.** herdr gives no timestamps, so the app dates a
+change when it sees it. An agent that was already idle when the app first
+looked has no date of its own; an omp agent whose session is reported (see
+below) is dated by when its session file was last written, which is when its
+last turn ended. A phone session is dated by when it last did anything. An
+agent with no date was idle before the app first looked, so it may be an hour
+old or a month: it sits between the ones that stopped within a day and the older
+ones, in machine and pane order, rather than under them.
+
+**What an agent is called.** The name you gave the pane in herdr, else the
+title the program set. An omp pane whose title is only its folder (omp shows
+`π > <folder>` until it has a title for the session) is named from its session
+log: the session's own title, else your last message in quotes
+(`“Add a regression test”`: what you asked, not the agent's name for it). This
+needs herdr's omp integration on the machine (`herdr integration install omp`),
+which is what tells herdr, and so the app, where the log is. Without it the
+title stays the folder. The log is read over SFTP (the head and the tail of the
+file) when a pane needs a name and again when its status changes, never while
+the app is in the background. An idle omp pane with a good title costs one
+`stat`, for the date above.
 
 **Cards or compact.** Cards show the last lines of the agent's terminal and
 how long it has been in its state; the compact list shows one row per agent.
@@ -378,9 +403,12 @@ Codex take it into the running turn. Queued messages show above the box; tap
 one to edit or remove it.
 
 **Stop.** While a turn runs, `Stop` sits next to the send button. It ends the
-turn only. Work the agent started in the background keeps running: a strip
-above the message box shows it, and the `Background work` sheet lists each
-job with its own Stop (`Hold to stop`).
+turn only. Messages waiting in the queue go out together, as one message, as
+soon as the turn has stopped (you queued them to follow this turn; stopping it
+is going on with them). A turn that fails, or is stopped from somewhere else,
+holds them instead, with `Resume`. Work the agent started in the background
+keeps running: a strip above the message box shows it, and the `Background
+work` sheet lists each job with its own Stop (`Hold to stop`).
 
 **Attachments and photos.** The paperclip opens the attach sheet with three
 tabs:
@@ -401,7 +429,14 @@ hold.
 **Signing in.** If the agent needs a login on the machine, the session shows
 `Sign in on the host` with the agent's login command (`Copy command`) and
 `Open a terminal on <machine>`, which opens a plain shell in the session's
-folder. The phone never logs in for you.
+folder. The phone never logs in for you. On a Mac, Claude Code keeps its login
+in the Keychain, which macOS opens only for programs of your desktop session. The
+phone starts Claude's sessions inside that session, so your subscription login is
+found without a token, as long as you are logged in at the Mac. If nobody is
+logged in there, or you set a token yourself, the session is started the old way
+and the panel can say `Claude Code needs a token`: run `claude setup-token` on
+the Mac, add `export CLAUDE_CODE_OAUTH_TOKEN=<token>` to `~/.zshenv`, and start
+a new session.
 
 **When the session ends.** If the keeper is gone (the machine restarted), the
 session shows `Session ended` and its saved transcript, read-only. `Continue`

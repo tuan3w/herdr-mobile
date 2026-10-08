@@ -251,11 +251,11 @@ say what the evidence is.
 
 ## Exploring alternatives
 
-When the best path isn't clear, build 2 or 3 genuinely different directions,
-each named by its axis (answer on the card vs. in a sheet; denser vs. calmer). Each must
-fully work with realistic data. Render them side by side (herdr-screen-check),
-give one line on when each wins and what it costs, and let the owner choose. Then
-delete the losers.
+When the best path isn't clear, don't argue it in words: build it with
+`herdr-prototype`. That skill reproduces the complaint on today's code, draws
+2 or 3 genuinely different directions (each named by its axis: answer on the
+card vs. in a sheet; denser vs. calmer) on the same realistic data, and ends
+with one line on when each wins and what it costs, for the owner to choose.
 
 ## Going deeper
 

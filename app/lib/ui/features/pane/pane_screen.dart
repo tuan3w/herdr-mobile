@@ -136,7 +136,13 @@ class _PaneScreenState extends State<PaneScreen> {
               child: _PaneBody(machine: machine, agent: widget.agent, viewModel: vm),
             );
     }
-    final title = paneTitle(machine, widget.agent.machineId, _paneId, known: _known);
+    final title = paneTitle(
+      machine,
+      widget.agent.machineId,
+      _paneId,
+      known: _known,
+      named: _fleet.agent(widget.agent.machineId, _paneId)?.betterTitle,
+    );
     if (title.status != null) _known = title;
     _title.value = title;
     return changed;

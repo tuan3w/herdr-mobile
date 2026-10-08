@@ -48,6 +48,44 @@ void main() {
       expect(listed.state, KeeperState.running);
     });
 
+    test('on a Mac, Claude with no token in the environment is marked as logging in through the Keychain', () async {
+      final bare = await newHost();
+      expect((await bare.start(agent: 'claude')).loginInKeychain, Platform.isMacOS);
+      expect((await bare.start()).loginInKeychain, isFalse, reason: 'omp keeps its login in a file');
+
+      final token = await newHost({'CLAUDE_CODE_OAUTH_TOKEN': 'test-token'});
+      expect((await token.start(agent: 'claude')).loginInKeychain, isFalse);
+      expect((await token.list()).single.loginInKeychain, isFalse);
+    });
+
+    test('on a Mac, Claude\'s keeper is a launchd job of the desktop session, works, and unloads when it ends', () async {
+      final uid = (await Process.run('id', ['-u'])).stdout.toString().trim();
+      if (!Platform.isMacOS || (await Process.run('launchctl', ['print', 'gui/$uid'])).exitCode != 0) {
+        markTestSkipped('needs a macOS desktop session');
+        return;
+      }
+      final h = await newHost({'HERDR_MOBILE_NO_LAUNCHD': ''});
+      final info = await h.start(agent: 'claude');
+      expect(info.loginInKeychain, isFalse, reason: 'the job can open the Keychain, so there is nothing to warn about');
+      final label = (await h.rawList()).single['launchd'] as String;
+      expect(label, startsWith('dev.herdrmobile.keeper.'));
+      Future<bool> loaded() async => (await Process.run('launchctl', ['print', 'gui/$uid/$label'])).exitCode == 0;
+      expect(await loaded(), isTrue);
+      expect([for (final f in Directory(h.keepers).listSync()) if (f.path.contains('/start-')) f.path], isEmpty,
+          reason: 'the plist (it can hold a token) and the report file are gone');
+
+      // It is a working keeper, with the starter's environment (the fake agent logs to FAKE_ACP_LOG).
+      final a = await h.attach(info.id);
+      await a.initialize(title: 'Phone');
+      await a.newSession(h);
+      await a.response(a.prompt('plain'));
+      expect(h.agentLog(), isNotEmpty);
+
+      await h.run(keeperKillCommand(info.id));
+      await eventually(() async => !await loaded(), what: 'the job to unload');
+      expect(await processAlive(info.pid!), isFalse);
+    });
+
     test('directory, socket, record and log are private', () async {
       final h = await newHost();
       final info = await h.start();

@@ -39,6 +39,17 @@ String clip(String text, int max) {
   return '${chars.take(max - 1)}…';
 }
 
+/// [end], or one less when it would leave half a surrogate pair at the end of
+/// `s.substring(0, end)`. A lone surrogate makes Flutter's paragraph builder
+/// throw ("string is not well-formed UTF-16"), and a layout that throws leaves
+/// the row undrawn.
+int safeEnd(String s, int end) {
+  if (end <= 0) return 0;
+  if (end >= s.length) return s.length;
+  final u = s.codeUnitAt(end - 1);
+  return u >= 0xD800 && u <= 0xDBFF ? end - 1 : end;
+}
+
 /// The last component of [path] (either separator; trailing separators
 /// ignored); [path] itself when it has none.
 String basenameOf(String path) {

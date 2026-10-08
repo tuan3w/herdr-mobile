@@ -7,6 +7,7 @@ import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../../data/acp/turns/turns.dart';
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import '../../core/controls.dart';
 import '../../core/glyphs.dart';
 import '../../core/motion.dart';
@@ -411,14 +412,14 @@ String? toolCommand(ToolCall call) {
 /// values as indented JSON, cut at [max] characters.
 String compactJson(Object? value, {int max = 20000}) {
   if (value == null) return '';
-  if (value is String) return value.length <= max ? value : value.substring(0, max);
+  if (value is String) return value.length <= max ? value : value.substring(0, safeEnd(value, max));
   String text;
   try {
     text = const JsonEncoder.withIndent('  ').convert(value);
   } on Object {
     text = value.toString();
   }
-  return text.length <= max ? text : '${text.substring(0, max)}\n…';
+  return text.length <= max ? text : '${text.substring(0, safeEnd(text, max))}\n…';
 }
 
 /// "Exited with code 1." / "Stopped by signal SIGTERM." for a command that

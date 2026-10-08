@@ -307,10 +307,11 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     _rebalance(id);
     if (changed) _changed();
     // The panes of the keepers' terminal views: the board shows their
-    // sessions, so those panes are not listed as agents of their own.
+    // sessions, so those panes are not listed as agents of their own, and
+    // the machine screen opens a pane's session instead of the terminal.
     m.connection.setKeeperPanes({
       for (final k in keepers)
-        if (k.state == KeeperState.running && k.paneId != null) k.paneId!,
+        if (k.state == KeeperState.running && k.paneId != null) k.paneId!: '$id/${k.id}',
     });
   }
 

@@ -431,9 +431,12 @@ tap opens a row in a sheet (edit, Save, Remove; it says `Already sent` when
 the turn ended meanwhile; the edit is a sheet, not the field, so a draft in the
 field is never overwritten and an edit keeps its place in the queue and its
 attachments), the cross (44 dp) removes it. The queue goes out one message at
-a time when the turn ends. After Stop, a failed turn or a refusal the
-messages are held: one line (quiet tone; the refusal itself is already in the
-link strip) says why, with `Resume`. Steered messages just appear as the
+a time when the turn ends; after the person's own Stop it goes out as soon as
+the turn has stopped, all of it as one message (text joined by a blank line, in
+the order sent, then attachments), because stopping a turn is going on with
+what was queued behind it. A failed turn, a turn stopped from elsewhere or a
+refusal holds the messages: one line (quiet tone; the refusal itself is already
+in the link strip) says why, with `Resume`. Steered messages just appear as the
 user's row. Haptics: `sent` when the session took the message (sent, steered,
 queued or held), `failed` when it did not or an attachment cannot be made; see
 "Send haptics follow the outcome".
@@ -472,7 +475,10 @@ in the session's folder (`SessionLauncher`, no command typed) and opens it,
 and `Copy command` / `Try again` (a connection that failed for the login). The
 phone runs no login and never says it worked: the next message sent clears the
 panel, or the agent asks again. The panel scrolls inside 60% of the window and
-goes in the compact layout.
+goes in the compact layout. For a login only the Mac's Keychain holds (Claude
+Code over SSH, `AuthNeeded.keychain`) the title is `<agent> needs a token`, the
+methods are left out (another sign-in would end up in the Keychain again) and
+the copyable command is `claude setup-token`.
 
 **What a decision shows** (`permission_evidence_view.dart`).
 Under the title, in order: the agent's last sentence before it asked (a quiet
@@ -546,6 +552,16 @@ transcript, the backlog passes 8 KB, Smooth text is off (Settings >
 Appearance, `AppSettings.smoothText`, on by default) or the transcript is
 hidden; reduced motion reveals whole lines. Text that is there when the row
 first shows is history and is never paced. No fade, no caret.
+
+The live row is not always the last row: a call that failed or was cancelled
+breaks out of its fold below the answer, and text still arrives after Stop or
+from a turn the agent started itself (the turn is then not live). So
+`TranscriptPlan.liveRow` searches for it, and the view makes the model again
+whenever the plan changes, also when the person opens a fold (a message that is
+streaming but is not the answer sits in the log). Why: with the model missing,
+the live row threw while building, and Flutter's release answer to that is a
+gray box as tall as the list (`compactErrorView` now makes it one readable row
+that names the error).
 
 Follow: the end stays in view while the reader has not left it
 (`_StickyPosition`, the correction happens in the layout pass), never while a
@@ -1297,7 +1313,11 @@ and colour, a quote in the supporting colour.
   `N more lines` and `Show all` (a lazy 360 dp box past 300 lines); the caller
   owns that state. Bidi overrides and control characters show as `‹U+202E›`
   (`visibleText`), tabs go to the next multiple of four, a line past 2000
-  characters is cut and counted.
+  characters is cut and counted. Every line goes through `clipLine`
+  (`visibleText`, then a cut that never splits a surrogate pair): half a pair
+  makes the paragraph builder throw "string is not well-formed UTF-16", and a
+  row whose layout throws is left undrawn. Prose goes through `proseText`
+  (half a pair becomes U+FFFD, bidi overrides go).
 - **Tables.** A real table: bold header over a stronger hairline, one hairline
   per row, no zebra, text 1.5 pt under body in tabular figures. A column is as
   wide as its longest cell (and bold header) between 48 and 240 dp, longer text

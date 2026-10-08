@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import '../../core/markdown/md_more_row.dart';
 import '../../core/theme.dart';
+import 'visible_text.dart';
 
 /// Longest text a panel works on. Anything beyond is cut (the end for a
 /// panel that shows the end, else the start) and says so, so one runaway
@@ -38,7 +40,7 @@ List<CodeLine> textLines(String text, {bool fromEnd = false, Color? color}) {
   var note = '';
   if (source.length > panelTextLimit) {
     final cut = source.length - panelTextLimit;
-    source = fromEnd ? source.substring(cut) : source.substring(0, panelTextLimit);
+    source = fromEnd ? source.substring(cut) : source.substring(0, safeEnd(source, panelTextLimit));
     note = '… $cut characters not shown';
   }
   final raw = source.split('\n');
@@ -50,9 +52,16 @@ List<CodeLine> textLines(String text, {bool fromEnd = false, Color? color}) {
   ];
 }
 
-String clipLine(String line) => line.length <= panelLineLimit
-    ? line
-    : '${line.substring(0, panelLineLimit)} … +${line.length - panelLineLimit} characters';
+/// One line of a panel as drawn: what it hides made visible ([visibleText]: an
+/// escape sequence, a direction override, half of a surrogate pair, which would
+/// make the paragraph builder throw), cut to [panelLineLimit] without splitting
+/// a pair, the rest named.
+String clipLine(String line) {
+  final text = visibleText(line);
+  return text.length <= panelLineLimit
+      ? text
+      : '${text.substring(0, safeEnd(text, panelLineLimit))} … +${text.length - panelLineLimit} characters';
+}
 
 /// Lines of mono text on a quiet panel, capped to [cap] lines with a "Show
 /// all" row. [fromEnd] keeps the last lines (command output) instead of the

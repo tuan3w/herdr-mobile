@@ -35,12 +35,14 @@ bool mdIsRtl(String text) {
 /// [text] without the characters that reorder what follows them (the bidi
 /// embeddings, overrides and isolates, U+202A-202E and U+2066-2069): in prose
 /// they can only mislead. The right-to-left and left-to-right MARKS stay, real
-/// RTL text needs them. Returns [text] itself when it holds none.
+/// RTL text needs them. A lone UTF-16 surrogate becomes U+FFFD: Flutter's
+/// paragraph builder throws on one, and a row whose layout throws is left
+/// undrawn. Returns [text] itself when it holds none of these.
 String proseText(String text) {
   var at = -1;
   for (var i = 0; i < text.length; i++) {
     final c = text.codeUnitAt(i);
-    if ((c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069)) {
+    if (_bidiControl(c) || _lone(text, i, c)) {
       at = i;
       break;
     }
@@ -49,10 +51,19 @@ String proseText(String text) {
   final b = StringBuffer(text.substring(0, at));
   for (var i = at; i < text.length; i++) {
     final c = text.codeUnitAt(i);
-    if ((c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069)) continue;
-    b.writeCharCode(c);
+    if (_bidiControl(c)) continue;
+    b.writeCharCode(_lone(text, i, c) ? 0xFFFD : c);
   }
   return b.toString();
+}
+
+bool _bidiControl(int c) => (c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069);
+
+/// Whether the code unit [c] at [i] is half of a surrogate pair whose other
+/// half is missing.
+bool _lone(String s, int i, int c) {
+  if (c >= 0xD800 && c <= 0xDBFF) return i + 1 >= s.length || (s.codeUnitAt(i + 1) & 0xFC00) != 0xDC00;
+  return c >= 0xDC00 && c <= 0xDFFF && (i == 0 || (s.codeUnitAt(i - 1) & 0xFC00) != 0xD800);
 }
 
 /// What a link destination is, for the renderer.

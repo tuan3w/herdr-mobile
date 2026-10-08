@@ -1,0 +1,23 @@
+{
+  "skill_name": "herdr-prototype",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "the machines tab is boring and i cant tell which machine has trouble or what its doing at a glance. prototype some directions so we can talk about it, dont change the app",
+      "expected_output": "A throwaway shots test (nothing in lib/ changed) with a baseline that shows the real Machines row (address and herdr version leading), 2-4 variants each named by an axis, light and dark PNGs that were opened, and a short report with a table, a pick, caveats and the re-render command.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "what if the board let me answer a claude code session's permission request right from the card, like it does for terminal agents? show me what that would look like next to today",
+      "expected_output": "Traces why session cards say 'Answer in the session' today (file:line), uses the real card or says the card is a stand-in, renders today vs 2-3 directions including a long-command case that must send the person to the session, and flags the guard (hold, stale-tap) as unprototyped behaviour.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "12 agents, cards or compact? i keep flipping between them. make something so we can decide",
+      "expected_output": "Baseline of both existing densities on the same 12-agent data, a variant that mixes them (for example, cards only for what needs attention), the Auto threshold (cards up to four, compact from five) acknowledged, and a pick with the cost of each. Does not invent a new setting for the main path.",
+      "files": []
+    }
+  ]
+}

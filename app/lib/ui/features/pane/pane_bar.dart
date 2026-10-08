@@ -26,8 +26,16 @@ typedef PaneTitle = ({String title, String where, AgentStatus? status, bool live
 
 /// The pane as [machine]'s snapshot shows it now. [known] is what it said
 /// last, used when the pane (or its whole machine) has vanished, so the bar
-/// keeps its name.
-PaneTitle paneTitle(MachineConnection? machine, String machineId, String paneId, {PaneTitle? known}) {
+/// keeps its name. [named] is the name read from the agent's session log for a
+/// pane whose own title says nothing (`FleetAgent.betterTitle`): the board
+/// calls it the same.
+PaneTitle paneTitle(
+  MachineConnection? machine,
+  String machineId,
+  String paneId, {
+  PaneTitle? known,
+  String? named,
+}) {
   final pane = machine?.paneById(paneId);
   if (pane == null) {
     return (
@@ -39,7 +47,7 @@ PaneTitle paneTitle(MachineConnection? machine, String machineId, String paneId,
       live: machine?.isLive ?? false,
     );
   }
-  final task = pane.title.trim();
+  final task = named ?? pane.title.trim();
   final title = task.isNotEmpty ? task : (pane.agent ?? paneId);
   final agent = pane.agent;
   return (

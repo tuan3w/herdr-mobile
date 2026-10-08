@@ -85,6 +85,35 @@ void main() {
       expect(q.release(), isFalse);
     });
 
+    test('mergeWaiting joins what waits into one message at the first one\'s place; held ones stay', () {
+      final q = PromptQueue();
+      final image = const ImageBlock(data: 'AAAA', mimeType: 'image/jpeg');
+      final a = q.add([const TextBlock('  one  '), image], at: _t);
+      q.add(_text('kept'), at: _t, state: QueuedState.held, heldReason: 'busy');
+      q.add(_text('two'), at: _t);
+      q.add([image], at: _t);
+
+      expect(q.mergeWaiting(), isTrue);
+
+      expect(q.entries.map((e) => e.text), ['one\n\ntwo', 'kept']);
+      expect(q.entries.first.id, a.id, reason: 'the first message keeps its id: one row becomes one');
+      expect(q.entries.first.blocks.first, isA<TextBlock>(), reason: 'text first, then attachments in order');
+      expect(q.entries.first.attachments, [image, image]);
+      expect(q.entries.last.held, isTrue);
+      expect(q.firstWaiting!.id, a.id);
+    });
+
+    test('mergeWaiting changes nothing with fewer than two waiting', () {
+      final q = PromptQueue();
+      expect(q.mergeWaiting(), isFalse);
+      q.add(_text('only'), at: _t);
+      q.add(_text('held'), at: _t, state: QueuedState.held, heldReason: 'x');
+      final before = q.entries;
+
+      expect(q.mergeWaiting(), isFalse);
+      expect(identical(before, q.entries), isTrue);
+    });
+
     test('a change makes a new list, so a screen can tell by identity', () {
       final q = PromptQueue();
       final empty = q.entries;

@@ -159,11 +159,9 @@ pixels.
 
 ## Comparing variants
 
-When a design question is open, render 2 or 3 genuinely different directions
-side by side, through the same matrix. Name each one by its axis (denser or
-calmer, answer first or command first), not "Option A". Show the PNGs, one line
-on when each one wins and one on what it costs, and let the owner choose. Delete
-the losers afterwards.
+When a design question is open, build and compare the directions with
+`herdr-prototype`; it owns the baseline, the variants and the report. Once the
+owner picks one and it is implemented, prove that one through the matrix above.
 
 ## What pixels can't tell you
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/acp/subagents/subagent_run.dart';
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import '../../../data/repositories/agent_session.dart';
 import '../../core/controls.dart';
 import '../../core/markdown/markdown.dart';
@@ -594,7 +595,7 @@ class SubagentSummaryBody extends StatelessWidget {
     ];
   }
 
-  static String _clip(String s, int max) => s.length <= max ? s : '${s.substring(0, max - 1)}…';
+  static String _clip(String s, int max) => s.length <= max ? s : '${s.substring(0, safeEnd(s, max - 1))}…';
 }
 
 /// `30 s`, `2 min`: a duration in words for a sentence.

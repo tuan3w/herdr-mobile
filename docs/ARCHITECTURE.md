@@ -93,6 +93,7 @@ connection (one `SSHClient`), with these channels on it:
 | SFTP | Opened on first file use, then cached | `ssh_transport.dart` `_openSftp`, `sftp_files.dart` |
 | Keeper commands and attaches | Short commands; at most 4 attached sessions per machine | `ssh_agent_host.dart`, `docs/ENGINEERING.md` "Permission safety" |
 | Session log follow (observed omp sessions) | While a screen shows it | `ssh_log_source.dart` |
+| Session log peek (omp panes: a name when the title is only the folder, the file's date when idle) | A `stat`, plus two SFTP reads (16 KB head, 64 KB tail) for a name, when a pane needs it and when its status changes; none in the background | `pane_session_names.dart` |
 
 herdr's socket takes one request per connection. The mux script on the host
 takes pipelined JSON requests on stdin and serves each one on its own thread,
@@ -343,6 +344,14 @@ line.
   session log (omp first) can also be shown as a chat. The chat is read from
   that log through the keeper's `follow`
   (`app/lib/data/repositories/observed_sessions.dart`, `app/lib/data/observed/`).
+- **Names for omp panes.** `PaneSessionNames` (owned by `FleetRepository`)
+  reads the head and tail of the log a pane reports, only for an omp pane whose
+  title says nothing, and gives `FleetAgent.sessionName`; the board, the
+  agent screen's bar and the notifications show `FleetAgent.betterTitle`. For
+  an idle omp pane it also stats the file: `FleetAgent.lastActive` stands in for
+  the status time herdr does not give, so Idle can be ordered. It
+  keeps names in memory and never guesses a log from a folder: with several
+  agents in one folder that would name the wrong one.
 
 ### Agent sessions (ACP)
 

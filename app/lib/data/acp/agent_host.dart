@@ -99,6 +99,7 @@ class KeeperInfo {
     this.unseenDone = false,
     this.paneId,
     this.clients = 0,
+    this.loginInKeychain = false,
   });
 
   /// Names the keeper on its host; the key of an agent session.
@@ -145,6 +146,12 @@ class KeeperInfo {
   /// How many clients are attached now (the phone, the terminal view, ...).
   final int clients;
 
+  /// The agent can only find its login in the macOS Keychain, which macOS
+  /// does not open for the SSH session the keeper runs in (Claude Code on a
+  /// Mac with no token in the environment). When it asks for a login,
+  /// signing in again does not help; a token does.
+  final bool loginInKeychain;
+
   /// Tolerant: an unknown or missing field never throws. Times are epoch
   /// milliseconds or ISO text.
   factory KeeperInfo.fromJson(Map<String, Object?> j) {
@@ -170,6 +177,7 @@ class KeeperInfo {
       unseenDone: j['unseen_done'] == true,
       paneId: j['pane_id'] is String ? j['pane_id'] as String : null,
       clients: (j['clients'] as num?)?.toInt() ?? 0,
+      loginInKeychain: j['login'] == 'keychain',
     );
   }
 
@@ -190,6 +198,7 @@ class KeeperInfo {
     'unseen_done': unseenDone,
     if (paneId != null) 'pane_id': paneId,
     'clients': clients,
+    if (loginInKeychain) 'login': 'keychain',
   };
 }
 

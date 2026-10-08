@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/auth_needed.dart';
+import 'package:herdr_mobile/data/acp/json_rpc.dart' show JsonRpcException;
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
 import 'package:herdr_mobile/data/repositories/session_launcher.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -234,7 +235,7 @@ void main() {
       expect(row.maxLines, 2);
       expect(row.overflow, TextOverflow.ellipsis);
 
-      session.cancel();
+      session.holdQueue('Held because the turn was stopped. Resume to send it.'); // a stop from elsewhere
       await settle(tester, 300);
       expect(find.textContaining('turn was stopped'), findsOneWidget);
       expect(find.widgetWithText(AppButton, 'Resume'), findsOneWidget);
@@ -650,6 +651,43 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue = 1.6;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await pump(tester, FakeAgentSession(link: AgentLink.failed)..auth = need(), size: const Size(320, 640));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a login locked in the Mac\u2019s Keychain asks for a token instead of another sign-in, and copies the token command', (tester) async {
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      final keychain = authNeededFrom(
+        const JsonRpcException(-32000, 'Authentication required'),
+        agentLabel: 'Claude Code',
+        advertised: [
+          {'id': 'claude-login', 'name': 'Log in with Claude', '_meta': {'terminal-auth': {'command': 'claude', 'args': ['/login']}}},
+        ],
+        keychain: true,
+      );
+      await pump(tester, FakeAgentSession()..auth = keychain);
+
+      expect(find.text('Claude Code needs a token'), findsOneWidget);
+      expect(find.textContaining('claude setup-token'), findsWidgets);
+      expect(find.textContaining('CLAUDE_CODE_OAUTH_TOKEN'), findsOneWidget);
+      expect(find.textContaining('Log in with Claude'), findsNothing, reason: 'signing in again would store it in the Keychain again');
+      expect(find.text('claude /login'), findsNothing);
+      expect(find.text('Open a terminal on devbox'), findsOneWidget);
+
+      await tester.tap(find.text('Copy command'));
+      await settle(tester);
+      expect(copied, ['claude setup-token']);
+    });
+
+    testWidgets('the token steps fit 320 px wide at 1.6 text scale', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final keychain = authNeededFrom(const JsonRpcException(-32000, 'Authentication required'), agentLabel: 'Claude Code', keychain: true);
+      await pump(tester, FakeAgentSession(link: AgentLink.failed)..auth = keychain, size: const Size(320, 640));
       expect(tester.takeException(), isNull);
     });
   });

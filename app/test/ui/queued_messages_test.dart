@@ -140,16 +140,33 @@ void main() {
     expect(session.sent, isEmpty);
   });
 
-  testWidgets('after Stop the queue is held, says why, and goes out only when resumed', (tester) async {
+  testWidgets('after Stop what waits goes out together, as one message, once the turn has stopped', (tester) async {
+    final session = working();
+    await pump(tester, session);
+    await queue(tester, 'then run the tests');
+    await queue(tester, 'and update the docs');
+
+    session.cancel();
+    await settle(tester, 300);
+    expect(session.sent, isEmpty, reason: 'the turn has not stopped yet');
+    expect(find.text('then run the tests'), findsOneWidget, reason: 'each message is still its own row');
+    expect(find.text('Resume'), findsNothing, reason: 'not held: Stop is going on with these');
+
+    endTurn(session);
+    await settle(tester, 300);
+    expect(session.sent, ['then run the tests\n\nand update the docs']);
+  });
+
+  testWidgets('a held queue says why and goes out only when resumed', (tester) async {
     final session = working();
     await pump(tester, session);
     await queue(tester, 'then run the tests');
 
-    session.cancel();
+    session.holdQueue('Held because the turn failed. Resume to send it.');
     endTurn(session);
     await settle(tester, 300);
-    expect(session.sent, isEmpty, reason: 'the person stopped the turn: nothing goes out unasked');
-    expect(find.textContaining('turn was stopped'), findsOneWidget);
+    expect(session.sent, isEmpty, reason: 'held: nothing goes out unasked');
+    expect(find.textContaining('turn failed'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(AppButton, 'Resume'));
     await settle(tester, 300);

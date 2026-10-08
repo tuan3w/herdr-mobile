@@ -102,8 +102,11 @@ PhotoItem chatPhotoItem(ThreadPhoto photo, int number, {ImagePreviewCache? cache
 }
 
 /// Opens [block] in the viewer, among the other pictures of the conversation
-/// when the tap came from a transcript (the viewer pages through them).
+/// when the tap came from a transcript (the viewer pages through them). The
+/// composer lets go of the focus first: Back would otherwise give it the
+/// keyboard again, over the history someone is reading.
 Future<void> showContentImage(BuildContext context, ImageBlock block, {String? origin}) {
+  FocusManager.instance.primaryFocus?.unfocus();
   final scope = ThreadPhotos.maybeOf(context);
   var photos = <ThreadPhoto>[];
   if (scope != null) {

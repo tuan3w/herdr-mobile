@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import '../../core/tokens.dart';
 import 'file_widgets.dart';
 import 'text_document.dart';
@@ -154,7 +155,7 @@ class _CodeViewState extends State<CodeView> {
       final raw = doc.line(i);
       final cap = widget.wrap ? codeWrapLineCap : codeLineCap;
       final cut = raw.length > cap;
-      final shown = TextDocument.expandTabs(cut ? raw.substring(0, cap) : raw);
+      final shown = TextDocument.expandTabs(cut ? raw.substring(0, safeEnd(raw, cap)) : raw);
       final text = cut ? '$shown … ${raw.length - cap} more characters' : shown;
       final marked = highlight == i + 1;
       final number = SizedBox(

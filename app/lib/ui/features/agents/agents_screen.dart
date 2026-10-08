@@ -25,6 +25,7 @@ import '../create/new_agent_session_screen.dart';
 import '../history/past_sessions_navigation.dart';
 import '../machines/machine_form_screen.dart';
 import 'agent_card.dart';
+import 'agent_more_row.dart';
 import 'agent_session_rows.dart';
 import 'agents_grouping.dart';
 import 'batch_action_bar.dart';
@@ -57,6 +58,10 @@ class AgentsScreen extends StatefulWidget {
 
 class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   AgentStatus? _filter;
+
+  // Idle shows its first rows and folds the rest ([idleShown]); true opens them.
+  // Not kept: the board opens folded again, the way a long inbox does.
+  bool _idleOpen = false;
   bool? _reportedVisible;
   AgentSessions? _sessions;
 
@@ -141,6 +146,8 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   void _toggleSection(AgentStatus s) =>
       setState(() => _collapsedBits.value ^= 1 << s.index);
 
+  void _toggleIdle() => setState(() => _idleOpen = !_idleOpen);
+
   /// Tells the sessions when the tab is on screen: they list their hosts
   /// every minute only then.
   void _reportVisible(bool visible) {
@@ -217,7 +224,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     // agent of that status shows up again.
     if (_filter != null && !sections.any((s) => s.status == _filter)) _filter = null;
     final filter = _filter;
-    final entries = agentEntries(sections, filter: filter, collapsed: _collapsed);
+    final entries = agentEntries(sections, filter: filter, collapsed: _collapsed, idleOpen: _idleOpen);
     _armGateWhenAnswersMove(entries);
     final listed = _withFolding(entries, overview);
     final indexes = entryIndexes(listed);
@@ -363,6 +370,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
                     open: l.open,
                     child: AgentSessionRow(session: l.session, divider: !l.last),
                   ),
+                final AgentMore m => AgentMoreRow(key: m.key, more: m, onTap: _toggleIdle),
                 final AgentFolding f => _FoldAway(
                     key: f.key,
                     height: f.height,

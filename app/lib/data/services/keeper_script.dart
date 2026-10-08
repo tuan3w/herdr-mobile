@@ -69,6 +69,22 @@ HELD = ("session/request_permission", "elicitation/create")
 SESSION_BUSY = -32003
 CHUNKS = ("agent_message_chunk", "agent_thought_chunk", "user_message_chunk")
 INIT_ID = "keeper-init"
+# What gives Claude Code a login without the macOS Keychain (see
+# Keeper.keychain_login).
+CLAUDE_ENV_LOGINS = (
+    "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+)
+
+# On macOS a keeper of an agent that reads its login from the Keychain is
+# started as a launchd job of the person's desktop session instead of as a
+# child of sshd: macOS opens the login Keychain only to processes of that
+# session (see start_in_desktop_session).
+LAUNCHD_PREFIX = "dev.herdrmobile.keeper"
+LAUNCHD_LABEL = re.compile(r"^dev\.herdrmobile\.keeper\.[0-9a-f]{12}$")
+LAUNCHD_TIMEOUT = 10
+# The job's label in a keeper that runs as one (cmd_daemon); None otherwise.
+DESKTOP_LABEL = None
 
 # Shared sessions (docs/AGENT_SESSIONS.md): the keeper's own file, which herdr
 # runs as `view` in the pane the keeper opens for the session.
@@ -248,7 +264,28 @@ def unlink(name):
         pass
 
 
+def launchd_bootout(label, wait=True):
+    """Unloads the launchd job [label] of this person's desktop session; its
+    process, when it still runs, gets SIGTERM. Best effort, never raises."""
+    if not LAUNCHD_LABEL.match(label or ""):
+        return
+    argv = ["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), label)]
+    try:
+        p = subprocess.Popen(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True, start_new_session=True,
+        )
+        if wait:
+            p.wait(timeout=LAUNCHD_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def remove_keeper(kid):
+    info = read_info(kid)
+    label = info.get("launchd") if info else None
+    if isinstance(label, str):
+        launchd_bootout(label, wait=False)
     for ext in (".json", ".sock", ".log"):
         unlink(kid + ext)
 
@@ -663,8 +700,25 @@ class ReplayLog(object):
             if not self.trim_next(pinned):
                 break
         while self.over():
+            last = self.last
+            if last is not None and self.bulk(last):
+                # The turn in flight is what fills the log (omp sends an update
+                # for every beat and chunk of a long command). The turns before it
+                # are a sliver, so dropping them frees next to nothing and only
+                # loses the conversation: it eats its own oldest entries instead.
+                if self.trim_next(pinned) or self.cut_oldest(last):
+                    continue
+                break
             if not (self.trim_next(pinned) or self.drop_next(pinned) or self.cut_oldest()):
                 break
+
+    def bulk(self, t):
+        """Whether turn `t` alone is over a bound, or, past the entry bound,
+        holds more than half of what that bound allows: dropping the turns
+        before it cannot be what makes room."""
+        if t.n > self.max_bytes or len(t.e) > self.max_entries:
+            return True
+        return self.count > self.max_entries and len(t.e) * 2 > self.max_entries
 
     def trim_next(self, pinned):
         """Cuts the heavy parts out of the oldest turn not yet cut: outside
@@ -783,11 +837,12 @@ class ReplayLog(object):
             return True
         return False
 
-    def cut_oldest(self):
+    def cut_oldest(self, only=None):
         """Last resort, when what is left (the newest turn, a waiting one) is
         over the bounds by itself: the oldest entry that is not a user
-        message, never the newest entry. False when there is none."""
-        for t in self.turns.values():
+        message, never the newest entry; of the turn `only` when given, else
+        of the oldest turn that has one. False when there is none."""
+        for t in ([only] if only is not None else self.turns.values()):
             keep = []
             while t.e and kind_of(t.e[0]) == "user_message_chunk":
                 keep.append(t.e.popleft())
@@ -917,6 +972,13 @@ class Keeper(object):
         self.bg_level = None
         # The herdr pane a `view` client said it shows this session in.
         self.pane_id = None
+        # Claude Code on macOS keeps its login in the login Keychain, which
+        # macOS does not open for an SSH session (the phone starts every
+        # keeper over SSH): without a login in the environment it answers
+        # "Please run /login" however often the person signs in. The phone
+        # says so when the agent asks for a login.
+        self.keychain_login = sys.platform == "darwin" and agent == "claude" and not DESKTOP_LABEL and not any(
+            os.environ.get(k) for k in CLAUDE_ENV_LOGINS)
         # The pane the keeper opens in herdr (open_pane): the herdr binary,
         # the command in flight and the tab, closed when the session is ended.
         self.herdr = None
@@ -1007,6 +1069,10 @@ class Keeper(object):
             d["title"] = self.title
         if self.pane_id:
             d["pane_id"] = self.pane_id
+        if self.keychain_login:
+            d["login"] = "keychain"
+        if DESKTOP_LABEL:
+            d["launchd"] = DESKTOP_LABEL
         if self.last_event_at:
             d["last_event_at"] = self.last_event_at
         if self.exit_code is not None:
@@ -2128,6 +2194,135 @@ def cmd_list():
     print(dumps(scan()))
 
 
+def start_in_desktop_session(agent):
+    """Whether the keeper of [agent] is started as a job of the person's
+    desktop session: on macOS, for Claude Code, which keeps its login in the
+    login Keychain. sshd's children cannot open it (errSecInteractionNotAllowed),
+    so a keeper started from the phone's SSH session answered "Please run
+    /login" however often the person signed in; Zed has no such problem because
+    it starts the agent from the desktop app. Not when the environment already
+    holds a login (a token needs no Keychain), and not under
+    HERDR_MOBILE_NO_LAUNCHD (tests)."""
+    return (
+        sys.platform == "darwin"
+        and agent == "claude"
+        and not os.environ.get("HERDR_MOBILE_NO_LAUNCHD")
+        and not any(os.environ.get(k) for k in CLAUDE_ENV_LOGINS)
+    )
+
+
+def launchctl(args):
+    """The finished `launchctl` process, or None when it could not be run or
+    did not finish."""
+    try:
+        return subprocess.run(
+            ["launchctl"] + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=LAUNCHD_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def start_via_launchd(agent, cwd):
+    """Runs the keeper as a launchd job of the person's desktop session
+    (`gui/<uid>`) and waits for its report. The job is `daemon` with this
+    process's whole environment, so it behaves as a keeper started here; its
+    report comes back in a file, as there is no pipe to a job. Returns the
+    report, or None when that cannot be done (nobody is logged in at the
+    desktop, launchctl refused): the caller then starts the keeper the usual
+    way. The job outlives this SSH session like any daemon, and unloads
+    itself when the keeper ends (daemon_exit)."""
+    import plistlib
+    domain = "gui/%d" % os.getuid()
+    p = launchctl(["print", domain])
+    if p is None or p.returncode != 0:
+        return None
+    tok = secrets.token_hex(6)
+    label = "%s.%s" % (LAUNCHD_PREFIX, tok)
+    sd = os.getcwd()
+    report = os.path.join(sd, "start-%s.report" % tok)
+    plist = os.path.join(sd, "start-%s.plist" % tok)
+    env = dict(os.environ)
+    env["HERDR_KEEPER_LABEL"] = label
+    env["HERDR_KEEPER_REPORT"] = report
+    job = {
+        "Label": label,
+        "ProgramArguments": [sys.executable, SCRIPT, "daemon", "--agent", agent, "--cwd", cwd],
+        "EnvironmentVariables": env,
+        "WorkingDirectory": sd,
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "StandardOutPath": os.devnull,
+        "StandardErrorPath": os.devnull,
+    }
+    # The environment can hold a token: the file is private and gone once
+    # launchd has read it.
+    try:
+        fd = os.open(plist, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            plistlib.dump(job, f)
+        p = launchctl(["bootstrap", domain, plist])
+    except (OSError, ValueError):
+        p = None
+    finally:
+        unlink(plist)
+    if p is None or p.returncode != 0:
+        unlink(report)
+        return None
+    began = time.time()
+    deadline = began + INIT_TIMEOUT + 20
+    checked = began
+    gone = False
+    rep = None
+    while time.time() < deadline:
+        try:
+            with open(report, "rb") as f:
+                text = f.read(65536)
+        except OSError:
+            text = b""
+        if b"\n" in text:
+            try:
+                rep = json.loads(text.decode("utf-8", "replace").splitlines()[0])
+            except ValueError:
+                rep = {"ok": False, "code": EX_FAILED, "error": "the keeper's answer was not understood"}
+            break
+        if gone:
+            rep = {"ok": False, "code": EX_FAILED, "error": "the keeper did not start (its job ended without an answer)"}
+            break
+        if time.time() - began > 3 and time.time() - checked >= 1:
+            checked = time.time()
+            q = launchctl(["print", "%s/%s" % (domain, label)])
+            gone = q is not None and (q.returncode != 0 or b"state = running" not in q.stdout)
+        time.sleep(0.05)
+    if rep is None:
+        rep = {"ok": False, "code": EX_FAILED, "error": "the keeper did not start (no answer from the new process)"}
+    unlink(report)
+    if not rep.get("ok"):
+        launchd_bootout(label)
+    return rep
+
+
+def cmd_daemon(agent, cwd):
+    """The keeper process of the job `start_via_launchd` loaded. Nobody types
+    this: it needs the job's label and report path in its environment."""
+    global DESKTOP_LABEL
+    label = os.environ.pop("HERDR_KEEPER_LABEL", "")
+    report = os.environ.pop("HERDR_KEEPER_REPORT", "")
+    if not LAUNCHD_LABEL.match(label) or not report:
+        fail(EX_USAGE, "daemon is started by start")
+    DESKTOP_LABEL = label
+    os.chdir(state_dir())
+    fd = os.open(report, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    route = route_by_id(agent)
+    dirs = search_dirs()
+    argv = resolve(route, dirs) if route else None
+    if argv is None:
+        os.write(fd, enc({"ok": False, "code": EX_MISSING, "error": "%s is not installed on this host" % agent}))
+        os.close(fd)
+        daemon_exit()
+    daemon(agent, cwd, argv, dirs, fd)
+
+
 def cmd_start(agent, cwd):
     route = route_by_id(agent)
     if route is None:
@@ -2144,6 +2339,14 @@ def cmd_start(agent, cwd):
         fail(EX_MISSING, "%s is not installed on this host (looked for %s)" % (route["id"], want))
     sd = state_dir()
     os.chdir(sd)
+    if start_in_desktop_session(agent):
+        rep = start_via_launchd(agent, cwd)
+        if rep is not None:
+            if rep.get("ok"):
+                print(dumps(rep["info"]))
+                sys.stdout.flush()
+                sys.exit(0)
+            fail(int(rep.get("code") or EX_FAILED), str(rep.get("error") or "the keeper did not start"))
     r, w = os.pipe()
     pid = os.fork()
     if pid > 0:
@@ -2181,6 +2384,14 @@ def cmd_start(agent, cwd):
     daemon(agent, cwd, argv, dirs, w)
 
 
+def daemon_exit():
+    """The end of a keeper process; one that runs as a launchd job unloads
+    the job first, or launchd would keep listing it."""
+    if DESKTOP_LABEL:
+        launchd_bootout(DESKTOP_LABEL, wait=False)
+    os._exit(0)
+
+
 def daemon(agent, cwd, argv, dirs, report_fd):
     os.umask(0o077)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -2201,7 +2412,7 @@ def daemon(agent, cwd, argv, dirs, report_fd):
         except OSError as e:
             remove_keeper(k.id)
             k.report({"ok": False, "code": EX_MISSING, "error": "could not run %s: %s" % (argv[0], e)})
-            os._exit(0)
+            daemon_exit()
         k.run()
     except BaseException:
         text = traceback.format_exc()
@@ -2217,7 +2428,7 @@ def daemon(agent, cwd, argv, dirs, report_fd):
             k.exited_at = now_ms()
             k.save()
             unlink(k.id + ".sock")
-    os._exit(0)
+    daemon_exit()
 
 
 def check_id(kid):
@@ -2326,6 +2537,11 @@ def cmd_kill(kid):
 # (escape sequences could rewrite the screen); newlines and tabs stay.
 VIEW_CONTROL = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 VIEW_NUMBER = re.compile(r"^[0-9]{1,4}$")
+# `view` on a terminal: SGR codes of its styles, from the 16 basic colours so
+# the terminal's theme decides how they look. Not used when NO_COLOR is set.
+VIEW_STYLE = {"dim": "2", "bold": "1", "accent": "36", "ok": "32", "bad": "31", "warn": "33;1"}
+# The narrowest `view` wraps to: a pane can be squeezed to almost nothing.
+VIEW_MIN_COLS = 20
 
 
 def short_host():
@@ -2346,6 +2562,107 @@ def one_line(text, n=200):
 def permission_options(params):
     options = params.get("options") if isinstance(params, dict) else None
     return [o for o in (options if isinstance(options, list) else []) if isinstance(o, dict) and isinstance(o.get("optionId"), str)]
+
+
+def char_width(ch):
+    """Columns [ch] takes in a terminal: 0 for a combining mark, 2 for a wide
+    character (CJK, most emoji), else 1."""
+    if ord(ch) < 0x300:
+        return 1
+    if unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def text_width(text):
+    return sum(char_width(c) for c in text)
+
+
+def fit(text, width, tail=False):
+    """[text] cut to [width] columns with an ellipsis where it was cut: its end,
+    or its start when [tail] (what was typed last stays in sight)."""
+    if text_width(text) <= width:
+        return text
+    out, w = [], 0
+    for ch in (reversed(text) if tail else text):
+        cw = char_width(ch)
+        if w + cw > width - 1:
+            break
+        out.append(ch)
+        w += cw
+    return "\u2026" + "".join(reversed(out)) if tail else "".join(out) + "\u2026"
+
+
+def wrap_rows(text, width):
+    """[text] (one line) cut into rows of at most [width] columns, at spaces
+    where it can be: [(offset of the row in text, row)], at least one; a
+    trailing empty row when [text] ends in the spaces of a break. Greedy, so
+    every row but the last stays the same however [text] grows: `view` writes
+    the finished rows of a line still streaming and keeps the last one live.
+    width None: one row."""
+    if width is None or len(text) * 2 <= width or text_width(text) <= width:
+        return [(0, text)]
+    rows = []
+    start, n = 0, len(text)
+    while True:
+        w, i, brk, word = 0, start, -1, False
+        while i < n:
+            cw = char_width(text[i])
+            if w + cw > width:
+                break
+            if text[i] == " ":
+                if word:
+                    brk = i
+            else:
+                word = True
+            w += cw
+            i += 1
+        if i >= n:
+            rows.append((start, text[start:]))
+            return rows
+        end = i if text[i] == " " or brk < 0 else brk
+        if end <= start:
+            end = start + 1  # a character wider than the row
+        rows.append((start, text[start:end].rstrip(" ")))
+        start = end
+        while start < n and text[start] == " ":
+            start += 1
+        if start >= n:
+            rows.append((n, ""))
+            return rows
+
+
+def final_rows(text, width):
+    """The rows of a finished line (no trailing empty row)."""
+    rows = [r for _, r in wrap_rows(text, width)]
+    if len(rows) > 1 and not rows[-1]:
+        rows.pop()
+    return rows
+
+
+def call_command(tc):
+    """What a waiting tool call will run or touch, whole, as the agent sent it:
+    its command (a string or argv words), else its path; "" when it names
+    neither."""
+    raw = tc.get("rawInput") if isinstance(tc, dict) else None
+    if not isinstance(raw, dict):
+        return ""
+    v = raw.get("command") or raw.get("cmd")
+    if isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+        # Codex wraps a shell command as [bash, -lc, script]: the script is it.
+        v = v[-1] if len(v) == 3 and v[1] in ("-c", "-lc") else " ".join(shlex.quote(x) for x in v)
+    if not isinstance(v, str) or not v.strip():
+        v = raw.get("file_path") or raw.get("path")
+    if not isinstance(v, str):
+        return ""
+    return VIEW_CONTROL.sub("", v.replace("\t", "    ")).strip("\n")
+
+
+def home_short(path):
+    h = home_dir()
+    if path == h:
+        return "~"
+    return "~" + path[len(h):] if path.startswith(h + "/") else path
 
 
 class HerdrReport(object):
@@ -2445,14 +2762,23 @@ class HerdrReport(object):
 class View(object):
     """`view ID`: the session in a terminal, the keeper's own client in the
     herdr pane it opens (Keeper.open_pane; docs/AGENT_SESSIONS.md, "Shared
-    sessions"). Line by line, no curses: it prints the conversation (thoughts
-    left out, a tool call as a line), sends a typed line as a prompt, answers
-    a waiting permission by its number, says that a question is answered on
-    the phone, and reports the session's state to herdr. It answers no request
-    the person did not pick."""
+    sessions"). It prints the conversation into the scrollback (thoughts left
+    out, a finished tool call as one row), sends what is typed as a prompt,
+    answers a waiting permission by its number, says that a question is
+    answered on the phone, and reports the session's state to herdr. It
+    answers no request the person did not pick.
 
-    def __init__(self, kid):
+    On a terminal ([tty]) it wraps rows itself and keeps a live area under the
+    scrollback: the row of a message still streaming, a status row, and the
+    input row, which it echoes itself so arriving output never splits what is
+    being typed. Nothing above the live area is redrawn, so the terminal's own
+    scroll and copy keep working. Elsewhere (a pipe) it writes plain lines: no
+    colour, no live area, input read line by line."""
+
+    def __init__(self, kid, tty=False):
         self.kid = kid
+        self.tty = tty
+        self.color = tty and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
         self.sock = None
         self.rbuf = b""
         self.ibuf = b""
@@ -2465,48 +2791,230 @@ class View(object):
         self.waited = False
         self.running = False
         self.mine = None
+        self.mine_text = ""
         self.waiting = collections.OrderedDict()
         self.resolved = set()
-        self.tools = {}
+        self.tools = collections.OrderedDict()  # calls not finished: id -> title
         self.tools_done = set()
-        self.cur = None
-        self.open = False
         self.done = False
+        # The screen. [cols]: the width rows are wrapped to (None: not wrapped).
+        self.cols = None
+        self.out = []
+        self.live = 0  # rows the live area takes on the screen now
+        self.dirty = False  # the live area changed
+        self.block = None  # what was written last: you, agent, tool, card, note
+        self.cur = None  # (chunk kind, messageId) of the message being written
+        self.line = ""  # its last row, still growing (live on a terminal)
+        self.first = True  # its next row is its first
+        self.gap = False  # a blank row is owed before its next row
+        # What is being typed (terminal only).
+        self.input = ""
+        self.esc = ""
+        self.paste = False
+        # The keeper's files are named relative to its folder; `run` leaves it
+        # for the session's own, which herdr then shows as the pane's folder.
+        self.dir = os.getcwd()
         info = read_info(kid) or {}
+        title = info.get("title")
+        self.title = title if isinstance(title, str) and title.strip() else None
+        self.asked = None  # the first thing the person asked: a name until the agent gives one
+        self.named = None  # the terminal title last set
         route = route_by_id(info.get("agent") or "") or {}
         resume = ["python3", SCRIPT, "view", kid] if view_runnable(SCRIPT) else None
+        self.label = route.get("label") or info.get("agent") or "agent"
+        self.cwd = info.get("cwd") or ""
         # Not the bare agent name: herdr knows `omp`, `codex` and `pi` as its
         # own agents, and its guide asks integrations not to use their names.
-        label = route.get("label") or info.get("agent") or "agent"
-        self.herdr = HerdrReport(label + " \u00b7 phone", resume)
+        self.herdr = HerdrReport(self.label + " \u00b7 phone", resume)
 
     # -- the terminal
 
-    def write(self, text):
-        if not text or self.done:
-            return
+    def style(self, name, text):
+        if not self.color or not name or not text:
+            return text
+        return "\x1b[%sm%s\x1b[0m" % (VIEW_STYLE[name], text)
+
+    def resize(self):
         try:
-            sys.stdout.buffer.write(text.encode("utf-8", "replace"))
+            cols = os.get_terminal_size(1).columns
+        except OSError:
+            cols = 80
+        # One column spare: a row that fills the width leaves the cursor
+        # waiting to wrap, and the live area's row count would be off by one.
+        self.cols = max(VIEW_MIN_COLS, cols) - 1
+        self.dirty = True
+        if self.cur is not None and self.line:
+            line, self.line = self.line, ""
+            self.put_text(line, False)
+
+    def width(self, lead):
+        return None if self.cols is None else self.cols - lead
+
+    def erase(self):
+        """Clears the live area; the cursor is on its last row."""
+        if self.live:
+            self.out.append(("\x1b[%dA" % (self.live - 1) if self.live > 1 else "") + "\r\x1b[J")
+            self.live = 0
+
+    def emit(self, rows):
+        """[rows] into the scrollback, above the live area."""
+        self.erase()
+        for r in rows:
+            self.out.append(r + "\n")
+
+    def record(self):
+        """The keeper's record now ({} once it is gone)."""
+        return read_info(os.path.join(self.dir, self.kid)) or {}
+
+    def name(self):
+        """What the terminal (and so herdr's pane row, on every computer) is
+        titled: the session's title, else what was asked first, never the
+        command that runs this."""
+        return one_line(self.title or self.asked or "", 120) or "%s session" % self.label
+
+    def flush(self):
+        if self.tty and not self.done and self.name() != self.named:
+            self.named = self.name()
+            self.out.append("\x1b]0;%s\x07" % self.named)
+        if self.tty and (self.out or self.dirty or (self.done and self.live)):
+            self.erase()
+            if not self.done:
+                rows, back = self.live_rows()
+                self.out.append("\n".join(rows))
+                if back:
+                    self.out.append("\r\x1b[%dC" % back)
+                self.live = len(rows)
+        self.dirty = False
+        if not self.out:
+            return
+        data, self.out = "".join(self.out), []
+        try:
+            sys.stdout.buffer.write(data.encode("utf-8", "replace"))
             sys.stdout.flush()
         except OSError:
             self.done = True
-            return
-        self.open = not text.endswith("\n")
 
-    def say(self, text):
-        """[text] as a line of its own."""
-        if self.open:
-            self.write("\n")
-        self.cur = None
-        self.write(text + "\n")
+    def live_rows(self):
+        """(the live area's rows, the column to put the cursor back to or 0
+        to leave it after the last row)."""
+        rows = []
+        if self.cur is not None and self.line:
+            rows.append(self.text_row(self.line))
+        rows.append("")  # the input is not part of the conversation above it
+        status = self.status()
+        if status:
+            rows.append(status)
+        mark = self.style("accent" if self.loaded else "dim", "\u203a") + " "
+        if self.input:
+            rows.append(mark + fit(self.input.replace("\n", "\u23ce "), self.cols - 2, tail=True))
+            return rows, 0
+        if not self.loaded:
+            rows.append(mark)
+            return rows, 0
+        hint = "Message %s \u00b7 /cancel stops it \u00b7 /quit leaves" % self.label
+        rows.append(mark + self.style("dim", fit(hint, self.cols - 2)))
+        return rows, 2
+
+    def status(self):
+        """The status row: what the session does now, or None when it rests."""
+        if not self.loaded:
+            text = "Waiting for the phone to open the session" if self.waited else "Opening the session"
+            return self.style("dim", fit("\u25cc " + text, self.cols))
+        if self.waiting:
+            n = len(self.waiting)
+            what = "%d requests" % n if n > 1 else (
+                "Question" if next(iter(self.waiting.values()))[0] == "elicitation/create" else "Permission")
+            head = "\u25b2 Needs you"
+            return self.style("warn", head) + self.style("dim", fit(" \u00b7 " + what, self.cols - len(head)))
+        if self.running or self.mine is not None:
+            head = "\u25d0 Working"
+            tools = list(self.tools.values())
+            rest = fit(" \u00b7 " + tools[-1], self.cols - len(head)) if tools else ""
+            return self.style("accent", head) + self.style("dim", rest)
+        return None
+
+    def text_row(self, row):
+        """A row of the message being written: the person's are marked and bold."""
+        if self.cur[0] == "user":
+            return (self.style("accent", "\u203a") + " " if self.first else "  ") + self.style("bold", row)
+        return row
+
+    def rows(self, text, style=None, head=None, head_style=None, indent=0):
+        """[text] wrapped, each row indented by [indent] columns and the first
+        led by [head] and a space, the rest lined up under it."""
+        lead = indent + (text_width(head) + 1 if head else 0)
+        out = []
+        for line in text.split("\n"):
+            for r in final_rows(line, self.width(lead)):
+                if head and not out:
+                    pad = " " * indent + self.style(head_style or style, head) + " "
+                else:
+                    pad = " " * lead
+                out.append(pad + self.style(style, r))
+        return out
+
+    def start(self, kind):
+        """Opens a block: a blank row between blocks, none between the rows of
+        tool calls or of notes."""
+        if self.block is not None and not (kind == self.block and kind in ("tool", "note")):
+            self.emit([""])
+        self.block = kind
+
+    def say(self, text, style="dim", head=None, head_style=None):
+        """[text] as a note of its own."""
+        self.end_text()
+        self.start("note")
+        self.emit(self.rows(text, style, head, head_style))
 
     def end(self, reason):
         if reason is None:
-            info = read_info(self.kid) or {}
+            info = self.record()
             reason = info.get("exit_reason") if info.get("state") == "exited" else None
         reason = one_line(reason, 300).rstrip(". ") or "the keeper closed the connection"
-        self.say("Session ended: %s." % reason)
+        self.say("Session ended: %s." % reason, None, "\u25a0", "bad")
         self.done = True
+
+    def put_row(self, row):
+        """A finished row of the message being written. Blank rows are kept
+        only between rows, one at most."""
+        if not row.strip():
+            if not self.first:
+                self.gap = True
+            return
+        if self.gap:
+            self.emit([""])
+            self.gap = False
+        self.emit([self.text_row(row)])
+        self.first = False
+
+    def put_text(self, text, final):
+        """A line of the message being written: all its rows when [final],
+        else all but the last, which stays live in [line]."""
+        rows = wrap_rows(text, self.width(2 if self.cur[0] == "user" else 0))
+        if final:
+            if len(rows) > 1 and not rows[-1][1]:
+                rows.pop()
+        else:
+            self.line = text[rows[-1][0]:]
+            rows = rows[:-1]
+        for _, r in rows:
+            self.put_row(r)
+
+    def end_text(self):
+        if self.cur is None:
+            return
+        if self.line:
+            line, self.line = self.line, ""
+            self.put_text(line, True)
+        self.cur = None
+        self.gap = False
+        self.dirty = True
+
+    def keep(self, text):
+        """[text], which was not sent, goes back to the input row."""
+        if self.tty and not self.input:
+            self.input = text
+            self.dirty = True
 
     # -- the keeper
 
@@ -2526,7 +3034,7 @@ class View(object):
         """Loads the keeper's session once it has one (the phone opens it just
         after the start)."""
         self.load_at = 0.0
-        info = read_info(self.kid) or {}
+        info = self.record()
         if info.get("state") == "exited":
             self.end(info.get("exit_reason") or "the agent exited")
             return
@@ -2537,7 +3045,9 @@ class View(object):
             return
         if not self.waited and time.time() - self.t0 >= 3:
             self.waited = True
-            self.say("Waiting for the phone to open the session.")
+            self.dirty = True
+            if not self.tty:
+                self.say("Waiting for the phone to open the session.")
         self.load_at = time.time() + (1.0 if self.waited else 0.5)
 
     def feed(self, data):
@@ -2577,13 +3087,18 @@ class View(object):
                 self.end("the session did not open (%s)" % text)
                 return
             self.loaded = True
-            self.say("Type a message and Enter to send it. /cancel stops the agent, /quit leaves.")
+            self.dirty = True
+            if not self.tty:
+                self.say("Type a message and Enter to send it. /cancel stops the agent, /quit leaves.")
         elif what == "prompt":
             self.mine = None
+            sent, self.mine_text = self.mine_text, ""
             if isinstance(err, dict) and err.get("code") == SESSION_BUSY:
-                self.say("The agent is busy; not sent.")
+                self.say("The agent is busy; not sent.", None, "\u2717", "bad")
+                self.keep(sent)
             elif err is not None:
-                self.say("Not sent: %s." % text.rstrip("."))
+                self.say("Not sent: %s." % text.rstrip("."), None, "\u2717", "bad")
+                self.keep(sent)
             else:
                 res = msg.get("result")
                 self.turn_end(res.get("stopReason") if isinstance(res, dict) else None)
@@ -2597,11 +3112,13 @@ class View(object):
             kid = p.get("requestId")
             if isinstance(kid, str):
                 self.resolved.add(kid)
-            self.say("Answered in %s: %s." % (one_line(p.get("by")) or "another client", one_line(p.get("answer")) or "?"))
+            self.say("Answered in %s: %s." % (one_line(p.get("by")) or "another client", one_line(p.get("answer")) or "?"),
+                     "dim", "\u2713", "ok")
         elif method == "$/cancel_request":
             kid = p.get("requestId")
             if isinstance(kid, str) and self.waiting.pop(kid, None) is not None and kid not in self.resolved:
                 self.say("The agent withdrew its request.")
+            self.dirty = True
         elif method == "_herdr/agent_exited":
             self.end(p.get("reason") or "the agent exited")
 
@@ -2612,12 +3129,16 @@ class View(object):
         elif kind == "user_message_chunk":
             self.chunk("user", u)
         elif kind in ("tool_call", "tool_call_update"):
-            self.tool(u, kind == "tool_call")
+            self.tool(u)
         elif kind == "state_update":
             if u.get("state") == "running":
                 self.running = True
+                self.dirty = True
             elif u.get("state") == "idle":
                 self.turn_end(u.get("stopReason"))
+        elif kind == "session_info_update" and "title" in u:
+            t = u.get("title")
+            self.title = t if isinstance(t, str) and t.strip() else None
 
     def chunk(self, kind, u):
         c = u.get("content")
@@ -2627,39 +3148,58 @@ class View(object):
         text = VIEW_CONTROL.sub("", text) if isinstance(text, str) else "[%s]" % one_line(c.get("type"), 40)
         key = (kind, u.get("messageId"))
         if key != self.cur:
-            if self.open:
-                self.write("\n")
-            if kind == "user":
-                self.write("\n> ")
+            self.end_text()
+            self.start("you" if kind == "user" else "agent")
             self.cur = key
-        if kind == "user":
-            text = text.replace("\n", "\n> ")
-        self.write(text)
+            self.first = True
+        if kind == "user" and self.asked is None and text.strip():
+            self.asked = text
+        parts = (self.line + text.replace("\t", "    ")).split("\n")
+        self.line = ""
+        for part in parts[:-1]:
+            self.put_text(part, True)
+        self.put_text(parts[-1], False)
+        self.dirty = True
 
-    def tool(self, u, new):
+    def tool(self, u):
+        """A call shows as one row when it finishes (the status row names it
+        while it runs): the scrollback is never rewritten."""
         tid = u.get("toolCallId")
-        if not isinstance(tid, str):
+        if not isinstance(tid, str) or tid in self.tools_done:
             return
-        title = one_line(u.get("title"))
-        if new or tid not in self.tools:
-            self.tools[tid] = title or self.tools.get(tid) or one_line(u.get("kind")) or "tool"
-            self.say("\u2022 " + self.tools[tid])
-            self.cur = ("tool", tid)
+        title = one_line(u.get("title"), 300)
+        if tid not in self.tools:
+            self.end_text()
+            self.tools[tid] = title or one_line(u.get("kind")) or "tool"
         elif title:
             self.tools[tid] = title
         status = u.get("status")
-        if status in ("completed", "failed") and tid not in self.tools_done:
+        if status in ("completed", "failed"):
             self.tools_done.add(tid)
-            word = "done" if status == "completed" else "failed"
-            self.say(("  " + word) if self.cur == ("tool", tid) else "  %s: %s" % (word, self.tools[tid]))
+            title = self.tools.pop(tid)
+            if status == "completed":
+                self.tool_row(title, "dim", "\u2713", "ok")
+            else:
+                self.tool_row(title + " \u00b7 failed", None, "\u2717", "bad")
+        self.dirty = True
+
+    def tool_row(self, text, style, head, head_style):
+        self.end_text()
+        self.start("tool")
+        self.emit(self.rows(text, style, head, head_style))
 
     def turn_end(self, stop):
         self.running = False
-        if self.open:
-            self.write("\n")
-        self.cur = None
+        self.end_text()
+        # A call the turn ended without: said once, and a late word on it is
+        # not news.
+        for tid, title in self.tools.items():
+            self.tools_done.add(tid)
+            self.tool_row(title + " \u00b7 no result", "dim", "\u25cc", "dim")
+        self.tools.clear()
         if isinstance(stop, str) and stop and stop != "end_turn":
             self.say("Turn ended: %s." % one_line(stop.replace("_", " "), 60))
+        self.dirty = True
 
     def on_request(self, msg):
         method, kid = msg["method"], msg["id"]
@@ -2668,18 +3208,27 @@ class View(object):
             if kid in self.waiting:
                 return
             self.waiting[kid] = (method, p)
+            self.end_text()
+            self.start("card")
+            self.dirty = True
             if method == "elicitation/create":
-                self.say("Question: " + (one_line(p.get("message"), 300) or "(no text)"))
-                self.say("Answer this on the phone.")
+                rows = self.rows("Question \u00b7 " + (one_line(p.get("message"), 300) or "(no text)"), "bold", "\u25b2", "warn")
+                rows += self.rows("Answer this on the phone.", "dim", indent=2)
+                self.emit(rows)
                 return
             tc = p.get("toolCall") if isinstance(p.get("toolCall"), dict) else {}
-            self.say("Permission: " + (one_line(tc.get("title"), 300) or one_line(tc.get("kind")) or "(no title)"))
+            title = one_line(tc.get("title"), 300) or one_line(tc.get("kind")) or "(no title)"
+            rows = self.rows("Permission \u00b7 " + title, "bold", "\u25b2", "warn")
+            command = call_command(tc)
+            if command and command not in title:
+                rows += self.rows(command, None, indent=2)
             for i, o in enumerate(permission_options(p), 1):
-                self.say("  %d. %s" % (i, one_line(o.get("name")) or one_line(o["optionId"])))
+                rows += self.rows(one_line(o.get("name")) or one_line(o["optionId"]), None, str(i), "bold", indent=2)
             if len(self.permissions()) == 1:
-                self.say("Type a number and Enter to answer.")
+                rows += self.rows("Type a number and Enter to answer.", "dim", indent=2)
             else:
-                self.say("More than one request waits: answer them on the phone.")
+                rows += self.rows("More than one request waits: answer them on the phone.", "dim", indent=2)
+            self.emit(rows)
             return
         self.send({"jsonrpc": "2.0", "id": kid, "error": {"code": -32601, "message": "A terminal view does not answer %s." % method}})
 
@@ -2692,7 +3241,7 @@ class View(object):
         text = text.strip()
         if not text:
             return
-        self.open = False  # the terminal ended the line the person typed
+        self.dirty = True
         if text == "/quit":
             self.done = True
             return
@@ -2707,18 +3256,84 @@ class View(object):
             options = permission_options(p)
             n = int(text)
             if not 1 <= n <= len(options):
-                self.say("There is no option %d." % n)
+                self.say("There is no option %d." % n, None, "\u2717", "bad")
                 return
             o = options[n - 1]
             self.send({"jsonrpc": "2.0", "id": kid, "result": {"outcome": {"outcome": "selected", "optionId": o["optionId"]}}})
             del self.waiting[kid]
-            self.say("Answered: %s." % (one_line(o.get("name")) or o["optionId"]))
+            self.say("Answered: %s." % (one_line(o.get("name")) or o["optionId"]), "dim", "\u2713", "ok")
             return
         if not self.loaded:
-            self.say("The session is not open yet; not sent.")
+            self.say("The session is not open yet; not sent.", None, "\u2717", "bad")
+            self.keep(text)
             return
+        # The keeper shows a prompt to the other clients; its sender shows its own.
+        self.end_text()
+        self.start("you")
+        self.emit(self.rows(text, "bold", "\u203a", "accent"))
+        self.mine_text = text
+        if self.asked is None:
+            self.asked = text
         self.mine = self.call("session/prompt", {"sessionId": self.sid, "prompt": [{"type": "text", "text": text}]}, "prompt")
-        self.cur = None
+
+    def keys(self, s):
+        """What was typed on a terminal (decoded): edits the input row; Enter
+        sends it. Inside a bracketed paste, a newline is part of the message."""
+        s, self.esc = self.esc + s, ""
+        i, n = 0, len(s)
+        while i < n and not self.done:
+            c = s[i]
+            i += 1
+            self.dirty = True
+            if c == "\x1b":
+                if i >= n:
+                    self.esc = c  # the rest of the sequence comes with the next read
+                    break
+                if s[i] not in "[O":
+                    continue  # a lone Esc, or Alt with the key that follows
+                j = i + 1
+                if s[i] == "[":
+                    while j < n and not ("\x40" <= s[j] <= "\x7e"):
+                        j += 1
+                if j >= n:
+                    self.esc = s[i - 1:]
+                    break
+                seq = s[i + 1:j + 1]
+                if seq == "200~":
+                    self.paste = True
+                elif seq == "201~":
+                    self.paste = False
+                i = j + 1  # arrows and other keys: not used
+            elif self.paste:
+                if c == "\r" and i < n and s[i] == "\n":
+                    continue
+                if c in "\r\n":
+                    self.input += "\n"
+                elif c == "\t":
+                    self.input += "    "
+                elif c >= " " and not "\x7f" <= c <= "\x9f":
+                    self.input += c
+            elif c in "\r\n":
+                text, self.input = self.input, ""
+                self.on_line(text)
+            elif c in "\x7f\x08":
+                self.input = self.input[:-1]
+            elif c == "\x15":  # Ctrl-U
+                self.input = ""
+            elif c == "\x17":  # Ctrl-W
+                self.input = re.sub(r"\S*\s*$", "", self.input)
+            elif c == "\x03":  # Ctrl-C: clears what is typed, else leaves
+                if self.input:
+                    self.input = ""
+                else:
+                    self.done = True
+            elif c == "\x04":  # Ctrl-D on an empty row leaves
+                if not self.input:
+                    self.done = True
+            elif c == "\t":
+                self.input += "    "
+            elif c >= " " and not "\x7f" <= c <= "\x9f":
+                self.input += c
 
     def report(self):
         if not self.loaded:
@@ -2738,8 +3353,13 @@ class View(object):
         except OSError:
             s.close()
             self.end(None)
+            self.flush()
             return
         self.sock = s
+        try:
+            os.chdir(self.cwd)
+        except OSError:
+            pass  # the folder is gone: the keeper's still works
         meta = {"viewer": True}
         if os.environ.get("HERDR_PANE_ID"):
             meta["pane"] = os.environ["HERDR_PANE_ID"]
@@ -2749,12 +3369,51 @@ class View(object):
             "clientInfo": {"name": VIEW_CLIENT, "title": "Terminal on " + short_host(), "version": "1"},
             "_meta": {"herdr": meta},
         }, "init")
+        saved = wake = decoder = None
+        if self.tty:
+            # The terminal stops echoing and editing: the input row does both,
+            # and Ctrl-C and Ctrl-D are keys. A resize wakes the loop.
+            saved = termios.tcgetattr(0)
+            mode = termios.tcgetattr(0)
+            mode[3] &= ~(termios.ECHO | termios.ICANON | termios.ISIG | termios.IEXTEN)
+            mode[6][termios.VMIN] = 1
+            mode[6][termios.VTIME] = 0
+            termios.tcsetattr(0, termios.TCSADRAIN, mode)
+            wake, poke = os.pipe()
+            os.set_blocking(wake, False)
+            os.set_blocking(poke, False)
+
+            def on_winch(signum, frame):
+                try:
+                    os.write(poke, b"!")
+                except OSError:
+                    pass
+            signal.signal(signal.SIGWINCH, on_winch)
+            decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            self.out.append("\x1b[?2004h")  # bracketed paste
+            self.resize()
+        # Which session this is, above everything the session shows.
+        self.start("note")
+        where = home_short(self.cwd)
+        head = self.style("bold", self.label)
+        if where:
+            head += self.style("dim", fit(" \u00b7 " + where, (self.cols or 10 ** 6) - text_width(self.label)))
+        self.emit([head])
         stdin_open = True
         try:
             while not self.done:
-                fds = [s, 0] if stdin_open else [s]
+                self.flush()
+                if self.done:
+                    break
+                fds = [s] + ([0] if stdin_open else []) + ([wake] if wake is not None else [])
                 timeout = 0.2 if (self.load_at or self.herdr.busy()) else None
                 ready, _, _ = select.select(fds, [], [], timeout)
+                if wake is not None and wake in ready:
+                    try:
+                        os.read(wake, 4096)
+                    except OSError:
+                        pass
+                    self.resize()
                 if s in ready:
                     try:
                         data = s.recv(262144)
@@ -2770,12 +3429,15 @@ class View(object):
                         # stdin closed (Ctrl-D): leave the session running.
                         stdin_open = False
                         self.done = True
-                    self.ibuf += data
-                    lines = self.ibuf.split(b"\n")
-                    self.ibuf = lines.pop()
-                    for ln in lines:
-                        if not self.done:
-                            self.on_line(ln.decode("utf-8", "replace"))
+                    elif decoder is not None:
+                        self.keys(decoder.decode(data))
+                    else:
+                        self.ibuf += data
+                        lines = self.ibuf.split(b"\n")
+                        self.ibuf = lines.pop()
+                        for ln in lines:
+                            if not self.done:
+                                self.on_line(ln.decode("utf-8", "replace"))
                 if self.load_at and time.time() >= self.load_at and not self.done:
                     self.try_load()
                 self.report()
@@ -2783,11 +3445,28 @@ class View(object):
         except KeyboardInterrupt:
             pass
         finally:
+            self.done = True
+            self.flush()
+            if saved is not None:
+                try:
+                    # The bracketed paste off, and the title back to the shell's.
+                    sys.stdout.buffer.write(b"\x1b[?2004l\x1b]0;\x07")
+                    sys.stdout.flush()
+                except OSError:
+                    pass
+                try:
+                    termios.tcsetattr(0, termios.TCSADRAIN, saved)
+                except (termios.error, OSError):
+                    pass  # the terminal is gone (the pane closed)
             s.close()
             self.herdr.release()
 
 
 def cmd_view(kid):
+    global codecs, shlex, termios, unicodedata
+    import codecs
+    import shlex
+    import unicodedata
     check_id(kid)
     os.chdir(state_dir())
     if read_info(kid) is None:
@@ -2795,7 +3474,10 @@ def cmd_view(kid):
     # A closed pane (SIGHUP) or a kill still tells herdr the agent left.
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, lambda signum, frame: sys.exit(128 + signum))
-    View(kid).run()
+    tty = os.isatty(0) and os.isatty(1)
+    if tty:
+        import termios
+    View(kid, tty).run()
 
 
 # -- history -----------------------------------------------------------------
@@ -3408,6 +4090,8 @@ def main(argv):
             cmd_kill(rest[0])
         elif cmd == "view" and len(rest) == 1:
             cmd_view(rest[0])
+        elif cmd == "daemon" and len(rest) == 4 and rest[0] == "--agent" and rest[2] == "--cwd":
+            cmd_daemon(rest[1], rest[3])
         else:
             fail(EX_USAGE, "unknown command: " + cmd)
     except OSError as e:

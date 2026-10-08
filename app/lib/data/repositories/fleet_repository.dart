@@ -3,13 +3,16 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 
-import '../models/herdr_models.dart';
 import '../models/machine_profile.dart';
 import '../services/network_monitor.dart';
 import 'agent_screens.dart';
+import 'fleet_agent.dart';
 import 'machine_connection.dart';
 import 'machine_repository.dart';
+import 'pane_session_names.dart';
 import 'reviewed_state.dart';
+
+export 'fleet_agent.dart';
 
 /// Builds the connection to [profile]. [secrets] reads its credentials from
 /// the keychain; it is for the connection to call when it needs them (to open
@@ -20,43 +23,6 @@ typedef ConnectionFactory = MachineConnection Function(
   Future<MachineSecrets> Function() secrets,
 );
 
-/// An agent pane together with where it lives.
-class FleetAgent {
-  const FleetAgent({
-    required this.machine,
-    required this.pane,
-    required this.workspace,
-  });
-
-  final MachineConnection machine;
-  final Pane pane;
-  final Workspace? workspace;
-
-  /// Stale when its machine is not currently online.
-  bool get stale => !machine.isLive;
-
-  /// Blocked on the person, and reachable (an offline machine's last-known
-  /// "needs you" cannot be answered): `AttentionSet`'s rule for a pane.
-  bool get needsYou => pane.status == AgentStatus.blocked && !stale;
-
-  /// Finished and not yet reviewed on this phone. [pane] is what the app
-  /// shows, where a reviewed agent is already idle.
-  bool get toReview => pane.status == AgentStatus.done;
-
-  /// Which agent program runs in the pane (`omp`, `claude`, ...): what the
-  /// agent says about its session, else what herdr detected.
-  String? get agentKind => pane.session?.agent.isNotEmpty == true ? pane.session!.agent : pane.agent;
-
-  /// The session log the agent appends its transcript to, on the machine, when
-  /// it names one: a `kind: path` session that is a `.jsonl` file. Null
-  /// otherwise (the pane then has no observed chat).
-  String? get sessionLogPath {
-    final session = pane.session;
-    if (session == null || session.kind != 'path' || !session.value.endsWith('.jsonl')) return null;
-    return session.value;
-  }
-}
-
 /// All saved machines, each with its own [MachineConnection], plus the
 /// merged cross-machine agent view.
 class FleetRepository extends ChangeNotifier {
@@ -66,11 +32,18 @@ class FleetRepository extends ChangeNotifier {
     required this._network,
     ReviewedState? reviewed,
     this._screens,
+    PaneSessionNames? names,
     this.longAway = const Duration(seconds: 5),
     this.backgroundSuspendAfter = const Duration(seconds: 90),
     this._clock = DateTime.now,
   })  : reviewed = reviewed ?? ReviewedState(),
         _ownsReviewed = reviewed == null {
+    this.names = names ??
+        PaneSessionNames(
+          agents: () => agents,
+          canRead: () => _backgroundedAt == null && !_suspended,
+        );
+    this.names.addListener(notifyListeners);
     _machines.addListener(_onMachinesChanged);
     _screens?.addListener(_reviewShown);
     _networkSub = _network.changes.listen(_onNetworkChanged);
@@ -134,6 +107,21 @@ class FleetRepository extends ChangeNotifier {
 
   MachineConnection? connection(String machineId) => _connections[machineId];
 
+  /// One agent pane as the board has it (with the name read for it), or null
+  /// when the machine or the pane is not there.
+  FleetAgent? agent(String machineId, String paneId) {
+    final c = _connections[machineId];
+    final p = c?.paneById(paneId);
+    if (c == null || p == null) return null;
+    return FleetAgent(
+      machine: c,
+      pane: p,
+      workspace: c.snapshot.workspace(p.workspaceId),
+      sessionName: names.nameFor(machineId, paneId, FleetAgent.logPathOf(p)),
+      lastActive: names.lastActiveFor(machineId, paneId, FleetAgent.logPathOf(p)),
+    );
+  }
+
   /// Every agent pane on every machine ([MachineConnection.agentPanes]: not a
   /// keeper's view of an agent session), most urgent first, then by machine
   /// then pane id for a stable order.
@@ -145,6 +133,8 @@ class FleetRepository extends ChangeNotifier {
             machine: c,
             pane: p,
             workspace: c.snapshot.workspace(p.workspaceId),
+            sessionName: names.nameFor(c.profile.id, p.id, FleetAgent.logPathOf(p)),
+            lastActive: names.lastActiveFor(c.profile.id, p.id, FleetAgent.logPathOf(p)),
           ),
     ];
     out.sort((a, b) {
@@ -157,6 +147,9 @@ class FleetRepository extends ChangeNotifier {
     return out;
   }
 
+  /// Names read from agents' session logs for panes whose title says nothing.
+  late final PaneSessionNames names;
+
   /// The person looked at [paneId] of [machineId] (opened or answered it): if
   /// it is done, it is reviewed and shows as idle from now on. herdr's own seen
   /// state is never touched (focusing would move the desktop's view).
@@ -165,6 +158,7 @@ class FleetRepository extends ChangeNotifier {
 
   void _onConnectionChanged() {
     notifyListeners();
+    names.sync();
     // A pane that finishes while its terminal is in front is read as it
     // happens.
     if (_screens?.front != null) _reviewShown();
@@ -261,6 +255,7 @@ class FleetRepository extends ChangeNotifier {
         _backgroundedAt = null;
         _graceElapsed = false;
         _syncBackground();
+        names.sync(); // reads that waited for the foreground start now
         _suspendTimer?.cancel();
         _suspendTimer = null;
         unawaited(onForeground(away: _clock().difference(at)));
@@ -344,6 +339,9 @@ class FleetRepository extends ChangeNotifier {
       c.dispose();
     }
     _connections.clear();
+    names
+      ..removeListener(notifyListeners)
+      ..dispose();
     if (_ownsReviewed) reviewed.dispose();
     super.dispose();
   }

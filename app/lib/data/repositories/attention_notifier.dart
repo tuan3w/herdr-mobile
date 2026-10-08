@@ -314,7 +314,7 @@ class AttentionNotifier {
           NotifyKind.needsYou,
           reachable: !a.stale,
           id: () => notificationIdFor(key),
-          title: () => _title(pane.title, _folder(pane.cwd), pane.agent ?? 'terminal'),
+          title: () => _title(a.betterTitle ?? pane.title, _folder(pane.cwd), pane.agent ?? 'terminal'),
           body: () => 'needs you · ${pane.agent ?? 'terminal'} · ${machine.label}',
           link: () => agentLinkFor(machine.id, pane.id),
           pane: (machineId: machine.id, paneId: pane.id),
@@ -325,7 +325,7 @@ class AttentionNotifier {
           NotifyKind.finished,
           reachable: !a.stale,
           id: () => notificationIdFor(key),
-          title: () => _title(pane.title, _folder(pane.cwd), pane.agent ?? 'terminal'),
+          title: () => _title(a.betterTitle ?? pane.title, _folder(pane.cwd), pane.agent ?? 'terminal'),
           body: () => 'done · ${pane.agent ?? 'terminal'} · ${machine.label}',
           link: () => agentLinkFor(machine.id, pane.id),
         ));

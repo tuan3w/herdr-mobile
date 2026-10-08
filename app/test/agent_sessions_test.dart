@@ -1337,6 +1337,143 @@ void main() {
     });
   });
 
+  group('omp names the session', () {
+    // omp's ACP mode never titles a session; `/rename` with no argument makes
+    // it generate one and announce it (`session_info_update`).
+    const listsRename = {
+      'sessionUpdate': 'available_commands_update',
+      'availableCommands': [
+        {
+          'name': 'rename',
+          'description': 'Rename the current session (omit title to generate)',
+          'input': {'hint': '[title]'},
+        },
+      ],
+    };
+
+    /// An agent that names the session when asked, and answers the rest.
+    void answersRename(_Rig r, {String title = 'Payments refactor'}) {
+      r.keeper.onPrompt = (text) {
+        if (text == '/rename') {
+          r.keeper.update({'sessionUpdate': 'session_info_update', 'title': title});
+        } else {
+          r.keeper.say('ok: $text', messageId: 'r$text');
+        }
+        return {'stopReason': 'end_turn'};
+      };
+    }
+
+    /// The first answer has come, [listed] says what the agent can do.
+    void exchange(_Rig r, {bool listed = true}) {
+      r.connect();
+      r.pump(1100);
+      if (listed) r.keeper.update(listsRename);
+      r.pump();
+      unawaited(r.session.send('refactor the payments client'));
+      r.pump();
+    }
+
+    List<String> asked(_Rig r) => [for (final p in r.keeper.prompts) if (p == '/rename') p];
+
+    _rigTest('after the first answer an untitled session asks omp for a title, and shows it', (r) {
+      answersRename(r);
+      exchange(r);
+
+      expect(asked(r), ['/rename']);
+      expect(r.session.title, 'Payments refactor');
+    });
+
+    _rigTest('it asks once: a later turn does not ask again', (r) {
+      r.keeper.onPrompt = (text) {
+        r.keeper.say('ok: $text', messageId: 'r$text');
+        return {'stopReason': 'end_turn'};
+      };
+      exchange(r); // omp declined: no title came
+      expect(asked(r), ['/rename']);
+
+      unawaited(r.session.send('and the tests'));
+      r.pump();
+      expect(asked(r), ['/rename'], reason: 'a model call per answer would be a cost nobody asked for');
+    });
+
+    _rigTest('it is not a result to review, and not a failure', (r) {
+      answersRename(r);
+      exchange(r);
+      r.session.markSeen();
+      r.pump();
+      expect(asked(r), ['/rename']);
+
+      expect(r.session.unseenDone, isFalse, reason: 'the person has seen the answer; naming it is not news');
+      expect(r.session.error, isNull);
+      expect(r.session.queued, isEmpty);
+    });
+
+    _rigTest('omp that cannot name (no model) shows no error and holds nothing', (r) {
+      r.keeper.onPrompt = (text) {
+        if (text == '/rename') throw const JsonRpcException(-32603, 'no model available');
+        r.keeper.say('ok: $text', messageId: 'r$text');
+        return {'stopReason': 'end_turn'};
+      };
+      exchange(r);
+      r.session.markSeen();
+      r.pump();
+
+      expect(asked(r), ['/rename']);
+      expect(r.session.error, isNull);
+      expect(r.session.queued, isEmpty, reason: 'the errand is not kept to retry');
+      expect(r.session.unseenDone, isFalse);
+      expect(r.session.title, 'proj', reason: 'the folder, as before');
+    });
+
+    _rigTest('a session that has a title is left alone', (r) {
+      answersRename(r);
+      exchange(r);
+
+      expect(asked(r), isEmpty);
+      expect(r.session.title, 'Mine');
+    }, seed: (h) => h.add(title: 'Mine'));
+
+    _rigTest('an omp that does not list rename is left alone', (r) {
+      answersRename(r);
+      exchange(r, listed: false);
+
+      expect(asked(r), isEmpty);
+    });
+
+    _rigTest('nothing is asked before the agent has answered', (r) {
+      answersRename(r);
+      r.connect();
+      r.pump(1100);
+      r.keeper.update(listsRename);
+      r.pump(1100);
+
+      expect(asked(r), isEmpty);
+    });
+
+    _rigTest('another agent is not asked: claude titles its own', (r) {
+      final claude = r.host.add(agent: 'claude');
+      final session = AcpAgentSession(
+        machine: r.machine,
+        host: r.host,
+        info: claude.info,
+        reviewed: r.reviewed,
+        clock: () => r.now,
+      );
+      claude.onPrompt = (text) {
+        claude.say('ok', messageId: 'c1');
+        return {'stopReason': 'end_turn'};
+      };
+      unawaited(session.connect());
+      r.pump(1100);
+      claude.update(listsRename);
+      unawaited(session.send('hello'));
+      r.pump();
+
+      expect(claude.prompts, ['hello']);
+      session.dispose();
+    });
+  });
+
   group('review', () {
     _rigTest('a finished turn is unseen until markSeen, which is remembered', (r) {
       r.connect();
@@ -1550,7 +1687,7 @@ void main() {
       expect(identical(one, r.session.queued), isFalse);
     });
 
-    _rigTest('Stop keeps what waits, held; the person resumes it, or removes it', (r) {
+    _rigTest('Stop sends what waits, together, once the turn has stopped', (r) {
       r.connect();
       working(r);
       unawaited(r.session.send('one'));
@@ -1558,16 +1695,46 @@ void main() {
       r.pump();
 
       r.session.cancel();
+      unawaited(r.session.send('three'));
       r.pump();
-      expect(r.session.queued.map((q) => q.state), [QueuedState.held, QueuedState.held],
-          reason: 'held at once, before the turn has even ended');
-      expect(r.session.queued.first.heldReason, contains('stopped'));
+      expect(r.session.queued.map((q) => q.state), everyElement(QueuedState.waiting),
+          reason: 'not held: stopping the turn is saying go on with these');
+      expect(queuedText(r), ['one', 'two', 'three'], reason: 'each stays its own row until the turn has stopped');
 
       r.keeper.finishTurn('cancelled');
       r.pump();
-      expect(r.keeper.prompts, ['first'], reason: 'nothing goes out by itself after a Stop');
-      expect(queuedText(r), ['one', 'two']);
-      expect(r.session.phase, AgentPhase.idle);
+      expect(r.keeper.prompts, ['first', 'one\n\ntwo\n\nthree'], reason: 'one message, in the order sent');
+      expect(r.session.queued, isEmpty);
+      expect(r.keeper.maxPromptsInFlight, 1);
+    });
+
+    _rigTest('Stop with one message waiting sends that message as it is', (r) {
+      r.connect();
+      working(r);
+      unawaited(r.session.send('only'));
+      r.pump();
+
+      r.session.cancel();
+      r.keeper.finishTurn('cancelled');
+      r.pump();
+
+      expect(r.keeper.prompts, ['first', 'only']);
+      expect(r.session.queued, isEmpty);
+    });
+
+    _rigTest('a turn stopped by someone else holds the queue: the person decides', (r) {
+      r.connect();
+      working(r);
+      unawaited(r.session.send('one'));
+      unawaited(r.session.send('two'));
+      r.pump();
+
+      r.keeper.finishTurn('cancelled'); // no Stop from this phone
+      r.pump();
+
+      expect(r.keeper.prompts, ['first'], reason: 'nothing goes out unasked');
+      expect(r.session.queued.map((q) => q.state), [QueuedState.held, QueuedState.held]);
+      expect(r.session.queued.first.heldReason, contains('stopped'));
       expect(r.session.delivery, SendDelivery.now, reason: 'held messages do not make a new one wait behind them');
 
       r.session.removeQueued(r.session.queued.first.id);
@@ -1904,6 +2071,18 @@ void main() {
       expect(r.session.authNeeded!.methods.map((m) => m.id), ['api-key', 'chat-gpt']);
       expect(r.session.authNeeded!.terminalHint, isFalse);
     });
+
+    _rigTest('a Claude login only the Mac\u2019s Keychain holds asks for a token, not another sign-in', (r) {
+      r.connect();
+      r.keeper.onPrompt = (_) => throw const JsonRpcException(-32000, 'Authentication required');
+      unawaited(r.session.send('hello'));
+      r.pump();
+
+      final need = r.session.authNeeded!;
+      expect(need.keychain, isTrue);
+      expect(need.message, contains('Keychain'));
+      expect(need.message, isNot(contains('sign in on the host')));
+    }, seed: (h) => h.add(agent: 'claude', loginInKeychain: true));
 
     _rigTest('another -32000 is not an auth failure', (r) {
       r.connect();

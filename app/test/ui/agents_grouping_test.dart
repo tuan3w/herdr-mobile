@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart' show AgentStatus;
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/models/status_time.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/features/agents/agents_grouping.dart';
 
+import '../support/fake_agent_session.dart';
 import 'ui_harness.dart';
 
 MachineProfile _machine(String id, String label, {bool enabled = true}) => MachineProfile(
@@ -242,6 +244,128 @@ void main() {
       );
       attention.dispose();
       h.dispose();
+    });
+  });
+
+  group('Idle, panes and sessions together', () {
+    final noon = DateTime.utc(2026, 1, 1, 12);
+
+    test('a session the person used ten minutes ago is not under the panes: all by when they last did something', () async {
+      final h = await _fleet({'a': const []});
+      final machine = h.fleet.connections.single;
+      final attention = AttentionSet(fleet: h.fleet);
+      AgentRowData pane(String key, StatusTime? since) => (
+            key: key,
+            machine: machine,
+            paneId: key,
+            status: AgentStatus.idle,
+            title: key,
+            subtitle: '',
+            stale: false,
+            since: since,
+            quietMinutes: 0,
+          );
+      FakeAgentSession session(String key, DateTime? activity) =>
+          FakeAgentSession(key: key, machine: machine)..lastActivity = activity;
+
+      final sections = boardSections(
+        [
+          pane('pane-3h', StatusTime.exact(noon.subtract(const Duration(hours: 3)))),
+          pane('pane-undated', null),
+          pane('pane-5d', StatusTime.exact(noon.subtract(const Duration(days: 5)))),
+        ],
+        [
+          session('s-3d', noon.subtract(const Duration(days: 3))),
+          session('s-10m', noon.subtract(const Duration(minutes: 10))),
+          session('s-undated', null),
+        ],
+        attention,
+        now: noon,
+      );
+
+      final idle = sections.singleWhere((s) => s.status == AgentStatus.idle);
+      expect([
+        for (final i in idle.items)
+          switch (i) {
+            PaneItem(:final row) => row.key,
+            SessionItem(:final session) => session.key,
+          },
+      ], [
+        's-10m',
+        'pane-3h',
+        'pane-undated',
+        's-undated',
+        's-3d',
+        'pane-5d',
+      ], reason: 'recent first, mixed; the undated panes then sessions; then the old, newest first');
+      attention.dispose();
+      h.dispose();
+    });
+  });
+
+  group('the Idle fold', () {
+    late UiHarness h;
+    late MachineConnection machine;
+
+    setUp(() async {
+      h = await _fleet({'a': const []});
+      machine = h.fleet.connections.single;
+    });
+
+    tearDown(() => h.dispose());
+
+    BoardSection section(AgentStatus status, int n) => BoardSection(
+          status,
+          [for (var i = 0; i < n; i++) PaneItem(_row('k$i', status, machine))],
+          count: n,
+        );
+
+    List<AgentMore> folds(List<AgentEntry> entries) => entries.whereType<AgentMore>().toList();
+    List<bool> open(List<AgentEntry> entries) =>
+        [for (final e in entries) if (e is AgentLine) e.open];
+
+    test('up to a row more than it shows, nothing folds: one hidden row is no saving', () {
+      for (final n in [1, idleShown, idleShown + 1]) {
+        final entries = agentEntries([section(AgentStatus.idle, n)]);
+        expect(folds(entries), isEmpty, reason: '$n idle');
+        expect(open(entries), everyElement(isTrue), reason: '$n idle');
+      }
+    });
+
+    test('past that, the first rows show and the rest sit behind one line that says how many and what', () {
+      final entries = agentEntries([section(AgentStatus.idle, 9)]);
+
+      expect(open(entries), [...List.filled(idleShown, true), ...List.filled(4, false)]);
+      final more = folds(entries).single;
+      expect(more.hidden, 4);
+      expect(more.names, ['k$idleShown', 'k${idleShown + 1}'], reason: 'the first two it holds, so it is not a guess');
+      expect(more.open, isFalse);
+      expect(entries.indexOf(more), 1 + idleShown, reason: 'header, then the rows that show, then the fold');
+    });
+
+    test('open, every row shows and the line moves to the end and reads Show fewer', () {
+      final entries = agentEntries([section(AgentStatus.idle, 9)], idleOpen: true);
+
+      expect(open(entries), everyElement(isTrue));
+      expect(entries.last, isA<AgentMore>().having((m) => m.open, 'open', isTrue));
+      expect(folds(entries), hasLength(1));
+    });
+
+    test('the Idle chip asks for exactly those rows: they all show, with no fold', () {
+      final entries = agentEntries([section(AgentStatus.idle, 9)], filter: AgentStatus.idle);
+
+      expect(folds(entries), isEmpty);
+      expect(open(entries), everyElement(isTrue));
+    });
+
+    test('a folded section has no fold line, and Idle is the only section that folds', () {
+      final closed = agentEntries([section(AgentStatus.idle, 9)], collapsed: {AgentStatus.idle});
+      expect(folds(closed), isEmpty);
+      expect(open(closed), everyElement(isFalse));
+
+      for (final s in [AgentStatus.working, AgentStatus.done, AgentStatus.blocked]) {
+        expect(folds(agentEntries([section(s, 12)])), isEmpty, reason: s.name);
+      }
     });
   });
 }

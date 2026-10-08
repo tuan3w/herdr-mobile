@@ -1,6 +1,7 @@
 import '../../../data/repositories/agent_session.dart' show AgentSessionView;
 import '../../../data/acp/session_state.dart';
 import '../../../data/acp/subagents/subagent_run.dart';
+import '../../../data/acp/turns/plain_text.dart' show safeEnd;
 import 'status_line.dart' show elapsedLabel;
 import 'visible_text.dart';
 
@@ -135,7 +136,7 @@ String? failureLine(SubagentRun run, {int max = 160}) {
   if (f == null) return null;
   final line = f.split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '').trim();
   if (line.isEmpty) return null;
-  return line.length <= max ? line : '${line.substring(0, max - 1)}…';
+  return line.length <= max ? line : '${line.substring(0, safeEnd(line, max - 1))}…';
 }
 
 /// The title of a run as shown: its description, with a fallback when the

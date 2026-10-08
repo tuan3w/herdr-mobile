@@ -1,4 +1,5 @@
 import '../acp_models.dart';
+import '../turns/plain_text.dart' show safeEnd;
 import 'subagent_run.dart';
 
 /// What one tool call update says about the subagents it started: the fields
@@ -107,7 +108,7 @@ RunFacts genericRunFacts(ToolCall call) {
   );
 }
 
-String _cut(String s, int max) => s.length <= max ? s : '${s.substring(0, max - 1)}\u2026';
+String _cut(String s, int max) => s.length <= max ? s : '${s.substring(0, safeEnd(s, max - 1))}\u2026';
 
 String? _firstLine(String? s) {
   if (s == null) return null;

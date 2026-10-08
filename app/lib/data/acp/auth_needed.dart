@@ -52,7 +52,7 @@ class AuthChoice {
 /// (no `authenticate`, no `auth.terminal`): the screen says so and offers a
 /// terminal session on the host, where the person signs in; then "Retry".
 class AuthNeeded {
-  const AuthNeeded({required this.message, this.agentMessage, this.methods = const []});
+  const AuthNeeded({required this.message, this.agentMessage, this.methods = const [], this.keychain = false});
 
   /// In words for the person ("Claude Code needs you to sign in on the host.").
   final String message;
@@ -60,6 +60,12 @@ class AuthNeeded {
   /// What the agent said ("Authentication required").
   final String? agentMessage;
   final List<AuthChoice> methods;
+
+  /// The agent's login is in the macOS Keychain, which the session started
+  /// from the phone cannot open (`KeeperInfo.loginInKeychain`): signing in
+  /// in a terminal stores it there again, so only a token in the host's
+  /// environment helps.
+  final bool keychain;
 
   /// Some method logs in through a terminal on the host: the screen can
   /// offer a terminal session for it.
@@ -87,10 +93,17 @@ bool isAuthRequired(Object? e) {
 
 /// The [AuthNeeded] for the auth error [e]: the methods in its `data` when it
 /// has any (pi-acp sends them there), else the ones [advertised] at
-/// `initialize`.
-AuthNeeded authNeededFrom(JsonRpcException e, {required String agentLabel, Object? advertised}) {
+/// `initialize`. [keychain]: see [AuthNeeded.keychain].
+AuthNeeded authNeededFrom(JsonRpcException e, {required String agentLabel, Object? advertised, bool keychain = false}) {
   final data = e.data;
   var methods = data is Map ? parseAuthChoices(data['authMethods']) : const <AuthChoice>[];
   if (methods.isEmpty) methods = parseAuthChoices(advertised);
-  return AuthNeeded(message: '$agentLabel needs you to sign in on the host.', agentMessage: e.message, methods: methods);
+  return AuthNeeded(
+    message: keychain
+        ? '$agentLabel keeps its login in the Mac’s Keychain, which macOS keeps locked for sessions started from the phone.'
+        : '$agentLabel needs you to sign in on the host.',
+    agentMessage: e.message,
+    methods: methods,
+    keychain: keychain,
+  );
 }

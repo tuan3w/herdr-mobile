@@ -6,7 +6,9 @@
 /// shows as `‹U+001B›[31m`), the zero-width and direction marks
 /// (U+200B-200F, U+202A-202E, U+2066-2069, U+061C), the line and paragraph
 /// separators, byte-order marks and soft hyphens, interlinear annotation
-/// marks and the invisible "tag" block. Everything else is left alone, so
+/// marks and the invisible "tag" block, and a lone UTF-16 surrogate (half of an
+/// emoji cut in two, or a bad `\ud800` escape in the agent's JSON), which would
+/// make Flutter's paragraph builder throw. Everything else is left alone, so
 /// Vietnamese and other scripts read as written.
 ///
 /// Anything that judges the text (the risk gate) must read this string, not
@@ -69,7 +71,7 @@ String terminalText(String raw) {
 bool _hidden(int r) {
   if (r < 0x20) return r != 0x0A && r != 0x09;
   if (r < 0x7F) return false;
-  if (r <= 0x9F) return true; // DEL and C1.
+  if (r >= 0xD800 && r <= 0xDFFF) return true; // a surrogate that is not half of a pair (runeAt joins pairs).
   return r == 0x00AD ||
       r == 0x061C ||
       r == 0x180E ||

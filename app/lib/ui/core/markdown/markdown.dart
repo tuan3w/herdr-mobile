@@ -24,3 +24,4 @@ export 'md_heal.dart' show healTail;
 export 'md_parser.dart' show parseMd;
 export 'md_stream.dart' show StreamingMd;
 export 'md_styles.dart' show MdTone, MdToneScope;
+export 'md_text.dart' show proseText;

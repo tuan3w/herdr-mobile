@@ -339,7 +339,10 @@ class _PaneRow extends StatelessWidget {
             },
       onTap: () {
         Haptics.tick();
-        unawaited(openAgent(context, PaneAgent(machine.profile.id, pane.id)));
+        // A keeper's view pane is the agent session as text: the chat shows
+        // the same session whole, with the dock, photos and files.
+        final session = machine.keeperPanes[pane.id];
+        unawaited(openAgent(context, session != null ? SessionAgent(session) : PaneAgent(machine.profile.id, pane.id)));
       },
     );
   }

@@ -120,6 +120,28 @@ client, one tiny turn each, stores redirected to temp dirs:**
   `end_turn`, hiding the error. The app flags a turn that ends with no answer
   (`The agent ended the turn without an answer ...`).
 
+**Titles.** ACP has no request that sets or generates a session title (the
+schema's methods end at `session/set_model`); `session_info_update.title` goes
+agent to client only, and `null` clears it. Zed takes nothing else: an external
+agent that never sends one stays "New Thread" (zed-industries/zed#53743). Claude
+Code sends the first message as the title, then its own summary; **omp's ACP
+mode sends none**: its title generator starts from the terminal UI and the
+command line (`maybeStartTitleGeneration` in `main.ts` and the input
+controller), never from the ACP prompt path, so a phone session's `title`
+record in omp's own file stays empty and every `session_info_update` carries
+none (11 of 11 seen). omp does list a `rename [title]` command, and `/rename`
+without an argument generates a title with omp's title model and announces it
+in a `session_info_update`. So `AcpAgentSession._maybeNameIt` sends `/rename`
+once per session per app run, to an omp session that lists `rename`, has no
+title, and has had an answer (not while the person's turn runs or messages
+wait). It is a prompt like any other, so its `/rename` row and omp's "Session
+renamed to …" stay in the transcript and replay (hiding them live would make a
+reload show what the live view did not), but it is the app's own errand
+(`_housekeeping`): no Done to review, no "ended without an answer", no failure
+shown, never held in the queue. omp declines a first message such as "hi"; that
+costs one model call per app run. **Not seen against a real omp**: the broker
+omp needs was unreachable, so only the fake keeper exercised it.
+
 Other adapters read: `acp-adapter` (Go, ACP over `codex app-server`, `claude -p`,
 `pi --mode rpc`) answers a `session/cancel` *request* and drops notifications
 (`internal/acp/server.go:382-389`, UNVERIFIED in tests); treat third-party
@@ -219,7 +241,11 @@ agent failed `initialize`, 78 python3 missing.
    claimed by binding the socket, so racing starts get different ids. `start`
    prints the keeper's JSON once the agent has answered `initialize`; if the
    agent dies or refuses, nothing is left behind and stderr carries the
-   agent's last words.
+   agent's last words. On macOS, for `claude` only, `start` instead loads a
+   launchd job into the person's desktop session (`launchctl bootstrap
+   gui/<uid>`, the job runs `daemon` with `start`'s whole environment) and
+   waits for the keeper's report in a file; see "A login the SSH session cannot
+   read" below. Nothing else about the keeper changes.
 2. The keeper sends `initialize` itself (form elicitation and boolean config
    options offered, no fs or terminal) and caches the answer; clients get the
    cache under their own id,
@@ -252,8 +278,14 @@ agent failed `initialize`, 78 python3 missing.
    never splitting one, never the newest turn, never a turn a pending request
    is about; the last mode/command list of a dropped turn is kept and replays
    first. Only when the newest turn alone is over the hard bound does the log
-   eat its oldest entries (never a user message, never the newest entry). The
-   entry bound also trims turns (the newest excepted) before it drops one.
+   eat its oldest entries (never a user message, never the newest entry). So
+   does a newest turn that holds more than half of what the entry bound allows
+   once the log is past it: omp sends an update for every beat and chunk of a
+   long command, so one long turn can fill the log by itself, and dropping the
+   turns before it (a skeleton of a few hundred entries) would free next to
+   nothing and lose the whole conversation (a long omp chat showed `Earlier
+   messages are no longer kept` with 0.5 MB left). The entry bound also trims
+   turns (the newest excepted) before it drops one.
    Each turn carries its own byte and entry counts, and a cursor marks the
    oldest turn not yet trimmed, so an update costs O(1) amortized and nothing
    re-scans the log. The keeper counts
@@ -436,9 +468,10 @@ coming from its side.
 4. **herdr sees the session through a pane the keeper opens.** When the agent
    has answered `initialize`, the keeper opens a tab in a herdr workspace
    labelled `Phone sessions` (created when missing, never focused) and runs the
-   keeper's `view` command in it. `view` is a plain line-oriented client of the
+   keeper's `view` command in it. `view` is a line-oriented client of the
    keeper: it prints the conversation, takes a typed line as a prompt and a
-   number as the answer to a waiting permission, and reports the session's
+   number as the answer to a waiting permission (the card shows the call's
+   command or path whole, from `rawInput`), and reports the session's
    state to herdr with `pane report-agent` (source `herdr-mobile`, agent
    `<route label> · phone`, e.g. `omp · phone`: herdr treats the bare `omp`,
    `codex` and `pi` as its own agents, and its docs ask integrations not to
@@ -456,13 +489,37 @@ coming from its side.
    existing workspace or `workspace create` (its root pane hosts the session),
    then `pane run`. Ending the session from a client (`kill`) closes the tab
    (3 s); an agent that exits on its own leaves it, showing why.
+   On a terminal, `view` writes to the scrollback and never rewrites it:
+   rows wrapped by `view` itself, a tool call as one `✓`/`✗` row when it
+   finishes, and colour from the 16 basic colours (none under `NO_COLOR`).
+   Under the scrollback it keeps a live area: the last row of a message still
+   streaming, a status row (`◐ Working · <running call>`, `▲ Needs you`) and
+   an input row it echoes itself (no echo or line editing from the
+   terminal; Backspace, Ctrl-U, Ctrl-W; bracketed paste keeps newlines in one
+   message; Ctrl-C clears the row, or leaves when it is empty). Why: in the
+   terminal's line mode, streamed output split the line being typed, and a
+   tool call took two lines (`• title`, then `done`). Rows are wrapped by
+   `view` so the live area's height is known exactly; the cost is that
+   copying a wrapped paragraph copies its line breaks. Not a terminal (a
+   pipe, the tests): plain lines, no colour, no live area. Checked in tmux
+   (macOS, python 3.9, 72 and 40 columns, a resize between); unverified in
+   herdr's own terminal.
+   `view` titles its terminal (OSC 0) with the session's title, else the
+   first message, else `<agent> session`, and clears it on exit; it runs in
+   the session's folder once connected to the keeper. Why: herdr names a
+   pane by its terminal title and folder, so every computer showed the row as
+   `python3 '/…/keeper-<version>.py' view <id>` in `keepers`.
 5. **The phone does not show that pane twice.** The keeper records the pane id
    `view` announces; `list` carries it (`pane_id`), and the phone leaves that
    pane out of everything that counts terminal agents (board rows, `Needs
    you`/`Done`, the badge, triage, pane notifications, the Machines count:
    `MachineConnection.agentPanes`). Right after the phone starts a keeper, a
    new agent pane on that machine triggers one `list`, so the pane is not
-   shown twice until the next 30 s listing.
+   shown twice until the next 30 s listing. The machine screen still lists
+   the pane (it is a pane of that workspace), but a tap opens the session's
+   chat (`MachineConnection.keeperPanes` maps the pane to the session key).
+   Why: the terminal there is a plain-text view of the same session, without
+   the dock, photos or files.
 6. **Prompts from another client are shown live.** A prompt from one client
    reaches the others as the same `user_message_chunk` the replay shows, then
    `state_update running`; its end reaches them as `state_update idle` with the
@@ -1230,13 +1287,18 @@ against a live Codex, Claude Code or pi, only against scripted agents: UNVERIFIE
   yet said whether a turn runs), idle and with nothing pending, one prompt at a
   time. The test keeps a counter of prompts in flight and asserts it never
   passes 1.
-- `held` never goes by itself. Stop holds everything that waits, at once ("Held
-  because you stopped the turn"); a turn that ends `cancelled` or `error` on a
-  live link holds what is left; a message the agent refused (a picture on a
-  text-only model, `AcpProtocolException`, an auth error) is added held with
-  the reason, so the text is not lost. `resumeQueue()` releases all held
-  messages, in order. Editing keeps the attachments; a blank text on a message
-  with none changes nothing.
+- `held` never goes by itself. Stop does **not** hold: the person queued those
+  messages to follow the turn and stopping it is going on with them, so
+  `cancel()` marks the session and, when the turn has stopped (`cancelled`, or
+  an `endTurn` that raced the Stop), `PromptQueue.mergeWaiting()` joins what
+  waits into one message (text by a blank line, in the order sent, then
+  attachments; the first keeps its id) and the usual pump sends it, one prompt in
+  flight. A turn that ends `error`, or `cancelled` without this phone's Stop
+  (another client, the host), holds what is left; a message the agent refused
+  (a picture on a text-only model, `AcpProtocolException`, an auth error) is
+  added held with the reason, so the text is not lost. `resumeQueue()` releases
+  all held messages, in order. Editing keeps the attachments; a blank text on a
+  message with none changes nothing.
 - Held in memory by `AcpAgentSession`, nothing on disk. It survives a dropped
   link and a re-attach of the same session object (the transcript is replaced
   by the replay, the queue is not) and the screen closing. It does **not**
@@ -1302,6 +1364,52 @@ by a successful attach. No trace holds an auth error (none of the 16 traces was
 recorded signed out): the shapes are from the adapters' source, UNVERIFIED live.
 Claude Code's v2 `stopReason: error` with `error.code -32000` in a `state_update`
 is not read.
+
+**A login the SSH session cannot read (Claude Code on macOS).** Claude Code keeps
+its login in the login Keychain, which macOS opens only for processes of the
+person's desktop session, not for children of `sshd`. Every keeper used to be
+started over SSH, so the agent answered `Please run /login` (adapter:
+`auth_required`) however often the person signed in, and a login made in a herdr
+terminal went into the same Keychain. Seen on a Mac: both keepers' logs held
+`Authentication required` on every prompt while the Keychain item existed (and
+`~/.claude/.credentials.json`, Claude's fallback when the Keychain is locked, was
+an empty folder). Zed has no such problem because it starts the agent from the
+desktop app; its login flow is a terminal running the agent's login command.
+
+So on macOS `cmd_start` starts a `claude` keeper as a launchd job of the desktop
+session (`start_in_desktop_session`, `start_via_launchd`, `cmd_daemon`): a
+plist in the state folder (0600, deleted once launchd read it: the environment
+can hold a token), `launchctl bootstrap gui/<uid>`, then `start` polls a report
+file the job writes (`HERDR_KEEPER_REPORT`; a job has no pipe to its starter) and
+checks every second, after the first three, that the job still runs. The job
+records its label in the keeper's record (`launchd`) and unloads itself in
+`daemon_exit`; `remove_keeper` unloads it too. It outlives the SSH session like
+any keeper. Used only for `claude`, only when the environment has none of
+`CLAUDE_ENV_LOGINS` (a token needs no Keychain, so the old start is kept), and
+not under `HERDR_MOBILE_NO_LAUNCHD`. Without a desktop session (`launchctl print
+gui/<uid>` fails: nobody is logged in at the Mac) or when launchctl refuses, it
+falls back to the old start and the rest below applies.
+
+The fallback marks the record `login: "keychain"` when it runs on macOS for the
+`claude` route with none of `CLAUDE_ENV_LOGINS` in its environment, which it
+inherits from the SSH command's shell (`~/.zshenv` on zsh). `KeeperInfo.loginInKeychain`
+carries it, and when this agent asks for a login `AuthNeeded.keychain` makes the
+panel say so and give the token steps (`claude setup-token`,
+`CLAUDE_CODE_OAUTH_TOKEN` in `~/.zshenv`, a new session) instead of another
+sign-in. The marker is a guess from the environment, not a look into the
+Keychain. A keeper that runs as the desktop job is not marked, so an auth error
+from it gets the ordinary `Sign in on the host` panel: a login made in a herdr
+terminal is in the same session and the job reads it.
+
+Checked: the real start, a working keeper with the starter's environment, the job
+unloading when the keeper is killed, no plist or report left (a test, macOS with
+a desktop session). A job of the desktop session reads the Keychain item without
+a prompt (`security find-generic-password` as such a job, rc 0, on the machine
+this was written on, where the shell that ran it is also in that session).
+UNVERIFIED: a keeper started over a real SSH session from the phone then reading
+the login (the claim above rests on macOS's session rule and the audit log, not
+on that run), the token variable letting the adapter log in, and the panel on a
+phone.
 
 ### Sending a phone file to the host (data side)
 

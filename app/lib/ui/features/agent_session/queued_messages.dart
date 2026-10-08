@@ -18,7 +18,8 @@ const queuedRowsShown = 3;
 /// What waits to be sent, above the composer: one soft row per message, oldest
 /// first. A tap opens it to edit or remove; the cross removes it. A message
 /// the agent could not take now ([QueuedState.waiting]) goes out by itself
-/// when the turn ends; after Stop, a failed turn or a refusal the messages are
+/// when the turn ends (after the person's own Stop, together as one message);
+/// after a failed turn, a stop from elsewhere or a refusal the messages are
 /// held, and one bar says why and offers Resume. Takes no room when nothing
 /// waits.
 class QueuedMessages extends StatefulWidget {

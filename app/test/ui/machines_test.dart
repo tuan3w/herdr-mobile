@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
@@ -14,12 +15,14 @@ import 'package:herdr_mobile/ui/core/controls.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/core/glyphs.dart';
 import 'package:herdr_mobile/ui/core/rows.dart';
+import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'package:herdr_mobile/ui/features/machines/machine_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machines_screen.dart';
 import 'package:provider/provider.dart';
 
+import '../support/fake_agent_session.dart';
 import '../support/fake_transport.dart';
 import '../support/memory_stores.dart';
 import 'ui_harness.dart';
@@ -68,6 +71,7 @@ Future<void> _pump(
   Widget home, {
   UiHarness? fleet,
   MachineRepository? repo,
+  AgentSessions? sessions,
   double width = 360,
   double height = 740,
   double scale = 1,
@@ -87,6 +91,7 @@ Future<void> _pump(
           attentionSetProvider(),
         ] else
           ChangeNotifierProvider.value(value: repo!),
+        if (sessions != null) ListenableProvider<AgentSessions>.value(value: sessions),
       ],
       child: MaterialApp(
         restorationScopeId: 'test',
@@ -412,6 +417,19 @@ void main() {
       await tester.tap(find.textContaining('payments-api-gateway'));
       await _flush(tester);
       expect(find.text('title w1:p0'), findsOneWidget);
+      await _tearDown(tester, h);
+    });
+
+    testWidgets('the pane a phone session shows in opens that session\'s chat, not the terminal', (tester) async {
+      final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: manyPanes(2))]);
+      final machine = h.fleet.connection('a')!;
+      machine.setKeeperPanes({'w1:p0': 'a/k1'});
+      final sessions = FakeAgentSessions([FakeAgentSession(key: 'a/k1', title: 'Fix the login test')]);
+      await _pump(tester, MachineScreen(machine: machine), fleet: h, sessions: sessions);
+
+      await _tapVisible(tester, find.text('title w1:p0'));
+      expect(find.byType(AgentSessionScreen), findsOneWidget);
+      expect(find.text('Fix the login test'), findsOneWidget);
       await _tearDown(tester, h);
     });
 

@@ -503,6 +503,7 @@ class FakeAgentHost implements AgentHost {
     int? exitCode,
     String? exitReason,
     String? id,
+    bool loginInKeychain = false,
   }) {
     final keeperId = id ?? 'k${++_next}';
     final keeper = FakeKeeper(
@@ -517,6 +518,7 @@ class FakeAgentHost implements AgentHost {
         title: title,
         exitCode: exitCode,
         exitReason: exitReason,
+        loginInKeychain: loginInKeychain,
       ),
     )..sessionId = sessionId;
     if (sessionId != null) keeper._remember();
@@ -554,6 +556,7 @@ class FakeAgentHost implements AgentHost {
         exitReason: exitReason ?? i.exitReason,
         paneId: paneId ?? i.paneId,
         clients: i.clients,
+        loginInKeychain: i.loginInKeychain,
       );
 
   @override
