@@ -4,6 +4,51 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.5] - 2026-10-08
+
+### The Idle list shows what you used last
+
+- Idle agents are ordered by when they stopped, most recent first: the ones
+  that stopped within a day, then those the app has no date for, then the older
+  ones. Agents started on the phone are mixed in by when they last did
+  something, so a session you used ten minutes ago no longer sits under days-old
+  terminal agents on other machines.
+- Idle shows its first five agents. The rest sit behind one line (`22 more
+  idle`, with the first two names under it) that opens them in place; the `Idle`
+  chip still shows all of them.
+
+### Agents have names
+
+- An omp agent in a terminal that still shows a generic title is named after
+  its session: the title omp gave it, or your last message. The board, the pane
+  header and notifications use that name, and an idle omp agent shows how long
+  ago its session was last touched. This needs herdr to report the session, so
+  run `herdr integration install omp` on the machine and restart omp in the
+  pane.
+- An omp session started from the phone names itself after its first answer
+  (omp does not do this over ACP, so the app asks it with `/rename`). The
+  `/rename` line and omp's "Session renamed to …" stay in the chat. It costs one
+  small model call per session; it is not a result to review and shows no error
+  if omp cannot name it.
+
+### Smaller things
+
+- Stop with messages waiting sends them together, as one message, once the
+  turn has stopped. A turn that fails, or that someone else stopped, still holds
+  the queue.
+- Opening a file no longer flashes dark between screens, and the keyboard no
+  longer comes back after you close a file or a picture from the chat.
+- A new agent session no longer forgets older turns when its latest turn alone
+  fills the history the host keeps. Sessions already running keep the old
+  behaviour until they end.
+- Claude Code on a Mac whose login lives in the Keychain says so, instead of
+  asking you to sign in again, which cannot help from a phone session.
+- A character the screen cannot draw, or a row that fails to draw, no longer
+  blanks a whole transcript: the row says `Couldn’t draw this` and the rest
+  stays.
+- A herdr pane that shows a phone session opens the full chat, with its dock,
+  photos and files.
+
 ## [0.1.4] - 2026-10-07
 
 ### Agent sessions show up on the computer
