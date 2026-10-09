@@ -4,6 +4,7 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 
+import '../decision/plain_text.dart' as plain show stripAnsi;
 import '../models/herdr_models.dart';
 import '../models/pane_preview.dart';
 import '../services/herdr_api.dart';
@@ -503,19 +504,14 @@ class _Handle implements PreviewHandle {
 
 // ------------------------------------------------------------------ parsing
 
-final _csi = RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]');
-final _osc = RegExp(r'\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)?');
-final _otherEsc = RegExp(r'\x1B[@-Z\\-_]|\x1B[ -/]*[0-~]');
 final _control = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
 
-/// Removes escape sequences and control characters from terminal text.
-String stripAnsi(String s) => s.contains('\x1B') || s.contains(_control)
-    ? s
-        .replaceAll(_osc, '')
-        .replaceAll(_csi, '')
-        .replaceAll(_otherEsc, '')
-        .replaceAll(_control, '')
-    : s;
+/// Removes escape sequences ([plain.stripAnsi], the one stripper) and the
+/// control characters it leaves (the ESC of a sequence that did not complete).
+String stripAnsi(String s) {
+  final t = plain.stripAnsi(s);
+  return t.contains(_control) ? t.replaceAll(_control, '') : t;
+}
 
 /// The rows of a `pane.read` shown in a preview: ANSI stripped, carriage
 /// returns resolved (a progress bar shows its last state), box side bars and

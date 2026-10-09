@@ -5,6 +5,13 @@
 prints a curl config (for `curl -K -`) on stdout when a notification is due.
 It prints nothing when there is nothing to send. notify.sh does the POST.
 
+A blocked/done event that the cooldown holds back would be lost for good: the
+pane stays blocked, so herdr sends no further event, and the hook is one
+short-lived process per event. So the skip also starts ONE detached
+`notify.sh` per pane that sleeps until the cooldown ends (RECHECK_ENV) and then
+runs `plan` in re-check mode: it alerts once if the pane still is in that state.
+It never starts another one, so there is no loop.
+
 Python 3.6+ standard library only. Never raises: any error is logged to the
 plugin state dir and the process exits 0 so herdr is never held up.
 """
@@ -22,6 +29,12 @@ import traceback
 from urllib.parse import quote, urlsplit
 
 WANTED = ("blocked", "done")
+# Set (to the seconds to sleep) only on the detached notify.sh a cooldown skip starts.
+RECHECK_ENV = "HERDR_NTFY_RECHECK_AFTER"
+# No deferred alert for a cooldown longer than this: the sleeper would outlive any
+# reason to alert. Past the grace a pending entry with no live sleeper is replaced.
+RECHECK_MAX = 600
+RECHECK_GRACE = 60
 DEFAULT_COOLDOWN = 30
 STATE_TTL = 7 * 24 * 3600
 LOG_LIMIT = 64 * 1024
@@ -65,13 +78,18 @@ BASE64_RE = re.compile(
 BORDER = " \t\u2502\u2503|\u256d\u256e\u2570\u256f\u2500\u2501>\u276f\u203a*"
 
 
-def state_dir():
+def _state_path():
     path = os.environ.get("HERDR_PLUGIN_STATE_DIR")
     if not path:
         base = os.environ.get("XDG_STATE_HOME") or os.path.join(
             os.path.expanduser("~"), ".local", "state"
         )
         path = os.path.join(base, "herdr-ntfy")
+    return path
+
+
+def state_dir():
+    path = _state_path()
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -150,11 +168,15 @@ def _store(path, saved):
 
 
 def record_status(pane_id, status, now, claim=True):
-    """Remember `status` for the pane; return why not to notify, or None.
+    """Remember `status` for the pane; return (why not to notify or None, wait).
 
-    With `claim`, a None answer also marks the alert as taken: racing events
+    With `claim`, a None reason also marks the alert as taken: racing events
     see it and stay quiet, and the cooldown starts. If the POST then fails,
     release_claim() gives the state back so the next event can try again.
+
+    `wait` is the seconds a detached re-check should sleep when the cooldown
+    alone held the alert back and none is pending for the pane yet, else None
+    (see claim_deferred).
     """
     lock, panes, path = _locked_pane(pane_id)
     with lock:
@@ -163,7 +185,7 @@ def record_status(pane_id, status, now, claim=True):
         previous = saved.get("seen")
         sent = saved.get("sent") if isinstance(saved.get("sent"), dict) else {}
         saved["seen"] = status
-        reason = None
+        reason = wait = None
         if status not in WANTED:
             reason = "status %s is not alertable" % status
         elif previous == status:
@@ -173,13 +195,115 @@ def record_status(pane_id, status, now, claim=True):
         else:
             last = sent.get(status)
             if isinstance(last, (int, float)) and 0 <= now - last < cooldown_seconds():
-                reason = "cooldown (%ds left)" % (cooldown_seconds() - (now - last))
+                left = cooldown_seconds() - (now - last)
+                reason = "cooldown (%ds left)" % left
+                pending = saved.get("deferred")
+                waiting = (
+                    isinstance(pending, dict)
+                    and pending.get("status") == status
+                    and isinstance(pending.get("due"), (int, float))
+                    and now < pending["due"] + RECHECK_GRACE
+                )
+                if claim and not waiting and left <= RECHECK_MAX:
+                    saved["deferred"] = {"status": status, "due": now + left}
+                    wait = int(left) + 1
         if reason is None and claim:
             sent[status] = now
             saved["prev_seen"] = previous
+            saved.pop("deferred", None)  # this alert supersedes a pending one
         saved["sent"] = sent
         _store(path, saved)
+    return reason, wait
+
+
+def claim_deferred(pane_id, status, now, live, claim=True):
+    """The detached re-check a cooldown skip started: why not to alert, or None.
+
+    It alerts only when the deferred alert is still pending (no other alert took
+    its place), the last event for the pane still says `status`, herdr itself
+    says the pane still is in it (`live`; None when herdr could not be asked,
+    then the events decide), and the cooldown is over. A None answer claims the
+    alert like record_status(); if its POST fails the next event for the pane
+    is a transition again. GONE when the state directory no longer exists (the
+    sleeper outlived its sandbox): nothing may be written then.
+    """
+    panes = os.path.join(_state_path(), "panes")
+    if not os.path.isfile(pane_file(panes, pane_id)):
+        return GONE
+    lock, panes, path = _locked_pane(pane_id)
+    with lock:
+        saved = _load(path)
+        sent = saved.get("sent") if isinstance(saved.get("sent"), dict) else {}
+        pending = saved.pop("deferred", None)
+        last = sent.get(status)
+        if not (isinstance(pending, dict) and pending.get("status") == status):
+            reason = "no deferred alert is pending"
+        elif saved.get("seen") != status:
+            reason = "the pane moved on"
+        elif live is not None and live != status:
+            reason = "herdr says the pane is %s" % live
+        elif isinstance(last, (int, float)) and 0 <= now - last < cooldown_seconds():
+            reason = "cooldown (%ds left)" % (cooldown_seconds() - (now - last))
+        else:
+            reason = None
+        if reason is None and claim:
+            sent[status] = now
+            saved["sent"] = sent
+            saved["prev_seen"] = None  # a failed post: the next event is a transition
+        _store(path, saved)
     return reason
+
+
+# claim_deferred(): nothing to do and nothing to log (logging would recreate the state dir).
+GONE = "state directory is gone"
+
+
+def live_status(pane_id):
+    """The pane's agent status according to herdr, 'gone' for a pane herdr does
+    not know, None when herdr cannot be asked or answers something unexpected."""
+    herdr = os.environ.get("HERDR_BIN_PATH") or "herdr"
+    try:
+        out = subprocess.run(
+            [herdr, "pane", "get", pane_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        ).stdout.decode("utf-8", "replace")
+        answer = json.loads(out)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    if not isinstance(answer, dict):
+        return None
+    result = answer.get("result")
+    pane = result.get("pane") if isinstance(result, dict) else None
+    if isinstance(pane, dict) and isinstance(pane.get("agent_status"), str):
+        return pane["agent_status"].lower()
+    error = answer.get("error")
+    if isinstance(error, dict) and error.get("code") == "pane_not_found":
+        return "gone"
+    return None
+
+
+def schedule_recheck(pane_id, status, wait):
+    """Start the one detached notify.sh that re-checks after the cooldown."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notify.sh")
+    env = dict(os.environ)
+    env[RECHECK_ENV] = str(wait)
+    try:
+        subprocess.Popen(
+            ["bash", script],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as error:
+        log("could not schedule the re-check of %s %s: %s" % (pane_id, status, error))
+        return
+    log("re-check %s %s in %ds" % (pane_id, status, wait))
 
 
 def release_claim(pane_id, status):
@@ -383,7 +507,16 @@ def plan():
         problem = error
     # Even with a broken config the pane's state is tracked, so fixing the
     # config does not suppress the next real transition.
-    reason = record_status(pane_id, status, time.time(), claim=problem is None)
+    if os.environ.get(RECHECK_ENV):
+        # The detached re-check of a cooldown skip (notify.sh slept first). It
+        # never schedules another one.
+        reason, wait = claim_deferred(pane_id, status, time.time(), live_status(pane_id), claim=problem is None), None
+        if reason == GONE:
+            return ""
+    else:
+        reason, wait = record_status(pane_id, status, time.time(), claim=problem is None)
+    if wait is not None:
+        schedule_recheck(pane_id, status, wait)
     if reason:
         log("skip %s %s: %s" % (pane_id, status, reason))
         return ""

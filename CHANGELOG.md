@@ -4,6 +4,68 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.6] - 2026-10-09
+
+### A slimmer tab bar you can drag
+
+- The bar at the bottom is smaller: 56 dp tall and centred instead of edge to
+  edge, with no shadow. Every tab shows its name, and the cells are the same
+  width, so nothing moves when you pick one.
+- Drag along the bar and the highlight follows your finger; the tab changes
+  where you let go, and a quick flick is enough. A tap works as before. The
+  names warm up as the highlight arrives under them, in step with it.
+- The "1 needs you" shortcut above the bar is no longer faded at its bottom
+  edge.
+- There is no sideways swipe over the whole screen to change tab: the bar is the
+  way.
+
+### Links open over the app
+
+- A link you tap, and the sign-in page a machine asks you to approve (Tailscale),
+  opens in a browser tab over the app, so Back or the close button returns to
+  where you were. It is your phone's own browser, so your sign-ins and passkeys
+  work.
+
+### Answers are safer
+
+- Keyboard Send on an empty reply field no longer presses Enter on the agent.
+- A terminal menu whose command sits above the question shows that command when
+  it is risky, and an answer that became risky since you saw it is not sent.
+- A cut-off command is held like any long one, "bypass permissions" and
+  "auto-accept edits" need a second step, and more risky commands are caught:
+  `bash -c "$(curl …)"`, quoted or escaped command words, `curl … | python3`,
+  `kill -9 -1`. A hostile command line can no longer freeze the phone while it
+  is judged.
+- An approval shows the command the screen asks about, not another running
+  one.
+- Dismissing a question or approval checks the terminal first, so a stale tap no
+  longer interrupts a working agent.
+- Your typed answer to a question survives the question coming back after a
+  refusal.
+
+### Fixes
+
+- An upload whose last write fails now says so instead of reporting success.
+- Replayed chats keep accented, CJK and emoji text intact in long replays.
+- Text after a stray escape sequence in a plan or a command is no longer hidden.
+- A machine's host key stays pinned when its connection restarts, and the
+  machine form no longer pins the old host's key after you edit the address
+  during a test.
+- A stream that keeps dropping backs off instead of retrying every second, and
+  one machine failing to connect no longer stops you adding or editing others.
+- A saved machine the app cannot read is kept and skipped instead of leaving the
+  app blank, and a start that fails shows what failed with a Retry button.
+- Commands run under fish and csh login shells; agents get your login umask
+  instead of the keeper's private one; a keeper that is still starting is no
+  longer marked gone.
+- A message that fails to send after you leave the screen comes back as a draft
+  with a note, not silently lost.
+- Cards stop reading terminal previews while the board is out of sight.
+- The gallery opens the picture you tapped, and sees a picture you just took
+  without restarting the app.
+- The file viewer no longer shows part of a file twice when you copy while it
+  loads.
+
 ## [0.1.5] - 2026-10-08
 
 ### The Idle list shows what you used last

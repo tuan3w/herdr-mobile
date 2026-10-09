@@ -28,20 +28,27 @@ import 'command_risk.dart';
 ///
 /// What the question is about goes into `PromptInfo.subject`: Claude Code's
 /// command block (the rows indented under a short header, above "Do you want
-/// to proceed?") and Codex's command row (between its question and the menu).
+/// to proceed?"), Codex's command row (between its question and the menu) and,
+/// for any menu with no such block, the row above the question when it is what
+/// made the question risky (it may as well be scrollback otherwise). What is
+/// shown is in the digest, so the card and a notification's button cover it.
 /// A reply that needs a second tap carries the reason in `QuickReply.risk`,
 /// judged by `command_risk.dart` on the subject, the question, the row above
 /// the question and the option's own text; never on the scrollback around.
 /// The subject is read whole for risk, however much of it is shown: when a row
-/// or the row count had to be cut (`…`), the affirmative answers also ask for
-/// a second tap ([longCommand]) unless a more specific reason applies.
+/// or the row count had to be cut (`…`), or the 12-row window dropped the rows
+/// above a block that runs to its top, the affirmative answers also ask for a
+/// second tap ([longCommand]) unless a more specific reason applies.
 PromptInfo? detectPrompt(List<String> rows) {
   final lines = <String>[];
   for (final raw in rows) {
     final c = cleanPreviewRow(raw);
     if (c != null) lines.add(c);
   }
-  if (lines.length > _window) lines.removeRange(0, lines.length - _window);
+  // The window drops the older rows: a block of rows that runs to the top of
+  // what is left may go on above it (see [_subjectAbove]).
+  final scrolled = lines.length > _window;
+  if (scrolled) lines.removeRange(0, lines.length - _window);
   if (lines.isEmpty) return null;
 
   // Hint and key-help rows that Claude Code / Codex draw under a menu.
@@ -53,8 +60,8 @@ PromptInfo? detectPrompt(List<String> rows) {
   }
   final body = lines.sublist(0, end);
 
-  return _numberedMenu(body) ??
-      _markerMenu(body) ??
+  return _numberedMenu(body, scrolled) ??
+      _markerMenu(body, scrolled) ??
       _inlineYesNo(body) ??
       _enterToContinue(lines);
 }
@@ -142,14 +149,14 @@ String _cap(String s, int max) =>
 
 // ---------------------------------------------------------------- numbered
 
-PromptInfo? _numberedMenu(List<String> body) {
+PromptInfo? _numberedMenu(List<String> body, bool scrolled) {
   // The menu starts at the LAST row numbered 1 whose tail is a clean menu.
   for (var i = body.length - 1; i >= 0; i--) {
     final first = _numbered.firstMatch(body[i]);
     if (first == null || first[3] != '1') continue;
     final options = _parseNumbered(body, i);
     if (options == null) continue;
-    return _buildNumbered(body, i, options);
+    return _buildNumbered(body, i, options, scrolled);
   }
   return null;
 }
@@ -194,7 +201,7 @@ List<_Opt>? _parseNumbered(List<String> body, int start) {
   return out;
 }
 
-PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options) {
+PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options, bool scrolled) {
   final pointers = options.where((o) => o.pointer.isNotEmpty).toList();
   if (pointers.length > 1) return null;
   final strong = pointers.length == 1 && _strongPointer.hasMatch(pointers.single.pointer);
@@ -204,28 +211,20 @@ PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options) {
   if (!strong && at == null) return null;
 
   // Without a question, a strong pointer still makes a menu: the row above
-  // stands in for the question and names no subject.
+  // stands in for the question.
   final q = at ?? above.length - 1;
-  final subject = at == null
+  final block = at == null
       ? const <String>[]
       : at == above.length - 1
           ? _subjectAbove(above, at)
           // Codex: the command is the row between the question and the menu.
           : [above.last];
-  // The subject is read as a command, all of it (the cut that keeps the card
-  // short must not hide a dangerous tail); the question and, when there is
-  // no subject, the row above it, as a command or a sentence.
-  final reason = _scopeRisk(
-    commands: subject,
-    sentences: [
-      if (q >= 0) above[q],
-      if (subject.isEmpty && q > 0) above[q - 1],
-    ],
-  );
-  return PromptInfo(
-    question: q < 0 ? '' : _cap(above[q].trim(), _questionMax),
-    subject: _subjectText(subject),
-    replies: [
+  return _promptOf(
+    body: above,
+    q: q,
+    block: block,
+    scrolled: scrolled,
+    replies: (reason, cut) => [
       for (final o in options)
         _quickReply(
           label: '${o.number}. ${_shortLabel(o.text)}',
@@ -233,10 +232,56 @@ PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options) {
           optionText: o.full,
           negativeText: o.text,
           scopeRisk: reason,
-          cutRisk: _isCut(subject) ? longCommand : null,
+          cutRisk: cut ? longCommand : null,
         ),
     ],
   );
+}
+
+/// The question at row [q] of [body] with what it is about, and its replies
+/// (given the scope reason and whether the subject was cut).
+///
+/// [block] is the rows drawn under a header or between the question and the
+/// menu, read as a command, all of it (the cut that keeps the card short must
+/// not hide a dangerous tail). Without one, the row above the question is read
+/// as a command or a sentence, and shown when it flags something ([_rowAbove]).
+/// [scrolled]: the 12-row window dropped older rows, so a block that runs to
+/// the top of it was cut.
+PromptInfo _promptOf({
+  required List<String> body,
+  required int q,
+  required List<String> block,
+  required bool scrolled,
+  required List<QuickReply> Function(String? reason, bool cut) replies,
+}) {
+  final subject = block.isNotEmpty ? block : _rowAbove(body, q);
+  final reason = _scopeRisk(
+    commands: block,
+    sentences: [
+      if (q >= 0) body[q],
+      if (block.isEmpty && q > 0) body[q - 1],
+    ],
+  );
+  final topCut = scrolled && block.isNotEmpty && q - block.length == 0;
+  return PromptInfo(
+    question: q < 0 ? '' : _cap(body[q].trim(), _questionMax),
+    subject: _subjectText(subject),
+    replies: replies(reason, topCut || _isCut(subject)),
+  );
+}
+
+/// The row right above the question at [q] when it is what made the question
+/// risky and is no deeper than the question: a command or a sentence drawn as
+/// part of the prompt, so the card shows the reason's cause and the digest
+/// tells `rm -rf x` from `rm -rf y`. A row that flags nothing is not shown:
+/// there it may as well be the scrollback (a tab title, a log line), which
+/// would put noise on every card and change the digest as it scrolls. One
+/// deeper than the question is the output of something else (a diff above an
+/// edit dialog); it is judged, and its reason shows, but it is not the subject.
+List<String> _rowAbove(List<String> body, int q) {
+  if (q <= 0 || _indent(body[q - 1]) > _indent(body[q])) return const [];
+  final row = body[q - 1];
+  return _scopeRisk(commands: [row], sentences: [row]) == null ? const [] : [row];
 }
 
 /// Why a second tap is needed when the subject could not be shown whole.
@@ -318,7 +363,8 @@ int _indent(String row) => row.length - row.trimLeft().length;
 /// (Claude Code: the command and its description under "Bash command"), all of
 /// them. Empty when there are none, or when the row above them does not look
 /// like a header (then they are some other output); the block may also run
-/// to the top of the visible rows, its header scrolled out.
+/// to the top of the visible rows, its header scrolled out, and then it may
+/// go on above them too (see [_promptOf] on `scrolled`).
 List<String> _subjectAbove(List<String> above, int q) {
   final indent = _indent(above[q]);
   var top = q;
@@ -376,13 +422,13 @@ bool _isQuestionRow(String line) {
   return t.endsWith('?') || t.endsWith(':');
 }
 
-PromptInfo? _markerMenu(List<String> body) =>
-    _radioMenu(body) ?? _pointerMenu(body);
+PromptInfo? _markerMenu(List<String> body, bool scrolled) =>
+    _radioMenu(body, scrolled) ?? _pointerMenu(body, scrolled);
 
 /// Short enough to be a choice rather than prose.
 bool _choiceLength(String line) => line.trim().length <= 60;
 
-PromptInfo? _pointerMenu(List<String> body) {
+PromptInfo? _pointerMenu(List<String> body, bool scrolled) {
   // The pointed row is within the last few rows; its siblings share its
   // text column and run to the very end.
   for (var p = body.length - 1; p >= 0 && p >= body.length - _maxReplies; p--) {
@@ -408,12 +454,12 @@ PromptInfo? _pointerMenu(List<String> body) {
       for (var i = start; i < body.length; i++)
         i == p ? m[3]!.trim() : body[i].trim(),
     ];
-    return _arrowMenu(body, start, texts, p - start);
+    return _arrowMenu(body, start, texts, p - start, scrolled);
   }
   return null;
 }
 
-PromptInfo? _radioMenu(List<String> body) {
+PromptInfo? _radioMenu(List<String> body, bool scrolled) {
   var start = body.length;
   var selected = -1;
   final texts = <String>[];
@@ -429,7 +475,7 @@ PromptInfo? _radioMenu(List<String> body) {
   }
   if (selected == -1) return null;
   // `selected` was counted from the bottom; make it an index into [texts].
-  return _arrowMenu(body, start, texts, texts.length - 1 - selected);
+  return _arrowMenu(body, start, texts, texts.length - 1 - selected, scrolled);
 }
 
 /// A menu answered with up/down to the wanted row, then enter. Needs a
@@ -439,16 +485,19 @@ PromptInfo? _arrowMenu(
   int start,
   List<String> texts,
   int selected,
+  bool scrolled,
 ) {
   if (texts.length < 2 || texts.length > _maxReplies) return null;
   if (start == 0 || !_isQuestionRow(body[start - 1])) return null;
-  // The question and the row above it (a tool name, a command) are read as
-  // a command or a sentence; each option is judged on its own text.
-  final q = start - 1;
-  final reason = _scopeRisk(sentences: body.sublist(q > 0 ? q - 1 : q, start));
-  return PromptInfo(
-    question: _cap(body[q].trim(), _questionMax),
-    replies: [
+  // The question and what it is about (rows under a header, else the row
+  // above it: a tool name, a command) are read as a command or a sentence and
+  // shown; each option is judged on its own text.
+  return _promptOf(
+    body: body,
+    q: start - 1,
+    block: _subjectAbove(body, start - 1),
+    scrolled: scrolled,
+    replies: (reason, cut) => [
       for (var k = 0; k < texts.length; k++)
         _quickReply(
           label: _shortLabel(texts[k]),
@@ -458,6 +507,7 @@ PromptInfo? _arrowMenu(
           ],
           optionText: texts[k],
           scopeRisk: reason,
+          cutRisk: cut ? longCommand : null,
         ),
     ],
   );

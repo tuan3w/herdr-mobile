@@ -36,6 +36,11 @@ enum LinkState {
   approval,
 }
 
+/// How long an event stream must stay up (or deliver an event) before the
+/// retry delays start over. The longest delay is 30 s: a stream that lives
+/// that long was not the failure the delays are there to space out.
+const _streamProvenAfter = Duration(seconds: 30);
+
 Duration defaultBackoff(int attempt) =>
     Duration(seconds: const [1, 2, 4, 8, 15, 30][attempt.clamp(0, 5)]);
 
@@ -142,6 +147,11 @@ class MachineConnection extends ChangeNotifier {
   DateTime? _seenAt;
   Completer<void>? _seenWatch;
   DateTime? _lastPersistAt;
+
+  /// Events the stream has delivered, ever. A stream that delivered one, or
+  /// stayed up for [_streamProvenAfter], worked: the retry delays start over
+  /// after it.
+  int _events = 0;
 
   /// Last `pane_updated` per pane since the event stream went live. A plain
   /// map write per event: nobody is notified, the board reads the result at
@@ -468,11 +478,21 @@ class MachineConnection extends ChangeNotifier {
           await _refresh();
           if (!alive()) return;
           _set(LinkState.online);
-          attempt = 0;
-          await _watch();
-          while (alive() && _resubscribing) {
-            _resubscribing = false;
-            await _watch(gap: true);
+          final liveAt = _clock();
+          final eventsBefore = _events;
+          try {
+            await _watch();
+            while (alive() && _resubscribing) {
+              _resubscribing = false;
+              await _watch(gap: true);
+            }
+          } finally {
+            // A good snapshot proves nothing: a stream that dies at once
+            // would retry every second for ever. The delays start over only
+            // once the stream has lived or delivered something.
+            if (_events != eventsBefore || _clock().difference(liveAt) >= _streamProvenAfter) {
+              attempt = 0;
+            }
           }
           raced = 0;
           if (!alive()) return;
@@ -492,6 +512,13 @@ class MachineConnection extends ChangeNotifier {
             continue;
           }
           error = e.toString();
+        } on Object catch (e) {
+          // A reply this app cannot read (a field of another type, a shape it
+          // does not know): the same as a failed attempt. Left alone it would
+          // end the loop with the link still shown as online or connecting,
+          // and nothing would ever retry.
+          if (!alive()) return;
+          error = 'Unexpected reply from the machine (${e.runtimeType})';
         }
         _set(LinkState.reconnecting, error: error);
         await _sleep(_retryDelay(attempt++));
@@ -730,6 +757,7 @@ class MachineConnection extends ChangeNotifier {
   ///  * status or agent changed (e.g. working -> blocked)    -> refresh now;
   ///  * anything else (title, cwd)                            -> throttled.
   void _onEvent(Map<String, dynamic> event, _RefreshScheduler refresher) {
+    _events++;
     if (event['event'] != 'pane_updated') {
       refresher.schedule(urgent: true);
       return;

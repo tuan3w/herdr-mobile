@@ -23,22 +23,64 @@ abstract interface class SecretStore {
 class PrefsProfileStore implements ProfileStore {
   static const _key = 'machines.v1';
 
+  /// Where a stored list that is not a list at all is copied before the next
+  /// write replaces it.
+  static const _unreadableKey = 'machines.v1.unreadable';
+
+  /// The rows of [raw], or null when it is not a JSON list.
+  static List<Object?>? _rows(Object raw) {
+    if (raw is! String) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is List ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// The machines this app can read. A row it cannot read (another type in a
+  /// field, a missing id) is left out of the list but stays in the store: see
+  /// [write].
   @override
   Future<List<MachineProfile>> read() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
+    final raw = prefs.get(_key);
     if (raw == null) return const [];
-    return (jsonDecode(raw) as List)
-        .cast<Map<String, dynamic>>()
-        .map(MachineProfile.fromJson)
-        .toList();
+    final rows = _rows(raw);
+    if (rows == null) {
+      debugPrint('herdr: the saved machines are not a list; they are kept as they are');
+      return const [];
+    }
+    final profiles = <MachineProfile>[];
+    for (final row in rows) {
+      final profile = MachineProfile.tryParse(row);
+      if (profile != null) {
+        profiles.add(profile);
+      } else {
+        debugPrint('herdr: a saved machine cannot be read and is kept as it is: $row');
+      }
+    }
+    return profiles;
   }
 
+  /// Saves [profiles]. What this app could not read is not its to delete: a
+  /// row [read] left out is written back with them (dropping it would also
+  /// orphan the machine's secrets in the keychain), and a stored value that
+  /// is no list at all is copied aside first.
   @override
   Future<void> write(List<MachineProfile> profiles) async {
     final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.get(_key);
+    final stored = raw == null ? const <Object?>[] : _rows(raw);
+    if (stored == null) await prefs.setString(_unreadableKey, '$raw');
     await prefs.setString(
-        _key, jsonEncode(profiles.map((p) => p.toJson()).toList()));
+      _key,
+      jsonEncode([
+        for (final p in profiles) p.toJson(),
+        for (final row in stored ?? const <Object?>[])
+          if (MachineProfile.tryParse(row) == null) row,
+      ]),
+    );
   }
 }
 
@@ -92,6 +134,15 @@ class MachineRepository extends ChangeNotifier {
   final Map<String, int> _credentialRevision = {};
 
   List<MachineProfile> get machines => _machines;
+
+  /// The saved machine [id], as it is now (with the host key pinned since a
+  /// connection to it was built), or null.
+  MachineProfile? byId(String id) {
+    for (final m in _machines) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
 
   /// Bumped whenever a machine's secrets are rewritten, so consumers can
   /// restart connections that were using the old ones.
@@ -176,9 +227,19 @@ class MachineRepository extends ChangeNotifier {
   }
 
   /// Persists a host key trusted on first use without disturbing connections.
+  /// Only for a machine with no pin: one that has a different pin keeps it
+  /// (a worker that did not know it must not replace the key the person
+  /// trusted; only re-adding the machine does).
   Future<void> pinHostKey(String id, String fingerprint) async {
     final i = _machines.indexWhere((m) => m.id == id);
     if (i < 0) return;
+    final pinned = _machines[i].hostKeyFingerprint;
+    if (pinned != null) {
+      if (pinned != fingerprint) {
+        debugPrint('herdr: not replacing the pinned host key of $id');
+      }
+      return;
+    }
     _machines = [
       for (var j = 0; j < _machines.length; j++)
         if (j == i)

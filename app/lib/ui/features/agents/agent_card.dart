@@ -61,8 +61,9 @@ const promptSubjectStyle = TextStyle(
 /// The card's height depends only on its status and the prompt (its question,
 /// its subject and its option count), never on how many lines have arrived or
 /// on the state of the chips, so the board does not jump while a preview fills
-/// in. It watches its pane's preview only while it is built (a virtualised
-/// list builds the ones near the screen) and releases on dispose.
+/// in. It watches its pane's preview only while it is built and on a screen
+/// the person can see (a virtualised list builds the ones near the screen; a
+/// hidden tab or a covered screen reads nothing) and releases on dispose.
 ///
 /// Semantics: the card body is ONE button that reads status, title, where, time
 /// and the question with its subject; the reply button and the answer chips
@@ -90,15 +91,35 @@ class _AgentCardState extends State<AgentCard> with SingleTickerProviderStateMix
   PromptInfo? _shown;
 
   AgentRowData get _agent => widget.agent;
-  bool get _wantsPreview => previewRowCount(_agent.status) > 0;
+
+  /// The card is on a screen the person can see: the board hidden behind
+  /// another tab (an IndexedStack runs it with tickers off) or covered by
+  /// another screen reads nothing. Known from `TickerMode`, which cannot be
+  /// asked in [initState], so the first watch is taken in
+  /// [didChangeDependencies].
+  bool _onScreen = true;
+  bool _started = false;
+
+  bool get _wantsPreview => _onScreen && previewRowCount(_agent.status) > 0;
 
   @override
   void initState() {
     super.initState();
     _previews = context.read<PanePreviews>();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _onScreen = TickerMode.valuesOf(context).enabled;
     _syncWatch();
-    // The guard is already armed: the card, and its answers, just appeared.
-    _shown = _promptIn(_handle?.preview.value);
+    if (_started) {
+      _syncShown();
+    } else {
+      // The guard is already armed: the card, and its answers, just appeared.
+      _started = true;
+      _shown = _promptIn(_handle?.preview.value);
+    }
   }
 
   @override

@@ -193,6 +193,10 @@ class FleetRepository extends ChangeNotifier {
     _reconciling = _reconciling.then((_) => _reconcile());
   }
 
+  /// One machine that cannot be set up or torn down (a connection factory that
+  /// throws) must not decide for the others: every machine is handled on its
+  /// own, and a failure is logged and left for the next change to try again
+  /// (a machine with no connection is built again by the next reconcile).
   Future<void> _reconcile() async {
     if (_disposed) return;
     final wanted = {for (final m in _machines.machines) m.id: m};
@@ -201,26 +205,34 @@ class FleetRepository extends ChangeNotifier {
     for (final id in _connections.keys.toList()) {
       if (!wanted.containsKey(id) || _keys[id] != _keyOf(wanted[id]!)) {
         final gone = _connections.remove(id)!..removeListener(_onConnectionChanged);
-        if (!wanted.containsKey(id)) gone.forget();
-        gone.dispose();
         _keys.remove(id);
         changed = true;
+        try {
+          if (!wanted.containsKey(id)) gone.forget();
+          gone.dispose();
+        } on Object catch (e, s) {
+          debugPrint('herdr: could not close the connection to $id: $e\n$s');
+        }
       }
     }
     for (final p in wanted.values) {
       if (_connections.containsKey(p.id)) continue;
-      final c = _connect(p, () => _machines.secretsFor(p.id))
-        ..attachReviewed(reviewed)
-        ..addListener(_onConnectionChanged);
-      _connections[p.id] = c;
-      _keys[p.id] = _keyOf(p);
-      if (_network.current.online) {
-        c.start();
-      } else {
-        c.goOffline();
+      try {
+        final c = _connect(p, () => _machines.secretsFor(p.id))
+          ..attachReviewed(reviewed)
+          ..addListener(_onConnectionChanged);
+        _connections[p.id] = c;
+        _keys[p.id] = _keyOf(p);
+        changed = true;
+        if (_network.current.online) {
+          c.start();
+        } else {
+          c.goOffline();
+        }
+        if (_background) c.setBackground(true);
+      } on Object catch (e, s) {
+        debugPrint('herdr: could not set up the connection to ${p.id}: $e\n$s');
       }
-      if (_background) c.setBackground(true);
-      changed = true;
     }
     if (changed) notifyListeners();
   }

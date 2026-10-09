@@ -480,7 +480,7 @@ void main() {
       final bar = tester.getRect(find.byType(FloatingTabBar));
       final toast = tester.getRect(_toast);
       expect(toast.bottom, lessThanOrEqualTo(bar.top));
-      expect(toast.bottom, bar.top - 12, reason: 'the bar margin again, above the pill');
+      expect(toast.bottom, bar.top - 8, reason: 'the bar margin again, above the pill');
       expect(toast.bottom, tester.view.physicalSize.height / tester.view.devicePixelRatio - FloatingTabBar.clearance(_ctx));
       await _end(tester);
     });

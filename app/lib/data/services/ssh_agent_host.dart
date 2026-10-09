@@ -80,10 +80,7 @@ class SshAgentHost implements AgentHost {
       () => _run(keeperListCommand(), quickTimeout, 'list the sessions'),
     );
     final rows = _json<List<Object?>>(out, 'the session list');
-    return [
-      for (final row in rows)
-        if (row is Map) KeeperInfo.fromJson(Map<String, Object?>.from(row)),
-    ];
+    return KeeperInfo.listFromJson(rows);
   }
 
   @override
@@ -99,7 +96,13 @@ class SshAgentHost implements AgentHost {
     }
     final out = await _withInstall(() => _run(command, startTimeout, 'start the agent'));
     final info = _json<Map<Object?, Object?>>(out, 'the new session');
-    return KeeperInfo.fromJson(Map<String, Object?>.from(info));
+    try {
+      return KeeperInfo.fromJson(Map<String, Object?>.from(info));
+    } on FormatException {
+      throw _unexpected(out, 'the new session');
+    } on TypeError {
+      throw _unexpected(out, 'the new session');
+    }
   }
 
   @override

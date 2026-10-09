@@ -7,5 +7,5 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   installErrorReporting();
   await configureSystemUi();
-  runApp(await bootApp());
+  await launchApp();
 }

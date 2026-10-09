@@ -6,6 +6,7 @@ import 'package:url_launcher_platform_interface/url_launcher_platform_interface.
 /// Records what the app asked the phone to open.
 class _Launcher extends UrlLauncherPlatform {
   final opened = <String>[];
+  final modes = <PreferredLaunchMode>[];
   var succeeds = true;
 
   @override
@@ -14,6 +15,7 @@ class _Launcher extends UrlLauncherPlatform {
   @override
   Future<bool> launchUrl(String url, LaunchOptions options) async {
     opened.add(url);
+    modes.add(options.mode);
     return succeeds;
   }
 }
@@ -24,6 +26,15 @@ void main() {
   setUp(() {
     launcher = _Launcher();
     UrlLauncherPlatform.instance = launcher;
+  });
+
+  group('where a link opens', () {
+    test('in a tab over the app, never in the browser app: Back must return to where the person was', () async {
+      await openTappedLink('https://example.com/a');
+      await openInBrowser('https://login.tailscale.com/a/abc');
+      expect(launcher.modes, everyElement(PreferredLaunchMode.inAppBrowserView));
+      expect(launcher.modes, hasLength(2));
+    });
   });
 
   group('a link the user tapped in terminal output', () {

@@ -290,12 +290,15 @@ class _FormState extends State<_Form> with RestorationMixin {
     final nav = Navigator.of(context);
     if (_replacesSavedKey) {
       if (vm.testState == TestState.testing) return;
-      if (vm.testState != TestState.ok) {
+      if (!vm.testedFor(_values())) {
         FocusScope.of(context).unfocus();
         await vm.test(_values());
         if (!mounted) return;
+        // An edit overtook the test: it says nothing about what is in the
+        // fields now. Save again once they are as wanted.
+        if (vm.testState == TestState.idle) return;
       }
-      if (vm.testState != TestState.ok) {
+      if (!vm.testedFor(_values())) {
         final choice = await _askAfterFailedTest(vm.message);
         if (!mounted) return;
         if (choice == null) return;

@@ -1217,7 +1217,7 @@ enum PermissionOptionKind {
 }
 
 class PermissionOption {
-  const PermissionOption({required this.optionId, required this.name, required this.kind, this.rawKind});
+  const PermissionOption({required this.optionId, required this.name, required this.kind, this.rawKind, this.gate});
 
   final String optionId;
   final String name;
@@ -1225,6 +1225,11 @@ class PermissionOption {
 
   /// The kind string as sent, for kinds this client does not know.
   final String? rawKind;
+
+  /// Why answering with this option needs a second tap, judged by whoever
+  /// produced the request (the terminal prompt detector: risky command,
+  /// standing grant, cut command); null when none. Never set on a refusal.
+  final String? gate;
 }
 
 /// `session/request_permission`: the agent asks before running a tool.

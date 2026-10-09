@@ -44,15 +44,6 @@ void main() {
     expect(g.accessReads, 0, reason: 'not even a platform call in the background');
   });
 
-  test('warming twice is one query', () async {
-    final g = FakeGallery();
-    final m = modelOf(g);
-    await m.warm();
-    await m.warm();
-    await m.open();
-    expect(g.pageQueries, 1);
-    expect(g.albumQueries, 1);
-  });
 
   test('ensure loads the page of an index once, however often the grid asks', () async {
     final g = FakeGallery(count: 1000);
@@ -158,5 +149,113 @@ void main() {
     expect(m.access.canRead, isTrue);
     expect(m.count, 0);
     expect(m.loading, isFalse);
+  });
+
+  group('a picture taken after the first load', () {
+    // The model lives for the whole app run. A screenshot taken while the app
+    // was open (or in the background) must be on the grid the next time the
+    // person reaches for the paperclip, without restarting the app.
+    Future<(FakeGallery, GalleryModel)> loaded({int count = 40}) async {
+      final g = FakeGallery(count: count);
+      final m = modelOf(g);
+      await m.warm();
+      await settle();
+      expect(m.at(0)!.id, '$count');
+      return (g, m);
+    }
+
+    test('is on the grid when the paperclip warms it', () async {
+      final (g, m) = await loaded();
+      g.count = 41;
+      await m.warm();
+      await settle();
+      expect(m.count, 41);
+      expect(m.at(0)!.id, '41', reason: 'newest first');
+      expect(m.at(1)!.id, '40');
+    });
+
+    test('is on the grid when the Gallery tab is shown', () async {
+      final (g, m) = await loaded();
+      g.count = 41;
+      await m.open();
+      await settle();
+      expect(m.at(0)!.id, '41');
+    });
+
+    test('is on the grid when the app comes back with the sheet open', () async {
+      final (g, m) = await loaded();
+      g.count = 41;
+      await m.recheck();
+      await settle();
+      expect(m.at(0)!.id, '41');
+    });
+
+    test('shows with the pictures that were already there, and tells the grid', () async {
+      final (g, m) = await loaded(count: 500);
+      m.ensure(300);
+      await settle();
+      var modelNotified = 0;
+      var revisions = 0;
+      m.addListener(() => modelNotified++);
+      m.revision.addListener(() => revisions++);
+      g.count = 501;
+      await m.warm();
+      await settle();
+      expect(modelNotified, greaterThan(0), reason: 'the count changed, so the grid is rebuilt');
+      expect(revisions, greaterThan(0));
+      expect(m.at(0)!.id, '501');
+      expect(m.at(300), isNull, reason: 'a page that moved is asked for again as the grid scrolls to it');
+      m.ensure(300);
+      await settle();
+      expect(m.at(300)!.id, '201', reason: 'index 300 is now the picture that was at 299');
+    });
+
+    test('a library that did not change is left alone: no rebuild, no new thumbnails', () async {
+      final (g, m) = await loaded();
+      final thumbs = g.thumbCalls;
+      var modelNotified = 0;
+      var revisions = 0;
+      m.addListener(() => modelNotified++);
+      m.revision.addListener(() => revisions++);
+      await m.warm();
+      await m.open();
+      await m.recheck();
+      await settle();
+      expect(modelNotified, 0);
+      expect(revisions, 0);
+      expect(g.thumbCalls, thumbs);
+    });
+
+    test('another album is read again too, and a vanished one falls back to Recent', () async {
+      final g = FakeGallery(
+        count: 300,
+        extraAlbums: [const GalleryAlbum(id: 'shots', name: 'Screenshots', count: 7)],
+      );
+      final m = modelOf(g);
+      await m.open();
+      await m.loadAlbums();
+      await m.selectAlbum(m.albums[1]);
+      await settle();
+      expect(m.count, 7);
+      g.extraAlbums[0] = const GalleryAlbum(id: 'shots', name: 'Screenshots', count: 8);
+      await m.open();
+      await settle();
+      expect(m.count, 8);
+      g.extraAlbums.clear();
+      await m.open();
+      await settle();
+      expect(m.album!.isRecent, isTrue);
+      expect(m.count, 300);
+    });
+
+    test('two warms at once are one read', () async {
+      final (g, m) = await loaded();
+      g.count = 41;
+      final before = g.pageQueries;
+      await Future.wait([m.warm(), m.warm(), m.open()]);
+      await settle();
+      expect(g.pageQueries, before + 1);
+      expect(m.at(0)!.id, '41');
+    });
   });
 }

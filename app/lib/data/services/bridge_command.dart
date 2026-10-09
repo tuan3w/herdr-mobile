@@ -327,9 +327,12 @@ void _checkSession(String session) {
   }
 }
 
+/// `sh -c '<decode and eval>'` over base64 text: the login shell (fish, csh)
+/// sees one single-quoted word, so it cannot choke on `$( )`, `{ }` or `||`
+/// (see `_wrap` in `keeper_command.dart`). Base64 has no quote character.
 String _shellCommand(String script) {
   final b64 = base64.encode(utf8.encode(script));
-  return 'sh -c "\$(echo $b64 | { base64 -d 2>/dev/null || base64 -D; })"';
+  return "sh -c 'eval \"\$(echo $b64 | { base64 -d 2>/dev/null || base64 -D; })\"'";
 }
 
 /// Builds the remote command for the multiplexed request channel: prints

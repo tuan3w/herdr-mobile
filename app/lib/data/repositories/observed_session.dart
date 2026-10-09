@@ -34,6 +34,27 @@ typedef AskStepper = AskStep Function(String screen);
 /// of view).
 AskStepper ompAskStepper(PendingAsk ask, List<AskAnswer> answers) => OmpAskDriver(ask, answers).next;
 
+final _whitespace = RegExp(r'\s+');
+
+/// Whether the text a dialog shows ([subject]) is the input of a log call
+/// ([input], its arguments): the same text, or, when the dialog cut it
+/// (marked `…`), the start of it. Whitespace does not count (the pane wraps
+/// rows where the log has none). A dialog that shows more than the input, or
+/// less without saying so, is not the call: two calls open at once must not
+/// swap, and a longer command must not pass for a shorter one.
+bool promptShowsInput(String subject, Object? input) {
+  var shown = subject.replaceAll(_whitespace, '');
+  final cut = shown.endsWith('…');
+  if (cut) shown = shown.substring(0, shown.length - 1);
+  if (shown.isEmpty || shown.contains('…')) return false;
+  final texts = input is String ? [input] : [if (input is Map) for (final v in input.values) if (v is String) v];
+  for (final text in texts) {
+    final whole = text.replaceAll(_whitespace, '');
+    if (whole == shown || (cut && whole.startsWith(shown))) return true;
+  }
+  return false;
+}
+
 /// An agent that runs in a herdr pane, as an [AgentSessionView]: the chat
 /// screen reads it like an ACP session.
 ///
@@ -187,6 +208,12 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   AgentPhase _lastPhase = AgentPhase.idle;
 
   int _holds = 0;
+
+  /// [_onMachine] is on [machine] and [parent]. Added by the first
+  /// [acquire] only: a screen that comes and goes would otherwise add one more
+  /// every time (a listener list grows, and each one runs a refresh per change
+  /// of the machine), and [dispose] removes one.
+  bool _listening = false;
   bool _disposed = false;
   bool _keepAlive = false;
   DateTime? _backgroundedAt;
@@ -557,7 +584,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     _lingerTimer = null;
     _idleTimer?.cancel();
     _idleTimer = null;
-    if (_holds == 1) {
+    if (!_listening) {
+      _listening = true;
       machine.addListener(_onMachine);
       parent?.addListener(_onMachine);
     }
@@ -965,9 +993,18 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       } else {
         _pendingSig = full;
         if (ask != null) {
-          next = PendingQuestion('ask:${ask.toolCallId}:$_attempt', askRequest(ask, sessionId: paneId, agentLabel: agentLabel));
+          // A refused answer re-issues the request under a new id; the form
+          // the person filled in is the same question (the draft key).
+          next = PendingQuestion(
+            'ask:${ask.toolCallId}:$_attempt',
+            askRequest(ask, sessionId: paneId, agentLabel: agentLabel),
+            draftKey: sig,
+          );
         } else {
-          next = PendingPermission('prompt:${promptSignature(prompt!).hashCode}:$_attempt', promptRequest(prompt, paneId: paneId, call: _openCall()));
+          next = PendingPermission(
+            'prompt:${promptSignature(prompt!).hashCode}:$_attempt',
+            promptRequest(prompt, paneId: paneId, call: _callAsking(prompt)),
+          );
         }
       }
     }
@@ -1001,15 +1038,24 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     }
   }
 
-  /// The tool call the pane most likely asks about: the latest one that
-  /// started and has no result.
-  ToolCall? _openCall() {
-    ToolCall? found;
+  /// The tool call the pane asks about, or none. The log's open calls are
+  /// candidates, but the screen is the truth: a call is taken only when its
+  /// input is what the dialog shows ([promptShowsInput]); with two calls open
+  /// the latest one is NOT assumed (the keys approve what the screen asks, and
+  /// the card must show the same). A dialog that shows nothing to compare
+  /// (a numbered menu, a plan review) takes the log's call only when exactly
+  /// one is open.
+  ToolCall? _callAsking(PromptInfo prompt) {
+    final open = <ToolCall>[];
     for (final id in _mapper.openToolCalls) {
       final call = _log.toolCall(id);
-      if (call != null && !call.status.isFinished) found = call;
+      if (call != null && !call.status.isFinished) open.add(call);
     }
-    return found;
+    if (prompt.subject.trim().isEmpty) return open.length == 1 ? open.single : null;
+    for (final call in open.reversed) {
+      if (promptShowsInput(prompt.subject, call.rawInput)) return call;
+    }
+    return null;
   }
 
   // -- preview and live output -----------------------------------------------------
@@ -1180,22 +1226,23 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     unawaited(_answerPermission(p, outcome));
   }
 
+  static const _answerGone = 'That answer is no longer on the screen. Check the terminal.';
+  static const _screenMoved = 'The terminal changed before that answer was sent. Look at it and answer again.';
+
   Future<void> _answerPermission(PendingPermission p, PermissionOutcome outcome) async {
     _busy = true;
     try {
-      if (outcome is PermissionSelected) {
-        final shown = _pendingPrompt;
-        final index = int.tryParse(outcome.optionId);
-        if (shown == null || index == null || index < 0 || index >= shown.replies.length) {
-          return _refuse(p, 'That answer is no longer on the screen. Check the terminal.');
-        }
-        // The screen is the truth: send the keys only if it still asks this.
-        final fresh = await _freshPrompt(menu: _pendingFromMenu);
-        if (fresh == null ||
-            promptSignature(fresh) != promptSignature(shown) ||
-            index >= fresh.replies.length) {
-          return _refuse(p, 'The terminal changed before that answer was sent. Look at it and answer again.');
-        }
+      final shown = _pendingPrompt;
+      final index = outcome is PermissionSelected ? int.tryParse(outcome.optionId) : null;
+      if (shown == null || (outcome is PermissionSelected && (index == null || index < 0 || index >= shown.replies.length))) {
+        return _refuse(p, _answerGone);
+      }
+      // The screen is the truth: keys (a refusal's `esc` too, which would
+      // interrupt a turn that went on) are sent only if it still asks this.
+      final fresh = await _freshPrompt(menu: _pendingFromMenu);
+      if (fresh == null || promptSignature(fresh) != promptSignature(shown)) return _refuse(p, _screenMoved);
+      if (index != null) {
+        if (index >= fresh.replies.length) return _refuse(p, _screenMoved);
         await machine.api.sendKeys(paneId, fresh.replies[index].keys);
         machine.markReviewed(paneId);
       } else {
@@ -1304,22 +1351,36 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     final p = _pending;
     if (p is! PendingQuestion || p.id != requestId || _busy || _disposed) return;
     final ask = _pendingAsk;
-    if (response is! ElicitationAccept || ask == null) {
-      _busy = true;
-      unawaited(
-        _keys(const ['esc']).whenComplete(() {
-          _busy = false;
-          _suppress(p);
-        }),
-      );
+    if (response is! ElicitationAccept) {
+      unawaited(_cancelAsk(p));
       return;
     }
+    if (ask == null) return _refuse(p, _notTaken);
     final parsed = askAnswers(ask, response.content);
     if (parsed.problem != null) {
       _refuse(p, parsed.problem!);
       return;
     }
     unawaited(_answerAsk(p, ask, parsed.answers));
+  }
+
+  /// Declines or cancels the question with `esc`, which cancels the whole tool
+  /// call: sent only while the ask dialog is on the screen, because an `esc`
+  /// that finds the agent working interrupts its turn.
+  Future<void> _cancelAsk(PendingQuestion p) async {
+    _busy = true;
+    try {
+      final read = await machine.api.readPane(paneId, lines: 60);
+      if (!looksLikeAsk(read.text)) return _refuse(p, _screenMoved);
+      await machine.api.sendKeys(paneId, const ['esc']);
+      _suppress(p);
+    } on HerdrApiException catch (e) {
+      _refuse(p, e.toString());
+    } on HerdrTransportException catch (e) {
+      _refuse(p, e.message);
+    } finally {
+      _busy = false;
+    }
   }
 
   static const _notTaken = 'The terminal did not take that answer. Open the terminal.';

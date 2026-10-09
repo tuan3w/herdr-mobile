@@ -57,7 +57,8 @@ ConnectionFactory sshConnectionFactory({
       cache: snapshotCache,
       api: HerdrApi(
         createSshTransportLater(
-          profile,
+          // Asked at each worker start: a replaced worker gets the pin made since.
+          () => machines.byId(profile.id) ?? profile,
           secrets,
           (fp) => machines.pinHostKey(profile.id, fp),
           (banner) => connection.onAuthNotice(banner),

@@ -58,6 +58,13 @@ class MachineFormViewModel extends ChangeNotifier {
   final TransportFactory _transportFactory;
 
   TestState _testState = TestState.idle;
+
+  /// Bumped by every test and every [invalidateTest]; a test whose number is
+  /// no longer current was overtaken by an edit and reports nothing.
+  int _testGeneration = 0;
+
+  /// What the last passing test connected with.
+  MachineFormValues? _tested;
   String? _message;
   String? _fingerprint;
   String? _version;
@@ -230,11 +237,14 @@ class MachineFormViewModel extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Any edit invalidates a previous test result and a failed save's reason.
+  /// Any edit invalidates a previous test result and a failed save's reason,
+  /// and a test still out: its result is dropped when it arrives.
   void invalidateTest() {
     if (_testState == TestState.idle && _saveError == null) return;
+    _testGeneration++;
     _testState = TestState.idle;
     _message = null;
+    _approvalUrl = null;
     _saveError = null;
     notifyListeners();
   }
@@ -291,10 +301,15 @@ class MachineFormViewModel extends ChangeNotifier {
   /// reason in [message]; the transport bounds each stage (connect, request,
   /// sign-in approval), so the busy state always ends.
   Future<void> test(MachineFormValues v) async {
+    final generation = ++_testGeneration;
+    // An edit while the test is out ([invalidateTest]) or a newer test
+    // supersedes it: what it finds describes values that are gone.
+    bool stale() => generation != _testGeneration;
     _testState = TestState.testing;
     _message = null;
     _approvalUrl = null;
     _saveError = null;
+    _tested = null;
     notifyListeners();
     String? seen;
     final profile = _profile(v, fingerprint: _pinFor(v));
@@ -308,28 +323,35 @@ class MachineFormViewModel extends ChangeNotifier {
         (f) => seen = f,
         (banner) {
           final url = approvalUrlFrom(banner);
-          if (url == null || url == _approvalUrl) return;
+          if (stale() || url == null || url == _approvalUrl) return;
           _approvalUrl = url;
           if (!_disposed) notifyListeners();
         },
       );
       final api = HerdrApi(transport);
-      _version = await api.ping();
-      _workspaces = (await api.snapshot()).workspaces.length;
-      _fingerprint = seen ?? profile.hostKeyFingerprint;
-      _testState = TestState.ok;
+      final version = await api.ping();
+      final workspaces = (await api.snapshot()).workspaces.length;
+      if (!stale()) {
+        _version = version;
+        _workspaces = workspaces;
+        _fingerprint = seen ?? profile.hostKeyFingerprint;
+        _tested = v;
+        _testState = TestState.ok;
+      }
     } on Object catch (e) {
-      _testState = TestState.failed;
-      _message = switch (e) {
-        HerdrTransportException(:final message) => message,
-        HerdrApiException() => e.toString(),
-        _ when secrets == null =>
-          'The saved secrets could not be read from this phone\'s keystore (${_describe(e)}). '
-              'Test again; if it keeps failing, restart the app.',
-        TimeoutException() => 'The machine did not answer in time. Check that it is on and '
-            'reachable from this phone, then test again.',
-        _ => 'The test stopped: ${_describe(e)}. Check the host and port, then test again.',
-      };
+      if (!stale()) {
+        _testState = TestState.failed;
+        _message = switch (e) {
+          HerdrTransportException(:final message) => message,
+          HerdrApiException() => e.toString(),
+          _ when secrets == null =>
+            'The saved secrets could not be read from this phone\'s keystore (${_describe(e)}). '
+                'Test again; if it keeps failing, restart the app.',
+          TimeoutException() => 'The machine did not answer in time. Check that it is on and '
+              'reachable from this phone, then test again.',
+          _ => 'The test stopped: ${_describe(e)}. Check the host and port, then test again.',
+        };
+      }
     } finally {
       try {
         await transport?.close();
@@ -340,6 +362,24 @@ class MachineFormViewModel extends ChangeNotifier {
     }
   }
 
+  /// The last test passed for exactly these values: nothing that reaches the
+  /// host differs from what was tested. Only then does its host key belong to
+  /// what Save would store, and only then does it vouch for a replaced key.
+  bool testedFor(MachineFormValues v) {
+    final t = _tested;
+    return _testState == TestState.ok &&
+        t != null &&
+        t.host == v.host &&
+        t.port == v.port &&
+        t.username == v.username &&
+        t.auth == v.auth &&
+        t.privateKey == v.privateKey &&
+        t.passphrase == v.passphrase &&
+        t.password == v.password &&
+        t.session == v.session &&
+        t.socketPath == v.socketPath;
+  }
+
   /// Stores the machine. False when nothing could be stored: [saveError]
   /// says why and the form keeps everything that was entered.
   Future<bool> save(MachineFormValues v) async {
@@ -347,9 +387,7 @@ class MachineFormViewModel extends ChangeNotifier {
     _saveError = null;
     notifyListeners();
     try {
-      final pin = _fingerprint != null && _testState == TestState.ok
-          ? _fingerprint
-          : _pinFor(v);
+      final pin = _fingerprint != null && testedFor(v) ? _fingerprint : _pinFor(v);
       await _repo.save(_profile(v, fingerprint: pin), secrets: await _secrets(v));
       dropKeyDraft();
       return true;

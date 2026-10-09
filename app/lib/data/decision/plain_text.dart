@@ -7,11 +7,21 @@
 /// invisible "tag" block.
 library;
 
-final _osc = RegExp(r'\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)?');
-final _csi = RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]');
-final _otherEscape = RegExp(r'\x1B[@-Z\\-_]|\x1B[ -/]*[0-~]');
+// An OSC is stripped only when it ends with BEL or ST on its own line: an
+// unterminated `ESC ]` used to delete everything after it (a path or a plan
+// cut at the first `ESC ]`), while a terminal would still show that text.
+final _osc = RegExp(r'\x1B\][^\x07\x1B\n]*(?:\x07|\x1B\\)');
+// A CSI is parameters (digits and `;:<=>?`), optional intermediates, one final
+// byte. A space is an intermediate only before `q` (the cursor-style
+// `ESC[2 q`): anywhere else `ESC[31 hello` would swallow the `h` of a word.
+final _csi = RegExp(r'\x1B\[[0-?]*(?: q|[!-/]*[@-~])');
+// Two-byte escapes. `[` and `]` are left out: a CSI or OSC that did not
+// complete is not a sequence, and its ESC stays in the text for [showHidden]
+// to show.
+final _otherEscape = RegExp(r'\x1B[@-Z\\^_]|\x1B[ -/]*[0-Z\\^-~]');
 
-/// [text] without terminal escape sequences (colour, cursor, OSC titles).
+/// [text] without terminal escape sequences (colour, cursor, OSC titles). A
+/// sequence that does not complete keeps its ESC, which [isHiddenRune] flags.
 String stripAnsi(String text) =>
     text.contains('\x1B') ? text.replaceAll(_osc, '').replaceAll(_csi, '').replaceAll(_otherEscape, '') : text;
 

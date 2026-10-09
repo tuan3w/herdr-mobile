@@ -266,9 +266,16 @@ class SftpFiles {
         final dir = '/${parts.take(i + 1).join('/')}';
         try {
           await s.mkdir(dir);
-        } on SftpStatusError {
+        } on SftpStatusError catch (refused) {
           // Made by someone else meanwhile (or refused): the next stat tells.
-          final attrs = await s.stat(dir);
+          // When there is still nothing there, the refusal is the answer
+          // ("permission denied"), not the stat's "no such file".
+          final SftpFileAttrs attrs;
+          try {
+            attrs = await s.stat(dir);
+          } on SftpStatusError {
+            throw refused;
+          }
           if (attrs.mode?.type != SftpFileType.directory) rethrow;
         }
       }
@@ -712,6 +719,10 @@ class _SftpUpload implements UploadJob {
         wake();
       });
     }
+    // A write that failed while it was the last one in flight ended the loop
+    // (nothing left in flight) before the check at its top saw the error:
+    // without this the upload reported success with a hole in the file.
+    if (error != null) Error.throwWithStackTrace(error!, errorTrace!);
   }
 
   /// Closes what is open and removes the half-written remote file. Best

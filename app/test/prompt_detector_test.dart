@@ -275,6 +275,7 @@ Which cleanup?
       ('2. No', ['2', 'enter'], false),
     ],
     risks: ['force-pushes', null],
+    subject: 'git push --force origin main',
   ),
   // ---- inline prompts
   _Case('[y/N] (overwrite counts as destructive)', 'Overwrite config.json? [y/N]\n', [
@@ -515,10 +516,32 @@ Which?
       expect(p.replies.first.label, endsWith('…'));
     });
 
-    test('only the last 12 rows are looked at', () {
-      final noise = List.generate(30, (i) => 'line $i').join('\n');
-      final p = _detect('$noise\nDo you want to proceed?\n❯ 1. Yes\n  2. No');
-      expect(p!.replies.map((r) => r.label), ['1. Yes', '2. No']);
+    // The window is what keeps old output out of a prompt's reading. What it
+    // drops of a command's own rows must not make the command look whole:
+    // the rows left (5 of a 12-row command) fit the card, and `rm -rf /` was in
+    // the first of them.
+    test('rows the window dropped from a long command make it "long", not whole', () {
+      final command = ['rm -rf /', for (var i = 2; i <= 12; i++) 'step $i'];
+      String screen(List<String> rows) => [
+            ' Bash command',
+            ...rows.map((r) => '   $r'),
+            ' Do you want to proceed?',
+            ' ❯ 1. Yes',
+            '   2. Yes, then B',
+            '   3. Yes, then C',
+            '   4. Yes, then D',
+            '   5. Yes, then E',
+            '   6. No',
+          ].join('\n');
+      // 12 rows fit exactly when the command has 4: nothing was dropped.
+      final whole = _detect(screen(['echo one', 'echo two', 'echo three', 'echo four']))!;
+      expect(whole.subject.split('\n'), ['echo one', 'echo two', 'echo three', 'echo four']);
+      expect(whole.replies.first.needsConfirm, isFalse);
+      // 12 command rows: the window keeps the last 5 of them and the question.
+      final cut = _detect(screen(command))!;
+      expect(cut.subject, isNot(contains('rm -rf')));
+      expect(cut.replies.first.risk, longCommand);
+      expect(cut.replies.last.needsConfirm, isFalse, reason: 'declining is always safe');
     });
 
     test('a Vietnamese question and options survive', () {
@@ -718,11 +741,41 @@ Do you want to proceed?
       expect(p.question, 'Some output');
     });
 
-    test('pointer, radio, inline and press-enter prompts have no subject', () {
-      expect(_detect('Allow this tool call?\n❯ Allow once\n  Deny')!.subject, '');
-      expect(_detect('Pick a mode?\n○ Fast\n● Careful')!.subject, '');
+    test('inline and press-enter prompts have no subject: their question already carries the row above', () {
       expect(_detect('Overwrite config.json? [y/N]')!.subject, '');
       expect(_detect('Installed.\nPress Enter to continue')!.subject, '');
+    });
+
+    // The row above a pointer or radio menu's question used to be judged for
+    // risk and then dropped: the card showed "Allow this tool call?" over any
+    // command, and its digest was the same for `ls` and `rm -rf`.
+    test('a pointer or radio menu names the risky row above its question', () {
+      final p = _detect('bash: rm -rf node_modules\nAllow this tool call?\n❯ Allow once\n  Deny')!;
+      expect(p.subject, 'bash: rm -rf node_modules');
+      expect(p.replies.map((r) => r.risk), ['deletes files', null]);
+      final radio = _detect('rm -rf node_modules\nPick a mode?\n○ Fast\n● Careful')!;
+      expect(radio.subject, 'rm -rf node_modules');
+    });
+
+    test('the digest and signature tell two commands under one question apart', () {
+      final rm = _detect('rm -rf node_modules\nAllow this tool call?\n❯ Allow once\n  Deny')!;
+      final ls = _detect('ls node_modules\nAllow this tool call?\n❯ Allow once\n  Deny')!;
+      expect(rm, isNot(ls));
+      expect(rm.subject, isNot(ls.subject));
+    });
+
+    test('a numbered menu names the risky row above its question too', () {
+      final p = _detect('git push --force origin main\nDo you want to proceed?\n❯ 1. Yes\n  2. No')!;
+      expect(p.subject, 'git push --force origin main');
+    });
+
+    test('a row above the question that flags nothing is scrollback, not a subject', () {
+      expect(_detect('Done editing, now:\nAllow this tool call?\n❯ Allow once\n  Deny')!.subject, '');
+      expect(_detect('ls node_modules\nAllow this tool call?\n❯ Allow once\n  Deny')!.subject, '');
+      // A diff above an edit dialog is deeper than the question: output.
+      final p = _detect('Here is the diff for lib/a.dart.\n   10 - rm -rf build\n Do you want to make this edit?\n ❯ 1. Yes\n   2. No')!;
+      expect(p.subject, '');
+      expect(p.replies.first.needsConfirm, isTrue, reason: 'judged, even though not shown');
     });
   });
 

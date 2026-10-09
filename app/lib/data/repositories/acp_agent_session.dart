@@ -163,6 +163,10 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   int _epoch = 0;
   int _attempt = 0;
 
+  /// Messages from the agent the client could not read or use, dropped
+  /// (tests, diagnostics).
+  int problems = 0;
+
   /// The epoch of the drop being looked into (`list`, then a retry): a nudge
   /// from the repository must not start an attach in the middle of it.
   int _recoveringEpoch = -1;
@@ -357,8 +361,10 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
 
   /// The keeper's most recent sign of life by the host's own clock (so
   /// comparable between sessions of one machine): for ranking which sessions
-  /// deserve a channel.
-  DateTime get activityAt => _info.lastEventAt ?? _info.startedAt;
+  /// deserve a channel. A keeper that said neither when it last did anything
+  /// nor when it started ranks as the oldest.
+  DateTime get activityAt =>
+      _info.lastEventAt ?? _info.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   DateTime? get cachedAsOf => _cachedAsOf;
@@ -754,6 +760,13 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         transport,
         handler: _handler,
         clock: _clock,
+        onProblem: (message) {
+          // An update the client could not read is dropped: the thread shown
+          // can be missing a line. Counted so it is not silent.
+          if (epoch != _epoch) return;
+          problems++;
+          debugPrint('acp ${_info.id}: $message');
+        },
         onExtension: (method, params) {
           if (created case final c?) _onExtension(c, method, params);
         },

@@ -1,3 +1,15 @@
+import 'package:flutter/foundation.dart' show debugPrint;
+
+/// What was logged already: a row that stays unreadable is met again at every
+/// refresh, and the log should say it once.
+final _reportedRows = <String>{};
+
+void _reportRow(String list, Object error) {
+  if (_reportedRows.length < 50 && _reportedRows.add('$list: $error')) {
+    debugPrint('herdr: an unreadable row of "$list" is left out: $error');
+  }
+}
+
 final _spinnerGlyphs = RegExp(r'[\u2800-\u28FF]');
 final _leadingNoise = RegExp(r'^[^\p{L}\p{N}]+', unicode: true);
 
@@ -390,11 +402,21 @@ class Snapshot {
   });
 
   factory Snapshot.fromJson(Map<String, dynamic> j) {
-    List<T> list<T>(String key, T Function(Map<String, dynamic>) f) =>
-        ((j[key] as List?) ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(f)
-            .toList(growable: false);
+    // One row this app cannot read (a field of another type, one a newer herdr
+    // adds) is left out and logged, not the whole machine: its other agents
+    // are still there to answer.
+    List<T> list<T>(String key, T Function(Map<String, dynamic>) f) {
+      final out = <T>[];
+      for (final row in (j[key] as List?) ?? const []) {
+        try {
+          if (row is! Map) throw FormatException('not an object', row);
+          out.add(f(row is Map<String, dynamic> ? row : Map<String, dynamic>.from(row)));
+        } on Object catch (e) {
+          _reportRow(key, e);
+        }
+      }
+      return out.toList(growable: false);
+    }
     // `completion_seq` is on the snapshot's `agents` entries (herdr's
     // `AgentInfo`), not on its panes; older servers send none.
     final completions = <String, int>{};

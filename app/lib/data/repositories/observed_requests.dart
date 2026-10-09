@@ -203,7 +203,15 @@ PermissionRequest promptRequest(PromptInfo prompt, {required String paneId, Tool
     title: prompt.question,
     options: [
       for (final (i, r) in prompt.replies.indexed)
-        PermissionOption(optionId: '$i', name: replyName(r), kind: replyKind(r)),
+        PermissionOption(
+          optionId: '$i',
+          name: replyName(r),
+          kind: replyKind(r),
+          // The detector's own judgement travels with the option: the dock
+          // judges only what it shows, and a cut command or a second-tap
+          // reason read from rows it does not show must still gate the tap.
+          gate: r.needsConfirm ? r.risk ?? 'check it first' : null,
+        ),
     ],
   );
 }

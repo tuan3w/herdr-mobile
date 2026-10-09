@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show Random;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/zipped_lines.dart';
@@ -38,6 +39,23 @@ void main() {
       '{"id":3}',
     ]);
     expect(out, ['{"id":1}', ...big.take(20), '{"id":2}', ...big.skip(20), '{"id":3}']);
+  });
+
+  test('a multi-byte character cut by the inflater\'s chunk boundary survives', () async {
+    // One piece that inflates to far more than the inflater's 64 KiB output
+    // chunk, in 3- and 4-byte characters: some character always straddles a
+    // boundary, and decoding each chunk alone turned it into U+FFFD.
+    final random = Random(7);
+    final lines = [
+      for (var i = 0; i < 700; i++)
+        '{"n":$i,"text":"${String.fromCharCodes([for (var c = 0; c < 120; c++) 0x4E00 + random.nextInt(0x4000)])}😀${String.fromCharCode(0x1F600 + random.nextInt(60))}"}',
+    ];
+    final text = '${lines.join('\n')}\n';
+    expect(utf8.encode(text).length, greaterThan(3 * 65536), reason: 'several inflater chunks');
+
+    final out = await _read([_Zipper().piece(text)]);
+
+    expect(out, lines);
   });
 
   test('a later piece is read with what the earlier ones taught the stream', () async {

@@ -375,7 +375,9 @@ sheet with the full URL.
 
 The dock shows one request at a time: the first permission, else the first
 question, with `N more waiting` under it. A question's answers typed so far are
-kept outside its panel, per request and per session (`QuestionDraft`), and
+kept outside its panel, per question and per session (`QuestionDraft`, keyed by
+`PendingQuestion.draftId`, which an observed question keeps when a refused
+answer re-issues it under a new id), and
 dropped only once the live session no longer waits on it (answered or
 withdrawn). Before, a permission arriving mid-answer took the dock, the
 question's panel was disposed, and it came back blank: typed answers lost
@@ -1226,6 +1228,18 @@ tabs draw what they have (the bars, the camera tile) while the library answers.
   at once (two at a time, `ComposerAttachments.speculate`) and abandoned if
   undone, so `Attach` has nothing left to wait for; the chips appear in the
   frame the sheet starts to leave, and uploads start when its animation is over.
+- **Fresh** (`GalleryModel._refresh`). The model lives for the app run, so what
+  it loaded is a saved copy: the paperclip's pointer-down, the composer's first
+  show, the Gallery tab being shown and the app coming back to the front each
+  read the album again (its count and its first page: two queries). The grid
+  paints what it has at once and is corrected when the answer differs; a
+  library that did not change notifies nobody and decodes nothing. A change
+  keeps the first page, drops the pages below it (their indexes moved; they are
+  asked for again as the grid scrolls there; thumbnails are keyed by picture and
+  stay), and an album that disappeared falls back to `Recent`. Why: it used to
+  read once per app run, so a screenshot taken while herdr was open was not on
+  the grid until the app was killed. Android 14's partial access still hides
+  pictures the person did not share: the `Manage` chip is the way to add them.
 - **Files** (`files_tab.dart`, `data/services/phone_files.dart`). `Choose
   files…` opens the system document picker (`file_picker`, multi-select; the
   plugin streams the document into the app's cache, so nothing large passes
@@ -1537,9 +1551,48 @@ Flutter starts, and light is the default. A person who chose Dark sees a brief
 paper-coloured launch (the Android 12 splash is paper with the app icon) before
 the first dark frame.
 
-`FloatingTabBar` shows the label of the selected tab only; the others are 48 x
-48 icon-only targets (their names stay in semantics), so three tabs fit 320 dp
-at 2x text. Tests find a tab with `FloatingTabBar.tabKey(label)`.
+`FloatingTabBar` is a slim floating pill (56 dp tall, 12 dp side margins, 8 dp
+below, at most 312 dp wide and centred) in equal cells: a 22 dp icon over the
+tab's name (`Type.label`), the selected one on a `ds.fillPressed` capsule with
+`ds.text`. A hairline and no shadow, no blur. Every tab is named and every cell
+is the same width, so nothing moves when a tab is chosen, and the count badge
+(18 dp, on the icon's corner) never meets a label. Why: the bar used to show
+only the selected tab's label, which grew and slid the other two icons on every
+tap, left two of three tabs as unlabelled icons, and put a `99+` badge on top of
+the word "Agents"; owner's call: floating, but equal cells. Why slim: at 64 dp
+and edge to edge it read as big (owner), and with its margins and scrim it
+reserved about 140 dp of a 892 dp board for two rarely used tabs. Why no
+shadow: it rendered as a hard grey band under the pill, and the app is flat
+(hairlines). Why `fillPressed`: `ds.fill` on the pill's surface was about 1.1:1
+and vanished in dark. Three cells fit 320 dp (text is clamped at 1.15x,
+`settings_test.dart`). `clearance` is 56 + 16 + the bottom inset. Selection is
+one capsule under the cells that slides to the chosen one (`Motion.standard`,
+`Motion.easeOut`; it jumps under reduced motion and a second tap retargets it
+from where it is). One number, the capsule's place in tab units, drives both
+the capsule and every cell's colour, so the text warms as the capsule arrives
+under it and cools as it leaves, exactly in step. Why: the colour used to be a
+separate linear tween against the capsule's ease-out, so the two clocks drifted,
+and the label weight (which cannot be interpolated) snapped on its own; the
+weight no longer changes. The bar is the only way to switch tab: a tap, or a
+drag along it. There is no sideways swipe over the whole screen (owner: no
+need). Why not: nothing showed it existed, the page did not follow the finger,
+and on Agents it fought swipe-to-review, since a left swipe over a finished row
+reviews it and over any other row would have changed tab.
+**Dragging along the bar carries the capsule** with the finger, 1:1 (the bar's
+`onHorizontalDrag*`): nothing is chosen while the finger is down, a tick marks
+each cell the capsule passes, it stops at the pill's two ends, and on release
+the tab is the one a flick would have reached (0.1 s of the release speed
+added to where the capsule is), so a quick flick is enough; a bar whose owner
+did not take the choice sends the capsule back. Why: it is an object in the
+hand, and a tap is the other way. The scrim that lets rows fade out above the
+bar ends at `clearance`, where the triage chip begins: it is drawn above the
+board, and a taller one dimmed the chip from its bottom edge up.
+The cells never move and there is no press scale. Why: the first version
+cross-faded a capsule in each cell (two ghosts, nothing travelled) and an
+instant version read as nothing happening (owner: "not connect"); one capsule
+that travels is the one motion that says where the selection went. Only a
+rising count pops (`PopOnRise`). Tests find a tab with
+`FloatingTabBar.tabKey(label)` and the capsule with `FloatingTabBar.capsuleKey`.
 
 The shell (`HomeShell`) fades the incoming tab in over `Motion.fade` (120 ms,
 opacity only; none under reduced motion); the outgoing tab just goes. Tapping

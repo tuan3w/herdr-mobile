@@ -231,7 +231,7 @@ void main() {
       final set = KeeperInfo.fromJson({'id': 'abc234', 'turn_active': true, 'unseen_done': true, 'state': 'starting'});
       expect(set.turnActive, isTrue);
       expect(set.unseenDone, isTrue);
-      expect(set.state, KeeperState.running);
+      expect(set.state, KeeperState.starting);
       final back = KeeperInfo.fromJson(set.toJson());
       expect(back.turnActive, isTrue);
       expect(back.unseenDone, isTrue);

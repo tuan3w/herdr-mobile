@@ -218,6 +218,24 @@ void main() {
       expect(fake.kit.tab, AttachTab.host);
       expect(find.textContaining('Find in'), findsOneWidget, reason: 'it opened on the Host tab');
     });
+
+    testWidgets('a screenshot taken while the app was open is on the grid the next time the sheet opens', (tester) async {
+      final gallery = FakeGallery(count: 30);
+      final fake = FakeKit(gallery: gallery);
+      await _open(tester, _session(), fake);
+      await _tapClip(tester);
+      await _wait(tester);
+      expect(find.byKey(const ValueKey('30')), findsOneWidget, reason: 'the newest picture, first after the camera');
+      expect(find.byKey(const ValueKey('31')), findsNothing);
+
+      await tester.tapAt(const Offset(200, 40)); // the scrim above the sheet
+      await _wait(tester);
+      gallery.count = 31; // the screenshot
+      await _tapClip(tester);
+      await _wait(tester);
+      expect(find.byKey(const ValueKey('31')), findsOneWidget);
+      expect(find.byKey(const ValueKey('30')), findsOneWidget, reason: 'what was there stays');
+    });
   });
 
   group('gallery selection', () {

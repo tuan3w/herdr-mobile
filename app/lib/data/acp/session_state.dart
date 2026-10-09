@@ -244,7 +244,7 @@ class PendingPermission extends PendingRequest {
 }
 
 class PendingQuestion extends PendingRequest {
-  const PendingQuestion(super.id, this.request, {this.receivedAt, super.origin});
+  const PendingQuestion(super.id, this.request, {this.receivedAt, super.origin, this.draftKey});
 
   final ElicitationRequest request;
 
@@ -253,12 +253,21 @@ class PendingQuestion extends PendingRequest {
   /// from here.
   final DateTime? receivedAt;
 
+  /// What identifies the QUESTION across requests, when the same question
+  /// comes back under a new [id] (an observed question the terminal refused:
+  /// the request is re-issued, the person's answers must not be lost). Null:
+  /// the [id] is the question.
+  final Object? draftKey;
+
+  /// The key the unsent answers are kept under.
+  Object get draftId => draftKey ?? id;
+
   @override
   String? get sessionId => request.sessionId;
 
   @override
   PendingQuestion withOrigin(SubagentOrigin origin) =>
-      PendingQuestion(id, request, receivedAt: receivedAt, origin: origin);
+      PendingQuestion(id, request, receivedAt: receivedAt, origin: origin, draftKey: draftKey);
 }
 
 const _keep = Object();

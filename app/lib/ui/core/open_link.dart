@@ -1,7 +1,16 @@
 import 'package:url_launcher/url_launcher.dart';
 
-/// Opens [url] in the phone's browser, outside the app. Returns false when no
-/// browser could handle it.
+/// Opens [url] in a browser tab over the app (a Chrome Custom Tab: the phone's
+/// own browser, with its sign-ins, passkeys and password manager, drawn inside
+/// the app's task), so Back or the close button returns to where the person
+/// was. Returns false when nothing could show it.
+///
+/// Why not a WebView of our own: Google refuses sign-in inside embedded
+/// WebViews (`disallowed_useragent`), and Tailscale's login offers Google, so
+/// the sign-in link this exists for would fail in one. Why not the browser app
+/// (what this used to do): it opened as a separate task, and getting back to
+/// the app meant finding it in recents. Without a Custom Tabs browser the
+/// plugin falls back to its own bare WebView.
 ///
 /// Only `https` links are opened. The links this is used for come from the text
 /// a remote machine sends (a login banner), so anything else is refused here
@@ -25,7 +34,11 @@ Future<bool> openTappedLink(String url) async {
 
 Future<bool> _launch(Uri uri) async {
   try {
-    return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    return await launchUrl(
+      uri,
+      mode: LaunchMode.inAppBrowserView,
+      browserConfiguration: const BrowserConfiguration(showTitle: true),
+    );
   } on Object {
     return false;
   }

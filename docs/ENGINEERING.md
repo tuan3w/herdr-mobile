@@ -339,7 +339,16 @@ on zoom; hold only the open photo and its neighbours.
   HELD (`HoldToConfirm`), a tap only shows the hint. Standing grants ("don't
   ask again", "always allow") always need the hold. The semantic tap
   (TalkBack) keeps a two-step prime-then-send path. It is a hint with gaps,
-  never the only safeguard: the command stays visible.
+  never the only safeguard: the command stays visible. A menu with no command
+  block (pointer, radio, a question with nothing indented under it) takes the
+  row above its question as the subject only when that row is what flagged the
+  question: any other row may be scrollback (a tab title, a log line) and
+  would put noise on every card and change its digest as it scrolls. A block
+  that runs to the top of the 12-row window may go on above it, so it counts
+  as cut (`long command, check it all`). The reasons are not in the digest, so
+  the recheck before a send also refuses an answer that became gated since the
+  chip was drawn, and an observed prompt's dock gets the detector's reason as
+  `PermissionOption.gate`.
 - **Prompt fixtures are captured, not written.** `tool/capture-prompt.sh`
   saves a real screen under `app/test/fixtures/prompts/<agent>/`;
   `UPDATE_EXPECTED=1 flutter test test/prompt_corpus_test.dart` writes the

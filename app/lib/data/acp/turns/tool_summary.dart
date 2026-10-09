@@ -179,12 +179,16 @@ ToolSummary _execute(ToolCall call) {
 }
 
 /// The command a call runs: `rawInput.command` (a string, or an argv list),
-/// or `rawInput` when it is a bare string; null when the input has none.
+/// or `rawInput` when it is a bare string; null when the input has none. Raw,
+/// as the agent sent it: a `\r` or an ESC in it is part of what the shell
+/// reads, so it is not stripped here (the UI shows control characters, see
+/// `visibleText`); `stripTerminalEscapes` is for output, which a terminal
+/// would have drawn.
 String? _commandOf(ToolCall call) {
   final input = call.rawInput;
   Object? c = input is Map ? (input['command'] ?? input['cmd']) : input;
   if (c is List) c = c.map((e) => '$e').join(' ');
-  if (c is String && c.trim().isNotEmpty) return stripTerminalEscapes(c);
+  if (c is String && c.trim().isNotEmpty) return c;
   return null;
 }
 

@@ -76,7 +76,12 @@ AgentRoute? agentRouteById(String id) {
   return null;
 }
 
-enum KeeperState { running, exited }
+/// Where a keeper is in its life, as the host lists it.
+///
+/// [starting] is a keeper whose agent has not answered `initialize` yet (the
+/// host's list shows it early, and `start` only returns once it is over);
+/// [running] is one that has, and [exited] one whose agent ended.
+enum KeeperState { starting, running, exited }
 
 /// One keeper on a host: a small process that owns one agent process, so the
 /// agent outlives the phone's SSH connection (`docs/AGENT_SESSIONS.md`, "The
@@ -87,7 +92,7 @@ class KeeperInfo {
     required this.agent,
     required this.cwd,
     required this.state,
-    required this.startedAt,
+    this.startedAt,
     this.pid,
     this.exitCode,
     this.sessionId,
@@ -109,7 +114,9 @@ class KeeperInfo {
   final String agent;
   final String cwd;
   final KeeperState state;
-  final DateTime startedAt;
+
+  /// When the keeper started; null when the host did not say.
+  final DateTime? startedAt;
   final int? pid;
 
   /// Set once [state] is [KeeperState.exited].
@@ -152,31 +159,68 @@ class KeeperInfo {
   /// signing in again does not help; a token does.
   final bool loginInKeychain;
 
-  /// Tolerant: an unknown or missing field never throws. Times are epoch
-  /// milliseconds or ISO text.
+  /// What a host listed, row by row: a row that is no keeper (not an object,
+  /// no id) is left out, so one odd row never hides the others.
+  static List<KeeperInfo> listFromJson(Iterable<Object?> rows) => [
+    for (final row in rows) ?_tryParse(row),
+  ];
+
+  static KeeperInfo? _tryParse(Object? row) {
+    if (row is! Map) return null;
+    try {
+      return KeeperInfo.fromJson(Map<String, Object?>.from(row));
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null; // a key that is not text
+    }
+  }
+
+  /// Reads one keeper. Throws [FormatException] when [j] names none (no string
+  /// id: a key made of `null` would be a session that does not exist). A field
+  /// of another type than expected is as good as missing, never an error; an
+  /// unknown state reads as running. Times are epoch milliseconds or ISO text.
   factory KeeperInfo.fromJson(Map<String, Object?> j) {
-    DateTime? time(Object? v) => switch (v) {
-      final num n => DateTime.fromMillisecondsSinceEpoch(n.toInt()),
-      final String s => DateTime.tryParse(s),
+    final id = j['id'];
+    if (id is! String || id.isEmpty) throw FormatException('a keeper has no id', j);
+    String? text(String key) => j[key] is String ? j[key] as String : null;
+    int? whole(String key) => switch (j[key]) {
+      final num n when n.isFinite => n.toInt(),
       _ => null,
     };
+    DateTime? time(String key) {
+      try {
+        return switch (j[key]) {
+          final num n when n.isFinite => DateTime.fromMillisecondsSinceEpoch(n.toInt()),
+          final String s => DateTime.tryParse(s),
+          _ => null,
+        };
+      } on ArgumentError {
+        return null;
+      }
+    }
+
     return KeeperInfo(
-      id: '${j['id']}',
-      agent: '${j['agent'] ?? ''}',
-      cwd: '${j['cwd'] ?? ''}',
-      state: j['state'] == 'exited' ? KeeperState.exited : KeeperState.running,
-      startedAt: time(j['started_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
-      pid: (j['pid'] as num?)?.toInt(),
-      exitCode: (j['exit_code'] as num?)?.toInt(),
-      sessionId: j['session_id'] as String?,
-      title: j['title'] as String?,
-      pending: (j['pending'] as num?)?.toInt() ?? 0,
-      lastEventAt: time(j['last_event_at']),
-      exitReason: j['exit_reason'] as String?,
+      id: id,
+      agent: text('agent') ?? '',
+      cwd: text('cwd') ?? '',
+      state: switch (j['state']) {
+        'exited' => KeeperState.exited,
+        'starting' => KeeperState.starting,
+        _ => KeeperState.running,
+      },
+      startedAt: time('started_at'),
+      pid: whole('pid'),
+      exitCode: whole('exit_code'),
+      sessionId: text('session_id'),
+      title: text('title'),
+      pending: whole('pending') ?? 0,
+      lastEventAt: time('last_event_at'),
+      exitReason: text('exit_reason'),
       turnActive: j['turn_active'] == true,
       unseenDone: j['unseen_done'] == true,
-      paneId: j['pane_id'] is String ? j['pane_id'] as String : null,
-      clients: (j['clients'] as num?)?.toInt() ?? 0,
+      paneId: text('pane_id'),
+      clients: whole('clients') ?? 0,
       loginInKeychain: j['login'] == 'keychain',
     );
   }
@@ -186,7 +230,7 @@ class KeeperInfo {
     'agent': agent,
     'cwd': cwd,
     'state': state.name,
-    'started_at': startedAt.millisecondsSinceEpoch,
+    if (startedAt != null) 'started_at': startedAt!.millisecondsSinceEpoch,
     if (pid != null) 'pid': pid,
     if (exitCode != null) 'exit_code': exitCode,
     if (sessionId != null) 'session_id': sessionId,

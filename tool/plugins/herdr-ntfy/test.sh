@@ -80,6 +80,14 @@ rows = [r for r in rows if r["path"] == "/" + sys.argv[2]]
 row = rows[int(sys.argv[3])]
 key = sys.argv[4]
 print(row["body"] if key == "body" else row["h"].get(key, "<none>"), end="")' "$W/posts.jsonl" "$@"; }
+wait_for() { # topic count seconds
+  local i
+  for i in $(seq $(($3 * 10))); do
+    [ "$(count "$1")" -ge "$2" ] && return 0
+    sleep 0.1
+  done
+  return 1
+}
 
 event() { # pane status [agent-key=value ...] -> HERDR_PLUGIN_EVENT_JSON
   python3 - "$@" <<'PY'
@@ -116,7 +124,7 @@ hook() { # event-json [VAR=value ...]
   shift
   env -i PATH="$PATH" HOME="$W/home" \
     HERDR_PLUGIN_CONFIG_DIR="$CFG" HERDR_PLUGIN_STATE_DIR="$STATE" \
-    HERDR_BIN_PATH="$W/bin/herdr" FAKE_SCREEN="$W/screen" \
+    HERDR_BIN_PATH="$W/bin/herdr" FAKE_SCREEN="$W/screen" FAKE_LIVE="$W/live" \
     HERDR_PLUGIN_EVENT=pane.agent_status_changed HERDR_PLUGIN_EVENT_JSON="$json" \
     HERDR_PLUGIN_CONTEXT_JSON='{"workspace_label":"myproj","tab_label":"1","focused_pane_agent":"claude"}' \
     "$@" bash "$here/notify.sh"
@@ -127,12 +135,22 @@ logtext() { cat "$STATE/ntfy.log" 2>/dev/null; }
 mkdir -p "$W/bin"
 cat >"$W/bin/herdr" <<'SH'
 #!/bin/sh
-# stands in for `herdr pane read`
+# stands in for `herdr pane read`, and for `herdr pane get` when $FAKE_LIVE/<pane>
+# holds the status herdr should report ("gone": a pane herdr does not know)
 [ -z "${FAKE_HANG:-}" ] || sleep 20
 [ "$1 $2" = "pane read" ] && cat "$FAKE_SCREEN" 2>/dev/null
+if [ "$1 $2" = "pane get" ] && [ -r "$FAKE_LIVE/$3" ]; then
+  live=$(cat "$FAKE_LIVE/$3")
+  if [ "$live" = gone ]; then
+    echo '{"error":{"code":"pane_not_found","message":"pane not found"},"id":"cli:pane:get"}'
+  else
+    printf '{"id":"cli:pane:get","result":{"pane":{"agent_status":"%s","pane_id":"%s"}}}\n' "$live" "$3"
+  fi
+fi
 exit 0
 SH
 chmod +x "$W/bin/herdr"
+mkdir -p "$W/live"
 : >"$W/screen"
 
 # --- part 1: the script ------------------------------------------------------
@@ -150,14 +168,55 @@ check "body has project and machine" eq "$(field $TOPIC 0 body)" $'myproj\non Te
 check "no auth header without a token" eq "$(field $TOPIC 0 Authorization)" '<none>'
 
 echo "== dedupe and cooldown"
+new_case 'NOTIFY_COOLDOWN=3'
+send 'wD:p1' blocked
+check "first block alerts" eq "$(count $TOPIC)" 1
 send 'wD:p1' blocked
 check "same pane, same state: no repeat" eq "$(count $TOPIC)" 1
 send 'wD:p1' working
 send 'wD:p1' blocked
-check "blocked again inside the cooldown: no repeat" eq "$(count $TOPIC)" 1
+check "blocked again inside the cooldown: held back, not lost" eq "$(count $TOPIC)" 1
+check "the hold-back and its re-check are logged" has "$(logtext)" 're-check wD:p1 blocked'
 send 'wD:p2' blocked
 check "another pane is independent" eq "$(count $TOPIC)" 2
 check "second pane in the link" eq "$(field $TOPIC 1 Click)" 'herdr://agent/Test%20Box/wD%3Ap2'
+check "the held-back alert goes out when the cooldown ends, the pane being still blocked" wait_for $TOPIC 3 10
+check "it is for the pane that was held back" eq "$(field $TOPIC 2 Click)" 'herdr://agent/Test%20Box/wD%3Ap1'
+sleep 1
+check "and goes out once" eq "$(count $TOPIC)" 3
+
+# Several held-back cases at once, so the cooldown is waited for only once.
+new_case 'NOTIFY_COOLDOWN=4'
+MOVED=$TOPIC
+send 'wD:p1' blocked
+send 'wD:p1' working
+send 'wD:p1' blocked
+send 'wD:p1' working
+new_case 'NOTIFY_COOLDOWN=4'
+MISSED=$TOPIC
+printf 'working' >"$W/live/wD:p3"
+send 'wD:p3' blocked
+send 'wD:p3' working
+send 'wD:p3' blocked
+new_case 'NOTIFY_COOLDOWN=4'
+GONE=$TOPIC
+printf 'gone' >"$W/live/wD:p4"
+send 'wD:p4' blocked
+send 'wD:p4' working
+send 'wD:p4' blocked
+new_case 'NOTIFY_COOLDOWN=4'
+BURST=$TOPIC
+for _ in 1 2 3; do
+  send 'wD:p1' blocked
+  send 'wD:p1' working
+done
+send 'wD:p1' blocked
+check "a burst holding back the same alert starts one re-check" eq "$(logtext | grep -c 're-check wD:p1 blocked')" 1
+sleep 6
+check "a pane that went back to working is not alerted late" eq "$(count $MOVED)" 1
+check "a pane herdr says is not blocked is not alerted late" eq "$(count $MISSED)" 1
+check "a pane herdr no longer knows is not alerted late" eq "$(count $GONE)" 1
+check "a burst is alerted late once" eq "$(count $BURST)" 2
 new_case 'NOTIFY_COOLDOWN=0'
 send 'wD:p1' blocked
 send 'wD:p1' working
@@ -405,13 +464,14 @@ check "the next event for the same state delivers" eq "$(count $TOPIC)" 1
 send 'wD:p1' blocked
 check "and then it is deduped as before" eq "$(count $TOPIC)" 1
 
-new_case
+new_case 'NOTIFY_COOLDOWN=3'
 touch "$W/posts.jsonl.fail"
 send 'wD:p1' blocked
 rm -f "$W/posts.jsonl.fail" "$W/posts.jsonl.failed"
 send 'wD:p1' blocked
 check "after a failure the cooldown still holds (a down server is not hammered)" eq "$(count $TOPIC)" 0
 check "cooldown is the stated reason" has "$(logtext)" 'cooldown'
+check "the failed alert is sent when the cooldown ends, with no further event" wait_for $TOPIC 1 10
 
 new_case 'NOTIFY_COOLDOWN=0'
 touch "$W/posts.jsonl.fail"
@@ -514,14 +574,6 @@ iso() { # run a command with an environment that cannot reach any other herdr
     HOME="$W/e2e/home" XDG_CONFIG_HOME="$W/e2e/cfg" XDG_RUNTIME_DIR="$W/e2e/run" \
     HERDR_SOCKET_PATH="$W/e2e/h.sock" SHELL=/bin/sh "$@"
 }
-wait_for() { # topic count seconds
-  local i
-  for i in $(seq $(($3 * 10))); do
-    [ "$(count "$1")" -ge "$2" ] && return 0
-    sleep 0.1
-  done
-  return 1
-}
 pane_of() { python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])'; }
 
 echo "== isolated herdr"
@@ -539,7 +591,7 @@ else
   check "no manifest warnings" lacks "$link" '"warnings"'
   cdir=$(iso herdr plugin config-dir herdr-mobile.ntfy)
   check "config dir is inside the sandbox" has "$cdir" "$W/e2e/cfg"
-  printf 'NTFY_URL=http://127.0.0.1:%s\nNTFY_TOPIC=e2e\nMACHINE=Test Box\nNOTIFY_DONE=1\n' "$PORT" >"$cdir/.env"
+  printf 'NTFY_URL=http://127.0.0.1:%s\nNTFY_TOPIC=e2e\nMACHINE=Test Box\nNOTIFY_DONE=1\nNOTIFY_COOLDOWN=5\n' "$PORT" >"$cdir/.env"
 
   p1=$(iso herdr workspace create --label myproj --no-focus | pane_of)
   iso herdr pane run "$p1" "echo 'Allow edit of foo.py?'" >/dev/null
@@ -556,13 +608,19 @@ else
   iso herdr pane report-agent "$p1" --source t --agent claude --state blocked >/dev/null
   sleep 1
   check "e2e: repeated blocked report does not repeat" eq "$(count e2e)" 1
+  iso herdr pane report-agent "$p1" --source t --agent claude --state working >/dev/null
+  iso herdr pane report-agent "$p1" --source t --agent claude --state blocked >/dev/null
+  sleep 1
+  check "e2e: blocked again inside the cooldown is held back" eq "$(count e2e)" 1
+  check "e2e: it goes out when the cooldown ends" wait_for e2e 2 12
+  check "e2e: for the same pane" eq "$(field e2e 1 Click)" "herdr://agent/Test%20Box/${p1//:/%3A}"
 
   p2=$(iso herdr workspace create --label second --no-focus | pane_of)
   iso herdr pane report-agent "$p2" --source t --agent codex --state working >/dev/null
   iso herdr pane report-agent "$p2" --source t --agent codex --state idle >/dev/null
-  check "finished (done) reaches the listener" wait_for e2e 2 6
-  check "e2e done title" eq "$(field e2e 1 Title)" "Codex finished"
-  check "e2e done link" eq "$(field e2e 1 Click)" "herdr://agent/Test%20Box/${p2//:/%3A}"
+  check "finished (done) reaches the listener" wait_for e2e 3 6
+  check "e2e done title" eq "$(field e2e 2 Title)" "Codex finished"
+  check "e2e done link" eq "$(field e2e 2 Click)" "herdr://agent/Test%20Box/${p2//:/%3A}"
   logs=$(iso herdr plugin log list --plugin herdr-mobile.ntfy)
   check "herdr recorded the hook runs as succeeded" has "$logs" '"status":"succeeded"'
   check "no hook failed" lacks "$logs" '"status":"failed"'

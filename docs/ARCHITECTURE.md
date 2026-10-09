@@ -216,9 +216,13 @@ root.
 ### Commands over SSH exec channels
 
 Every command the app sends is a fixed script, base64-encoded and run as
-`sh -c "$(echo <base64> | { base64 -d || base64 -D; })"`. That way any login
-shell (fish, csh) passes it through unchanged, and stdin and stdout stay free
-for data (`bridge_command.dart:330-333`, `keeper_command.dart:100-105`).
+`sh -c 'eval "$(echo <base64> | { base64 -d 2>/dev/null || base64 -D; })"'`,
+the whole of it one single-quoted word. That way any login shell (bash, zsh,
+fish, csh) sees one literal argument and hands it to `sh` unchanged, and stdin
+and stdout stay free for data (`bridge_command.dart`, `keeper_command.dart`).
+Why single quotes: with the old double-quoted form the login shell parsed the
+`$( )` and the `{ }` itself before `sh` ran, and fish exited 127 and csh/tcsh
+exited 1; `login_shell_commands_test.dart` runs every installed shell.
 
 | What | When | What it runs | Source |
 | --- | --- | --- | --- |
@@ -421,8 +425,11 @@ The only socket the app opens is the SSH connection
 
 Other ways traffic can leave the phone:
 
-- **Links you tap** are handed to the phone's browser through `url_launcher`
-  (`app/lib/ui/core/open_link.dart`). A link from a login banner (Tailscale SSH
+- **Links you tap** open in a browser tab over the app (a Chrome Custom Tab,
+  `LaunchMode.inAppBrowserView`, through `url_launcher`;
+  `app/lib/ui/core/open_link.dart`), so Back returns to the app. The page is
+  the phone's browser, not a WebView of ours: Google refuses sign-in inside
+  embedded WebViews and Tailscale's login offers Google. A link from a login banner (Tailscale SSH
   approval) opens only if it is `https`. A link tapped in terminal output may
   be `http` or `https`, and the sheet shows the whole address first.
   Addresses that point at the host itself (`localhost`, loopback addresses,
@@ -462,6 +469,13 @@ dartssh2 reports the host key as an OpenSSH-style `SHA256:` fingerprint.
 - **Any later mismatch.** The handshake is refused and the error is fatal
   ("Host key changed since it was first trusted"). The machine stops retrying
   and shows `attention` (`ssh_transport.dart:17-21`, `247-249`).
+- **A replaced worker.** The SSH worker isolate is rebuilt from the machine's
+  current stored profile, so a pin saved after the connection was built still
+  holds when the worker dies and is replaced, and `pinHostKey` never overwrites
+  an existing pin with a different one (`transport_factory.dart`,
+  `machine_repository.dart`, `host_key_pin_test.dart`). Why: the worker used to
+  get the profile captured when the connection was built, so a machine saved
+  without a test trusted its host again on first use.
 - **Changing the pin.** Changing the host or port in the form drops the pin
   (`machine_form_view_model.dart:242-247`). Otherwise, remove the machine and
   add it again.

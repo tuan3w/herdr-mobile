@@ -117,6 +117,10 @@ class QuickReplyController extends ChangeNotifier {
       if (now == null || index < 0 || index >= now.replies.length || promptDigest(now) != promptDigest(asked)) {
         throw _Changed(now, index);
       }
+      // The digest does not cover the reasons (a cut command, a risky word
+      // the question did not have): an answer that became a gated one since the
+      // chip was drawn was not confirmed as one, and is not sent on that tap.
+      if (now.replies[index].needsConfirm && !reply.needsConfirm) throw _Changed(now, index);
       await machine.api.sendKeys(paneId, now.replies[index].keys);
     }, reply.label, reply: reply);
   }

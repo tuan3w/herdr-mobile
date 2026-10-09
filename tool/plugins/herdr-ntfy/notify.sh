@@ -5,6 +5,11 @@
 # herdr runs this once per event with HERDR_PLUGIN_EVENT_JSON set. The decision
 # (dedupe, cooldown, message) lives in notify.py; this script loads the config,
 # sends the request with curl, and logs failures. It always exits 0.
+#
+# With HERDR_NTFY_RECHECK_AFTER=<seconds> (set by notify.py, never by herdr) this
+# is the one detached re-check of an alert the cooldown held back: it sleeps
+# that long, then runs the same steps, and notify.py alerts only if the pane
+# still is in that state.
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 0
 config_dir=${HERDR_PLUGIN_CONFIG_DIR:-$here}
@@ -12,6 +17,11 @@ config_dir=${HERDR_PLUGIN_CONFIG_DIR:-$here}
 if ! command -v python3 >/dev/null 2>&1; then
   echo "herdr-ntfy: python3 not found" >&2
   exit 0
+fi
+
+if [ -n "${HERDR_NTFY_RECHECK_AFTER:-}" ]; then
+  case $HERDR_NTFY_RECHECK_AFTER in *[!0-9]*) exit 0 ;; esac
+  sleep "$HERDR_NTFY_RECHECK_AFTER" || exit 0
 fi
 
 log() { python3 "$here/notify.py" log "$*" 2>/dev/null || echo "herdr-ntfy: $*" >&2; }

@@ -71,7 +71,9 @@ void main() {
 
     final tiles = find.byType(PhotoTile).evaluate().length;
 
-    // Close and open again: the library, the page and the thumbnails stay.
+    // Close and open again: the pictures and thumbnails stay on screen at once,
+    // and the library is checked for anything new (its first page, no more).
+    final queriesBeforeReopen = gallery.pageQueries;
     await tester.tapAt(const Offset(200, 40));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -141,7 +143,11 @@ attach grid, 5,000 pictures, desktop test binding (debug JIT, no raster):
   thumbnail cache                        ${fake.kit.thumbs.length} entries, ${(fake.kit.thumbs.bytes / 1024).round()} KB
   plugin thumbnail calls / page queries  ${gallery.thumbCalls} / ${gallery.pageQueries}''');
 
-    expect(queriesAfterReopen, 1, reason: 'the second opening asks the library for nothing');
+    expect(
+      queriesAfterReopen - queriesBeforeReopen,
+      lessThanOrEqualTo(2),
+      reason: 'a second opening re-reads the first page (finger down, tab shown) and never the library',
+    );
     expect(maxTiles, lessThan(70), reason: 'a few screenfuls of tiles, whatever the library holds');
     expect(gridBuilds, 0, reason: 'the grid itself is never rebuilt by scrolling');
     expect(selectionGridBuilds, 0);

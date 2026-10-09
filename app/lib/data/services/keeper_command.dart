@@ -98,11 +98,15 @@ for o in os.listdir(d):
 print('{"ok":true}')
 ''';
 
-/// `sh -c` over base64 text, so any login shell (fish, csh) passes it intact;
-/// stdin and stdout stay the data path.
+/// `sh -c '<decode and eval>'` over base64 text. The login shell (fish, csh and
+/// tcsh included) sees ONE single-quoted word and nothing else: no `$( )`, no
+/// `{ }`, no `||`, which fish and csh parse differently or refuse (fish exits
+/// 127 on `{ }`, csh 1). The base64 text has only `A-Za-z0-9+/=`, so it can
+/// neither close the quote nor be touched by history expansion. `sh` decodes
+/// and `eval`s the script; stdin and stdout stay the data path.
 String _wrap(String script) {
   final b64 = base64.encode(utf8.encode(script));
-  return 'sh -c "\$(echo $b64 | { base64 -d 2>/dev/null || base64 -D; })"';
+  return "sh -c 'eval \"\$(echo $b64 | { base64 -d 2>/dev/null || base64 -D; })\"'";
 }
 
 const _needPython = '''

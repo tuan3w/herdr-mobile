@@ -188,16 +188,19 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
               ),
             ],
           ),
-          // Rows fade out into the page above the tab bar and are gone behind
-          // it and the system navigation: the scrim is solid under the pill
-          // and the gesture inset, so no text shows beside or below the pill.
+          // Rows fade out into the page just above the tab bar and are gone
+          // behind it and the system navigation: the scrim is solid under the
+          // pill and the gesture inset, so no text shows beside or below the
+          // pill. It ends where the triage chip begins (the chip sits at
+          // `clearance`): the scrim is drawn above the board, and a taller one
+          // dimmed the chip, the one loud shortcut, from its bottom edge up.
           // Picking agents puts the board's own action bar in the tab bar's
           // place.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: FloatingTabBar.clearance(context) + 32,
+            height: FloatingTabBar.clearance(context),
             child: ValueListenableBuilder<bool>(
               valueListenable: _selecting,
               builder: (context, selecting, child) => selecting ? const SizedBox.shrink() : child!,
@@ -208,7 +211,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [ds.bg.withValues(alpha: 0), ds.bg, ds.bg],
-                      stops: const [0, 0.26, 1],
+                      stops: const [0, 0.5, 1],
                     ),
                   ),
                 ),

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
@@ -29,9 +30,88 @@ import 'data/services/ssh_agent_host.dart';
 import 'data/services/ssh_log_source.dart';
 import 'data/services/transcript_cache.dart';
 import 'ui/core/frame_flush.dart';
-import 'ui/core/tokens.dart' show Ds;
 import 'ui/features/agent_session/visible_text.dart' show visibleText;
 import 'data/services/system_clipboard.dart';
+import 'ui/core/controls.dart';
+import 'ui/core/status_panel.dart';
+import 'ui/core/theme.dart';
+
+/// Runs the app: boots it and shows it with [show]. When booting throws (a
+/// store that cannot be read at all, a platform plugin that fails) the person
+/// gets [BootFailedApp], which says so and boots again on Retry, instead of
+/// the blank window a thrown error leaves behind. `main` calls it; the
+/// arguments are for tests.
+Future<void> launchApp({
+  Future<Widget> Function() boot = bootApp,
+  void Function(Widget app) show = runApp,
+}) async {
+  try {
+    show(await boot());
+  } on Object catch (e, s) {
+    debugPrint('herdr: could not start: $e\n$s');
+    show(BootFailedApp(error: e, retry: () => launchApp(boot: boot, show: show)));
+  }
+}
+
+/// What the person sees when the app could not start: what failed, and Retry.
+/// Deliberately independent of every store (the theme is the default one: the
+/// saved choice may be what failed to load).
+class BootFailedApp extends StatefulWidget {
+  const BootFailedApp({super.key, required this.error, required this.retry});
+
+  final Object error;
+
+  /// Boots again. When it works, the app replaces this screen.
+  final Future<void> Function() retry;
+
+  @override
+  State<BootFailedApp> createState() => _BootFailedAppState();
+}
+
+class _BootFailedAppState extends State<BootFailedApp> {
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    setState(() => _retrying = true);
+    try {
+      await widget.retry();
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        home: Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(Gap.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Builder(
+                      builder: (context) => StatusPanel(
+                        color: context.ds.danger,
+                        title: 'Could not start',
+                        message: '${widget.error}',
+                        messageMaxLines: 6,
+                      ),
+                    ),
+                    const SizedBox(height: Gap.md),
+                    AppButton(label: 'Retry', onPressed: _retry, loading: _retrying),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+}
 
 /// How the app sits under the system bars. `main` and the keyboard benchmark
 /// both call it, so the benchmark measures the window the app really has.

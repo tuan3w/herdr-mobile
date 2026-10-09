@@ -8,9 +8,8 @@ import '../../decision/plain_text.dart' show stripAnsi;
 
 /// [raw] without colour and cursor sequences ([stripAnsi]), a line that was
 /// rewritten with a carriage return (a progress bar) kept as its last version.
-/// Same result as `terminalText` in `ui/features/agent_session/visible_text.dart`
-/// before it makes hidden characters visible (a layer this file must not
-/// import).
+/// The one stripper: `terminalText` in `ui/features/agent_session/visible_text.dart`
+/// adds only the layer that makes hidden characters visible.
 String stripTerminalEscapes(String raw) {
   var text = stripAnsi(raw);
   if (text.contains('\r')) {

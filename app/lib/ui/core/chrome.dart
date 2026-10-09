@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'controls.dart';
@@ -288,15 +290,30 @@ class TabSpec {
   final String badgeLabel;
 }
 
-/// Floating pill tab bar. Content scrolls under it, so lists must reserve
-/// [clearance] at the bottom. Opaque-ish surface with a hairline and one soft
-/// shadow: no backdrop blur, which costs a full-screen blur pass per frame on
-/// mid-range GPUs.
+/// Floating pill tab bar: three equal cells, an icon over a name in each, the
+/// selected one on a soft capsule. Content scrolls under it, so lists must
+/// reserve [clearance] at the bottom. A hairline and no shadow (a shadow
+/// rendered as a hard grey band under the pill, and the app is flat), and no
+/// backdrop blur, which costs a full-screen blur pass per frame on mid-range
+/// GPUs.
 ///
-/// Only the selected tab shows its label; the others are icon-only (48 x 48),
-/// so three or four tabs still fit a 320 dp phone. Every tab keeps its full
-/// name for screen readers, and [tabKey] finds one by label in tests.
-class FloatingTabBar extends StatelessWidget {
+/// Slim on purpose: 56 dp tall, at most [_maxWidth] wide and centred, so it
+/// sits in the thumb's reach without spreading edge to edge over the board it
+/// serves (the first version was 64 dp and the full width, and read as big).
+///
+/// Every tab is named and every cell is the same width, so nothing moves when a
+/// tab is chosen (a second tap from memory lands where the first did) and a
+/// count badge, which rides the icon's corner, never meets a label. Three
+/// cells fit a 320 dp phone: the text is clamped at 1.15x, and a cell holds
+/// "Machines" at that. Every tab keeps its full name for screen readers, and
+/// [tabKey] finds one by label in tests.
+///
+/// One number, the capsule's place in tab units, drives the capsule and every
+/// cell's colour, so the text warms as the capsule arrives under it and cools
+/// as it leaves, in step. Two clocks (a position curve and a separate linear
+/// colour tween) drifted apart, and the label weight, which cannot be
+/// interpolated, snapped on its own: it no longer changes.
+class FloatingTabBar extends StatefulWidget {
   const FloatingTabBar({
     super.key,
     required this.tabs,
@@ -308,59 +325,198 @@ class FloatingTabBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onChanged;
 
-  /// Key of the tab labelled [label]. Its text is only in the tree while the
-  /// tab is selected, so tests and callers find tabs by this key.
+  /// Key of the tab labelled [label], for tests and callers.
   static Key tabKey(String label) => ValueKey('tab:$label');
 
+  /// Key of the selection capsule, for tests.
+  static const capsuleKey = ValueKey('tab:capsule');
+
   static const _height = 56.0;
-  static const _margin = 12.0;
+  static const _pad = 4.0;
+  static const _cell = _height - _pad * 2;
+  static const _margin = 8.0;
+  static const _side = 12.0;
+  static const _maxWidth = 312.0;
 
   /// Space a scrolling list should keep free at its bottom.
   static double clearance(BuildContext context) =>
       _height + _margin * 2 + MediaQuery.paddingOf(context).bottom;
 
   @override
-  Widget build(BuildContext context) => ToastShelf(lift: clearance(context), child: _bar(context));
+  State<FloatingTabBar> createState() => _FloatingTabBarState();
+}
+
+class _FloatingTabBarState extends State<FloatingTabBar> with SingleTickerProviderStateMixin {
+  // The capsule's place in tab units (0 is the first cell). It stops when it
+  // arrives; nothing runs at rest.
+  late final AnimationController _place = AnimationController.unbounded(
+    vsync: this,
+    value: widget.index.toDouble(),
+  );
+
+  final _cellsKey = GlobalKey();
+
+  // A finger holds the capsule: it follows 1:1 and the glide stays out of the way.
+  bool _scrubbing = false;
+  int _over = 0;
+
+  /// Seconds of the flick's speed that carry on after the finger lifts, to
+  /// choose the tab the capsule would have coasted to (Apple's projection).
+  static const _momentum = 0.1;
+
+  @override
+  void didUpdateWidget(FloatingTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index == widget.index || _scrubbing) return;
+    _glideTo(widget.index);
+  }
+
+  // From where it is now, never from the old tab: a second tap mid-glide
+  // carries on from the live place. Under reduced motion it is there at once.
+  void _glideTo(int i) {
+    if (Motion.reduced(context)) {
+      _place.value = i.toDouble();
+    } else {
+      unawaited(_place.animateTo(i.toDouble(), duration: Motion.standard, curve: Motion.easeOut));
+    }
+  }
+
+  double get _cellWidth => (_cellsKey.currentContext?.size?.width ?? 0) / widget.tabs.length;
+
+  void _scrubStart(DragStartDetails _) {
+    _scrubbing = true;
+    _place.stop();
+    _over = _place.value.round();
+  }
+
+  void _scrubUpdate(DragUpdateDetails d) {
+    final cell = _cellWidth;
+    if (cell <= 0) return;
+    final last = widget.tabs.length - 1;
+    // The capsule lives inside the pill: it stops at the first and last cell.
+    final next = (_place.value + d.delta.dx / cell).clamp(0.0, last.toDouble());
+    _place.value = next;
+    final over = next.round().clamp(0, last);
+    if (over != _over) {
+      _over = over;
+      Haptics.tick();
+    }
+  }
+
+  // Chosen where a flick would have stopped, so a quick flick is enough.
+  void _scrubEnd(double velocity) {
+    if (!_scrubbing) return;
+    _scrubbing = false;
+    final cell = _cellWidth;
+    final last = widget.tabs.length - 1;
+    final projected = _place.value + (cell > 0 ? velocity * _momentum / cell : 0);
+    final target = projected.round().clamp(0, last);
+    if (target != widget.index) {
+      widget.onChanged(target);
+      // The caller owns the selection: if it did not take it, the capsule goes back.
+      WidgetsBinding.instance
+        ..addPostFrameCallback((_) {
+          if (mounted && !_scrubbing && widget.index != target) _glideTo(widget.index);
+        })
+        ..ensureVisualUpdate();
+    } else {
+      _glideTo(widget.index);
+    }
+  }
+
+  @override
+  void dispose() {
+    _place.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      ToastShelf(lift: FloatingTabBar.clearance(context), child: _bar(context));
 
   Widget _bar(BuildContext context) {
     final ds = context.ds;
-    final bottom = MediaQuery.paddingOf(context).bottom;
+    final inset = MediaQuery.paddingOf(context);
+    final n = widget.tabs.length;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.15,
       child: Padding(
-        padding: EdgeInsets.only(bottom: bottom + _margin),
+        padding: EdgeInsets.fromLTRB(
+          inset.left + FloatingTabBar._side,
+          0,
+          inset.right + FloatingTabBar._side,
+          inset.bottom + FloatingTabBar._margin,
+        ),
         child: Align(
           alignment: Alignment.bottomCenter,
           heightFactor: 1,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: ds.surface.withValues(alpha: 0.97),
-              borderRadius: BorderRadius.circular(_height / 2),
-              border: Border.all(color: ds.hairline),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: ds.isDark ? 0.45 : 0.07,
-                  ),
-                  blurRadius: 28,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final (i, tab) in tabs.indexed)
-                    _TabItem(
-                      key: tabKey(tab.label),
-                      tab: tab,
-                      selected: i == index,
-                      onTap: () => onChanged(i),
-                    ),
-                ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: FloatingTabBar._maxWidth),
+            child: GestureDetector(
+              // The capsule is an object in the hand: drag it along the bar and
+              // it follows the finger; the tab changes where it is let go. A tap
+              // on a cell does the same without it.
+              onHorizontalDragStart: _scrubStart,
+              onHorizontalDragUpdate: _scrubUpdate,
+              onHorizontalDragEnd: (d) => _scrubEnd(d.velocity.pixelsPerSecond.dx),
+              onHorizontalDragCancel: () => _scrubEnd(0),
+              child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: ds.surface,
+                borderRadius: BorderRadius.circular(FloatingTabBar._height / 2),
+                border: Border.all(color: ds.hairline),
               ),
+              child: Padding(
+                padding: const EdgeInsets.all(FloatingTabBar._pad),
+                child: SizedBox(
+                  key: _cellsKey,
+                  height: FloatingTabBar._cell,
+                  child: AnimatedBuilder(
+                    animation: _place,
+                    builder: (context, _) {
+                      final at = _place.value;
+                      return Stack(
+                        children: [
+                          // One capsule under the cells that travels from where
+                          // it was to where it is, so the eye follows it; the
+                          // cells themselves never move. [ds.fill] on the pill's
+                          // surface was about 1.1:1 and vanished in dark.
+                          Align(
+                            alignment: Alignment(n < 2 ? 0 : -1 + 2 * at / (n - 1), 0),
+                            child: FractionallySizedBox(
+                              key: FloatingTabBar.capsuleKey,
+                              widthFactor: 1 / n,
+                              heightFactor: 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: ds.fillPressed,
+                                  borderRadius: BorderRadius.circular(FloatingTabBar._cell / 2),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              for (final (i, tab) in widget.tabs.indexed)
+                                Expanded(
+                                  child: _TabItem(
+                                    key: FloatingTabBar.tabKey(tab.label),
+                                    tab: tab,
+                                    selected: i == widget.index,
+                                    // 1 with the capsule centred under this cell, 0 a cell away.
+                                    near: (1 - (at - i).abs()).clamp(0.0, 1.0).toDouble(),
+                                    onTap: () => widget.onChanged(i),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
             ),
           ),
         ),
@@ -374,106 +530,82 @@ class _TabItem extends StatelessWidget {
     super.key,
     required this.tab,
     required this.selected,
+    required this.near,
     required this.onTap,
   });
 
   final TabSpec tab;
   final bool selected;
+  final double near;
   final VoidCallback onTap;
+
+  static const _icon = 22.0;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
     final badge = tab.badge;
-    final reduced = Motion.reduced(context);
     return PressBuilder(
       onTap: onTap,
       haptic: !selected,
-      scale: 0.95,
       selected: selected,
       semanticLabel: badge > 0 ? '${tab.label}, $badge ${tab.badgeLabel}' : tab.label,
-      builder: (context, pressed) => AnimatedContainer(
-        duration: Motion.pressing(pressed),
-        curve: Motion.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        height: 48,
-        decoration: BoxDecoration(
-          color: selected ? ds.fill : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: TweenAnimationBuilder<Color?>(
-          tween: ColorTween(end: selected ? ds.text : ds.textSecondary),
-          duration: Motion.standard,
-          builder: (context, color, _) => Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(tab.icon, size: 20, color: color),
-                  if (badge > 0)
-                    Positioned(
-                      left: 11,
-                      top: -8,
-                      child: PopOnRise(
-                        value: badge,
-                        child: Container(
-                        constraints: const BoxConstraints(minWidth: 17),
-                        height: 17,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        decoration: BoxDecoration(
-                          color: ds.blocked,
-                          borderRadius: BorderRadius.circular(8.5),
-                          border: Border.all(color: ds.surface, width: 1.5),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          badge > 99 ? '99+' : '$badge',
-                          style: TextStyle(
-                            fontFamily: Type.family,
-                            fontSize: 11,
-                            height: 1,
-                            fontWeight: FontWeight.w700,
-                            fontFeatures: Type.tabular,
-                            color: ds.onStatus,
-                          ),
-                        ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              // The label grows in from the icon (width and colour alpha) and
-              // is not built at all once it has shrunk to nothing.
-              TweenAnimationBuilder<double>(
-                tween: Tween(end: selected ? 1 : 0),
-                duration: reduced ? Duration.zero : Motion.standard,
-                curve: Motion.easeOut,
-                builder: (context, t, _) => t == 0
-                    ? const SizedBox.shrink()
-                    : ClipRect(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: t,
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 10),
+      builder: (context, pressed) => SizedBox(
+        height: FloatingTabBar._cell,
+        // The press warms the text at once; the capsule's place does the rest.
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: pressed ? 1 : 0),
+          duration: Motion.pressing(pressed),
+          curve: Motion.easeOut,
+          builder: (context, press, _) {
+            final color = Color.lerp(ds.textSecondary, ds.text, near > press ? near : press);
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(tab.icon, size: _icon, color: color),
+                    if (badge > 0)
+                      Positioned(
+                        left: _icon - 8,
+                        top: -7,
+                        child: PopOnRise(
+                          value: badge,
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 18),
+                            height: 18,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: ds.blocked,
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(color: ds.surface, width: 1.5),
+                            ),
+                            alignment: Alignment.center,
                             child: Text(
-                              tab.label,
-                              maxLines: 1,
-                              softWrap: false,
-                              style: Type.label.copyWith(
-                                color: (color ?? ds.text).withValues(alpha: t),
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13.5,
+                              badge > 99 ? '99+' : '$badge',
+                              style: Type.caption.copyWith(
+                                height: 1,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: Type.tabular,
+                                color: ds.onStatus,
                               ),
                             ),
                           ),
                         ),
                       ),
-              ),
-            ],
-          ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  tab.label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: Type.label.copyWith(color: color, fontWeight: FontWeight.w500),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

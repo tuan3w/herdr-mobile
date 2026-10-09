@@ -21,6 +21,26 @@ const hostKeyChangedMessage =
     'Host key changed since it was first trusted. Re-add the machine if the '
     'change is expected.';
 
+/// What to do with the host key a machine presented.
+enum HostKeyVerdict {
+  /// Nothing is pinned yet: trust this key and remember it (the one moment a
+  /// key is taken on trust).
+  trustFirstUse,
+
+  /// The pinned key. Go on.
+  matches,
+
+  /// Not the pinned key: a hard stop, never a re-pin. Only the person
+  /// re-adding the machine accepts a new key.
+  changed,
+}
+
+/// Judges the host key [seen] against the [pinned] one (null: none yet).
+HostKeyVerdict judgeHostKey({required String? pinned, required String seen}) {
+  if (pinned == null) return HostKeyVerdict.trustFirstUse;
+  return pinned == seen ? HostKeyVerdict.matches : HostKeyVerdict.changed;
+}
+
 /// The server hung up after showing a sign-in link, so the link was refused,
 /// expired, or the connection dropped while waiting. Fatal: each retry would
 /// issue a new link and another prompt.
@@ -272,14 +292,17 @@ class SshTransport implements HerdrTransport {
         },
         onVerifyHostKey: (type, fingerprint) {
           final seen = utf8.decode(fingerprint);
-          final pinned = _pinned;
-          if (pinned == null) {
-            _pinned = seen;
-            onPinHostKey(seen);
-            return true;
+          switch (judgeHostKey(pinned: _pinned, seen: seen)) {
+            case HostKeyVerdict.trustFirstUse:
+              _pinned = seen;
+              onPinHostKey(seen);
+              return true;
+            case HostKeyVerdict.matches:
+              return true;
+            case HostKeyVerdict.changed:
+              hostKeyMismatch = true;
+              return false;
           }
-          hostKeyMismatch = pinned != seen;
-          return !hostKeyMismatch;
         },
       );
       client.authenticated.then(

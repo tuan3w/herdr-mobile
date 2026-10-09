@@ -33,6 +33,18 @@ class MachineProfile {
         enabled: j['enabled'] != false,
       );
 
+  /// [fromJson] for a stored row that may be anything: null when [row] is not
+  /// a machine this app can read (not an object, a field of another type, an
+  /// id or host missing).
+  static MachineProfile? tryParse(Object? row) {
+    if (row is! Map) return null;
+    try {
+      return MachineProfile.fromJson(Map<String, dynamic>.from(row));
+    } on Object {
+      return null;
+    }
+  }
+
   final String id;
   final String label;
   final String host;

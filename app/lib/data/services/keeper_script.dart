@@ -76,6 +76,23 @@ CLAUDE_ENV_LOGINS = (
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
 )
 
+# The umask this process got from the person's login (sshd's session; for a
+# launchd job, the one `start` read, see start_via_launchd). The keeper itself
+# runs at 077 (daemon): its own files are private. What it spawns for the
+# person, the agent and every tool the agent runs, gets this one back
+# (_default_signals): with 077 inherited, each file an agent wrote was
+# unreadable to the person's group, unlike one written from their own shell.
+# Read once at import, before anything changes the umask, and defined here so
+# a process that never runs daemon() (AgentTalk) has a value too.
+def read_umask():
+    mask = os.umask(0o077)
+    os.umask(mask)
+    return mask
+
+
+LOGIN_UMASK = read_umask()
+
+
 # On macOS a keeper of an agent that reads its login from the Keychain is
 # started as a launchd job of the person's desktop session instead of as a
 # child of sshd: macOS opens the login Keychain only to processes of that
@@ -349,6 +366,19 @@ def mark_stale(info):
     unlink(kid + ".sock")
 
 
+def starting_alive(info):
+    """A keeper still waiting for its agent's `initialize` answer. It does not
+    accept connections yet (the backlog of its socket is 16), so a probe cannot
+    tell it from a dead one: the 16th probe was refused and the keeper marked
+    exited while it was alive and kill skipped it. Only its process says. A
+    start that outlives the init timeout by 30 s is not starting any more (the
+    keeper ends it itself), so a record that old is probed like any other."""
+    if info.get("state") != "starting" or not pid_alive(info.get("pid")):
+        return False
+    began = info.get("started_at")
+    return not isinstance(began, (int, float)) or now_ms() - began < (INIT_TIMEOUT + 30) * 1000
+
+
 def scan():
     """All keepers on disk, stale ones marked exited, expired ones removed."""
     out = []
@@ -363,7 +393,7 @@ def scan():
         info = read_info(kid)
         if info is None or info.get("id") != kid:
             continue
-        if info.get("state") != "exited":
+        if info.get("state") != "exited" and not starting_alive(info):
             if not (pid_alive(info.get("pid")) and sock_alive(kid)):
                 mark_stale(info)
         if info.get("state") == "exited":
@@ -2176,9 +2206,12 @@ def init_request(rid, agent, air=True):
 
 
 def _default_signals():
+    """preexec of everything the keeper starts for the person: default signal
+    handling and the umask of the login (the keeper's own is 077)."""
     signal.signal(signal.SIGHUP, signal.SIG_DFL)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    os.umask(LOGIN_UMASK)
 
 
 # -- subcommands -----------------------------------------------------------
@@ -2245,6 +2278,8 @@ def start_via_launchd(agent, cwd):
     env = dict(os.environ)
     env["HERDR_KEEPER_LABEL"] = label
     env["HERDR_KEEPER_REPORT"] = report
+    # The job starts with launchd's umask, not the login's.
+    env["HERDR_KEEPER_UMASK"] = "%o" % LOGIN_UMASK
     job = {
         "Label": label,
         "ProgramArguments": [sys.executable, SCRIPT, "daemon", "--agent", agent, "--cwd", cwd],
@@ -2305,12 +2340,17 @@ def start_via_launchd(agent, cwd):
 def cmd_daemon(agent, cwd):
     """The keeper process of the job `start_via_launchd` loaded. Nobody types
     this: it needs the job's label and report path in its environment."""
-    global DESKTOP_LABEL
+    global DESKTOP_LABEL, LOGIN_UMASK
     label = os.environ.pop("HERDR_KEEPER_LABEL", "")
     report = os.environ.pop("HERDR_KEEPER_REPORT", "")
+    umask = os.environ.pop("HERDR_KEEPER_UMASK", "")
     if not LAUNCHD_LABEL.match(label) or not report:
         fail(EX_USAGE, "daemon is started by start")
     DESKTOP_LABEL = label
+    try:
+        LOGIN_UMASK = int(umask, 8) & 0o777
+    except ValueError:
+        pass
     os.chdir(state_dir())
     fd = os.open(report, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     route = route_by_id(agent)
@@ -2458,9 +2498,14 @@ def cmd_attach(kid, zipped=False):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         s.connect(kid + ".sock")
-    except OSError:
+    except OSError as e:
         info = read_info(kid) or info
         if info.get("state") != "exited":
+            pid = info.get("pid")
+            if e.errno != errno.ENOENT and pid_alive(pid) and pid != os.getpid() and is_keeper_pid(pid):
+                # Alive but not taking connections: still starting its agent,
+                # or with a full backlog. Not gone, so not marked exited.
+                fail(EX_FAILED, "keeper %s is busy (still starting its agent?); try again in a moment" % kid)
             mark_stale(info)
             info = read_info(kid) or info
         fail(EX_EXITED, "keeper %s: %s" % (kid, info.get("exit_reason") or "the agent has exited."))
@@ -2511,7 +2556,9 @@ def cmd_kill(kid):
     if info is None:
         fail(EX_GONE, "no such keeper: " + kid)
     pid = info.get("pid")
-    if info.get("state") != "exited" and pid_alive(pid) and is_keeper_pid(pid):
+    # The record's state does not decide: a keeper marked exited by a failed
+    # probe (see scan) can be alive, and forgetting its record would orphan it.
+    if pid != os.getpid() and pid_alive(pid) and is_keeper_pid(pid):
         os.kill(pid, signal.SIGTERM)
         deadline = time.time() + 6
         while pid_alive(pid) and time.time() < deadline:

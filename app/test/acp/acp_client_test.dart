@@ -507,6 +507,20 @@ void main() {
       await h.dispose();
     });
 
+    test('a Stop with nothing running does not turn the next prompt\'s real error into "cancelled"', () async {
+      final h = _Harness();
+      await h.client.initialize();
+      h.client.cancel(_sid);
+      h.agent.methods['session/prompt'] = (_) => throw const JsonRpcException(-32000, 'authentication required');
+
+      await expectLater(
+        h.client.prompt(_sid, [const TextBlock('x')]),
+        throwsA(isA<JsonRpcException>().having((e) => e.message, 'message', contains('authentication'))),
+      );
+      expect(h.state.lastStopReason, StopReason.error);
+      await h.dispose();
+    });
+
     test(r'the agent withdrawing the request ($/cancel_request) cancels it and clears the block', () async {
       final h = _Harness();
       await h.client.initialize();

@@ -501,7 +501,10 @@ class AcpClient {
   /// this session as cancelled. [prompt] completes when the agent says so.
   /// Does nothing when the connection is gone.
   void cancel(String sessionId) {
-    _cancelling.add(sessionId);
+    // Only a running turn clears the flag (in [prompt]'s finally): set while
+    // idle, it would survive until the next prompt and turn that prompt's
+    // real error (an expired login) into a silent "cancelled".
+    if (state(sessionId).turnActive) _cancelling.add(sessionId);
     _update(sessionId, (s) => s.withCancelRequested(at: _clock()));
     try {
       _rpc.notify('session/cancel', {'sessionId': sessionId});

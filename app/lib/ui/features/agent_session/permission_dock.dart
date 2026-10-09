@@ -33,7 +33,7 @@ import 'visible_text.dart';
 /// streaming answer or the keyboard moving rebuilds nothing here. A panel is
 /// keyed by its request: a new request gets a new panel, which ignores taps
 /// for [tapGuard] (see [PermissionPanel]). What the person has put into a
-/// question is kept outside its panel ([QuestionDraft], per request), so a
+/// question is kept outside its panel ([QuestionDraft], per question), so a
 /// permission that takes the dock in the middle of it costs nothing.
 class PromptDock extends StatelessWidget {
   const PromptDock({super.key, required this.session, this.forRun});
@@ -52,20 +52,22 @@ class PromptDock extends StatelessWidget {
     return session.subagentRun(origin.id)?.items ?? const [];
   }
 
-  /// The unsent answers to this session's questions, by request id. They
-  /// belong to the session, not to a panel or to this dock: a permission that
-  /// arrives takes the dock and the question's panel goes, and the person may
-  /// leave the screen or open the subagent that asked; wherever the question
-  /// shows again, its answers are where they were.
+  /// The unsent answers to this session's questions, by [PendingQuestion.draftId]
+  /// (the question, not the request: a question the terminal refused comes
+  /// back under a new request id and must find its answers). They belong to
+  /// the session, not to a panel or to this dock: a permission that arrives
+  /// takes the dock and the question's panel goes, and the person may leave
+  /// the screen or open the subagent that asked; wherever the question shows
+  /// again, its answers are where they were.
   static final _drafts = Expando<Map<Object, QuestionDraft>>('question drafts');
 
-  /// Drops the drafts of requests the live session no longer waits on
+  /// Drops the drafts of questions the live session no longer waits on
   /// (answered, here or elsewhere, or withdrawn). A saved copy or a dropped
   /// link says nothing about what waits, so it drops none.
   Map<Object, QuestionDraft> _draftsFor(List<PendingRequest> all) {
     final drafts = _drafts[session] ??= <Object, QuestionDraft>{};
     if (session.link == AgentLink.live && session.cachedAsOf == null) {
-      drafts.removeWhere((id, _) => !all.any((p) => p.id == id));
+      drafts.removeWhere((key, _) => !all.any((p) => p is PendingQuestion && p.draftId == key));
     }
     return drafts;
   }
@@ -106,7 +108,7 @@ class PromptDock extends StatelessWidget {
               request: question.request,
               items: _itemsOf(question),
               receivedAt: question.receivedAt,
-              draft: drafts.putIfAbsent(question.id, QuestionDraft.new),
+              draft: drafts.putIfAbsent(question.draftId, QuestionDraft.new),
               more: pending.length - 1,
               onAnswer: (response) => session.answerQuestion(question.id, response),
             ),
@@ -175,7 +177,7 @@ String? optionGate(PermissionOption option, String? risk) {
   final name = visibleText(option.name);
   if (option.kind == PermissionOptionKind.rejectAlways) return 'refuses from now on';
   if (option.kind.isStanding || grantsStandingPermission(name)) return standingPermission;
-  if (_allows(option)) return risk ?? proseRisk(name);
+  if (_allows(option)) return risk ?? option.gate ?? proseRisk(name);
   return null;
 }
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/services/ssh_transport.dart' show HostKeyVerdict, judgeHostKey;
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart';
 
 import 'support/fake_transport.dart';
@@ -74,7 +75,9 @@ void main() {
         existing: existing,
         transportFactory: (profile, s, onPin, onNotice) {
           attempts?.add((profile: profile, secrets: s));
-          if (profile.hostKeyFingerprint == null) onPin(fingerprint);
+          if (judgeHostKey(pinned: profile.hostKeyFingerprint, seen: fingerprint) == HostKeyVerdict.trustFirstUse) {
+            onPin(fingerprint);
+          }
           banners.forEach(onNotice);
           return FakeTransport()..failure = failure;
         },

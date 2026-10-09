@@ -13,7 +13,9 @@ const galleryWarmThumbs = 24;
 
 /// The gallery tab's state: the permission, the albums, the pictures of the
 /// album on show. One per app run (it lives in the `AttachKit`), so a second
-/// opening of the sheet starts from what the first one loaded.
+/// opening of the sheet starts from what the first one loaded, paints it at
+/// once, and then reads the album again for what is new ([warm], [open] and
+/// [recheck] do; the pictures are a saved copy, never the live library).
 ///
 /// The grid does not rebuild when a page arrives: tiles whose picture was not
 /// there yet listen to [revision] themselves. A change of access, album or
@@ -59,19 +61,23 @@ class GalleryModel extends ChangeNotifier {
   GalleryAsset? at(int index) => index >= 0 && index < _assets.length ? _assets[index] : null;
 
   /// Reads the permission without asking, and loads the first screenful when
-  /// it is already given. The paperclip calls this on pointer-down and the
-  /// composer on first show, so the sheet opens onto pictures. Never asks the
-  /// system for anything and does nothing while the app is in the background.
+  /// it is already given; when the pictures are loaded already it reads the
+  /// library again for anything new (see [_refresh]). The paperclip calls this
+  /// on pointer-down and the composer on first show, so the sheet opens onto
+  /// pictures, the picture just taken among them. Never asks the system for
+  /// anything and does nothing while the app is in the background.
   Future<void> warm() async {
     if (!_foreground() || _loadingFirst) return;
     if (_checked && !_access.canRead) return;
-    if (_checked && _album != null && _assets.isNotEmpty) return;
+    if (_checked && _album != null && _assets.isNotEmpty) return _refresh();
     await _check(load: true);
   }
 
   /// The Gallery tab is on show: the same, and the answer reaches the tab.
   Future<void> open() async {
-    if (_checked && _access.canRead && _album != null) return;
+    if (_checked && _access.canRead && _album != null) {
+      return _assets.isEmpty ? _check(load: true) : _refresh();
+    }
     await _check(load: true);
   }
 
@@ -95,7 +101,12 @@ class GalleryModel extends ChangeNotifier {
   Future<void> recheck() async {
     final before = _access;
     final access = await _gallery.access();
-    if (access != before || (access.canRead && _album == null)) await _apply(access, load: true);
+    if (access != before || (access.canRead && _album == null)) {
+      await _apply(access, load: true);
+    } else if (access.canRead) {
+      // Back from another app: a picture may have been taken meanwhile.
+      await _refresh();
+    }
   }
 
   Future<void> loadAlbums() async {
@@ -195,6 +206,57 @@ class GalleryModel extends ChangeNotifier {
       _assets[start + i] = list[i];
     }
     revision.value++;
+  }
+
+  Future<void>? _refreshing;
+
+  /// Reads the album on show again and takes in what changed since it was
+  /// loaded: the model lives for the whole app run, so a screenshot taken
+  /// after the first load is otherwise never on the grid until the app is
+  /// killed. Two queries (the album's count and its first page); a library
+  /// that did not change notifies nobody and reads no thumbnail. Asked many
+  /// times at once it reads once. What is on screen stays until the answer
+  /// arrives: the saved copy is painted at once and corrected, never waited for.
+  Future<void> _refresh() => _refreshing ??= _read().whenComplete(() => _refreshing = null);
+
+  Future<void> _read() async {
+    final current = _album;
+    if (current == null || _assets.isEmpty) return;
+    final epoch = _epoch;
+    final list = await _gallery.albums(onlyRecent: current.isRecent);
+    if (_disposed || epoch != _epoch) return;
+    final fresh = list.where((a) => current.isRecent ? a.isRecent : a.id == current.id).firstOrNull;
+    if (fresh == null) {
+      // The album is gone (its last picture was deleted): Recent is where the
+      // person lands, as on the first opening.
+      _epoch++;
+      _album = null;
+      _assets = <GalleryAsset?>[];
+      _pagesLoading.clear();
+      await _check(load: true);
+      return;
+    }
+    final head = await _gallery.assets(fresh.id, start: 0, count: galleryPage);
+    if (_disposed || epoch != _epoch) return;
+    final same = fresh.count == _assets.length &&
+        head.length == (fresh.count < galleryPage ? fresh.count : galleryPage) &&
+        [for (var i = 0; i < head.length; i++) head[i].id == _assets[i]?.id].every((s) => s);
+    if (same) return;
+    // Everything below the first page moved with the new picture: those pages
+    // are asked for again as the grid scrolls to them (their thumbnails are
+    // still in the cache, which is keyed by picture).
+    _epoch++;
+    _album = fresh;
+    _albums = [for (final a in _albums) a.id == fresh.id || (a.isRecent && fresh.isRecent) ? fresh : a];
+    _assets = List<GalleryAsset?>.filled(fresh.count, null, growable: false);
+    _pagesLoading.clear();
+    for (var i = 0; i < head.length && i < _assets.length; i++) {
+      _assets[i] = head[i];
+    }
+    notifyListeners();
+    revision.value++;
+    final warm = <GalleryAsset>[for (var i = 0; i < galleryWarmThumbs; i++) ?at(i)];
+    if (warm.isNotEmpty) thumbs.prefetch(warm);
   }
 
   @override

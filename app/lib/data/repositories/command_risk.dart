@@ -12,6 +12,8 @@
 /// bare word, so `rg "remove_user"` and `git log --grep=delete` pass.
 library;
 
+import '../decision/mode_danger.dart' show ModeRisk, assessMode;
+
 /// The first reason [text], taken as a shell command, deserves a second look.
 String? commandRisk(String text) => _first(_commandRules, text);
 
@@ -24,8 +26,13 @@ String? riskOf(String text) => commandRisk(text) ?? proseRisk(text);
 
 /// Whether an option grants something that outlives this answer ("Yes, and
 /// don't ask again for ...", "Allow always", "allow all edits during this
-/// session"). One tap is too easy for a permission that stays.
-bool grantsStandingPermission(String optionText) => _standing.hasMatch(optionText);
+/// session") or switches the session to a mode that asks for less ("Yes, and
+/// bypass permissions", "Yes, auto-accept edits"). One tap is too easy for a
+/// permission that stays. The mode words are the ones `assessMode` reads, so
+/// the label of an option and the mode it names are judged alike; "manually
+/// approve edits" asks for more, not less, and passes.
+bool grantsStandingPermission(String optionText) =>
+    _standing.hasMatch(optionText) || assessMode(name: optionText).risk != ModeRisk.none;
 
 /// Shown on the confirm chip for a standing grant.
 const standingPermission = 'standing permission';
@@ -53,8 +60,15 @@ String? _first(List<_Rule> rules, String text) {
 }
 
 /// Where a command word can start: the beginning, after a space, a separator,
-/// a pipe, a subshell or a brace. `--rm` and `a-rm` do not start one.
-const _start = r'(?:^|[\s;&|(`{])';
+/// a pipe, a subshell, a brace, a quote or a backslash. `--rm` and `a-rm` do
+/// not start one; `\rm`, `"rm"`, `eval "rm -rf /"` and `docker exec c 'rm -rf /'`
+/// do. A quote opens a word, so a command that is only quoted text
+/// (`git commit -m "rm -rf is dangerous"`) is flagged too: a wrong hold costs
+/// a tap, a missed one costs the person's files.
+const _start = r'''(?:^|[\s;&|(`{"'\\])''';
+
+/// The quote that may close a quoted command word (`"rm" -rf /`).
+const _close = '''["']?''';
 
 /// A command word typed with its directory too (`/bin/rm`, `/usr/bin/git`).
 const _cmd = '$_start' r'(?:[\w.~-]*/)*';
@@ -62,7 +76,13 @@ const _cmd = '$_start' r'(?:[\w.~-]*/)*';
 /// `git`, then the global options that may come before the subcommand
 /// (`-C <dir>`, `-c k=v`, `--no-pager`, `--git-dir <dir>`): `git -C repo push`
 /// is `git push`.
-const _git = r'\bgit(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*';
+///
+/// The alternatives are mutually exclusive: an option that takes a value is
+/// matched only with its value, and the plain-option form refuses to match
+/// those names. With both able to match `-C`, a run of `-C -C -C ...` could be
+/// split in exponentially many ways and a failed match took minutes.
+const _gitValued = r'(?:-[Cc]|--(?:git-dir|work-tree|namespace))';
+const _git = r'\bgit(?:\s+(?:' '$_gitValued' r'\s+\S+|(?!' '$_gitValued' r'(?:\s|$))-[\w-]+(?:=\S+)?))*';
 
 final _commandRules = <_Rule>[
   // Remote and history.
@@ -70,7 +90,7 @@ final _commandRules = <_Rule>[
   _Rule('$_git' r'\s+push\b', 'pushes to a remote'),
 
   // Data that does not come back.
-  _Rule('$_cmd(?:rm|rmdir|unlink|shred)' r'\s+\S', 'deletes files'),
+  _Rule('$_cmd(?:rm|rmdir|unlink|shred)$_close' r'\s+\S', 'deletes files'),
   _Rule(
     r'''\b(?:ba|z|da|k)?sh(?:\s+-\S+)*?\s+-\w*c\s+["'](?:[^"']*[\s;&|])?(?:[\w.~-]*/)*(?:rm|rmdir|unlink|shred)\s+\S''',
     'deletes files',
@@ -78,7 +98,7 @@ final _commandRules = <_Rule>[
   _Rule(r'\bxargs\s+(?:-\S+\s+)*(?:sudo\s+)?(?:rm|rmdir|unlink|shred)\b', 'deletes files'),
   _Rule(r'\bfind\b[^;&|]*\s-delete\b', 'deletes files'),
   _Rule('$_git' r'\s+clean\b', 'deletes files'),
-  _Rule('${_cmd}dd' r'\s+[^;&|]*\bof=', 'overwrites a disk'),
+  _Rule('${_cmd}dd$_close' r'\s+[^;&|]*\bof=', 'overwrites a disk'),
   _Rule(r'\b(?:mkfs(?:\.\w+)?|wipefs)\b', 'overwrites a disk'),
 
   // Work in a repository.
@@ -118,9 +138,15 @@ final _commandRules = <_Rule>[
 
   // Code that was not written here.
   _Rule(
-    r'\b(?:curl|wget)\b[^;&]*\|\s*(?:sudo\s+(?:-\S+\s+)*)?(?:ba|z|da|k)?sh\b|'
-    r'\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget)\b|'
-    r'\b(?:eval|source)\b[^;&]*[$<]\(\s*(?:curl|wget)\b',
+    r'\b(?:curl|wget)\b[^;&]*\|\s*(?:sudo\s+(?:-\S+\s+)*)?'
+    r'(?:(?:ba|z|da|k)?sh\b|'
+    // An interpreter that reads the script from stdin: bare, or with a lone `-`.
+    // `| python3 -m json.tool` and `| node script.js` read something else.
+    r'(?:python[\d.]*|node|nodejs|deno|perl|ruby|php)(?:\s+-(?=\s|$)|\s*(?:$|[;&|)])))|'
+    // A shell, `eval`, `source` or `.` that runs what a download printed:
+    // `bash -c "$(curl ...)"`, `source <(curl ...)`.
+    r'\b(?:(?:ba|z|da|k)?sh|eval|source)\b[^;&]*(?:[$<]\(|`)\s*(?:curl|wget)\b|'
+    r'(?:^|[\s;&|(])\.\s+<\(\s*(?:curl|wget)\b',
     'runs a downloaded script',
   ),
 
@@ -156,7 +182,9 @@ final _commandRules = <_Rule>[
     r'\bsystemctl\s+(?:stop|restart|disable|mask|kill|reboot|poweroff|halt)\b|'
     r'\bservice\s+\S+\s+(?:stop|restart)\b|'
     '$_cmd(?:shutdown|reboot|poweroff|halt)' r'\b|'
-    r'\bkill\s+(?:-\S+\s+)?\d|\b(?:pkill|killall)\b',
+    // A signal to everything (`kill -9 -1`) is a number too; `kill $PID` and
+    // `kill -s TERM 42` name a process like `kill 42` does.
+    r'\bkill\s+(?:-\S+\s+|[a-z]+\s+)*(?:-?\d|\$)|\b(?:pkill|killall)\b',
     'stops processes',
   ),
   _Rule(r'\b(?:chmod\s+(?:-\S*R\S*|[0-7]*777)|chown\s+-\S*R\S*)\b', 'changes permissions'),

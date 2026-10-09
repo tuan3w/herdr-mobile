@@ -19,6 +19,7 @@ import '../../core/glyphs.dart';
 import '../../core/motion.dart';
 import '../../core/tap_guard.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import 'agent_navigation.dart';
 import 'agent_card.dart';
 import 'agent_session_rows.dart';
@@ -452,8 +453,27 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply> 
     });
   }
 
+  /// Whether the question's chips are on screen (what the build draws them for).
+  bool get _asking =>
+      widget.agent.status == AgentStatus.blocked && !widget.agent.stale && _handle.preview.value?.prompt != null;
+
+  /// The keyboard's Send. On an empty field it is a bare Enter, and a bare
+  /// Enter while a question is shown would choose whatever the agent has
+  /// highlighted, past the chips' hold and guard: it is refused with a toast
+  /// (as the pane screen does), and otherwise waits for the guard and a free
+  /// controller like the Enter key button does. Typed text is deliberate, and
+  /// is not a tap on something that moved: it only needs a live agent.
   Future<void> _submit() async {
+    if (widget.agent.stale || _reply.busy) return;
     final text = _input.text;
+    if (text.trim().isEmpty) {
+      if (!settled) return;
+      if (_asking) {
+        Haptics.tick();
+        showToast(context, 'Pick an answer above');
+        return;
+      }
+    }
     final sent = await _reply.sendLine(text);
     if (sent && mounted && _input.text == text) _input.clear();
     _answered(sent);

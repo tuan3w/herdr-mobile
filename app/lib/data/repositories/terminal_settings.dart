@@ -59,7 +59,14 @@ class TerminalSettings extends ChangeNotifier {
   /// Reads the saved settings. Anything unreadable or out of range falls back
   /// to the default.
   Future<void> load() async {
-    final saved = await _store.read();
+    ({double? fontSize, bool? wrap}) saved;
+    try {
+      saved = await _store.read();
+    } on Object {
+      // A stored value of another type (the platform throws on it) is a
+      // setting lost, not an app that cannot start.
+      saved = (fontSize: null, wrap: null);
+    }
     final fontSize = saved.fontSize;
     _fontSize = fontSize == null || !fontSize.isFinite
         ? defaultTerminalFontSize

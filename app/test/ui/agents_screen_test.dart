@@ -570,8 +570,8 @@ void main() {
       await pumpUi(tester, h, height: _tall);
 
       final bar = tester.getRect(find.byType(FloatingTabBar));
-      // Left of the pill, in the strip the fade covers (inside the card's margin).
-      await tester.tapAt(Offset(24, bar.center.dy));
+      // Above the pill, in the strip the fade covers, left of the "needs you" pill.
+      await tester.tapAt(Offset(24, bar.top - 8));
       await settle(tester);
       expect(find.byType(PaneScreen), findsOneWidget);
       await teardownUi(tester, h);

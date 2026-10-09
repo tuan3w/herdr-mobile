@@ -54,7 +54,6 @@ void main() {
       'not json {',
       '[1, 2, 3]',
       '"a string"',
-      '{"workspaces": [{"no_id": true}]}',
       '{"panes": "not a list"}',
     ]) {
       await prefs.setString(key, garbage);

@@ -2,15 +2,20 @@ import 'dart:convert';
 
 import '../../../data/acp/acp_models.dart';
 import '../../../data/repositories/command_risk.dart';
+import '../../../data/repositories/prompt_detector.dart' show longCommand;
 import 'visible_text.dart';
 
 /// Most characters of a command, input or path list that are drawn. What is
 /// cut is counted and named in the text itself, never dropped silently.
 const subjectCharLimit = 20000;
 
-/// Most characters the risk rules read. Past it the text is not judged; the
-/// request shows its cut as well.
-const _riskCharLimit = 200000;
+/// Most characters the risk rules read in one piece. A command longer than
+/// this is read by its first and its last [_riskCharLimit] characters and,
+/// when neither names a reason, is [longCommand]: the request asks for the
+/// hold a command nobody can read in full deserves. The rules run on the UI
+/// isolate and a few of them are quadratic in the text, so the cap is a few
+/// screens, not the size of the longest command.
+const _riskCharLimit = 3000;
 
 /// What a permission request asks to run or touch, ready to draw.
 class PermissionInfo {
@@ -99,9 +104,9 @@ PermissionInfo describePermission(PermissionRequest request, {bool dropPlan = fa
 
   String? risk;
   for (final c in commands) {
-    risk ??= commandRisk(_forRisk(visibleText(c)));
+    risk ??= _boundedRisk(visibleText(c), commandRisk);
   }
-  risk ??= riskOf(title);
+  risk ??= _boundedRisk(title, riskOf);
   final pathCandidates = [
     ..._inputPaths(input),
     for (final l in call.locations) l.path,
@@ -195,7 +200,14 @@ List<String> _inputPaths(Object? input) {
   return out;
 }
 
-String _forRisk(String s) => s.length <= _riskCharLimit ? s : s.substring(0, _riskCharLimit);
+/// [judge] over [s], or over its two ends and [longCommand] when [s] is longer
+/// than [_riskCharLimit] (see there).
+String? _boundedRisk(String s, String? Function(String) judge) {
+  if (s.length <= _riskCharLimit) return judge(s);
+  return judge(s.substring(0, _riskCharLimit)) ??
+      judge(s.substring(s.length - _riskCharLimit)) ??
+      longCommand;
+}
 
 /// The input as lines of `key: value`, the shortest first, so a long file body
 /// does not push the path above it out of the box.

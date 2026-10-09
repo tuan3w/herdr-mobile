@@ -388,9 +388,16 @@ agent failed `initialize`, 78 python3 missing.
    client (`_herdr/agent_exited`) and leaves; `list` shows the record for 24 h
    and then deletes it, together with stale sockets. Requests pending at that
    moment are noted as cancelled in `<id>.log`. `list` also marks a keeper
-   whose process or socket vanished as exited. `kill` sends SIGTERM to the
+   whose process or socket vanished as exited, except one still starting its
+   agent: it does not accept connections yet, so only its process counts (the
+   16th probe of its full backlog was refused and a live keeper was marked
+   exited; `attach` likewise answers "busy", not "exited", while the process
+   lives). `kill` sends SIGTERM to the
    keeper, which sends SIGTERM to the agent's process group and SIGKILL 3 s
-   later, then forgets the keeper (it also dismisses an exited record).
+   later, then forgets the keeper (it also dismisses an exited record, and ends
+   a live process whatever its record says). The keeper runs with umask 077
+   for its own files; the agent and the tools it starts get the umask the
+   login had (`LOGIN_UMASK`, restored in the child's preexec).
    Non-JSON lines from the agent and garbage from a client are logged to
    `<id>.log` (kept under 1 MB) and skipped. Idle sessions are reaped by the
    agent's own policy, not by us.

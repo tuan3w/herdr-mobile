@@ -53,12 +53,18 @@ Future<void> openGalleryPreview(
   required int index,
   PhoneGallery? gallery,
 }) {
+  // Every picture whose page has arrived, in album order. Pages arrive out of
+  // order (a long scroll loads page 2 before page 1), so the list can have
+  // holes: the tapped picture is found by its id, never by its position in
+  // the grid.
   final assets = <GalleryAsset>[];
   for (var i = 0; i < model.count; i++) {
-    final a = model.at(i);
-    if (a == null) break;
-    assets.add(a);
+    if (model.at(i) case final a?) assets.add(a);
   }
+  final tapped = model.at(index);
+  final at = tapped == null ? -1 : assets.indexWhere((a) => a.id == tapped.id);
+  // Nothing to show (an empty album, or the tapped picture is not loaded).
+  if (at < 0) return Future<void>.value();
   final byId = {for (final a in assets) a.id: a};
   final source = gallery ?? model.gallery;
   return openPhotoViewer(
@@ -74,7 +80,7 @@ Future<void> openGalleryPreview(
           source: GalleryPhotoSource(source, a),
         ),
     ],
-    initialIndex: index.clamp(0, assets.length - 1),
+    initialIndex: at,
     overlay: (context, viewer) => Positioned(
       left: 0,
       right: 0,

@@ -25,12 +25,16 @@ class CorruptZippedLines extends FormatException {
 /// the inflater is gone.
 Stream<String> zippedLines(Stream<String> lines) {
   ByteConversionSink? inflater;
+  // A multi-byte character can straddle two inflated chunks (the inflater
+  // hands over 64 KiB at a time): decoding each chunk alone turned the cut
+  // character into U+FFFD, so the decoder keeps its state across chunks.
+  ByteConversionSink? decoder;
   EventSink<String>? current;
   var partial = '';
   var broken = false;
 
-  void onInflated(List<int> data) {
-    final text = partial + utf8.decode(data, allowMalformed: true);
+  void onText(String chunk) {
+    final text = partial + chunk;
     var from = 0;
     while (true) {
       final nl = text.indexOf('\n', from);
@@ -40,6 +44,8 @@ Stream<String> zippedLines(Stream<String> lines) {
     }
     partial = text.substring(from);
   }
+
+  void onInflated(List<int> data) => decoder!.add(data);
 
   return lines.transform(
     StreamTransformer<String, String>.fromHandlers(
@@ -51,9 +57,11 @@ Stream<String> zippedLines(Stream<String> lines) {
         }
         current = sink;
         try {
-          (inflater ??= zlib.decoder.startChunkedConversion(_Collect(onInflated))).add(
-            base64.decode(line.substring(1)),
-          );
+          if (inflater == null) {
+            decoder = const Utf8Decoder(allowMalformed: true).startChunkedConversion(_CollectText(onText));
+            inflater = zlib.decoder.startChunkedConversion(_Collect(onInflated));
+          }
+          inflater!.add(base64.decode(line.substring(1)));
         } on Object {
           broken = true;
           sink.addError(const CorruptZippedLines());
@@ -61,8 +69,13 @@ Stream<String> zippedLines(Stream<String> lines) {
         }
       },
       handleDone: (sink) {
-        if (partial.isNotEmpty && !broken) sink.add(partial);
+        if (!broken) {
+          current = sink;
+          decoder?.close();
+          if (partial.isNotEmpty) sink.add(partial);
+        }
         inflater = null;
+        decoder = null;
         sink.close();
       },
     ),
@@ -76,6 +89,18 @@ class _Collect implements Sink<List<int>> {
 
   @override
   void add(List<int> data) => _onData(data);
+
+  @override
+  void close() {}
+}
+
+class _CollectText implements Sink<String> {
+  const _CollectText(this._onData);
+
+  final void Function(String) _onData;
+
+  @override
+  void add(String data) => _onData(data);
 
   @override
   void close() {}

@@ -1,3 +1,5 @@
+import '../../../data/acp/turns/plain_text.dart' show stripTerminalEscapes;
+
 /// [text] with every character that can hide or reorder what it says replaced
 /// by a visible escape (`‹U+202E›`), so the person reads what the machine
 /// would run.
@@ -40,33 +42,11 @@ String escapeOf(int rune) => '\u2039U+${rune.toRadixString(16).toUpperCase().pad
 /// Whether [text] holds a character [visibleText] would replace.
 bool hasHiddenCharacters(String text) => visibleText(text) != text;
 
-final _osc = RegExp(r'\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)?');
-final _csi = RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]');
-final _otherEscape = RegExp(r'\x1B[@-Z\\-_]|\x1B[ -/]*[0-~]');
-
 /// Command output as a panel shows it: colour and cursor sequences removed,
 /// a line rewritten with a carriage return (a progress bar) kept as its last
-/// version, and what remains made visible by [visibleText].
-String terminalText(String raw) {
-  var text = raw;
-  if (text.contains('\x1B')) {
-    text = text.replaceAll(_osc, '').replaceAll(_csi, '').replaceAll(_otherEscape, '');
-  }
-  if (text.contains('\r')) {
-    text = text.replaceAll('\r\n', '\n');
-    if (text.contains('\r')) {
-      text = text.split('\n').map((line) {
-        var end = line.length;
-        while (end > 0 && line.codeUnitAt(end - 1) == 0x0D) {
-          end--;
-        }
-        final cr = end == 0 ? -1 : line.lastIndexOf('\r', end - 1);
-        return cr < 0 ? line.substring(0, end) : line.substring(cr + 1, end);
-      }).join('\n');
-    }
-  }
-  return visibleText(text);
-}
+/// version ([stripTerminalEscapes], the one stripper), and what remains made
+/// visible by [visibleText].
+String terminalText(String raw) => visibleText(stripTerminalEscapes(raw));
 
 bool _hidden(int r) {
   if (r < 0x20) return r != 0x0A && r != 0x09;

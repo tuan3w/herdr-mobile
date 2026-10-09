@@ -163,7 +163,7 @@ never executed). A variable already in herdr's environment wins over the file.
 | `NTFY_TOKEN` | none | ntfy access token, sent as `Authorization: Bearer`. |
 | `MACHINE` | this host's name | The machine's name in herdr mobile. Used in the tap link and the message. |
 | `NOTIFY_DONE` | off | `1` also alerts when an agent finishes. Blocked always alerts. |
-| `NOTIFY_COOLDOWN` | `30` | Seconds before the same pane may alert again for the same state. |
+| `NOTIFY_COOLDOWN` | `30` | Seconds before the same pane may alert again for the same state. An alert the cooldown holds back is sent when it ends, if the pane is still in that state (see "What an alert contains"). |
 
 ## What an alert contains
 
@@ -186,9 +186,22 @@ end up in the notification, and ntfy's server sees it**. The ntfy token and
 topic are never part of the message.
 
 An alert fires on a **transition** into the state, once per pane and state: a
-second event for a pane that is already blocked sends nothing, a pane that goes
-back to working and blocks again alerts again after the cooldown. Done follows
-herdr's own meaning: a finished agent nobody has looked at yet.
+second event for a pane that is already blocked sends nothing, and a pane that
+goes back to working and blocks again inside the cooldown is **held back, not
+dropped**. The pane stays blocked and herdr sends no further event, so the hook
+that held it back also starts one detached `notify.sh` for that pane (more
+holds for the same alert start none), which sleeps until the cooldown ends and
+alerts once if the pane is still in that state: the last event says so and
+`herdr pane get` agrees (when herdr cannot be asked, the events decide). A pane
+that went back to working, is gone, or alerted in the meantime sends nothing.
+A cooldown over 10 minutes holds an alert back without this re-check. Done
+follows herdr's own meaning: a finished agent nobody has looked at yet.
+
+Why: a hold-back used to record the pane as already blocked, and a pane that
+stays blocked sends no further event, so a blocked agent whose alert fell in
+the cooldown (a quick retry loop, a restart) never alerted at all. The sleeper
+has no stdin/stdout/stderr to herdr, is one per pane, never starts another, and
+exits silently when its state directory is gone.
 
 The plugin never holds herdr up. It posts with a 4 s connect and 8 s total
 limit (one retry), exits 0 whatever happens, and logs problems to
@@ -198,8 +211,10 @@ limit (one retry), exits 0 whatever happens, and logs problems to
 
 If a post fails (server down, 5xx), the pane's state is given back, so the next
 event for that pane tries again; the cooldown still applies, so a server that
-is down is tried once per cooldown rather than once per event. There is no
-queue: a failure with no later event for that pane is not retried.
+is down is tried once per cooldown rather than once per event, and an event
+that arrives inside the cooldown is held back and sent when it ends, like any
+other. There is no queue: a failure with no later event for that pane is not
+retried.
 
 ## The tap
 

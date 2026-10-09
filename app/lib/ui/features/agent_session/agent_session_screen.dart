@@ -419,8 +419,15 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
     final chips = _attachments.items;
+    // Taken before the send: if the person leaves while it is out, the screen
+    // is gone when it fails, and neither the toast overlay nor the draft's
+    // store can be looked up from it then.
+    final toaster = Toaster.maybeOf(context);
+    final screens = _screens;
     _input.clear();
-    unawaited(_send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>()));
+    unawaited(
+      _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens),
+    );
   }
 
   Future<void> _send(
@@ -429,6 +436,8 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     List<Attachment> chips,
     List<ContentBlock> blocks,
     SentPhrases? learned,
+    Toaster? toaster,
+    AgentScreens? screens,
   ) async {
     final sent = await session.sendBlocks(blocks);
     if (sent) {
@@ -436,10 +445,30 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       if (learned != null) unawaited(learned.learn(text));
       return;
     }
-    Haptics.failed();
-    if (!mounted) return;
-    _giveBack(text);
-    _attachments.restore(chips);
+    if (mounted) {
+      Haptics.failed();
+      _giveBack(text);
+      _attachments.restore(chips);
+      return;
+    }
+    _giveBackAfterLeaving(text, chips, toaster, screens);
+  }
+
+  /// The send failed after the person left this screen (Back, or a swipe to
+  /// the next agent): the text goes back to the agent's draft, ahead of
+  /// whatever was typed there since, and a toast (failed: it carries the
+  /// haptic) says the message did not go. The chips live and die with the
+  /// screen (a prepared picture or an upload has no home outside it), so the
+  /// toast says they were not kept.
+  void _giveBackAfterLeaving(String text, List<Attachment> chips, Toaster? toaster, AgentScreens? screens) {
+    final agent = widget.agent;
+    final keep = text.isNotEmpty && agent != null && screens != null;
+    if (keep) {
+      final newer = screens.draftOf(agent);
+      screens.keepDraft(agent, newer.isEmpty ? text : '$text\n$newer');
+    }
+    final lost = chips.isEmpty ? '' : ' Its attachments were not kept: attach them again.';
+    toaster?.show('${keep ? 'Not sent. Your message is back in the draft.' : 'Not sent.'}$lost', kind: ToastKind.failed);
   }
 
   /// Puts the text of a send that failed back in the field. What was typed

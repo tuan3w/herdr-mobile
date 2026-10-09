@@ -33,7 +33,7 @@ void main() {
       expect(info.pid, greaterThan(0));
       expect(info.pending, 0);
       expect(info.sessionId, isNull);
-      expect(DateTime.now().difference(info.startedAt).inSeconds.abs(), lessThan(60));
+      expect(DateTime.now().difference(info.startedAt!).inSeconds.abs(), lessThan(60));
 
       // The starter is gone; the keeper lives, also after SIGHUP.
       Process.killPid(info.pid!, ProcessSignal.sighup);
@@ -114,7 +114,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 2500)); // a minimum: past the 1 s orphan bound
       final starting = (await h.rawList()).single;
       expect(starting['state'], 'starting');
-      expect(KeeperInfo.fromJson(starting).state, KeeperState.running);
+      expect(KeeperInfo.fromJson(starting).state, KeeperState.starting);
       final id = starting['id']! as String;
       for (final ext in ['json', 'sock', 'log']) {
         expect(File('${h.keepers}/$id.$ext').existsSync(), isTrue, reason: ext);

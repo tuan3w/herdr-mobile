@@ -155,6 +155,8 @@ Future<void> pumpBar(
   ValueChanged<int>? onChanged,
   double width = 320,
   double textScale = 1,
+  int settleMs = 400,
+  bool reduceMotion = false,
 }) async {
   tester.view
     ..physicalSize = Size(width, 400) * 2
@@ -164,7 +166,7 @@ Future<void> pumpBar(
     MaterialApp(
       theme: AppTheme.light(),
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale), disableAnimations: reduceMotion),
         child: child!,
       ),
       home: Scaffold(
@@ -175,7 +177,7 @@ Future<void> pumpBar(
       ),
     ),
   );
-  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pump(Duration(milliseconds: settleMs));
 }
 
 const _threeTabs = [
@@ -450,49 +452,78 @@ void main() {
   });
 
   group('the floating tab bar with three tabs', () {
-    testWidgets('fits 320 dp at 2x text; only the selected tab has a label', (tester) async {
+    testWidgets('fits 320 dp at 2x text with every tab named and the targets big enough', (tester) async {
       await pumpBar(tester, index: 0, tabs: _threeTabs, textScale: 2);
       expect(tester.takeException(), isNull);
-      expect(find.text('Agents'), findsOneWidget);
-      expect(find.text('Machines'), findsNothing);
-      expect(find.text('Settings'), findsNothing);
+      for (final label in ['Agents', 'Machines', 'Settings']) {
+        expect(find.text(label), findsOneWidget, reason: '$label is named, selected or not');
+      }
 
       final bar = tester.getRect(find.byType(FloatingTabBar));
       expect(bar.left, greaterThanOrEqualTo(0));
       expect(bar.right, lessThanOrEqualTo(320));
       for (final label in ['Agents', 'Machines', 'Settings']) {
         final rect = tester.getRect(find.byKey(FloatingTabBar.tabKey(label)));
-        expect(rect.width, greaterThanOrEqualTo(48), reason: label);
+        expect(rect.width, greaterThanOrEqualTo(44), reason: label);
         expect(rect.height, greaterThanOrEqualTo(44), reason: label);
         expect(rect.left, greaterThanOrEqualTo(0), reason: label);
         expect(rect.right, lessThanOrEqualTo(320), reason: label);
-      }
-
-      // The label moves with the selection.
-      for (final (i, label) in ['Machines', 'Settings'].indexed) {
-        await pumpBar(tester, index: i + 1, tabs: _threeTabs, textScale: 2);
-        expect(find.text(label), findsOneWidget);
-        expect(find.text('Agents'), findsNothing);
-        final rect = tester.getRect(find.byKey(FloatingTabBar.tabKey(label)));
-        expect(rect.right, lessThanOrEqualTo(320));
+        final text = tester.renderObject<RenderParagraph>(find.text(label));
+        expect(text.didExceedMaxLines, isFalse, reason: '$label is never cut');
+        expect(tester.getRect(find.text(label)).width, lessThanOrEqualTo(rect.width), reason: label);
       }
     });
 
-    testWidgets('a 99+ badge on an icon-only tab stays on screen at 320 dp', (tester) async {
-      await pumpBar(
-        tester,
-        index: 2,
-        textScale: 2,
-        tabs: const [
-          TabSpec(icon: Icons.list, label: 'Agents', badge: 120),
-          TabSpec(icon: Icons.dns, label: 'Machines'),
-          TabSpec(icon: Icons.settings, label: 'Settings'),
-        ],
-      );
-      expect(tester.takeException(), isNull);
-      final badge = tester.getRect(find.text('99+'));
-      expect(badge.left, greaterThanOrEqualTo(0));
+    testWidgets('the cells are equal and spread across the width', (tester) async {
+      await pumpBar(tester, index: 0, tabs: _threeTabs);
+      final rects = [for (final l in ['Agents', 'Machines', 'Settings']) tester.getRect(find.byKey(FloatingTabBar.tabKey(l)))];
+      expect(rects[1].width, rects[0].width);
+      expect(rects[2].width, rects[0].width);
+      final bar = tester.getRect(find.byType(FloatingTabBar));
+      expect(rects.first.left - bar.left, lessThan(20), reason: 'the cells fill the pill, not a cluster in its middle');
+      expect(bar.right - rects.last.right, lessThan(20));
     });
+
+    testWidgets('nothing moves when the selection does', (tester) async {
+      Future<List<Rect>> cells(int index) async {
+        await tester.pumpWidget(const SizedBox());
+        await pumpBar(tester, index: index, tabs: _threeTabs);
+        return [for (final l in ['Agents', 'Machines', 'Settings']) tester.getRect(find.byKey(FloatingTabBar.tabKey(l)))];
+      }
+
+      final first = await cells(0);
+      expect(await cells(1), first);
+      expect(await cells(2), first);
+    });
+
+    testWidgets('stops growing on a wide window and stays centred', (tester) async {
+      await pumpBar(tester, index: 0, tabs: _threeTabs, width: 900);
+      final left = tester.getRect(find.byKey(FloatingTabBar.tabKey('Agents'))).left;
+      final right = tester.getRect(find.byKey(FloatingTabBar.tabKey('Settings'))).right;
+      expect(left, greaterThan(100), reason: 'not stretched to the window edge');
+      expect(left + right, closeTo(900, 1), reason: 'centred');
+    });
+
+    for (final selected in [0, 1, 2]) {
+      testWidgets('a 99+ badge stays on screen and off the labels at 320 dp, tab $selected selected', (tester) async {
+        await pumpBar(
+          tester,
+          index: selected,
+          textScale: 2,
+          tabs: const [
+            TabSpec(icon: Icons.list, label: 'Agents', badge: 120),
+            TabSpec(icon: Icons.dns, label: 'Machines'),
+            TabSpec(icon: Icons.settings, label: 'Settings'),
+          ],
+        );
+        expect(tester.takeException(), isNull);
+        final badge = tester.getRect(find.text('99+'));
+        expect(badge.left, greaterThanOrEqualTo(0));
+        for (final label in ['Agents', 'Machines', 'Settings']) {
+          expect(badge.overlaps(tester.getRect(find.text(label))), isFalse, reason: 'the count is not written over $label');
+        }
+      });
+    }
 
     testWidgets('announces the selected tab and the spoken badge, once each', (tester) async {
       final handle = tester.ensureSemantics();
@@ -510,7 +541,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('tapping an icon-only tab selects it', (tester) async {
+    testWidgets('tapping a tab selects it', (tester) async {
       final taps = <int>[];
       await pumpBar(tester, index: 0, tabs: _threeTabs, onChanged: taps.add);
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
@@ -518,14 +549,151 @@ void main() {
       expect(taps, [2, 1]);
     });
 
-    testWidgets('the label grows in under 300 ms', (tester) async {
-      await pumpBar(tester, index: 0, tabs: _threeTabs);
-      final narrow = tester.getSize(find.byKey(FloatingTabBar.tabKey('Settings'))).width;
-      expect(narrow, 48);
-      await tester.pumpWidget(const SizedBox());
-      await pumpBar(tester, index: 2, tabs: _threeTabs);
-      final wide = tester.getSize(find.byKey(FloatingTabBar.tabKey('Settings'))).width;
-      expect(wide, greaterThan(narrow + 40));
+    group('the selection capsule', () {
+      Rect capsule(WidgetTester tester) => tester.getRect(find.byKey(FloatingTabBar.capsuleKey));
+      Rect cell(WidgetTester tester, String label) => tester.getRect(find.byKey(FloatingTabBar.tabKey(label)));
+
+      testWidgets('sits under the chosen tab, and slides there from where it was, never past it', (tester) async {
+        await pumpBar(tester, index: 0, tabs: _threeTabs);
+        expect(capsule(tester).left, closeTo(cell(tester, 'Agents').left, 0.5));
+        final from = capsule(tester).left;
+        final to = cell(tester, 'Settings').left;
+
+        // Same widgets, a new index: a move, not a new capsule.
+        await pumpBar(tester, index: 2, tabs: _threeTabs, settleMs: 0);
+        await tester.pump(const Duration(milliseconds: 60));
+        final mid = capsule(tester).left;
+        expect(mid, greaterThan(from), reason: 'it has left the old tab');
+        expect(mid, lessThan(to), reason: 'and has not arrived');
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(capsule(tester).left, closeTo(to, 0.5));
+        expect(capsule(tester).width, closeTo(cell(tester, 'Settings').width, 0.5), reason: 'one cell wide, whichever');
+      });
+
+      testWidgets('a second tap retargets it from where it is, without a jump', (tester) async {
+        await pumpBar(tester, index: 0, tabs: _threeTabs);
+        await pumpBar(tester, index: 2, tabs: _threeTabs, settleMs: 80);
+        final mid = capsule(tester).left;
+        await pumpBar(tester, index: 1, tabs: _threeTabs, settleMs: 0);
+        await tester.pump();
+        expect((capsule(tester).left - mid).abs(), lessThan(20), reason: 'it carries on from the live position');
+      });
+
+      testWidgets('reduced motion: it is under the chosen tab at once', (tester) async {
+        await pumpBar(tester, index: 0, tabs: _threeTabs, reduceMotion: true);
+        await pumpBar(tester, index: 2, tabs: _threeTabs, reduceMotion: true, settleMs: 16);
+        expect(capsule(tester).left, closeTo(cell(tester, 'Settings').left, 0.5));
+      });
+
+      testWidgets('is still at rest: no animation left running', (tester) async {
+        await pumpBar(tester, index: 1, tabs: _threeTabs);
+        expect(tester.hasRunningAnimations, isFalse);
+      });
+
+      testWidgets('the text warms as the capsule arrives under it and cools as it leaves, in step with it', (tester) async {
+        Color colour(String label) => tester.widget<Text>(find.text(label)).style!.color!;
+        // 0 at textSecondary, 1 at text, read off the red channel.
+        double warmth(String label) =>
+            (colour(label).r - Ds.paper.textSecondary.r) / (Ds.paper.text.r - Ds.paper.textSecondary.r);
+        // 1 with the capsule centred on the cell, 0 a cell or more away.
+        double under(WidgetTester tester, String label) {
+          final c = cell(tester, label);
+          return (1 - (capsule(tester).left - c.left).abs() / c.width).clamp(0.0, 1.0);
+        }
+
+        await pumpBar(tester, index: 0, tabs: _threeTabs);
+        expect(warmth('Agents'), closeTo(1, 0.01));
+        expect(warmth('Machines'), closeTo(0, 0.01));
+
+        await pumpBar(tester, index: 2, tabs: _threeTabs, settleMs: 0);
+        for (final ms in [16, 24, 40]) {
+          await tester.pump(Duration(milliseconds: ms));
+          for (final label in ['Agents', 'Machines', 'Settings']) {
+            expect(warmth(label), closeTo(under(tester, label), 0.03), reason: '$label at +${ms}ms');
+          }
+        }
+        expect(warmth('Machines'), greaterThan(0), reason: 'the capsule passed under it, so it warmed on the way');
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(warmth('Settings'), closeTo(1, 0.01));
+        expect(warmth('Agents'), closeTo(0, 0.01));
+      });
+
+      group('dragged along the bar', () {
+        Future<TestGesture> grab(WidgetTester tester, List<int> taps) async {
+          await pumpBar(tester, index: 0, tabs: _threeTabs, onChanged: taps.add);
+          return tester.startGesture(cell(tester, 'Agents').center);
+        }
+
+        Future<void> drag(WidgetTester tester, TestGesture g, double dx) async {
+          for (var moved = 0.0; moved < dx; moved += 5) {
+            await g.moveBy(const Offset(5, 0));
+          }
+          await tester.pump(const Duration(milliseconds: 250)); // held still: no momentum
+        }
+
+        Future<void> settle(WidgetTester tester) => tester.pumpAndSettle();
+
+        testWidgets('follows the finger, and the tab changes where it is let go', (tester) async {
+          final taps = <int>[];
+          final g = await grab(tester, taps);
+          final from = capsule(tester).left;
+          const travelled = 130.0; // the finger's steps of 5 dp, until past one cell and a bit
+          await drag(tester, g, 126);
+          final moved = capsule(tester).left - from;
+          expect(moved, lessThanOrEqualTo(travelled), reason: 'never ahead of the finger');
+          expect(moved, greaterThan(travelled - 30), reason: 'it came along with it, the touch slop aside: no glide of its own');
+          expect(taps, isEmpty, reason: 'nothing is chosen while the finger is down');
+          await g.up();
+          expect(taps, [1]);
+        });
+
+        testWidgets('a short drag that ends nearer where it began chooses nothing, and the capsule goes back', (tester) async {
+          final taps = <int>[];
+          final g = await grab(tester, taps);
+          await drag(tester, g, 30);
+          await g.up();
+          await settle(tester);
+          expect(taps, isEmpty);
+          expect(capsule(tester).left, closeTo(cell(tester, 'Agents').left, 0.5));
+          expect(tester.hasRunningAnimations, isFalse);
+        });
+
+        testWidgets('a bar whose owner did not take the choice gets its capsule back under the chosen tab', (tester) async {
+          final taps = <int>[];
+          final g = await grab(tester, taps);
+          await drag(tester, g, cell(tester, 'Agents').width + 30);
+          await g.up();
+          await settle(tester);
+          expect(taps, [1]);
+          expect(capsule(tester).left, closeTo(cell(tester, 'Agents').left, 0.5), reason: 'index is still 0');
+        });
+
+        testWidgets('a flick is enough: it goes where it would have coasted', (tester) async {
+          final taps = <int>[];
+          await pumpBar(tester, index: 0, tabs: _threeTabs, onChanged: taps.add);
+          await tester.fling(find.byKey(FloatingTabBar.tabKey('Agents')), const Offset(50, 0), 900);
+          await settle(tester);
+          expect(taps, hasLength(1));
+          expect(taps.single, greaterThan(0));
+        });
+
+        testWidgets('dragged past the last tab the capsule stops at the pill, never outside it', (tester) async {
+          final taps = <int>[];
+          await pumpBar(tester, index: 2, tabs: _threeTabs, onChanged: taps.add);
+          final g = await tester.startGesture(cell(tester, 'Settings').center);
+          for (var i = 0; i < 40; i++) {
+            await g.moveBy(const Offset(5, 0));
+          }
+          await tester.pump();
+          expect(capsule(tester).right, closeTo(cell(tester, 'Settings').right, 0.5));
+          expect(capsule(tester).right, lessThanOrEqualTo(tester.getRect(find.byType(FloatingTabBar)).right));
+          await tester.pump(const Duration(milliseconds: 250));
+          await g.up();
+          await settle(tester);
+          expect(taps, isEmpty);
+          expect(capsule(tester).left, closeTo(cell(tester, 'Settings').left, 0.5));
+        });
+      });
     });
   });
 

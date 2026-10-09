@@ -319,7 +319,23 @@ class FileViewerViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _readMore(int epoch) async {
+  Future<void>? _reading;
+  var _readingEpoch = -1;
+
+  /// Reads the next piece, or joins the read that is already running for this
+  /// [epoch]: two callers (Load more, Copy, a jump to a line) reading the same
+  /// byte range would append it twice.
+  Future<void> _readMore(int epoch) {
+    if (_reading case final running? when _readingEpoch == epoch) return running;
+    _readingEpoch = epoch;
+    late final Future<void> read;
+    read = _readPiece(epoch).whenComplete(() {
+      if (identical(_reading, read)) _reading = null;
+    });
+    return _reading = read;
+  }
+
+  Future<void> _readPiece(int epoch) async {
     final doc = _doc!;
     final left = textLimit - doc.bytes;
     final size = stat.size;

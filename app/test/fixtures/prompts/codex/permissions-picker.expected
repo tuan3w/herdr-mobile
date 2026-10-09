@@ -2,5 +2,5 @@ question:
   Update Model Permissions
 replies:
   1. Ask for approval  Read and edit… | keys: 1 enter | confirm: no
-  2. Approve for me    Only ask for… | keys: 2 enter | confirm: no
-  3. Full Access       Use with caution:… | keys: 3 enter | confirm: no
+  2. Approve for me    Only ask for… | keys: 2 enter | confirm: standing permission
+  3. Full Access       Use with caution:… | keys: 3 enter | confirm: standing permission
