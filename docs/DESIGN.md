@@ -1545,6 +1545,29 @@ what it talks to, source link, licences). The version is `lib/data/app_info.dart
 `test/app_settings_test.dart` fails when it differs from `pubspec.yaml`.
 `AppSwitch` / `SwitchRow` live there until another screen needs a switch.
 
+**Updates** (`features/settings/update_panel.dart`, `AppUpdate`). A newer
+version on GitHub is a suggestion, so it is quiet: a 10 dp accent dot on the
+Settings tab's icon (`TabSpec.mark`; the loud orange count stays the Agents
+badge's alone) and an `Update` panel at the top of Settings, absent when there
+is nothing newer. No toast, no notification, nothing on the board. The panel
+says the version and its size, and offers one step at a time: Download
+(`Try again` after a failure), a progress bar and Cancel, Install; `What's new`
+opens the release notes (the version's `CHANGELOG.md` section, rendered with
+the shared Markdown) in a sheet before anything is downloaded. A failure says
+what happened and what to do, in the panel, in red text; nothing is lost
+(a stopped download continues from its bytes). Install opens Android's own
+confirm dialog, so nothing is installed silently; if Android does not yet
+allow herdr to install apps, its settings page opens and the panel says to tap
+Install again after allowing it. The buttons stack at large text sizes (a cut
+"Try again" otherwise). About holds `Check for updates` (the manual check,
+with the reason when it fails) and `Check automatically` (on by default: at
+most every 12 h while the app is in front; the request carries the app name and
+version, and a download comes from GitHub's file servers). Why on by default and why About says so: the app used to
+say it "sends nothing anywhere else"; github.com is now the one other place it
+contacts, and the Connection line says it. The download is only ever started
+by a tap (it is ~50 MB of the person's radio). Android only: `bootApp` builds
+no updater elsewhere and the screen then shows nothing about updates.
+
 The native launch window is the paper colour in day **and** night
 (`herdr_bg`, no `values-night`): the chosen theme is not readable before
 Flutter starts, and light is the default. A person who chose Dark sees a brief

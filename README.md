@@ -91,6 +91,9 @@ Download `herdr-mobile-<version>.apk` from
 unknown sources, and open it. One APK covers every Android 7.0+ phone (32- and 64-bit
 ARM). Check it against `SHA256SUMS`.
 
+Later releases can be installed from inside the app: Settings shows a dot when
+one is available, with what's new, and downloads and checks it for you.
+
 **On each machine** you need:
 
 - sshd, reachable from the phone (LAN, VPN or tailnet).

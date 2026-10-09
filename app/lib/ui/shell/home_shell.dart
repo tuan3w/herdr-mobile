@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/repositories/app_update.dart';
 import '../../data/repositories/attention_set.dart';
 import '../../data/repositories/fleet_repository.dart';
 import '../core/chrome.dart';
@@ -19,7 +20,7 @@ import '../features/settings/settings_screen.dart';
 /// The three root tabs with a floating tab bar over them. The tab bar gives its
 /// own selection haptic.
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, this.initialTab = 0, this.onTabChanged, this.moveToBackground, this.tabs});
+  const HomeShell({super.key, this.initialTab = 0, this.onTabChanged, this.moveToBackground, this.tabs, this.update});
 
   /// The tab shown at first, unless the OS restores another ([HomeTab] order:
   /// 0 Agents, 1 Machines, 2 Settings): the one the app was left on.
@@ -36,11 +37,17 @@ class HomeShell extends StatefulWidget {
   /// toast's action), as a tap on the tab bar would.
   final HomeTabs? tabs;
 
+  /// Looks for a newer version; null where the app cannot update itself. Its
+  /// release puts a quiet dot on the Settings tab.
+  final AppUpdate? update;
+
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTickerProviderStateMixin {
+  static final _noUpdate = Listenable.merge(const <Listenable>[]);
+
   static final _agents = HomeTab.agents.index;
   static final _machines = HomeTab.machines.index;
   static final _settings = HomeTab.settings.index;
@@ -183,7 +190,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
                 opacity: _opacity,
                 child: TickerMode(
                   enabled: index == _settings,
-                  child: _settingsOpened ? const SettingsScreen() : const SizedBox.shrink(),
+                  child: _settingsOpened ? SettingsScreen(update: widget.update) : const SizedBox.shrink(),
                 ),
               ),
             ],
@@ -225,19 +232,29 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
             child: ValueListenableBuilder<bool>(
               valueListenable: _selecting,
               builder: (context, selecting, child) => selecting ? const SizedBox.shrink() : child!,
-              child: FloatingTabBar(
-                index: index,
-                onChanged: _select,
-                tabs: [
-                  TabSpec(
-                    icon: LucideIcons.bot,
-                    label: 'Agents',
-                    badge: needsYou,
-                    badgeLabel: 'need you',
-                  ),
-                  const TabSpec(icon: LucideIcons.server, label: 'Machines'),
-                  const TabSpec(icon: LucideIcons.settings, label: 'Settings'),
-                ],
+              child: ListenableBuilder(
+                listenable: widget.update ?? _noUpdate,
+                builder: (context, _) => FloatingTabBar(
+                  index: index,
+                  onChanged: _select,
+                  tabs: [
+                    TabSpec(
+                      icon: LucideIcons.bot,
+                      label: 'Agents',
+                      badge: needsYou,
+                      badgeLabel: 'need you',
+                    ),
+                    const TabSpec(icon: LucideIcons.server, label: 'Machines'),
+                    // A newer version is a quiet dot, never a count: it is not
+                    // something that needs the person.
+                    TabSpec(
+                      icon: LucideIcons.settings,
+                      label: 'Settings',
+                      mark: widget.update?.release != null,
+                      markLabel: 'update available',
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

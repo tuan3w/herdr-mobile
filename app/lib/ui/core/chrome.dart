@@ -278,6 +278,8 @@ class TabSpec {
     required this.label,
     this.badge = 0,
     this.badgeLabel = 'need you',
+    this.mark = false,
+    this.markLabel = '',
   });
 
   final IconData icon;
@@ -288,6 +290,12 @@ class TabSpec {
 
   /// What the count means, for screen readers: "Agents, 2 need you".
   final String badgeLabel;
+
+  /// A small plain dot, in the accent: something here is worth a look, and
+  /// nothing needs the person (the count [badge] is the loud one). Not drawn
+  /// next to a count. [markLabel] is its meaning for screen readers.
+  final bool mark;
+  final String markLabel;
 }
 
 /// Floating pill tab bar: three equal cells, an icon over a name in each, the
@@ -549,7 +557,11 @@ class _TabItem extends StatelessWidget {
       onTap: onTap,
       haptic: !selected,
       selected: selected,
-      semanticLabel: badge > 0 ? '${tab.label}, $badge ${tab.badgeLabel}' : tab.label,
+      semanticLabel: badge > 0
+          ? '${tab.label}, $badge ${tab.badgeLabel}'
+          : tab.mark
+              ? '${tab.label}, ${tab.markLabel}'
+              : tab.label,
       builder: (context, pressed) => SizedBox(
         height: FloatingTabBar._cell,
         // The press warms the text at once; the capsule's place does the rest.
@@ -591,6 +603,20 @@ class _TabItem extends StatelessWidget {
                                 color: ds.onStatus,
                               ),
                             ),
+                          ),
+                        ),
+                      )
+                    else if (tab.mark)
+                      Positioned(
+                        left: _icon - 5,
+                        top: -3,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: ds.accent,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: ds.surface, width: 1.5),
                           ),
                         ),
                       ),

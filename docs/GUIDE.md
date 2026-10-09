@@ -57,6 +57,13 @@ looked for in that user's home.
 3. Open the APK. Android asks you to allow installs from this source (the
    browser or file manager you opened it with). Allow it, then install.
 4. Later releases install over this one and keep your machines and settings.
+   You do not have to come back to this page: when a new version is out,
+   Settings gets a small dot. Open it, read What's new, tap Download, then
+   Install. herdr checks the file against the release's checksum first, and
+   Android asks you to confirm. The first time, Android also asks you to allow
+   herdr to install apps: allow it and tap Install again. Settings > About >
+   Check automatically turns the automatic look off (then Check for updates
+   asks on demand).
 
 ## 3. Add a machine
 

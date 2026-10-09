@@ -4,6 +4,21 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.7] - 2026-10-09
+
+### Update from inside the app
+
+- When a new version is out, Settings shows a small dot and an Update panel at
+  the top: the version, its size and What's new (these notes). Tap Download,
+  then Install; Android asks you to confirm. No more fetching the APK by hand.
+- The download is compared with the checksum GitHub publishes for it before
+  Android sees it; a download that breaks or goes quiet continues from where it
+  stopped, and the file is checked again just before it is installed.
+- herdr looks for a new version about twice a day while you use it, and on
+  Settings > About > Check for updates. Switch the automatic look off there. It
+  asks GitHub only, with the app's name and version; it never downloads without
+  your tap.
+
 ## [0.1.6] - 2026-10-09
 
 ### A slimmer tab bar you can drag

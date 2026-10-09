@@ -9,6 +9,7 @@ import 'data/repositories/app_settings.dart';
 import 'data/repositories/agent_session.dart' show AgentSessions;
 import 'data/repositories/agent_session_repository.dart';
 import 'data/repositories/agent_session_settings.dart';
+import 'data/repositories/app_update.dart';
 import 'data/repositories/attention_notifier.dart';
 import 'data/repositories/attention_set.dart';
 import 'data/repositories/fleet_repository.dart';
@@ -94,6 +95,7 @@ class HerdrMobileApp extends StatefulWidget {
     this.attentionSet,
     this.previews,
     this.observedSessions,
+    this.update,
   });
 
   final MachineRepository machines;
@@ -167,6 +169,11 @@ class HerdrMobileApp extends StatefulWidget {
   /// it, before the previews and fleet it reads.
   final ObservedSessions? observedSessions;
 
+  /// Looks for, downloads and installs a newer version (Android, from GitHub
+  /// releases); null elsewhere and in tests. The app takes it over and
+  /// disposes it.
+  final AppUpdate? update;
+
   @override
   State<HerdrMobileApp> createState() => _HerdrMobileAppState();
 }
@@ -224,6 +231,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
       onTabChanged: (tab) => unawaited(widget.appSettings.setHomeTab(tab)),
       moveToBackground: const PlatformTaskMover().moveToBack,
       tabs: _tabs,
+      update: widget.update,
     ),
   );
 
@@ -238,6 +246,10 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     var registering = true;
     _notifier.onOpen((link) => unawaited(_links.follow(link, cold: registering)));
     registering = false;
+    // The daily look for a newer version, once the first frame is up.
+    if (widget.update case final update?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(update.checkIfDue()));
+    }
   }
 
   @override
@@ -247,6 +259,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     widget.observedSessions?.onLifecycleState(state);
     widget.agentSessions?.onLifecycleState(state);
     widget.attention?.onLifecycleState(state);
+    widget.update?.onLifecycleState(state);
   }
 
   /// Observed sessions stay attached in the background exactly when the
@@ -267,6 +280,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp>
     widget.agentSessions?.dispose();
     _fleet.dispose();
     if (widget.notificationSettings == null) _notificationSettings.dispose();
+    widget.update?.dispose();
     super.dispose();
   }
 

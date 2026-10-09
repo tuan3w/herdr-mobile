@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The one folder the installer may read: the downloaded, verified APK
+     (data/services/release_files.dart keeps it in the app's cache directory,
+     `updates/`). -->
+<paths>
+    <cache-path name="updates" path="updates/"/>
+</paths>

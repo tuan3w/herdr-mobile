@@ -40,6 +40,10 @@ app/lib/
   data/
     app_info.dart   version shown in Settings > About (repeats pubspec.yaml;
                     test/app_info_test.dart fails when they disagree)
+    repositories/app_update.dart, services/release_feed.dart,
+    release_files.dart, apk_installer.dart
+                    the in-app update: GitHub release, resumable verified
+                    download, Android installer (see "Android release build")
     models/         herdr_models.dart (and its wire field lists),
                     machine_profile.dart, pane previews, remote files, slash
                     commands
@@ -187,3 +191,32 @@ app). For a build you will not publish, pass
 (`appIdSuffix`) are exempt because they install beside the real app. Keep the
 keystore backed up: an update only installs over an earlier release if it is
 signed with the same key.
+
+### What the in-app update reads from a release
+
+Settings > Update (`data/repositories/app_update.dart`) offers whatever
+`releases/latest` on GitHub names, so a release is only offered if it keeps
+this shape (the release workflow produces it; so must a by-hand upload):
+
+- the tag is `vX.Y.Z` (a tag like `v0.2.0-rc1` is never offered);
+- the APK is the asset `herdr-mobile-X.Y.Z.apk`, with a `SHA256SUMS` asset
+  beside it (or GitHub's own `digest` on the asset). **A release without a
+  checksum is refused**, never installed unchecked. The checksum comes from the
+  same release as the APK, so it catches a broken, cut or swapped download, not
+  a compromised release: that is Android's same-signing-key rule. A release
+  re-published under the same tag (`gh release upload --clobber`) is handled:
+  a download that no longer matches is thrown away and the release is read
+  again, so re-publish before anyone has the file, not after;
+- the release body is the "What's new" sheet, as Markdown: it is the version's
+  `CHANGELOG.md` section (`tool/release-notes.sh`), so write it for the person
+  who reads it before tapping Download;
+- every URL must start with `https://github.com/tuan3w/herdr-mobile/releases/download/`;
+  anything else is ignored.
+
+The APK is downloaded to `cache/updates/` (resumable `.part`, renamed only after
+the SHA-256 matched) and handed to Android's installer through
+`UpdateFileProvider` (`res/xml/update_paths.xml` limits it to that folder).
+Android installs it only when it is signed with the same key as the installed
+app: a debug build cannot update to a release, and Android then says "App not
+installed". Not measured on a phone: the install itself (the build and the
+download/verify code are tested; Android's dialog is not).

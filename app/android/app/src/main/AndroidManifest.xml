@@ -23,6 +23,11 @@
          at run time on the first tap of the mic button, after which Android's
          own speech service listens. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- In-app update (data/repositories/app_update.dart): the downloaded
+         release APK is handed to Android's installer, which asks the person
+         to confirm. Android also needs "Install unknown apps" allowed for
+         herdr; the app sends the person there on the first install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="herdr"
         android:name="${applicationName}"
@@ -63,6 +68,17 @@
                 android:name="flutter_deeplinking_enabled"
                 android:value="true"/>
         </activity>
+        <!-- Shares the downloaded update APK (and nothing else: see
+             res/xml/update_paths.xml) with the package installer. -->
+        <provider
+            android:name=".UpdateFileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths"/>
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

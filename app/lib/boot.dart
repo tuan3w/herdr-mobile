@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,6 +13,7 @@ import 'data/repositories/fleet_repository.dart';
 import 'data/repositories/last_seen.dart';
 import 'data/repositories/machine_repository.dart';
 import 'data/repositories/notification_settings.dart';
+import 'data/repositories/app_update.dart';
 import 'data/repositories/reviewed_state.dart';
 import 'data/repositories/slash_usage.dart';
 import 'data/repositories/quick_phrases.dart';
@@ -22,9 +24,12 @@ import 'data/repositories/observed_sessions.dart';
 import 'data/repositories/pane_answerer.dart';
 import 'data/repositories/pane_previews.dart';
 import 'data/observed/omp_log_mapper.dart';
+import 'data/services/apk_installer.dart';
 import 'data/services/local_notifier.dart';
 import 'data/services/network_monitor.dart';
 import 'data/services/notifier.dart';
+import 'data/services/release_feed.dart';
+import 'data/services/release_files.dart';
 import 'data/services/snapshot_cache.dart';
 import 'data/services/ssh_agent_host.dart';
 import 'data/services/ssh_log_source.dart';
@@ -229,6 +234,18 @@ Future<HerdrMobileApp> bootApp({
     answerer: PaneAnswerer(connection: fleet.connection),
     visibleText: visibleText,
   );
+  // Updating from GitHub releases is an Android thing (the release is an APK,
+  // and an iPhone cannot install one from the app); tests with their own
+  // connections have no network to ask.
+  final appUpdate = connect == null && defaultTargetPlatform == TargetPlatform.android
+      ? AppUpdate(
+          store: PrefsUpdateStore(),
+          feed: GitHubReleaseFeed(),
+          files: HttpReleaseFiles(),
+          installer: const PlatformApkInstaller(),
+        )
+      : null;
+  await appUpdate?.load();
   return HerdrMobileApp(
     previews: previews,
     observedSessions: observedSessions,
@@ -249,6 +266,7 @@ Future<HerdrMobileApp> bootApp({
     agentSessionSettings: agentSessionSettings,
     notificationSettings: notificationSettings,
     notifier: notify,
+    update: appUpdate,
     attention: attention,
     attentionSet: attentionSet,
   );

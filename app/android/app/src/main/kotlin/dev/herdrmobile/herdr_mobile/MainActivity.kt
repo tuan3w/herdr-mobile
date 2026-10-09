@@ -1,14 +1,19 @@
 package dev.herdrmobile.herdr_mobile
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.core.content.FileProvider
 import com.dexterous.flutterlocalnotifications.ForegroundService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 /**
  * Flutter syncs the keyboard's animation with the window's insets from API 30
@@ -64,6 +69,46 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.herdrmobile/update")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "install" -> installApk(call.argument<String>("path"), result)
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * Opens Android's package installer on a downloaded release APK. Without
+     * the "Install unknown apps" permission for this app (Android 8+) the page
+     * that grants it opens instead, and Dart says so; the person taps Install
+     * again afterwards. The file is shared through [UpdateFileProvider], which
+     * serves the `updates/` cache folder and nothing else.
+     */
+    private fun installApk(path: String?, result: MethodChannel.Result) {
+        // Only a verified, renamed release APK: never a `.part` or another file.
+        if (path == null || !File(path).name.matches(Regex("herdr-mobile-\\d+\\.\\d+\\.\\d+\\.apk"))) {
+            return result.error("install", "There is no update file to install. Download it again.", null)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
+                )
+                return result.success("needsPermission")
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.updates", File(path))
+            startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+            )
+            result.success("started")
+        } catch (e: IllegalArgumentException) {
+            result.error("install", "The update file is not where herdr keeps updates. Download it again.", null)
+        } catch (e: ActivityNotFoundException) {
+            result.error("install", "This phone has no installer that can open the update.", null)
+        }
     }
 
     /**

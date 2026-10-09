@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/app_info.dart';
 import '../../../data/repositories/app_settings.dart';
+import '../../../data/repositories/app_update.dart';
 import '../../../data/repositories/notification_settings.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/services/notifier.dart';
@@ -20,11 +21,16 @@ import '../../core/tokens.dart';
 import 'app_switch.dart';
 import 'font_size_control.dart';
 import 'quick_phrases_editor.dart';
+import 'update_panel.dart';
 
 /// The third root tab: how the app looks, how the terminal is drawn, and what
 /// this app is. Everything here applies at once and is remembered.
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.update});
+
+  /// Looks for and installs a newer version; null where the app cannot (not
+  /// Android, tests), and the screen then shows nothing about updates.
+  final AppUpdate? update;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -36,11 +42,12 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (update case final update?) UpdatePanel(update: update),
                   const _AppearanceSection(),
                   const _TerminalSection(),
                   const QuickPhrasesSection(),
                   const _NotificationsSection(),
-                  const _AboutSection(),
+                  _AboutSection(update: update),
                   SizedBox(height: FloatingTabBar.clearance(context) + Gap.md),
                 ],
               ),
@@ -369,7 +376,9 @@ class _NotificationsSectionState extends State<_NotificationsSection> {
 }
 
 class _AboutSection extends StatelessWidget {
-  const _AboutSection();
+  const _AboutSection({this.update});
+
+  final AppUpdate? update;
 
   static const _repoLabel = 'github.com/tuan3w/herdr-mobile · GPL-3.0';
 
@@ -393,33 +402,89 @@ class _AboutSection extends StatelessWidget {
       );
 
   @override
-  Widget build(BuildContext context) => FormSection(
-        label: 'About',
-        children: [
-          Column(
+  Widget build(BuildContext context) {
+    final update = this.update;
+    return FormSection(
+      label: 'About',
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _InfoRow(title: 'herdr mobile', subtitle: 'Version $appVersion'),
+            if (update != null) _UpdateRows(update: update),
+            _InfoRow(
+              title: 'Connection',
+              subtitle: update == null
+                  ? 'Talks to herdr over SSH and sends nothing anywhere else. '
+                      'Dictation uses your phone\'s own speech service.'
+                  : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
+                      'to look for a new version and, when you tap Download, to fetch it. '
+                      'Dictation uses your phone\'s own speech service.',
+            ),
+            _InfoRow(
+              title: 'Source code',
+              subtitle: _repoLabel,
+              trailing: LucideIcons.externalLink,
+              onTap: () => unawaited(_openRepo(context)),
+            ),
+            _InfoRow(
+              title: 'Licenses',
+              trailing: LucideIcons.chevronRight,
+              onTap: () => _openLicenses(context),
+              divider: false,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Looking for a newer version: the check, and whether it happens by itself.
+/// What a newer version offers is the panel at the top of the screen.
+class _UpdateRows extends StatelessWidget {
+  const _UpdateRows({required this.update});
+
+  final AppUpdate update;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: update,
+        builder: (context, _) {
+          final ds = context.ds;
+          final release = update.release;
+          final checking = update.stage == UpdateStage.checking;
+          final problem = update.checkProblem;
+          final subtitle = checking
+              ? 'Asking github.com\u2026'
+              : problem ??
+                  (release != null
+                      ? 'Version ${release.version} is available, at the top of this page.'
+                      : update.upToDate
+                          ? 'You have the latest version.'
+                          : 'Asks github.com for the newest release.');
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _InfoRow(title: 'herdr mobile', subtitle: 'Version $appVersion'),
-              const _InfoRow(
-                title: 'Connection',
-                subtitle: 'Talks to herdr over SSH and sends nothing anywhere else. '
-                    'Dictation uses your phone\'s own speech service.',
-              ),
               _InfoRow(
-                title: 'Source code',
-                subtitle: _repoLabel,
-                trailing: LucideIcons.externalLink,
-                onTap: () => unawaited(_openRepo(context)),
+                title: 'Check for updates',
+                subtitle: subtitle,
+                subtitleColor: problem != null ? ds.dangerText : null,
+                trailing: LucideIcons.refreshCw,
+                busy: checking,
+                onTap: update.stage == UpdateStage.idle ? () => unawaited(update.check()) : null,
               ),
-              _InfoRow(
-                title: 'Licenses',
-                trailing: LucideIcons.chevronRight,
-                onTap: () => _openLicenses(context),
-                divider: false,
+              SwitchRow(
+                title: 'Check automatically',
+                subtitle: 'Asks github.com about twice a day while you use the app, with this '
+                    'app\'s name and version. A download comes from GitHub\'s file servers.',
+                value: update.autoCheck,
+                onChanged: (on) => unawaited(update.setAutoCheck(on)),
               ),
+              const Hairline(),
             ],
-          ),
-        ],
+          );
+        },
       );
 }
 
@@ -432,6 +497,8 @@ class _InfoRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.divider = true,
+    this.busy = false,
+    this.subtitleColor,
   });
 
   final String title;
@@ -439,6 +506,12 @@ class _InfoRow extends StatelessWidget {
   final IconData? trailing;
   final VoidCallback? onTap;
   final bool divider;
+
+  /// A spinner in place of the trailing icon: the row's work is running.
+  final bool busy;
+
+  /// The subtitle's colour when it is not the usual one (a failure).
+  final Color? subtitleColor;
 
   @override
   Widget build(BuildContext context) {
@@ -474,13 +547,16 @@ class _InfoRow extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
                             subtitle,
-                            style: Type.secondary.copyWith(color: ds.textSecondary),
+                            style: Type.secondary.copyWith(color: subtitleColor ?? ds.textSecondary),
                           ),
                         ),
                     ],
                   ),
                 ),
-                if (trailing != null) ...[
+                if (busy) ...[
+                  const SizedBox(width: Gap.md),
+                  const BusySpinner(size: 18),
+                ] else if (trailing != null) ...[
                   const SizedBox(width: Gap.md),
                   Icon(trailing, size: 18, color: ds.textTertiary),
                 ],
