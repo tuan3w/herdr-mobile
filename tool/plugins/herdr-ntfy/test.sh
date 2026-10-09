@@ -297,7 +297,10 @@ import sys
 sys.path.insert(0, sys.argv[1])
 import notify
 
-# (description, text, the part that must not survive)
+# (description, text, the part that must not survive). The provider-shaped
+# ones are split in two ("AIza" "Sy...") so the file never holds a whole one:
+# GitHub secret scanning flagged the fake Slack webhook and Google key as public
+# leaks. Python joins the pieces, so the test reads the same.
 SECRETS = [
     ("Authorization: Bearer in a curl command", "curl -H 'Authorization: Bearer abc123tokenvalue' https://x.example/api?", "abc123tokenvalue"),
     ("Authorization: Bearer on its own", "Authorization: Bearer abc123", "abc123"),
@@ -313,15 +316,15 @@ SECRETS = [
     ("password: value", "password: hunter2", "hunter2"),
     ("token in a query string", "GET /v1/items?token=abc123def&x=1", "abc123def"),
     ("userinfo in a database URL", "connect to postgres://user:pw@host/db?", "user:pw"),
-    ("a token as userinfo in a git URL", "git clone https://ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git?", "ghp_abcdefghij"),
-    ("Slack webhook", "post to https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX?", "T00000000"),
-    ("Discord webhook", "post to https://discord.com/api/webhooks/123456789/abcDEF_ghi-jkl?", "abcDEF_ghi"),
+    ("a token as userinfo in a git URL", "git clone https://ghp_" "abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git?", "ghp_abcdefghij"),
+    ("Slack webhook", "post to https://hooks.slack" ".com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX?", "T00000000"),
+    ("Discord webhook", "post to https://discord.com/api/web" "hooks/123456789/abcDEF_ghi-jkl?", "abcDEF_ghi"),
     ("sk- key", "Use sk-abcdefgh12345678 now?", "abcdefgh12345678"),
-    ("GitHub token", "Use ghp_abcdefghijklmnopqrstuvwxyz0123456789 now?", "ghp_abcdefghij"),
-    ("GitHub fine-grained token", "Use github_pat_11ABCDEFG0abcdefghijklmno_abcdef now?", "11ABCDEFG0"),
-    ("Slack token", "Use xoxb-123456789012-abcdefghijkl now?", "123456789012"),
-    ("AWS access key id", "Use AKIAIOSFODNN7EXAMPLE now?", "AKIAIOSFODNN7"),
-    ("Google API key", "Use AIzaSyA1234567890abcdefghijklmnopqrstuv now?", "AIzaSyA1234"),
+    ("GitHub token", "Use ghp_" "abcdefghijklmnopqrstuvwxyz0123456789 now?", "ghp_abcdefghij"),
+    ("GitHub fine-grained token", "Use github_pat_" "11ABCDEFG0abcdefghijklmno_abcdef now?", "11ABCDEFG0"),
+    ("Slack token", "Use xoxb-" "123456789012-abcdefghijkl now?", "123456789012"),
+    ("AWS access key id", "Use AKIA" "IOSFODNN7EXAMPLE now?", "AKIAIOSFODNN7"),
+    ("Google API key", "Use AIza" "SyA1234567890abcdefghijklmnopqrstuv now?", "AIza" "SyA1234"),
     ("JWT", "Use eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U now?", "eyJhbGci"),
     ("40 hex characters", "Use 9fceb02d0ae598e95dc970b74767f19372d61af8 now?", "9fceb02d0ae598e9"),
     ("a long base64 blob", "Use dGhpcyBpcyBhIHZlcnkgbG9uZyBiYXNlNjQgc3RyaW5n/QUJDRA== now?", "dGhpcyBpcyBhIHZlcnkg"),

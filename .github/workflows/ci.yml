@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# It only reads the code: the token can do nothing else (CodeQL
+# actions/missing-workflow-permissions).
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
