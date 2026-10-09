@@ -451,8 +451,13 @@ void main() {
       _write(f, [_json(1)]);
       final run = await host.follow(f.path, pollMs: 2000);
       await run.next();
-      final watch = Stopwatch()..start();
+      // Timed from a line it has just picked up, so from a look: timed from the
+      // start, a slow runner can deliver the first line late, just before the
+      // next look, and the line after it comes at once.
       _write(f, [_json(2)], mode: FileMode.append);
+      await run.next(timeout: const Duration(seconds: 5));
+      final watch = Stopwatch()..start();
+      _write(f, [_json(3)], mode: FileMode.append);
       await run.next(timeout: const Duration(seconds: 5));
       expect(watch.elapsedMilliseconds, greaterThan(1000), reason: 'it only looks every 2 s');
       await run.stop();
