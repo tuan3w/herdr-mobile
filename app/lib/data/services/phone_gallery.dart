@@ -118,7 +118,14 @@ class PhotoManagerGallery implements PhoneGallery {
     androidPermission: AndroidPermission(type: RequestType.image, mediaLocation: false),
   );
 
-  static final _filter = FilterOptionGroup(orders: const [OrderOption()]);
+  // No creation-date bound. `FilterOptionGroup`'s default `createTimeCond` caps
+  // the query at `DateTime.now()` *when the group is built*; this group is
+  // built once per app run, so every picture taken after the first query
+  // (the screenshot just taken) was filtered out of every later one.
+  static final _filter = FilterOptionGroup(
+    createTimeCond: DateTimeCond.def().copyWith(ignore: true),
+    orders: const [OrderOption()],
+  );
 
   final _paths = <String, AssetPathEntity>{};
   final _entities = <String, AssetEntity>{};
