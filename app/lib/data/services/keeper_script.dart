@@ -143,7 +143,10 @@ ORPHAN_AFTER = envint("HERDR_KEEPER_ORPHAN_SECONDS", INIT_TIMEOUT + 30)
 # `follow`: a session log read for the phone (see cmd_follow).
 FOLLOW_TAIL = 192 * 1024
 FOLLOW_TAIL_MIN = 16 * 1024
-FOLLOW_TAIL_MAX = 8 * 1024 * 1024
+# "Load earlier" on the phone widens the tail 4x at a time up to this: the
+# whole of all but the longest chats (a 64 MB Claude log is days of work), and
+# still sent slimmed and deflated.
+FOLLOW_TAIL_MAX = 64 * 1024 * 1024
 FOLLOW_CUT = 16 * 1024
 FOLLOW_RAW = 2048
 FOLLOW_LINE = 4 * 1024 * 1024
@@ -3924,8 +3927,11 @@ class Follower(object):
         return os.pread(self.fd, 1, offset)
 
     def start_tail(self, size, marker):
-        """Begin at the last self.tail bytes, after a newline."""
+        """Begin at the last self.tail bytes, after a newline. Says where the
+        tail starts (`S`, 0: the whole file) so the phone knows whether
+        there is more to load before it."""
         start = max(0, size - self.tail)
+        self.emit(b"S\t%d\n" % start)
         self.skip = start > 0
         if self.skip:
             start -= 1
@@ -4072,7 +4078,8 @@ def follow_target(path):
 def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL, zipped=False):
     """Prints the tail of the log (or what follows byte [frm]), then every
     complete line appended later, one record per line: `<endOffset>\t<json>`
-    (long strings and binary payloads cut), `R\t<offset>` when the file
+    (long strings and binary payloads cut), `S\t<offset>` where a tail read
+    starts (0: the whole file), `R\t<offset>` when the file
     shrank or was replaced (what follows starts at that offset), `C\t<offset>`
     once, when the file's content up to that offset has been sent, or
     `E\t<message>` before exiting 70 when reading fails. Ends when stdout or

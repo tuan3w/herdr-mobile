@@ -1,0 +1,6 @@
+question:
+  Implement this plan?
+replies:
+  1. Yes, implement this plan · Switch… | keys: 1 enter | confirm: no
+  2. Yes, clear context and implement ·… | keys: 2 enter | confirm: no
+  3. No, stay in Plan mode · Continue… | keys: 3 enter | confirm: no

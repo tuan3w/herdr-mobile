@@ -541,6 +541,101 @@ changes with them, never quote them. On a 600-item chat: cold 1.5 MB / 4 round
 trips plain, 172 KB / 3 zipped; copy 172 KB zipped, 3 KB with `session/load`
 asked from the copy's last turn.
 
+### Observed Claude Code and Codex
+
+Each agent's chat is its own session log mapped to the ACP updates
+(`app/lib/data/observed/`), its hand is the pane. Everything below was
+captured on a real agent (Claude Code 2.1.293 / 2.1.295, Codex 0.153.4,
+herdr 0.9.3; fixtures in `app/test/fixtures/claude_logs`, `codex_logs`,
+`prompts/{claude,codex}`) and is what the mappers rely on. Agents change
+weekly: when a layout moves, capture it again before changing a mapper.
+
+**Finding the log.** herdr's `agent_session` exists only when its integration
+is installed, and its hook fires on SessionStart only (a session that was running
+when it was installed reports nothing until it is restarted or resumed).
+
+- Claude: `~/.claude/projects/<cwd, every non-alphanumeric char as "-">/<sessionId>.jsonl`,
+  made at the first prompt (not at start; `/clear` makes the new file at once).
+  The folder uses the real path (`/private/tmp/...` on macOS). Without a report:
+  `pane.process_info` names the process (`argv0` is `claude`, its `name` is the
+  VERSION string, and the foreground list also holds MCP helpers) and
+  `~/.claude/sessions/<pid>.json` names its session (updated by `/clear`;
+  verified on a live session). The `session_id` field with an underscore inside a
+  log is stale after `/clear`: use `sessionId`.
+- Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-<stamp>-<id>.jsonl`, the date and
+  the stamp in the HOST's local time of the thread's creation, `<id>` a
+  UUIDv7 whose first 48 bits are that moment in UTC: look in the day before,
+  of and after. The file is made at the first prompt. herdr's hook reports the
+  thread id only. With no report nothing links a pane to a thread.
+
+**What the logs hold, and what they do not.**
+
+- Claude writes one content block per line (same `message.id`, contiguous), a
+  tool call BEFORE it runs (the pending tool_use is the last line while a
+  permission dialog or a question shows), each tool result as a line of its own,
+  and `thinking` with a signature only. `parentUuid` is not a chain, timestamps
+  are not in order: only the file order counts. Esc writes `[Request interrupted
+  by user ...]` and NO `turn_duration`; refusing a tool writes the same and a
+  `turn_duration`. A denial is `toolDenialKind: "user-rejected"` on the result
+  line. The owner's hooks may rewrite a command: the dialog shows `rtk ping`, the
+  log keeps `ping`, so a card is tied to its call by the command only when they
+  are equal, and is otherwise a card without the call.
+- Codex (`history_mode: paginated`): the chat is `event_msg` `item_completed`
+  items; `response_item.message` repeats it and is never mapped. The model
+  calls one tool, `exec`, a JavaScript script (a JS object, not JSON: `{cmd:"ls"}`);
+  `CommandExecution` / `FileChange` items carry NO call id and land before the
+  output, after a "Script running" output, inside a LATER call, or after
+  `task_complete`. They are matched by `process_id` (a script's `session_id`),
+  then by the command string, then by the call still open. A declined approval
+  interrupts the whole turn (`turn_aborted`). A `compacted` line is 1.2 MB and
+  is skipped from its first 160 characters.
+- A subagent: Claude writes `<session>/subagents/agent-<agentId>.jsonl` with a
+  `.meta.json` naming the call (`toolUseId`), every line `isSidechain: true`
+  (the main file has none); its finish is a `<task-notification>`. Codex's
+  child is a thread of its own: its rollout starts with a replay of the parent,
+  its own lines from `subagent_history_start_ordinal`.
+- Background work: Claude's `Bash` with `run_in_background` returns a
+  `backgroundTaskId`; the end is a `<task-notification>` (a user line, or an
+  attachment when the person stopped it), `TaskStop` leaves none. Codex has two
+  things: a unified-exec PROCESS (a script's `session_id`, ended by its
+  `CommandExecution`, no model tool stops it) and a script CELL (`Script running
+  with cell ID N`, stopped by `wait {cell_id, terminate:true}`); only a cell has a
+  stop route. Both stop messages were verified on a live agent.
+
+**The screens.** Claude 2.1 draws a command dialog as a header, a tip, a
+description, the command between two dashed rules (`╌`), then the question:
+`cleanPreviewRow` keeps a dashed rule as `dashedRuleRow` so `detectPrompt` can
+tell the command from the description (a dialog about a file keeps its diff out of
+the subject). Codex's `request_user_input` has no `enter` after the digit
+(an `enter` would answer the next question with its first option). A captured
+screen must be read with `--lines 60`: the blank rows under the dialog count.
+Claude's `AskUserQuestion` is answered by `ClaudeAskDriver` (key table in its
+header; arrow counts, never a digit that could be typed text) and its result
+text is compared with what was answered.
+
+**Reviewed hazards, kept in mind.** Approval cards are read from a screen the agent
+draws: a command can contain anything, so the detector treats a dashed rule as a
+rule only when it is a whole row of 20+ with no bar (a command row behind ` │ ` is
+the command's), takes every row of a Codex command, and ties a card to its log call
+only when exactly one call matches (two open calls with a cut subject in common
+show the screen's text, not either call). A card made before the log arrives is
+made again when it has the call. A new Claude/Codex chat with no log file yet is
+live and empty (the first prompt makes the file); a reported path is `stat`ed
+first. `Agent` calls and Codex cells are not offered as "the call a dialog asks
+about".
+
+**Keeping up with the agents.** `app/lib/data/observed/agent_coverage.dart` lists
+every kind of tool call and item the mappers know and what the app does with
+it. An unlisted kind is still shown (Claude: any tool call is a row; Codex: an
+unknown item is a row naming its type), never dropped. `tool/sync-agent-schemas.sh`
+writes the kinds the installed agents ship a schema for (Codex's protocol
+schema, Claude Code's SDK tool schemas) into `app/test/fixtures/schemas/`;
+`test/agent_coverage_test.dart` fails when one is not in the tables, and when a
+captured log holds one that is not. Run the script after each agent update, add
+the row, capture a real log of the new kind. What the schemas cannot tell (the
+shape of a log line, which screen a dialog draws) still needs a capture: rows
+marked "not captured" in the tables are the ones to check first.
+
 ### `benchmark/observed_open_bench_test.dart` measures opening the chat of an agent in a pane
 
 `BENCH_OUT=/tmp/obs.txt flutter test benchmark/observed_open_bench_test.dart`

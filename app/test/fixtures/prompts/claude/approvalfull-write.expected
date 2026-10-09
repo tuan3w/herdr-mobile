@@ -1,0 +1,6 @@
+question:
+  Do you want to create note2.txt?
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, and switch to accept edits… | keys: 2 enter | confirm: standing permission
+  3. No | keys: 3 enter | confirm: no

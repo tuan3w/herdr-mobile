@@ -82,6 +82,11 @@ AskAnswers askAnswers(PendingAsk ask, Map<String, Object?> content) {
     final raw = content[askFieldName(i)];
     final text = content[askOtherFieldName(i)];
     final own = text is String && text.trim().isNotEmpty ? text.trim() : null;
+    // The text is typed into the agent's dialog: a line break would submit it
+    // and put the rest in the next field or the agent's prompt.
+    if (own != null && own.contains(RegExp(r'[\u0000-\u001f\u007f]'))) {
+      return AskAnswers.problem('Your own answer to “${_short(q.question)}” must be one line, with no control characters.');
+    }
     final chosen = raw is List ? [for (final v in raw) '$v'] : [if (raw != null) '$raw'];
     final wantsOther = chosen.contains(askOtherValue);
     final picked = <int>[];
@@ -183,7 +188,7 @@ String askSignature(PendingAsk ask) => [
 /// Option [PermissionOption.optionId] is the reply's index.
 PermissionRequest promptRequest(PromptInfo prompt, {required String paneId, ToolCall? call}) {
   final subject = prompt.subject.trim();
-  final input = call == null ? null : _flatInput(call);
+  final input = call == null ? null : _evidenceInput(call);
   final fields = <String, Object?>{
     'toolCallId': call?.toolCallId ?? 'prompt',
     'title': call != null && call.title.trim().isNotEmpty ? call.title : prompt.question,
@@ -192,6 +197,8 @@ PermissionRequest promptRequest(PromptInfo prompt, {required String paneId, Tool
       'rawInput': input
     else if (subject.isNotEmpty)
       'rawInput': {'command': subject},
+    // The change the call makes, as its diffs: what an edit approval shows.
+    if (call != null && call.content.any((c) => c is ToolDiff)) 'content': [for (final c in call.content) c.toJson()],
     if (call != null && call.locations.isNotEmpty)
       'locations': [
         for (final l in call.locations) {'path': l.path, if (l.line != null) 'line': l.line},
@@ -214,6 +221,19 @@ PermissionRequest promptRequest(PromptInfo prompt, {required String paneId, Tool
         ),
     ],
   );
+}
+
+/// [_flatInput] without what the card shows better another way: the change of
+/// an edit (its diffs are sent) and the plan file's path (the plan itself is).
+Object? _evidenceInput(ToolCall call) {
+  final input = _flatInput(call);
+  if (input is! Map) return input;
+  final drop = <String>{
+    if (call.content.any((c) => c is ToolDiff)) ...const ['old_string', 'new_string', 'content', 'patch', 'edits', 'file_path'],
+    if (call.kind == ToolKind.switchMode) 'planFilePath',
+  };
+  if (drop.isEmpty) return input;
+  return {for (final e in input.entries) if (!drop.contains(e.key)) e.key: e.value};
 }
 
 /// The call's arguments as the permission dock can read them. A `task` call

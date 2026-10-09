@@ -403,7 +403,7 @@ void main() {
         tester,
         app: AppSettings(MemoryAppSettingsStore()),
         terminal: TerminalSettings(MemoryTerminalSettingsStore()),
-        height: 1800,
+        height: 2000, // the whole screen on one page: it grows with every line of copy
       );
       await tester.tap(find.text('Licenses'));
       await tester.pump();

@@ -238,12 +238,12 @@ Machines chip counting offline panes).
 ### One agent per screen
 
 An agent screen shows one agent: a terminal pane's terminal (`PaneScreen`) or
-its chat (an agent session, or an omp pane followed through its log). Every
+its chat (an agent session, or an omp, Claude Code or Codex pane followed through its log). Every
 way in opens it through `openAgent` (`agents/agent_navigation.dart`): the
 board, notifications and links, the start forms, Duplicate, past sessions and
 the agent screens themselves. An agent already in front in that view is left
 as it is. Why: the pane used to have browser-style tabs, and they held
-terminals only (an omp agent opens as a chat by default, agent sessions were
+terminals only (an agent the app can read opens as a chat by default, agent sessions were
 always pushed screens), so they were a second, partial list of agents beside
 the board, with its own count and order. The board is the
 one scan surface; an agent screen is for one agent.
@@ -274,12 +274,16 @@ one scan surface; an agent screen is for one agent.
   round, so the person feels where the list ends instead of landing back on
   the first agent without noticing.
 - **Chat and Terminal are one agent's two views, switched from its menu.** An
-  agent with both (an omp pane the app can follow) has `Show terminal` in the
+  agent with both (a pane the app can follow through its log) has `Show terminal` in the
   chat's `Session options` and `Show chat` in the terminal's `Pane options`.
   It swaps the view in place, and the choice is remembered for that agent for
   the app run: the board and the swipe open it in that view after. Settings >
-  `Open omp agents as` stays the default for an agent with no choice yet; a
-  pane whose agent has no chat opens its terminal and offers no `Show chat`.
+  `Open agents as` stays the default for an agent with no choice yet; a
+  pane whose agent has no chat opens its terminal and offers no `Show chat`. A
+  Claude Code or Codex pane that herdr reports no session for offers `Read as chat…`
+  in its terminal's options, always (not only after a look for the log failed): it installs herdr's hook for that agent
+  on the machine after one confirmation (`connect_chat.dart`), which makes
+  the agent report its session.
   Why: the old `Terminal` action replaced the chat, and nothing in the
   terminal led back to it. It then became a
   two-icon toggle in every bar, 88 dp that the title needed, for something
@@ -358,8 +362,8 @@ screen reader hears `Output is stale` once. A closed pane is dimmed, not stale.
 
 Slim bar like the pane bar (status glyph by phase, title over
 `agent · machine · folder`, a tap on the title area opens the session
-overview, `Session options`, which also holds `Show terminal` for an omp pane's
-chat); plan header (`1 of 3` + the
+overview, `Session options`, which also holds `Show terminal` for a followed
+pane's chat); plan header (`1 of 3` + the
 current step); a virtualized transcript stuck to the bottom with Jump to
 latest; the permission dock; the composer (send becomes stop while a turn
 runs). The permission dock is a safety surface: the command is always visible
@@ -1537,7 +1541,7 @@ the hidden Agents board. The system bars follow the resolved brightness, so
 `system` follows the phone.
 
 Settings is the third tab (`features/settings/`): Appearance (theme control and
-a paper / ink preview, the agent list density, how omp agents open, and the
+a paper / ink preview, the agent list density, how agents open, and the
 Smooth text switch: streaming answers at an even pace, on by default,
 `AppSettings.smoothText`), Terminal (font size stepper 8 to 22 with a sample
 line, wrap switch; both edit the pane's `TerminalSettings`), About (version,

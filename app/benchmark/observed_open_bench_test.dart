@@ -50,6 +50,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/json_rpc.dart' show splitLines;
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/observed_contracts.dart';
+import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
@@ -254,9 +255,9 @@ class _Held {
     session = ObservedAgentSession(
       machine: rig.machine,
       paneId: 'w1:p1',
-      agent: 'omp',
+      kind: ompKind,
       source: source,
-      mapper: OmpLogMapper(),
+      mapper: OmpLogMapper.new,
       previews: rig.previews,
       linger: const Duration(milliseconds: 50),
     );

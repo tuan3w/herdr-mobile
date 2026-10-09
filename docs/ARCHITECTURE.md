@@ -92,7 +92,8 @@ connection (one `SSHClient`), with these channels on it:
 | Events: one `events.subscribe` stream | Persistent while connected | `ssh_transport.dart` `events`, `machine_connection.dart` `_watch` |
 | SFTP | Opened on first file use, then cached | `ssh_transport.dart` `_openSftp`, `sftp_files.dart` |
 | Keeper commands and attaches | Short commands; at most 4 attached sessions per machine | `ssh_agent_host.dart`, `docs/ENGINEERING.md` "Permission safety" |
-| Session log follow (observed omp sessions) | While a screen shows it | `ssh_log_source.dart` |
+| Session log follow (observed omp, Claude Code and Codex sessions) | While a screen shows it | `ssh_log_source.dart` |
+| Looking for a session log (Claude Code and Codex: SFTP `stat`/`list`/`read` of their own folders; a `pane.process_info` for a Claude pane herdr reports no session for) | When a screen opens the chat, again when the pane's session reference changes, and every 5 s doubling to 30 s while the file does not exist yet | `session_log_locator.dart`, `claude_locator.dart`, `codex_locator.dart` |
 | Session log peek (omp panes: a name when the title is only the folder, the file's date when idle) | A `stat`, plus two SFTP reads (16 KB head, 64 KB tail) for a name, when a pane needs it and when its status changes; none in the background | `pane_session_names.dart` |
 
 herdr's socket takes one request per connection. The mux script on the host
@@ -344,10 +345,21 @@ line.
   `app/lib/data/repositories/reviewed_state.dart`).
 - **`FleetRepository`** owns every connection and merges their agent panes into
   one list (`app/lib/data/repositories/fleet_repository.dart`).
-- **Observed sessions.** A terminal pane running an agent that names a `.jsonl`
-  session log (omp first) can also be shown as a chat. The chat is read from
-  that log through the keeper's `follow`
-  (`app/lib/data/repositories/observed_sessions.dart`, `app/lib/data/observed/`).
+- **Observed sessions.** A terminal pane running `omp`, Claude Code or Codex
+  can also be shown as a chat. The chat is read from the agent's own session log
+  through the keeper's `follow`, mapped to the same updates an ACP session
+  gives (`app/lib/data/repositories/observed_sessions.dart`,
+  `app/lib/data/observed/`). One `ObservedKind` per agent says how its log is
+  found (`SessionLogLocator`: omp reports the path; Claude Code reports a path or
+  a session id once herdr's integration is installed, else the running
+  process's `~/.claude/sessions/<pid>.json` names the session; Codex reports a
+  thread id, found by the UUIDv7's creation time in
+  `~/.codex/sessions/YYYY/MM/DD`, and with no report stays a terminal), how a
+  line is read (`OmpLogMapper`, `ClaudeLogMapper`, `CodexLogMapper`), where its
+  subagents' transcripts are, and what the phone can do (answer its question
+  tool by keys, ask it to stop a background job). Approvals are read from the
+  screen by the prompt detector for all three. Facts that took a capture to
+  learn are in `docs/ENGINEERING.md`, "Observed Claude Code and Codex".
 - **Names for omp panes.** `PaneSessionNames` (owned by `FleetRepository`)
   reads the head and tail of the log a pane reports, only for an omp pane whose
   title says nothing, and gives `FleetAgent.sessionName`; the board, the

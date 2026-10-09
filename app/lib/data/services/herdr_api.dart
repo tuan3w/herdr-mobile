@@ -195,6 +195,34 @@ class HerdrApi {
     ];
   }
 
+  /// The processes in the foreground of [paneId] (`pane.process_info`). Throws
+  /// [HerdrUnsupportedException] on a herdr that predates it.
+  Future<List<PaneProcess>> paneProcessInfo(String paneId) async {
+    final r = await _call('pane.process_info', {'pane_id': paneId});
+    final info = r['process_info'];
+    final rows = info is Map ? info['foreground_processes'] : null;
+    return [
+      if (rows is List)
+        for (final row in rows)
+          ?PaneProcess.tryParse(row),
+    ];
+  }
+
+  /// Installs herdr's hook for the agent [target] (`omp`, `claude`, `codex`)
+  /// on the machine and returns what herdr says about it
+  /// (`integration.install`). Throws [HerdrUnsupportedException] on a herdr
+  /// that predates it.
+  Future<List<String>> installIntegration(String target) async {
+    final r = await _call('integration.install', {'target': target});
+    final details = r['details'];
+    final messages = details is Map ? details['messages'] : null;
+    return [
+      if (messages is List)
+        for (final m in messages)
+          if (m is String) m,
+    ];
+  }
+
   /// [HerdrTransport.request] with "this herdr is too old for that" told
   /// apart from a bad request: herdr answers an unknown method (or a
   /// parameter it does not know) with the same `invalid_request` it uses for

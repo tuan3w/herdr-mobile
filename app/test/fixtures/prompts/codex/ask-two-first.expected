@@ -1,0 +1,6 @@
+question:
+  1 of 2 · Which room is the desk in?
+replies:
+  1. Office (Recommended) · The desk is… | keys: 1 | confirm: no
+  2. Bedroom · The desk is in the bedroom. | keys: 2 | confirm: no
+  3. None of the above | keys: 3 | confirm: no

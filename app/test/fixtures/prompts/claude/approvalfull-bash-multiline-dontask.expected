@@ -1,0 +1,11 @@
+question:
+  Do you want to proceed?
+subject:
+  touch /tmp/hm-capture-claude/one.txt
+  touch /tmp/hm-capture-claude/two.txt
+  touch /tmp/hm-capture-claude/three.txt
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, don't ask again | keys: 2 enter | confirm: standing permission
+  3. Yes, and switch to auto mode · auto… | keys: 3 enter | confirm: standing permission
+  4. No | keys: 4 enter | confirm: no

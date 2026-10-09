@@ -1,0 +1,12 @@
+question:
+  Do you want to proceed?
+subject:
+  for f in alpha beta gamma; do
+  echo "file: $f"
+  touch /tmp/hm-capture-claude/$f.txt
+  done
+  echo finished
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, and switch to auto mode · auto… | keys: 2 enter | confirm: standing permission
+  3. No | keys: 3 enter | confirm: no

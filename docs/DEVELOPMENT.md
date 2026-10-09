@@ -53,8 +53,8 @@ app/lib/
                     (a transcript as turns, changes, diffs)
     decision/       pure rules for what the person is asked to judge: mode
                     danger, permission evidence, text hygiene, composer chips
-    observed/       observed sessions: an agent in a herdr pane (omp first)
-                    shown as a chat, read from its own session log
+    observed/       observed sessions: an agent in a herdr pane (omp, Claude
+                    Code, Codex) shown as a chat, read from its own session log
     streaming/      when a session flushes to its listeners, and RevealPacer
                     (how much arrived text to show now)
     services/       transports: herdr_transport.dart (interface),

@@ -122,6 +122,54 @@ void main() {
     expect(t.paramsOf('pane.rename').single, {'pane_id': 'w1:p3', 'label': null});
   });
 
+  group('paneProcessInfo', () {
+    test('lists the foreground processes of the pane', () async {
+      t.on['pane.process_info'] = (_) => {
+            'type': 'pane_process_info',
+            'process_info': {
+              'pane_id': 'w1:p3',
+              'shell_pid': 10,
+              'foreground_processes': [
+                {'pid': 4242, 'name': 'claude', 'argv0': 'claude', 'cmdline': 'claude --resume', 'cwd': '/work/app'},
+                {'pid': 'x', 'name': 'broken'},
+              ],
+            },
+          };
+
+      final rows = await api.paneProcessInfo('w1:p3');
+
+      expect(t.paramsOf('pane.process_info').single, {'pane_id': 'w1:p3'});
+      expect(rows.map((p) => (p.pid, p.name, p.cmdline, p.cwd)), [(4242, 'claude', 'claude --resume', '/work/app')]);
+    });
+
+    test('an old herdr is told apart from a bad request', () async {
+      t.on['pane.process_info'] = (_) => throw unknownMethod('pane.process_info');
+
+      await expectLater(api.paneProcessInfo('w1:p3'), throwsA(isA<HerdrUnsupportedException>()));
+    });
+  });
+
+  group('installIntegration', () {
+    test('sends the target and returns what herdr says', () async {
+      t.on['integration.install'] = (_) => {
+            'type': 'integration_install',
+            'target': 'claude',
+            'details': {
+              'messages': ['installed hook', 7, 'restart claude'],
+            },
+          };
+
+      expect(await api.installIntegration('claude'), ['installed hook', 'restart claude']);
+      expect(t.paramsOf('integration.install').single, {'target': 'claude'});
+    });
+
+    test('an old herdr is told apart from a bad request', () async {
+      t.on['integration.install'] = (_) => throw unknownMethod('integration.install');
+
+      await expectLater(api.installIntegration('codex'), throwsA(isA<HerdrUnsupportedException>()));
+    });
+  });
+
   group('agentManifests', () {
     test('lists the agent kinds in herdr order', () async {
       t.on['server.agent_manifests'] = (_) => {

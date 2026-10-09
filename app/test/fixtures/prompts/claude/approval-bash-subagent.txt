@@ -1,0 +1,21 @@
+# agent: claude
+# herdr: 0.9.3
+# status: blocked
+# captured: 2026-10-09T13:55:22Z
+# source: herdr pane read --source recent --lines 40 --ansi
+[0m[38;2;177;185;249m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+ [0m[1m[38;2;177;185;249mBash command [0m[38;2;153;153;153m· [0mfrom the general-purpose agent
+ [0m[1mTip: auto mode handles these prompts for you — choose "switch to auto mode" below[0m
+ [0m[38;2;153;153;153mList contents of hm-capture-claude temp directory[0m
+[0m[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[0m
+ rtk ls -1 /tmp/hm-capture-claude
+[0m[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[0m
+ This command requires approval
+
+ Do you want to proceed?
+ [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mYes[0m
+   [0m[38;2;153;153;153m2. [0mYes, and don’t ask again for: rtk ls *
+   [0m[38;2;153;153;153m3. [0mYes, and switch to auto mode[0m[38;2;153;153;153m · auto mode handles these prompts for you[0m
+   [0m[38;2;153;153;153m4. [0mNo
+
+ [0m[38;2;153;153;153mEsc to cancel · Tab to amend · ctrl+x ctrl+k twice to stop background agents[0m

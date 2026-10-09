@@ -461,7 +461,10 @@ class _PaneWatch {
   bool _publish() {
     // The card shows what the agent has been doing, not its own input box and
     // status bar; the prompt is still read from every row.
-    final content = withoutAgentChrome(rows, blocked: status == AgentStatus.blocked);
+    final content = withoutAgentChrome(
+      [for (final r in rows) if (!isDashedRule(r)) r],
+      blocked: status == AgentStatus.blocked,
+    );
     final shown = content.length > _owner.keepRows
         ? content.sublist(content.length - _owner.keepRows)
         : content;

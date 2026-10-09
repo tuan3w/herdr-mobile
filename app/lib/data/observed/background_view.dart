@@ -22,6 +22,11 @@ class BackgroundView {
   /// by itself: Send, not Stop.
   final bool waiting;
 
+  /// [agentGone]: the agent's process is not in the pane any more.
+  ///
+  /// [wakes]: a job that finishes starts a turn of the agent (false for Codex,
+  /// whose finished background commands are only seen when it next looks).
+  ///
   /// [herdr] is the pane's status, null when it is not known (the machine is
   /// out of reach, the pane is gone). [watchedRunning] holds the ids of
   /// subagent tasks that the subagent roster independently confirms running
@@ -51,13 +56,15 @@ class BackgroundView {
     required List<BackgroundTask> tasks,
     required DateTime now,
     required String wakeLabel,
+    bool wakes = true,
+    bool agentGone = false,
     Set<String> watchedRunning = const {},
   }) {
     final working = herdr == AgentStatus.working;
     final nothingWorks = turnEnded && (herdr == AgentStatus.idle || herdr == AgentStatus.done);
     final waiting = working && turnEnded;
     if (tasks.isEmpty) {
-      return waiting ? BackgroundView(BackgroundWork(wakes: true, wakeLabel: wakeLabel, unknownRunning: true), true) : none;
+      return waiting ? BackgroundView(BackgroundWork(wakes: wakes, wakeLabel: wakeLabel, unknownRunning: true), true) : none;
     }
 
     var changed = false;
@@ -65,7 +72,13 @@ class BackgroundView {
     for (final t in tasks) {
       final unseenEnd =
           t.isActive &&
-          (t.pastDeadline(now) || (nothingWorks && !(t.kind == BackgroundKind.agent && watchedRunning.contains(t.id))));
+          (t.pastDeadline(now) ||
+              (nothingWorks &&
+                  // A background terminal outlives the agent's turn (Codex says
+                  // so itself): an idle agent says nothing about it, until the
+                  // agent is gone.
+                  (agentGone || t.kind != BackgroundKind.terminal) &&
+                  !(t.kind == BackgroundKind.agent && watchedRunning.contains(t.id))));
       if (unseenEnd) {
         changed = true;
         shown.add(t.copyWith(status: BackgroundStatus.stopped, stop: StopRoute.none));
@@ -76,7 +89,7 @@ class BackgroundView {
     final list = changed ? shown : tasks;
     final anyRunning = list.any((t) => t.isActive);
     return BackgroundView(
-      BackgroundWork(tasks: list, wakes: true, wakeLabel: wakeLabel, unknownRunning: waiting && !anyRunning),
+      BackgroundWork(tasks: list, wakes: wakes, wakeLabel: wakeLabel, unknownRunning: waiting && !anyRunning),
       waiting,
     );
   }

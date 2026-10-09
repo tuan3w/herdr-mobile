@@ -73,6 +73,12 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   AgentLink get link => parent.link;
   @override
   DateTime? get cachedAsOf => parent.cachedAsOf;
+
+  @override
+  EarlierHistory get earlier => EarlierHistory.none;
+
+  @override
+  void loadEarlier() {}
   @override
   String? get error => null;
   @override

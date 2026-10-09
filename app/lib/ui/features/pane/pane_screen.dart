@@ -34,6 +34,7 @@ import '../dictation/dictation_language_sheet.dart';
 import '../dictation/dictation_session.dart';
 import '../files/files_navigation.dart';
 import 'answer_dock.dart';
+import 'connect_chat.dart';
 import 'key_modifiers.dart';
 import 'live_edge.dart';
 import 'link_sheet.dart';
@@ -196,6 +197,8 @@ class _PaneScreenState extends State<PaneScreen> {
     final title = _title.value?.title ?? _paneId;
     final machine = _machine;
     final observed = context.read<ObservedSessions?>();
+    // An agent the app could read as a chat if herdr knew its session.
+    final connectTarget = machine == null ? null : observed?.integrationFor(machine, _paneId);
     Haptics.tick();
     unawaited(
       showActionSheet(
@@ -205,6 +208,12 @@ class _PaneScreenState extends State<PaneScreen> {
           // An agent whose log the app can follow has its chat as well.
           if (machine != null && observed != null && observed.supports(machine, _paneId))
             agentViewAction(context, widget.agent, AgentView.terminal),
+          if (machine != null && connectTarget != null)
+            SheetAction(
+              label: 'Read as chat…',
+              icon: LucideIcons.messageSquare,
+              onTap: () => unawaited(showConnectChat(context, machine, _paneId, connectTarget)),
+            ),
           _duplicateAction(),
           SheetAction(
             label: 'Copy title',

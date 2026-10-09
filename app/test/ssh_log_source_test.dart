@@ -99,15 +99,19 @@ void main() {
       expect(run.batches.map((b) => '${b.lines.length} ${b.endOffset} ${b.reset}'), ['0 300 false']);
     });
 
-    test('the caught-up record after lines adds no batch', () async {
+    test('the caught-up record after lines is an empty batch that says so, with where the tail starts', () async {
       final run = _Run(source.follow(_path));
       await settle();
       channel
+        ..emit('S\t4')
         ..emit('10\t{"a":1}')
         ..emit('C\t10');
       await settle();
 
-      expect(run.batches.map((b) => '${b.lines.join(' ')} ${b.endOffset}'), ['{"a":1} 10']);
+      expect(run.batches.map((b) => '${b.lines.join(' ')} ${b.endOffset} ${b.head} ${b.caughtUp}'), [
+        '{"a":1} 10 4 false',
+        ' 10 null true',
+      ]);
     });
 
     test('a body is whatever follows the first tab, undecoded', () async {

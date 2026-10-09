@@ -13,7 +13,7 @@ import '../acp/background/background_work.dart' show BackgroundTask;
 /// and no [reset] says the follower has sent everything the file held (the log
 /// is empty, or a resume found nothing after its offset).
 class LogBatch {
-  const LogBatch(this.lines, this.endOffset, {this.reset = false});
+  const LogBatch(this.lines, this.endOffset, {this.reset = false, this.caughtUp = false, this.head});
 
   /// Whole JSONL lines, without the trailing newline, oldest first.
   final List<String> lines;
@@ -25,6 +25,15 @@ class LogBatch {
   /// The file shrank or was replaced: forget what came before and rebuild from
   /// [lines] (which start at the new beginning).
   final bool reset;
+
+  /// Everything the file held when the follow began has now been sent: what
+  /// follows is what the agent appends.
+  final bool caughtUp;
+
+  /// Where in the file the tail this follow started with begins, on the first
+  /// batch of a tail read (null on the others and on a resume): 0 when it is
+  /// the whole file, more when earlier lines were left out.
+  final int? head;
 }
 
 /// Reads a growing log file on a host.
@@ -32,9 +41,9 @@ abstract interface class SessionLogSource {
   /// The tail of [path] first (at most the last [tailBytes], default 192 KB,
   /// starting at a line boundary; the whole file when it is smaller), then
   /// every line appended later, pushed within about a second. With [from] it
-  /// resumes after that byte offset instead of replaying the tail ("Load
-  /// earlier" restarts the follow with a bigger [tailBytes] and resets its
-  /// state). Oversized fields are cut on the host so a line stays small (see
+  /// resumes after that byte offset instead of replaying the tail ("load
+  /// earlier" follows again with a bigger [tailBytes]; [LogBatch.head] says
+  /// whether there is anything before it). Oversized fields are cut on the host so a line stays small (see
   /// the follower). The stream ends when the channel does; it errors with a
   /// retryable `HerdrTransportException` when the link drops.
   Stream<LogBatch> follow(String path, {int? from, int? tailBytes});
@@ -99,6 +108,8 @@ class SubagentInfo {
     this.assignment = '',
     this.toolCount = 0,
     this.recentTools = const [],
+    this.logId,
+    this.callId,
   });
 
   /// The subagent's id and display name (`PongReply`).
@@ -116,6 +127,13 @@ class SubagentInfo {
 
   /// Names of its latest tool calls, oldest first.
   final List<String> recentTools;
+
+  /// The id the host's transcript file is named by, when that is not [name]
+  /// (Claude `agent-<id>.jsonl`, a Codex thread id). Null for omp.
+  final String? logId;
+
+  /// The id of the tool call that spawned it, to find its file by.
+  final String? callId;
 }
 
 /// Turns the lines of one agent's session log into the updates the chat

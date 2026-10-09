@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Saves what a herdr pane shows right now as a prompt fixture for
 # app/test/prompt_corpus_test.dart: the agent's label and herdr's version as a
-# `# key: value` header, then the last 40 rows with their colours.
+# `# key: value` header, then the last 60 rows (a dialog sits above the blank rows under it, which count) with their colours.
 #
 #   tool/capture-prompt.sh <pane-id> [name]
 #
@@ -53,7 +53,7 @@ out=$fixtures/$agent/$name.txt
 [ ! -e "$out" ] || die "$out exists; pick another name"
 [ ! -e "${out%.txt}.expected" ] || die "${out%.txt}.expected exists; pick another name"
 
-screen=$(herdr pane read "$pane" --source recent --lines 40 --ansi) || die "cannot read $pane"
+screen=$(herdr pane read "$pane" --source recent --lines 60 --ansi) || die "cannot read $pane"
 
 # The read ends with the blank rows under the cursor: drop them, so the
 # question is what the detector finds last, as on a phone.
@@ -76,7 +76,7 @@ mkdir -p "$fixtures/$agent"
     echo "# herdr: $version"
     echo "# status: ${status:-unknown}"
     echo "# captured: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# source: herdr pane read --source recent --lines 40 --ansi"
+    echo "# source: herdr pane read --source recent --lines 60 --ansi"
     printf '%s\n' "${rows[@]:0:last}"
   } >"$out"
 )

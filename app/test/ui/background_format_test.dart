@@ -177,7 +177,7 @@ void main() {
 
     test('the stop label says what it does', () {
       expect(stopLabel(StopRoute.direct, 'omp'), 'Stop');
-      expect(stopLabel(StopRoute.message, 'omp'), 'Ask omp to stop');
+      expect(stopLabel(StopRoute.message, 'omp'), 'Ask to stop');
       expect(stopSemantics(task('bg_6'), 'omp', primed: false), 'Stop bg_6, hold to confirm');
       expect(
         stopSemantics(task('bg_6').copyWith(stop: StopRoute.message), 'omp', primed: false),

@@ -23,7 +23,9 @@ import 'data/repositories/terminal_settings.dart';
 import 'data/repositories/observed_sessions.dart';
 import 'data/repositories/pane_answerer.dart';
 import 'data/repositories/pane_previews.dart';
-import 'data/observed/omp_log_mapper.dart';
+import 'data/observed/claude_kind.dart';
+import 'data/observed/codex_kind.dart';
+import 'data/observed/omp_kind.dart';
 import 'data/services/apk_installer.dart';
 import 'data/services/local_notifier.dart';
 import 'data/services/network_monitor.dart';
@@ -218,7 +220,7 @@ Future<HerdrMobileApp> bootApp({
           fleet: fleet,
           previews: previews,
           sourceFor: (machine) => SshLogSource(SshAgentHost(machine.api.transport)),
-          mappers: {'omp': OmpLogMapper.new},
+          kinds: {'omp': ompKind, 'claude': claudeKind, 'codex': codexKind},
         );
   // What needs the person, computed once per change of the fleet or the
   // sessions: built before the notifier, so it is current when that reads it.

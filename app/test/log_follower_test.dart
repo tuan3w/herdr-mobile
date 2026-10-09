@@ -70,6 +70,7 @@ class _Rec {
 
   bool get isReset => text.startsWith('R\t');
   bool get isCaughtUp => text.startsWith('C\t');
+  bool get isHead => text.startsWith('S\t');
   bool get isError => text.startsWith('E\t');
   int get offset => int.parse(text.substring(0, text.indexOf('\t')));
   int get resetOffset => int.parse(text.substring(2));
@@ -85,8 +86,9 @@ class _Follow {
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
       (l) {
         final r = _Rec(l);
-        // The caught-up record is a note about the stream, not a record of the log.
-        (r.isCaughtUp ? caughtUp : _records).add(r);
+        // The caught-up and head records are notes about the stream, not
+        // records of the log.
+        (r.isCaughtUp ? caughtUp : r.isHead ? heads : _records).add(r);
         _wake();
       },
       onDone: () {
@@ -102,6 +104,9 @@ class _Follow {
 
   /// The `C` records, in order (the follower sends one, after its first read to the end).
   final caughtUp = <_Rec>[];
+
+  /// The `S` records, in order: where each tail read starts.
+  final heads = <_Rec>[];
   final _err = StringBuffer();
   var _done = false;
   Completer<void>? _waiting;
@@ -303,6 +308,17 @@ void main() {
       expect(firstStart, lessThan(size - _tail + 120));
       expect([for (final r in got) r.json['n']], [for (var i = first; i < 20000; i++) i]);
       expect(got.last.offset, size);
+      // It says the tail is not the whole file: the phone offers what is before.
+      expect([for (final h in run.heads) h.resetOffset], [size - _tail]);
+      await run.stop();
+    });
+
+    test('a file inside the window comes whole, and says so', () async {
+      final f = File(host.path());
+      _write(f, [for (var i = 0; i < 3; i++) _json(i)]);
+      final run = await host.follow(f.path);
+      expect(await run.settle(), hasLength(3));
+      expect([for (final h in run.heads) h.resetOffset], [0]);
       await run.stop();
     });
 
@@ -332,7 +348,7 @@ void main() {
       expect(await tailOf(0, tailBytes: 65536), hasLength(1024));
     });
 
-    test('--tail-bytes is clamped to 16 KB..8 MB', () async {
+    test('--tail-bytes is clamped to 16 KB..64 MB', () async {
       Future<int> lineCount(int tailBytes) async {
         final f = File(host.path());
         _write(f, [for (var i = 0; i < 10000; i++) _json(i, pad: 'y' * (48 - '$i'.length))]);
@@ -344,7 +360,7 @@ void main() {
 
       expect(await lineCount(1), 256, reason: 'never below 16 KB');
       expect(await lineCount(16384), 256);
-      expect(await lineCount(1 << 40), 10000, reason: 'never above 8 MB: the 640 KB file comes whole');
+      expect(await lineCount(1 << 40), 10000, reason: 'never above 64 MB: the 640 KB file comes whole');
     });
 
     test('--from wins over --tail-bytes, and a reset uses the tail size too', () async {
@@ -357,6 +373,7 @@ void main() {
       final stale = await host.follow(f.path, from: offsets.last + 5, tailBytes: 16384);
       expect((await stale.next()).isReset, isTrue);
       expect(await stale.settle(), hasLength(256));
+      expect(stale.heads, hasLength(1), reason: 'the reset tail says where it starts too');
       await stale.stop();
     });
 
@@ -920,9 +937,10 @@ void main() {
       // More than a pipe holds, so the write after `head` has gone fails.
       _write(f, [for (var i = 0; i < 6000; i++) _json(i, pad: 'e' * 80)]);
       // stdin stays open (an endless /dev/zero), so only the broken pipe can end it.
-      final r = await host.runToEnd('${keeperFollowCommand(f.path)} < /dev/zero 2>err.txt | head -n 1');
+      final r = await host.runToEnd('${keeperFollowCommand(f.path)} < /dev/zero 2>err.txt | head -n 2');
       expect(r.code, 0);
-      expect(r.out.trim(), contains('\t{'));
+      // The first line says where the tail starts; the second is a record.
+      expect(r.out.trim().split('\n').last, contains('\t{'));
       expect(File('${host.home.path}/err.txt').readAsStringSync(), isEmpty);
     });
 

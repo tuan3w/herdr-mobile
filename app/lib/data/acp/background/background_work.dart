@@ -270,3 +270,24 @@ String? stopMessageForOmp(Iterable<String> ids) {
   final noun = list.length == 1 ? 'job' : 'jobs';
   return 'Stop these background $noun now: $calls. Do nothing else.';
 }
+
+/// The message that asks Claude Code to stop background tasks [ids] (its
+/// `TaskStop` tool). Null when there is nothing to ask or an id is not a plain
+/// token.
+String? stopMessageForClaude(Iterable<String> ids) {
+  final list = ids.toList();
+  if (list.isEmpty || list.any((id) => !isSafeBackgroundId(id))) return null;
+  final noun = list.length == 1 ? 'task' : 'tasks';
+  return 'Stop these background $noun now: ${list.join(', ')}. Use TaskStop. Do nothing else.';
+}
+
+/// The message that asks Codex to end scripts [ids] that still run (`cell<N>`):
+/// its `wait` tool with `terminate` stops a cell (observed on Codex 0.153.4).
+/// Null when there is nothing to ask or an id is not a plain token.
+String? stopMessageForCodex(Iterable<String> ids) {
+  final list = ids.toList();
+  if (list.isEmpty || list.any((id) => !isSafeBackgroundId(id))) return null;
+  final cells = [for (final id in list) id.startsWith('cell') ? id.substring(4) : id];
+  final noun = cells.length == 1 ? 'cell' : 'cells';
+  return 'Stop the running $noun now: ${cells.join(', ')}. Call wait with terminate true on each. Do nothing else.';
+}

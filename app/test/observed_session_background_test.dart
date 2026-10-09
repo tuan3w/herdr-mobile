@@ -5,6 +5,7 @@ import 'package:herdr_mobile/data/acp/background/background_work.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart' show AgentPhase;
 import 'package:herdr_mobile/data/models/herdr_models.dart' show AgentStatus;
 import 'package:herdr_mobile/data/observed/background_view.dart';
+import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
@@ -65,6 +66,18 @@ List<String> _bgStart(String n, String command, {Object? timeout}) => [
 ];
 
 void main() {
+  group('a background terminal outlives the agent\'s turn', () {
+    final proc = [_task('proc27850', kind: BackgroundKind.terminal)];
+
+    test('an idle agent does not make it ended; a gone agent does', () {
+      final alive = BackgroundView.derive(herdr: AgentStatus.idle, turnEnded: true, tasks: proc, now: DateTime.utc(2026, 10, 4, 12), wakeLabel: 'Codex', wakes: false);
+      expect(alive.work.running.map((t) => t.id), ['proc27850']);
+
+      final gone = BackgroundView.derive(herdr: AgentStatus.idle, turnEnded: true, tasks: proc, now: DateTime.utc(2026, 10, 4, 12), wakeLabel: 'Codex', wakes: false, agentGone: true);
+      expect(gone.work.running, isEmpty);
+    });
+  });
+
   group('BackgroundView.derive: herdr status x turnEnded x tasks (the States table)', () {
     final running = [_task('bg_6')];
 
@@ -175,9 +188,9 @@ void main() {
       final session = ObservedAgentSession(
         machine: rig.machine,
         paneId: 'w1:p1',
-        agent: 'omp',
+        kind: ompKind,
         source: rig.source,
-        mapper: OmpLogMapper(),
+        mapper: OmpLogMapper.new,
         previews: rig.previews,
         clock: clock ?? DateTime.now,
       );
@@ -204,9 +217,9 @@ void main() {
       final session = ObservedAgentSession(
         machine: rig.machine,
         paneId: 'w1:p1',
-        agent: 'omp',
+        kind: ompKind,
         source: rig.source,
-        mapper: OmpLogMapper(),
+        mapper: OmpLogMapper.new,
         previews: rig.previews,
         notifyEvery: const Duration(seconds: 5),
       );
@@ -335,12 +348,11 @@ void main() {
       final sub = ObservedAgentSession(
         machine: rig.machine,
         paneId: 'w1:p1',
-        agent: 'omp',
+        kind: ompKind,
         source: FakeLogSource(),
-        mapper: OmpLogMapper(),
+        mapper: OmpLogMapper.new,
         parent: parent,
         subagentName: 'Alpha',
-        fixedPath: '/x/Alpha.jsonl',
       );
       addTearDown(sub.dispose);
       expect(sub.backgroundWork, same(BackgroundWork.empty));

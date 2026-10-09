@@ -451,12 +451,24 @@ resumes the conversation where the agent supports it.
 
 ### Show terminal / Show chat
 
-An omp agent running in a herdr pane can be read both ways: as its terminal,
-or as a chat built from omp's own session log. Switch with `Show chat` in
-`Pane options` or `Show terminal` in `Session options`. The choice is
-remembered for that agent until the app restarts; the default is in
-Settings > Appearance > `Open omp agents as`. Other terminal agents have only
-the terminal.
+An omp, Claude Code or Codex agent running in a herdr pane can be read both
+ways: as its terminal, or as a chat built from the agent's own session log.
+Switch with `Show chat` in `Pane options` or `Show terminal` in `Session
+options`. The choice is remembered for that agent until the app restarts; the
+default is in Settings > Appearance > `Open agents as`. Other terminal agents
+have only the terminal.
+
+The chat needs the app to find the agent's log. omp tells herdr where it is.
+For Claude Code and Codex, herdr's hook has to report the session: if the
+terminal's `Pane options` offers `Read as chat…`, tap it and confirm to install
+the hook on that machine (the same as `herdr integration install claude` or
+`codex`), then restart or resume the agent. A Claude Code that was already
+running without the hook still opens as a chat when the app can recognise its
+process; a Codex session cannot be found without the hook, because Codex keeps
+no record of which process runs which session. In the chat you can read the
+whole conversation, answer approvals from the card, answer Claude Code's
+questions, stop a turn, send a message, and see subagents and background
+tasks.
 
 ## 7. Files
 

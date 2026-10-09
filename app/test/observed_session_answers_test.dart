@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
+import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
@@ -56,9 +57,9 @@ Future<(ObservedRig, ObservedAgentSession)> _open(List<String> lines, {required 
   final session = ObservedAgentSession(
     machine: rig.machine,
     paneId: 'w1:p1',
-    agent: 'omp',
+    kind: ompKind,
     source: rig.source,
-    mapper: OmpLogMapper(),
+    mapper: OmpLogMapper.new,
     previews: rig.previews,
     answerGrace: const Duration(seconds: 30),
   );
@@ -100,9 +101,9 @@ void main() {
       final session = ObservedAgentSession(
         machine: machine,
         paneId: 'w1:p1',
-        agent: 'omp',
+        kind: ompKind,
         source: source,
-        mapper: OmpLogMapper(),
+        mapper: OmpLogMapper.new,
         previews: previews,
       );
 

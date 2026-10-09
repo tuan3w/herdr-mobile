@@ -223,7 +223,7 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 /// Follows the session log [path] (absolute, `.jsonl`, under the host user's
 /// home; anything else exits 66 with a reason on stderr): first the tail of the
 /// file (the last [tailBytes] from a line start, default 192 KB, clamped by the
-/// host to 16 KB..8 MB; the whole file when smaller), or
+/// host to 16 KB..64 MB; the whole file when smaller), or
 /// with [from] everything after that byte offset; then every complete line
 /// that is appended, pushed within [pollMs] (default 250 ms; the file is
 /// stat'ed that often while it grows, every 1 s after 60 s and every 2 s after
@@ -238,6 +238,9 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 ///                          reads (token accounting, the provider's envelope,
 ///                          `thinkingSignature`, `details.displayContent`)
 ///                          and a `credential_pin` entry is not sent at all
+///   `S\t<offset>`          before the first line of a tail read (at the start,
+///                          and with every `R`): where in the file the tail
+///                          begins, 0 when it is the whole file
 ///   `R\t<offset>`          the file shrank or was replaced (or [from] is not
 ///                          a line end of it): forget what came before, what
 ///                          follows is its content from [offset]

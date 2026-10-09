@@ -8,6 +8,7 @@ import '../models/herdr_models.dart' show AgentStatus;
 import '../models/pane_name.dart';
 import '../models/remote_file.dart';
 import '../observed/omp_session_name.dart';
+import '../observed/session_log_locator.dart' show isReadableLogPath;
 import '../services/herdr_transport.dart' show HerdrTransportException;
 import 'fleet_agent.dart' show FleetAgent;
 import 'machine_connection.dart';
@@ -133,16 +134,7 @@ class PaneSessionNames extends ChangeNotifier {
       a.agentKind == 'omp' &&
       a.machine.isLive &&
       (a.hasGenericTitle || a.pane.status == AgentStatus.idle) &&
-      _readable(path);
-
-  /// A log path worth reading: absolute, a `.jsonl`, no control characters and
-  /// no `..` segment.
-  static bool _readable(String path) =>
-      RemotePath.isAbsolute(path) &&
-      path.endsWith('.jsonl') &&
-      path.length <= 4096 &&
-      !path.codeUnits.any((c) => c < 0x20 || c == 0x7f) &&
-      !path.split('/').contains('..');
+      isReadableLogPath(path);
 
   void _pump() {
     while (!_disposed && _running.length < maxConcurrent && _queue.isNotEmpty && _canRead()) {

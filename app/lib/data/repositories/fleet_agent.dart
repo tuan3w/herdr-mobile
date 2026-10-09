@@ -37,7 +37,10 @@ class FleetAgent {
 
   /// Which agent program runs in the pane (`omp`, `claude`, ...): what the
   /// agent says about its session, else what herdr detected.
-  String? get agentKind => pane.session?.agent.isNotEmpty == true ? pane.session!.agent : pane.agent;
+  String? get agentKind => kindOf(pane);
+
+  /// [agentKind] of a bare [pane].
+  static String? kindOf(Pane pane) => pane.session?.agent.isNotEmpty == true ? pane.session!.agent : pane.agent;
 
   /// The session log the agent appends its transcript to, on the machine, when
   /// it names one: a `kind: path` session that is a `.jsonl` file. Null

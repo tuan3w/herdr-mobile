@@ -27,7 +27,7 @@ class SshLogSource implements SessionLogSource {
   final SshAgentHost _host;
 
   /// [tailBytes] widens the first read (the host's default is 192 KB, at most
-  /// 8 MB): "load earlier" follows again with a bigger one and starts over.
+  /// 64 MB): "load earlier" follows again with a bigger one and starts over.
   @override
   Stream<LogBatch> follow(String path, {int? from, int? tailBytes}) =>
       _Follow(_host, path, from, tailBytes).stream;
@@ -66,6 +66,9 @@ class _Follow {
   var _pending = <String>[];
   var _end = 0;
   var _flushScheduled = false;
+
+  // Where the tail read begins (`S`), for the next batch that goes out.
+  int? _head;
 
   void _start() {
     final String command;
@@ -110,6 +113,14 @@ class _Follow {
     if (_finished) return;
     final tab = line.indexOf('\t');
     if (tab < 1) return; // banner of a login shell, not ours
+    if (tab == 1 && line.codeUnitAt(0) == 0x53) {
+      // S: a tail read starts here; the lines that follow are from there on.
+      final offset = int.tryParse(line.substring(2));
+      if (offset == null) return;
+      _flush();
+      _head = offset;
+      return;
+    }
     if (tab == 1 && line.codeUnitAt(0) == 0x52) {
       // R: the file shrank or was replaced; what follows is its new content.
       final offset = int.tryParse(line.substring(2));
@@ -117,20 +128,19 @@ class _Follow {
       _flush();
       _end = offset;
       _delivered = true;
-      _out.add(LogBatch(const [], offset, reset: true));
+      _out.add(LogBatch(const [], offset, reset: true, head: _takeHead()));
       return;
     }
     if (tab == 1 && line.codeUnitAt(0) == 0x43) {
       // C: the helper sent everything the file held. With nothing delivered
       // yet (an empty log, a resume at its end) this is the only word the
-      // session gets, and it is up to date now instead of after a quiet wait.
+      // session gets, and it is up to date now instead of after a quiet wait;
+      // after a wider read it is when that read is whole.
       final offset = int.tryParse(line.substring(2));
       if (offset == null) return;
       _flush();
-      if (!_delivered) {
-        _delivered = true;
-        _out.add(LogBatch(const [], offset));
-      }
+      _delivered = true;
+      _out.add(LogBatch(const [], offset, caughtUp: true, head: _takeHead()));
       return;
     }
     if (tab == 1 && line.codeUnitAt(0) == 0x45) {
@@ -161,7 +171,13 @@ class _Follow {
     final lines = _pending;
     _pending = <String>[];
     _delivered = true;
-    _out.add(LogBatch(lines, _end));
+    _out.add(LogBatch(lines, _end, head: _takeHead()));
+  }
+
+  int? _takeHead() {
+    final head = _head;
+    _head = null;
+    return head;
   }
 
   Future<void> _ended(String command, ExecChannel channel) async {

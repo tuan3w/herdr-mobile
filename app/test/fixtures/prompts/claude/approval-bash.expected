@@ -1,0 +1,9 @@
+question:
+  Do you want to proceed?
+subject:
+  touch /tmp/hm-capture-claude/x.txt
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, and always allow access to… | keys: 2 enter | confirm: standing permission
+  3. Yes, and switch to auto mode · auto… | keys: 3 enter | confirm: standing permission
+  4. No | keys: 4 enter | confirm: no

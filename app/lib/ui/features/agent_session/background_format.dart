@@ -155,10 +155,11 @@ String? stoppedToast(BackgroundWork work) {
   return 'Turn stopped \u00b7 ${nounPhrase(work.running)} still running';
 }
 
-/// `Stop` or `Ask omp to stop`: the label of a task's stop chip, which says
-/// what it does (a message is not a kill).
-String stopLabel(StopRoute route, String agentLabel) =>
-    route == StopRoute.message ? 'Ask $agentLabel to stop' : 'Stop';
+/// `Stop` or `Ask to stop`: the label of a task's stop chip, which says what
+/// it does (a message is not a kill). The agent's name is not in it: `Ask Claude
+/// Code to stop` took most of a narrow row and the sheet already names the
+/// agent ([stopSemantics] too).
+String stopLabel(StopRoute route, String agentLabel) => route == StopRoute.message ? 'Ask to stop' : 'Stop';
 
 /// What a screen reader says for a task's stop chip.
 String stopSemantics(BackgroundTask task, String agentLabel, {required bool primed}) {

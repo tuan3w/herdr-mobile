@@ -7,7 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
+import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/observed_sessions.dart';
@@ -548,7 +548,7 @@ void main() {
               fleet: h.fleet,
               previews: h.previews,
               sourceFor: (_) => source,
-              mappers: {'omp': OmpLogMapper.new},
+              kinds: {'omp': ompKind},
             ),
           ),
         ],

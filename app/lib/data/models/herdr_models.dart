@@ -511,3 +511,25 @@ class PaneRead {
   final String text;
   final bool truncated;
 }
+
+/// One process in the foreground of a pane (`pane.process_info`).
+class PaneProcess {
+  const PaneProcess({required this.pid, required this.name, this.argv0, this.cmdline, this.cwd});
+
+  /// Null for a row without an integer pid: herdr's own field, not ours to
+  /// rely on.
+  static PaneProcess? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final pid = json['pid'];
+    final name = json['name'];
+    if (pid is! int || name is! String) return null;
+    String? text(String key) => json[key] is String ? json[key] as String : null;
+    return PaneProcess(pid: pid, name: name, argv0: text('argv0'), cmdline: text('cmdline'), cwd: text('cwd'));
+  }
+
+  final int pid;
+  final String name;
+  final String? argv0;
+  final String? cmdline;
+  final String? cwd;
+}

@@ -4,6 +4,35 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.9] - 2026-10-10
+
+### Claude Code and Codex as chats
+
+- A Claude Code or Codex agent running in a herdr pane opens as a chat, like
+  omp does: the whole conversation (no more scrolling a terminal that keeps
+  none), what it ran with its output, the plan and the task list, and the
+  subagents and background commands it started. The terminal stays one tap away.
+- Approvals show the command itself on a card: tap to allow, hold for a risky
+  one. Claude Code's questions (single choice, several, your own answer) are
+  answered from the app. Stop sends Esc; a background job can be stopped by
+  asking the agent.
+- Claude Code needs herdr's hook to report its session, or a running process
+  the app can recognise; Codex needs the hook. If the terminal's options offer
+  `Read as chat…`, tap it and confirm: it installs herdr's hook for that agent on
+  the machine (nothing is installed without the tap), then restart or resume the
+  agent.
+- Settings: `Open omp agents as` is now `Open agents as`.
+
+### The whole conversation, as far back as it goes
+
+- A chat used to show only the end of a long session: the last 192 KB of the
+  agent's log, which for Claude Code is often less than one turn, with no sign
+  that anything was missing. Now scroll up and the earlier messages load as you
+  reach the top, all the way back to the start of the session. What you are
+  reading stays where it is while they arrive.
+- Opening a chat costs what it did: earlier messages are read only when you
+  scroll up. A log longer than 64 MB shows its last 64 MB and says so.
+
 ## [0.1.8] - 2026-10-09
 
 ### A release to try updating with

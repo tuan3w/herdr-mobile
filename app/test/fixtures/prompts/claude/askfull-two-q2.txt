@@ -1,0 +1,35 @@
+# agent: claude
+# herdr: 0.9.3
+# status: blocked
+# captured: 2026-10-09T14:21:41Z
+# source: herdr pane read --source recent --lines 60 --ansi
+
+[0m[38;2;215;119;87m ▐[0m[38;2;215;119;87m[48;2;0;0;0m▛███▛█   [0m[1mClaude Code [0m[38;2;153;153;153mv2.1.295[0m
+[0m[38;2;215;119;87m▝▜[0m[38;2;215;119;87m[48;2;0;0;0m█████[0m[38;2;215;119;87m█▀  [0m[38;2;153;153;153mHaiku 5.5 · Claude Max[0m
+[0m[38;2;215;119;87m ▝▝   ▝▝   [0m[38;2;153;153;153m/private/tmp/hm-capture-claude[0m
+
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯[0m[48;2;55;55;55m [0m[38;2;255;255;255m[48;2;55;55;55m/clear[0m[48;2;55;55;55m                                                                                                 [0m
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the AskUserQuestion tool ONCE with TWO questions: question 1 single-choice, header Lang: which [0m[48;2;55;55;55m    [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mlanguage do I prefer (Python, Go, Rust). Question 2 multi-select (multiSelect true), header Extras: [0m[48;2;55;55;55m   [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mwhich extras do I want (Tests, Docs, CI, Lint). Do nothing else.[0m[48;2;55;55;55m                                       [0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+←  ☐ Lang [0m[38;2;0;0;0m[48;2;177;185;249m ☐ Extras  [0m✔ Submit  →
+
+[0m[1m[38;2;255;255;255mWhich extras do I want?[0m
+ 
+[0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[ ] [0m[38;2;177;185;249mTests[0m
+         [0m[38;2;153;153;153mInclude a test suite[0m
+  [0m[38;2;153;153;153m2. [0m[ ] Docs
+         [0m[38;2;153;153;153mInclude documentation[0m
+  [0m[38;2;153;153;153m3. [0m[ ] CI
+         [0m[38;2;153;153;153mInclude continuous integration setup[0m
+  [0m[38;2;153;153;153m4.[0m [ ] Lint
+         [0m[38;2;153;153;153mInclude linting configuration[0m
+  [0m[38;2;153;153;153m5. [0m[ ] [0m[38;2;153;153;153mType something[0m
+     [0m[1mSubmit[0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  6. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[0m

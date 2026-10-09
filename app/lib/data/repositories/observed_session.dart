@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
@@ -13,9 +14,12 @@ import '../acp/session_state.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../models/herdr_models.dart';
 import '../models/pane_preview.dart';
+import '../models/remote_file.dart' show RemoteFileException;
 import '../observed/background_view.dart';
 import '../observed/observed_contracts.dart';
-import '../observed/omp_ask_driver.dart';
+import '../observed/observed_kind.dart';
+import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
+import '../observed/session_log_locator.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
@@ -27,13 +31,6 @@ import 'prompt_detector.dart';
 /// Opens the stream of an agent's session log on a machine.
 typedef LogSourceFor = SessionLogSource Function(MachineConnection machine);
 
-/// Reads the pane's screen and says what to send next to answer a dialog.
-typedef AskStepper = AskStep Function(String screen);
-
-/// The omp driver, one per answer (it remembers checkboxes that scrolled out
-/// of view).
-AskStepper ompAskStepper(PendingAsk ask, List<AskAnswer> answers) => OmpAskDriver(ask, answers).next;
-
 final _whitespace = RegExp(r'\s+');
 
 /// Whether the text a dialog shows ([subject]) is the input of a log call
@@ -44,6 +41,8 @@ final _whitespace = RegExp(r'\s+');
 /// swap, and a longer command must not pass for a shorter one.
 bool promptShowsInput(String subject, Object? input) {
   var shown = subject.replaceAll(_whitespace, '');
+  // Codex draws a command as `$ cmd`.
+  if (shown.startsWith(r'$')) shown = shown.substring(1);
   final cut = shown.endsWith('…');
   if (cut) shown = shown.substring(0, shown.length - 1);
   if (shown.isEmpty || shown.contains('…')) return false;
@@ -51,6 +50,18 @@ bool promptShowsInput(String subject, Object? input) {
   for (final text in texts) {
     final whole = text.replaceAll(_whitespace, '');
     if (whole == shown || (cut && whole.startsWith(shown))) return true;
+  }
+  return false;
+}
+
+/// Whether [input] (a call's arguments) holds a patch that touches [path]: a
+/// `*** Add File: a/b.txt` row whose path ends [path] or is ended by it.
+bool _patchTouches(Object? input, String path) {
+  final patch = input is Map ? input['patch'] : input;
+  if (patch is! String) return false;
+  for (final m in RegExp(r'^\*\*\* (?:Add|Update|Delete) File: (.+)$', multiLine: true).allMatches(patch)) {
+    final file = m.group(1)!.trim();
+    if (file.isNotEmpty && (path == file || path.endsWith('/$file') || file.endsWith('/$path'))) return true;
   }
   return false;
 }
@@ -92,14 +103,13 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   ObservedAgentSession({
     required this.machine,
     required this.paneId,
-    required this.agent,
+    required this.kind,
     required this._source,
-    required this._mapper,
+    required SessionLogMapper Function() mapper,
     this._previews,
     this.parent,
     this.subagentName,
-    this._fixedPath,
-    this.askStepper = ompAskStepper,
+    this.onUnlinked,
     this._clock = DateTime.now,
     this._backoff = defaultBackoff,
     this._jitter = defaultRetryJitter,
@@ -122,6 +132,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     this.maxAskSteps = 25,
     this.onIdle,
   }) : assert((parent == null) == (subagentName == null), 'a subagent names its parent'),
+       _parentLog = parent?.logPath,
+       _newMapper = mapper,
+       _mapper = mapper(),
        _log = AgentSessionState(subagentName == null ? 'pane/$paneId' : 'sub/$paneId/$subagentName') {
     _phaseSince = DateTime.now();
   }
@@ -131,27 +144,32 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   /// The pane the agent runs in (a subagent's is its main agent's).
   final String paneId;
+
+  /// What kind of agent this is: how its log is found and read and what can be
+  /// done from the phone.
+  final ObservedKind kind;
+
   @override
-  final String agent;
+  String get agent => kind.id;
 
   /// The main agent's session when this is one of its subagents.
   final ObservedAgentSession? parent;
   final String? subagentName;
 
   final SessionLogSource _source;
-  final SessionLogMapper _mapper;
+  final SessionLogMapper Function() _newMapper;
+  SessionLogMapper _mapper;
   final PanePreviews? _previews;
   final Duration Function(int attempt) _backoff;
   final double Function() _jitter;
-  final String? _fixedPath;
+
+  /// Where the main agent's log was when this subagent was made: a subagent is
+  /// [stale] once it is somewhere else.
+  final String? _parentLog;
 
   /// What the cross-check of background tasks reads as "now" (tests replace
   /// it).
   final DateTime Function() _clock;
-
-  /// Makes the planner that answers the agent's question dialog, one screen at
-  /// a time (the omp driver).
-  final AskStepper Function(PendingAsk ask, List<AskAnswer> answers) askStepper;
 
   /// Retries per outage before the session gives up ([AgentLink.failed]).
   final int maxAttempts;
@@ -200,6 +218,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   /// Told when no screen has held the session for [idleAfter].
   final void Function(ObservedAgentSession session)? onIdle;
 
+  /// Told when the agent's log cannot be found and waiting will not change that
+  /// (the registry then opens the pane as its terminal for a while).
+  final VoidCallback? onUnlinked;
+
   // -- state ------------------------------------------------------------------
 
   AgentSessionState _log;
@@ -232,8 +254,33 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   AgentLink _logLink = AgentLink.connecting;
   String? _failure;
   Completer<void>? _machineWake;
+  Completer<void>? _locateWake;
+  String? _waiting;
+  String? _locatedFor;
+  bool _relocating = false;
   Timer? _retryTimer;
   StreamSubscription<LogBatch>? _sub;
+
+  // Earlier history. The follow starts with the end of the file; "load
+  // earlier" follows again with a tail 4x as wide.
+  static const _defaultTail = 192 * 1024;
+  static const _maxTail = 64 * 1024 * 1024;
+
+  /// How much of the end of the file a tail read asks for; null: the host's
+  /// default ([_defaultTail]).
+  int? _tailBytes;
+
+  /// Where in the file what is shown starts (0: at its start); null until a
+  /// tail read said.
+  int? _head;
+
+  /// A wider tail read under way: its lines are mapped here, beside what is
+  /// shown, and replace it in one step once the host has sent all of it
+  /// ([LogBatch.caughtUp]). Shown in between: what was there before, so
+  /// nothing flickers or jumps while the older turns arrive.
+  SessionLogMapper? _wideMapper;
+  AgentSessionState? _wideLog;
+  int? _wideHead;
 
   String? _problem;
   Timer? _problemTimer;
@@ -291,7 +338,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       : 'pane/${machine.profile.id}/$paneId';
 
   @override
-  String get agentLabel => _isSub ? 'Subagent of ${parent!.title}' : (agent == 'omp' ? 'omp' : agent);
+  String get agentLabel => _isSub ? 'Subagent of ${parent!.title}' : kind.label;
 
   Pane? get _pane => machine.paneById(paneId);
 
@@ -321,6 +368,42 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   DateTime? get cachedAsOf => null;
+
+  @override
+  EarlierHistory get earlier {
+    final head = _head;
+    if (head == null || head == 0) return EarlierHistory.none;
+    if (_wideLog != null) return EarlierHistory.loading;
+    return (_tailBytes ?? _defaultTail) >= _maxTail ? EarlierHistory.tooLong : EarlierHistory.available;
+  }
+
+  @override
+  void loadEarlier() {
+    if (earlier != EarlierHistory.available || !held || _followedPath == null) return;
+    _tailBytes = math.min(_maxTail, (_tailBytes ?? _defaultTail) * 4);
+    _startWide();
+    _offset = null;
+    _restartFollow();
+    _refresh();
+  }
+
+  void _startWide() {
+    _wideMapper = _newMapper();
+    _wideLog = AgentSessionState(_log.sessionId);
+    _wideHead = null;
+  }
+
+  /// The wider read is whole: it becomes what is shown.
+  void _adoptWide() {
+    _mapper = _wideMapper!;
+    // What was shown keeps its keys: the list holds its place by them.
+    _log = _wideLog!.withKeysOf(_log);
+    _head = _wideHead ?? _head;
+    _wideMapper = null;
+    _wideLog = null;
+    _wideHead = null;
+    _composed = null;
+  }
 
   @override
   AgentLink get link {
@@ -504,6 +587,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       tasks: tasks,
       now: _clock(),
       wakeLabel: agentLabel,
+      wakes: kind.wakesOnBackground,
+      agentGone: gone,
       watchedRunning: tasks.any((t) => t.kind == BackgroundKind.agent && t.isActive)
           ? {
               for (final s in _mapper.subagents)
@@ -545,7 +630,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       for (final t in tasks)
         if (t.stop == StopRoute.message && isSafeBackgroundId(t.id)) t.id,
     ];
-    final message = stopMessageForOmp(ids);
+    final message = kind.stopMessage?.call(ids);
     if (message == null) return const BackgroundNotStoppable();
     final failure = await _sendPrompt(message);
     if (failure != null) return BackgroundStopFailed(failure);
@@ -607,7 +692,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   /// A subagent whose main agent moved on to another log (the person started
   /// or resumed a session): what it shows belongs to the old one.
-  bool get stale => _isSub && parent!.subagentLog(subagentName!) != _fixedPath;
+  bool get stale => _isSub && parent!.logPath != _parentLog;
 
   /// The follow is running (tests, diagnostics).
   bool get following => _following;
@@ -623,20 +708,19 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   // -- the log ------------------------------------------------------------------
 
-  /// Where the agent writes its log now: what herdr says the pane runs (it
-  /// changes when the person starts or resumes another session), or a
-  /// subagent's file.
-  String? get _logPath {
-    if (_fixedPath != null) return _fixedPath;
-    final session = _pane?.session;
-    if (session == null || session.kind != 'path' || !session.value.endsWith('.jsonl')) return null;
-    return session.value;
-  }
+  /// The log being followed (the main agent's, or a subagent's), once found.
+  /// A subagent is made only for a parent that has one.
+  String? get logPath => _followedPath;
+
+  /// A quiet status while the log does not exist yet (the agent writes it with
+  /// the first message); null otherwise.
+  String? get waiting => _waiting;
 
   void _ensureFollowing() {
     if (_disposed || _following || _detached || !held) return;
     if (_failure != null) return;
     _following = true;
+    _locatedFor = _paneSig(_pane);
     unawaited(_follow(++_epoch));
   }
 
@@ -673,31 +757,59 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   Future<void> _follow(int epoch) async {
     var attempt = 0;
+    var locateDelay = _locateEvery;
     try {
       while (_alive(epoch)) {
-        final path = _logPath;
-        if (path == null) {
-          _fail('This agent does not name a session log.');
-          return;
-        }
-        if (_followedPath != null && _followedPath != path) {
-          _resetLog();
-          _ready = false;
-          _logLink = AgentLink.connecting;
-        }
-        _followedPath = path;
         if (!machine.isLive) {
           _setLink(AgentLink.reconnecting);
           await _waitForMachine(epoch);
           continue;
         }
-        if (!_ready) _setLink(AgentLink.connecting);
         Object? failure;
         try {
-          final gotRecords = await _followOnce(path, epoch);
+          final found = await _locate();
           if (!_alive(epoch)) return;
-          if (gotRecords) attempt = 0;
-          failure = const HerdrTransportException('The connection to the log ended.');
+          switch (found) {
+            case Unlinked(:final why):
+              _fail(why);
+              onUnlinked?.call();
+              return;
+            case NotYet(:final why):
+              // The agent writes its file with the first message: wait, quietly.
+              _waiting = why;
+              // The pane is there and the person may type: the first prompt is
+              // what makes the agent write its file. An empty chat, not a
+              // connection that never comes.
+              if (!_ready) {
+                _ready = true;
+                _failure = null;
+                _setLink(AgentLink.live);
+              }
+              _refresh();
+              await _sleepLocate(locateDelay);
+              locateDelay = locateDelay * 2 > _locateMax ? _locateMax : locateDelay * 2;
+              continue;
+            case Located(:final path):
+              locateDelay = _locateEvery;
+              if (_waiting != null) {
+                _waiting = null;
+                _refresh();
+              }
+              if (_followedPath != null && _followedPath != path) {
+                _resetLog();
+                // Another session: it opens at its end like any other.
+                _tailBytes = null;
+                _head = null;
+                _ready = false;
+                _logLink = AgentLink.connecting;
+              }
+              _followedPath = path;
+              if (!_ready) _setLink(AgentLink.connecting);
+              final gotRecords = await _followOnce(path, epoch);
+              if (!_alive(epoch)) return;
+              if (gotRecords) attempt = 0;
+              failure = const HerdrTransportException('The connection to the log ended.');
+          }
         } on AgentHostException catch (e) {
           if (!_alive(epoch)) return;
           if (e.fatal) {
@@ -712,6 +824,13 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
             return;
           }
           failure = e;
+        } on RemoteFileException catch (e) {
+          if (!_alive(epoch)) return;
+          if (e.fatal) {
+            _fail(e.message);
+            return;
+          }
+          failure = HerdrTransportException(e.message);
         } on Object catch (e) {
           if (!_alive(epoch)) return;
           _fail('The log could not be read: $e');
@@ -731,6 +850,30 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     }
   }
 
+  /// First wait between two looks for a log that does not exist yet; it doubles
+  /// to [_locateMax] while it is held.
+  static const _locateEvery = Duration(seconds: 5);
+  static const _locateMax = Duration(seconds: 30);
+
+  /// Where the log is now: what the agent's locator says about the pane (herdr
+  /// names it, or its files do), or, for a subagent, where its kind keeps the
+  /// transcript.
+  Future<LogLocation> _locate() async {
+    if (_isSub) {
+      final parentPath = parent!.logPath;
+      final subs = kind.subagents;
+      if (parentPath == null || subs == null) return const Unlinked('This subagent has no transcript.');
+      final name = subagentName!;
+      final info = parent!._mapper.subagents.where((s) => s.name == name).firstOrNull ?? SubagentInfo(name: name);
+      final path = await subs.pathOf(machine, parentPath, info);
+      if (path == null || !isReadableLogPath(path)) return const NotYet('This subagent has not written its transcript yet.');
+      return Located(path);
+    }
+    final pane = _pane;
+    if (pane == null) return const Unlinked('herdr no longer lists this pane.');
+    return kind.locator.locate(machine, pane);
+  }
+
   static String _words(Object e) => switch (e) {
     AgentHostException(:final message) => message,
     HerdrTransportException(:final message) => message,
@@ -745,6 +888,25 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     return done.future;
   }
 
+  /// Waits [d] before the next look for the log, or until something says the
+  /// pane's session changed ([_nudgeLocate]).
+  Future<void> _sleepLocate(Duration d) {
+    final done = _locateWake = Completer<void>();
+    _retryTimer = Timer(d, () {
+      if (!done.isCompleted) done.complete();
+    });
+    return done.future;
+  }
+
+  void _nudgeLocate() {
+    final wake = _locateWake;
+    _locateWake = null;
+    if (wake != null && !wake.isCompleted) {
+      _retryTimer?.cancel();
+      wake.complete();
+    }
+  }
+
   Future<void> _waitForMachine(int epoch) {
     final wake = _machineWake = Completer<void>();
     return wake.future;
@@ -755,7 +917,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     final done = Completer<bool>();
     var got = false;
     var work = Future<void>.value();
-    final sub = _source.follow(path, from: _offset).listen(
+    // A wider read that starts over (the link dropped before any of it came)
+    // is mapped from scratch; one that resumes goes on where it was.
+    if (_offset == null && _wideLog != null) _startWide();
+    final sub = _source.follow(path, from: _offset, tailBytes: _offset == null ? _tailBytes : null).listen(
       (batch) {
         got = true;
         work = work.then((_) => _alive(epoch) ? _applyBatch(batch, epoch) : null);
@@ -790,7 +955,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   }
 
   Future<void> _applyBatch(LogBatch batch, int epoch) async {
-    if (batch.reset) _resetLog();
+    final wide = _wideLog != null;
+    if (batch.reset) wide ? _startWide() : _resetLog();
+    if (batch.head case final head?) wide ? _wideHead = head : _head = head;
     final lines = batch.lines;
     final big = lines.length > sliceLines || !_ready;
     if (big) _batching = true;
@@ -816,13 +983,30 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     _ready = true;
     _failure = null;
     if (first) _setLink(AgentLink.live);
+    if (wide) {
+      // The older turns are not shown until all of them are there.
+      if (!batch.caughtUp || _wideLog == null) {
+        _wake();
+        return;
+      }
+      _adoptWide();
+    }
     _composed = null;
-    if (lines.isNotEmpty) _onLogEntries();
-    _refresh(urgent: first || batch.reset || big);
+    if (lines.isNotEmpty || wide) _onLogEntries();
+    _refresh(urgent: first || batch.reset || big || wide);
     _wake();
   }
 
   void _applyLine(String line) {
+    final mapper = _wideMapper;
+    if (mapper != null) {
+      var log = _wideLog!;
+      for (final u in mapper.map(line)) {
+        log = log.apply(u);
+      }
+      _wideLog = log;
+      return;
+    }
     for (final u in _mapper.map(line)) {
       _log = _log.apply(u);
     }
@@ -831,6 +1015,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   void _resetLog() {
     _mapper.reset();
     _log = AgentSessionState(_log.sessionId);
+    _wideMapper = null;
+    _wideLog = null;
+    _wideHead = null;
     _composed = null;
     _offset = null;
     _pendingAsk = null;
@@ -877,18 +1064,71 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
   void _onMachine() {
     if (_disposed) return;
     if (machine.isLive) _wake();
-    // herdr named another log (a new or resumed session): follow that one.
+    // The pane runs another session (a new or resumed one), or the agent has
+    // got a session herdr reports: look for the log again.
     if (held && !_isSub) {
-      final path = _logPath;
-      if (path != null && _followedPath != null && path != _followedPath && _following) {
-        _restartFollow();
-      } else if (path != null && _failure != null && path != _followedPath) {
-        _failure = null;
-        _attempt = 0;
-        _ensureFollowing();
+      final seen = _paneSig(_pane);
+      if (seen != _locatedFor) {
+        _locatedFor = seen;
+        _nudgeLocate();
+        unawaited(_relocate());
       }
     }
     _refresh();
+  }
+
+  /// What of the pane says which session runs in it: its session reference, or,
+  /// for an agent that reports none, its status (a turn ends: the agent's own
+  /// files may say more now).
+  String _paneSig(Pane? pane) {
+    final session = pane?.session;
+    final ref = session == null ? 'none' : '${session.kind}:${session.value}';
+    // The session herdr reports can be an old one (the hook fires on start only);
+    // a Claude pane is looked at again when a turn starts or ends, not on every
+    // change of its status.
+    final turn = kind.id == 'claude' ? '|${pane?.status == AgentStatus.idle || pane?.status == AgentStatus.done}' : '';
+    return session == null && kind.id != 'claude' ? 'none:${pane?.status.name}' : '$ref$turn';
+  }
+
+  /// Looks for the log once more while it is followed or has failed: when it is
+  /// another file now, follows that one.
+  Future<void> _relocate() async {
+    if (_relocating || _disposed || _isSub) return;
+    final pane = _pane;
+    if (pane == null) return;
+    _relocating = true;
+    try {
+      final found = await kind.locator.locate(machine, pane);
+      if (_disposed || !held) return;
+      if (found is NotYet && _following && _followedPath != null) {
+        // The pane runs a session that has no file yet: what is shown is the
+        // old one. Start over; the follow waits for the new file.
+        _resetLog();
+        _followedPath = null;
+        _ready = false;
+        _restartFollow();
+        return;
+      }
+      if (found is! Located || found.path == _followedPath) return;
+      if (_failure != null) {
+        _failure = null;
+        _attempt = 0;
+        _ensureFollowing();
+      } else if (_following && _followedPath != null) {
+        _restartFollow();
+      }
+    } on Object {
+      // The next change of the pane looks again.
+    } finally {
+      _relocating = false;
+    }
+    _refresh();
+    // The pane moved on again while this look was in flight.
+    if (held && !_disposed && _paneSig(_pane) != _locatedFor) {
+      _locatedFor = _paneSig(_pane);
+      _nudgeLocate();
+      unawaited(_relocate());
+    }
   }
 
   void _wake() {
@@ -924,7 +1164,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       _pending,
       _needsTerminal,
       title,
-      '$error|$sendBlocked',
+      '$error|$sendBlocked|${earlier.name}',
       cwd,
       _silent ? _liveRows : null,
       _log,
@@ -968,13 +1208,17 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     // The log's open question is enough: herdr marks the dialog blocked only
     // when its omp extension is installed. Answers are checked against the
     // screen before a key is sent.
-    final asking = _mapper.pendingAsk;
+    final asking = kind.ask == null ? null : _mapper.pendingAsk;
     if (asking != null && machine.isLive && (_pane?.isAgent ?? false)) {
       ask = asking;
       sig = 'ask:${askSignature(asking)}';
     } else if (_blocked) {
       final understood = _preview?.prompt ?? _menu;
-      if (_preview != null && _preview!.prompt == null && !_probing && !identical(_probedFor, _preview)) {
+      if (kind.menuPrompt != null &&
+          _preview != null &&
+          _preview!.prompt == null &&
+          !_probing &&
+          !identical(_probedFor, _preview)) {
         unawaited(_probe(_preview!));
       }
       if (understood != null) {
@@ -987,7 +1231,11 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     if (sig.isNotEmpty && sig == _suppressedSig) {
       next = null;
     } else if (sig.isNotEmpty) {
-      final full = '$sig\u0003$_attempt';
+      // The call the dialog is about is part of what the card says (its
+      // title, plan, diffs): a card made before the log has the call is made
+      // again when it does.
+      final call = prompt == null ? null : _callAsking(prompt);
+      final full = '$sig\u0003$_attempt\u0003${call?.toolCallId ?? ''}';
       if (full == _pendingSig && _pending != null) {
         next = _pending;
       } else {
@@ -1002,8 +1250,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
           );
         } else {
           next = PendingPermission(
-            'prompt:${promptSignature(prompt!).hashCode}:$_attempt',
-            promptRequest(prompt, paneId: paneId, call: _callAsking(prompt)),
+            'prompt:${promptSignature(prompt!).hashCode}:$_attempt:${call?.toolCallId ?? ''}',
+            promptRequest(prompt, paneId: paneId, call: call),
           );
         }
       }
@@ -1052,10 +1300,16 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       if (call != null && !call.status.isFinished) open.add(call);
     }
     if (prompt.subject.trim().isEmpty) return open.length == 1 ? open.single : null;
-    for (final call in open.reversed) {
-      if (promptShowsInput(prompt.subject, call.rawInput)) return call;
+    // A dialog about a patch names only where it goes.
+    final destination = RegExp(r'^\s*Destination:\s*(.+?)\s*$', multiLine: true).firstMatch(prompt.subject)?.group(1);
+    if (destination != null) {
+      final hits = [for (final call in open) if (_patchTouches(call.rawInput, destination)) call];
+      return hits.length == 1 ? hits.single : null;
     }
-    return null;
+    // Two calls that look like what the dialog shows (a cut command with the
+    // same start) are not told apart: the card then shows the screen's own text.
+    final hits = [for (final call in open) if (promptShowsInput(prompt.subject, call.rawInput)) call];
+    return hits.length == 1 ? hits.single : null;
   }
 
   // -- preview and live output -----------------------------------------------------
@@ -1258,15 +1512,16 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     }
   }
 
-  /// The prompt on the pane's screen right now, read the way [menu] says: omp's
-  /// own menus (tool approval, plan review) or the generic prompt detector.
+  /// The prompt on the pane's screen right now, read the way [menu] says: the
+  /// agent's own menus (omp's tool approval, plan review) or the generic prompt
+  /// detector.
   Future<PromptInfo?> _freshPrompt({required bool menu}) async {
     final read = await machine.api.readPane(paneId, lines: 60);
     return _parsePrompt(read.text, menu: menu);
   }
 
-  static PromptInfo? _parsePrompt(String text, {required bool menu}) {
-    if (menu) return _menuPrompt(text);
+  PromptInfo? _parsePrompt(String text, {required bool menu}) {
+    if (menu) return kind.menuPrompt?.call(text);
     final rows = <String>[];
     for (final raw in text.split('\n')) {
       final cr = raw.lastIndexOf('\r');
@@ -1276,43 +1531,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     return detectPrompt(rows);
   }
 
-  /// omp's tool approval or plan review as a prompt: each option with the keys
-  /// that choose it from where the cursor is.
-  static PromptInfo? _menuPrompt(String screen) {
-    final approval = parseOmpApproval(screen);
-    final OmpMenuScreen? menu = approval ?? parseOmpPlanReview(screen);
-    if (menu == null) return null;
-    final replies = <QuickReply>[];
-    for (final (i, o) in menu.options.indexed) {
-      final keys = menu.keysFor(i);
-      if (keys == null) return null;
-      replies.add(QuickReply(label: o.label, keys: keys));
-    }
-    return PromptInfo(
-      question: approval == null ? 'Plan mode - next step' : 'Allow tool: ${approval.tool}',
-      subject: approval == null ? '' : _approvalSubject(approval.detail),
-      replies: replies,
-    );
-  }
-
-  /// The rows above an approval's options, without their `Command:`-style
-  /// labels when it names a command.
-  static String _approvalSubject(List<String> detail) {
-    for (final line in detail) {
-      final m = RegExp(r'^\s*(?:Command|Path|File|Url|URL):\s*(.+)$').firstMatch(line);
-      if (m != null) return m[1]!.trim();
-    }
-    return detail.map((l) => l.trim()).where((l) => l.isNotEmpty).join('\n');
-  }
-
-  /// One read of the pane for omp's own menus, when the generic detector found
+  /// One read of the pane for the agent's own menus, when the generic detector found
   /// nothing in the preview.
   Future<void> _probe(PanePreview seen) async {
     _probing = true;
     try {
       final read = await machine.api.readPane(paneId, lines: 60);
       if (_disposed) return;
-      _menu = _menuPrompt(read.text);
+      _menu = kind.menuPrompt?.call(read.text);
     } on HerdrApiException {
       _menu = null;
     } on HerdrTransportException {
@@ -1351,6 +1577,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     final p = _pending;
     if (p is! PendingQuestion || p.id != requestId || _busy || _disposed) return;
     final ask = _pendingAsk;
+    if (kind.ask == null) return;
     if (response is! ElicitationAccept) {
       unawaited(_cancelAsk(p));
       return;
@@ -1371,7 +1598,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     _busy = true;
     try {
       final read = await machine.api.readPane(paneId, lines: 60);
-      if (!looksLikeAsk(read.text)) return _refuse(p, _screenMoved);
+      if (!kind.ask!.looksLikeAsk(read.text)) return _refuse(p, _screenMoved);
       await machine.api.sendKeys(paneId, const ['esc']);
       _suppress(p);
     } on HerdrApiException catch (e) {
@@ -1389,7 +1616,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     _busy = true;
     try {
       var submitted = false;
-      final stepper = askStepper(ask, answers);
+      final stepper = kind.ask!.stepper(ask, answers);
       for (var step = 0; step < maxAskSteps && !submitted; step++) {
         final read = await machine.api.readPane(paneId, lines: 60);
         final next = stepper(read.text);
@@ -1408,7 +1635,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       final recorded = await _waitFor(() => _mapper.pendingAsk?.toolCallId != ask.toolCallId, confirmWithin);
       final output = _log.toolCall(ask.toolCallId)?.rawOutput;
       if (!recorded) return _refuse(p, _notTaken);
-      if (!askResultMatches(output is String ? output : null, ask, answers)) {
+      if (!kind.ask!.resultMatches(output is String ? output : null, ask, answers)) {
         _setProblem('The terminal recorded a different answer than the one you gave. Check the terminal.');
       }
       _suppress(p);
@@ -1462,50 +1689,17 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     }
   }
 
-  /// The folder next to the log that holds the subagents' files.
-  String? get artifactDir {
-    final path = _followedPath ?? _logPath;
-    if (path == null || !path.endsWith('.jsonl')) return null;
-    return path.substring(0, path.length - '.jsonl'.length);
-  }
-
-  /// The log file of subagent [name].
-  String? subagentLog(String name) {
-    final dir = artifactDir;
-    return dir == null ? null : '$dir/$name.jsonl';
-  }
-
   Future<void> _listArtifacts() async {
-    final dir = artifactDir;
-    if (dir == null || !machine.isLive || _disposed) return;
-    final List<dynamic> entries;
+    final subs = kind.subagents;
+    final path = _followedPath;
+    if (subs == null || path == null || !machine.isLive || _disposed) return;
+    Map<String, SubagentState>? refined;
     try {
-      entries = await machine.api.files.list(dir);
+      refined = await subs.refine(machine, path, _mapper.subagents, running: subagentActive * 4);
     } on Object {
-      return;
+      return; // the link dropped: the next poll looks again
     }
-    if (_disposed || _rosterWatchers == 0) return;
-    final now = DateTime.now().toUtc();
-    final names = <String, Map<String, DateTime?>>{};
-    for (final e in entries) {
-      final name = e.name as String;
-      final dot = name.lastIndexOf('.');
-      if (dot <= 0) continue;
-      names.putIfAbsent(name.substring(0, dot), () => {})[name.substring(dot + 1)] = e.modified as DateTime?;
-    }
-    final refined = <String, SubagentState>{};
-    for (final s in _mapper.subagents) {
-      final files = names[s.name];
-      if (files == null) continue;
-      if (files.containsKey('md') || files.containsKey('json')) {
-        refined[s.name] = SubagentState.finished;
-      } else if (files.containsKey('jsonl')) {
-        final at = files['jsonl'];
-        refined[s.name] = at != null && now.difference(at.toUtc()) <= subagentActive * 4
-            ? SubagentState.running
-            : SubagentState.finished;
-      }
-    }
+    if (refined == null || _disposed || _rosterWatchers == 0) return;
     if (mapEquals(refined, _refined)) return;
     _refined = refined;
     _refresh();

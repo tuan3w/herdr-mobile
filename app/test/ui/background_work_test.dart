@@ -316,7 +316,7 @@ void main() {
       session.backgroundWork = work([task('bg_6', stop: StopRoute.message), task('bg_7', stop: StopRoute.message)]);
       await pump(tester, session);
       await openSheet(tester);
-      expect(find.text('Ask Claude Code to stop'), findsNWidgets(2));
+      expect(find.text('Ask to stop'), findsNWidgets(2));
       expect(
         find.text('Claude Code has no stop key for this. The phone sends Claude Code a message asking it to.'),
         findsOneWidget,

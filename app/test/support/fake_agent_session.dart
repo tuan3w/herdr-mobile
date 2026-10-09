@@ -85,6 +85,20 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   DateTime? get cachedAsOf => cachedAsOfValue;
+
+  EarlierHistory earlierValue = EarlierHistory.none;
+  int loadEarlierCalls = 0;
+
+  void setEarlier(EarlierHistory value) {
+    earlierValue = value;
+    notifyListeners();
+  }
+
+  @override
+  EarlierHistory get earlier => earlierValue;
+
+  @override
+  void loadEarlier() => loadEarlierCalls++;
   @override
   String? get error => _error;
   @override

@@ -1,0 +1,6 @@
+question:
+  1 of 1 · Which room is the desk in?
+replies:
+  1. Office (Recommended) · Optimizes… | keys: 1 | confirm: no
+  2. Bedroom · Accounts for shared… | keys: 2 | confirm: no
+  3. None of the above | keys: 3 | confirm: no

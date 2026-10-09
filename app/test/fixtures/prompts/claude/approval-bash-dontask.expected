@@ -1,0 +1,9 @@
+question:
+  Do you want to proceed?
+subject:
+  brew --version | head -1 && sleep 1
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, don’t ask again | keys: 2 enter | confirm: standing permission
+  3. Yes, and switch to auto mode · auto… | keys: 3 enter | confirm: standing permission
+  4. No | keys: 4 enter | confirm: no

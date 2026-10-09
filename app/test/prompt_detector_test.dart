@@ -952,6 +952,124 @@ Do you want to proceed?
     });
   });
 
+  group('Claude Code 2.1 command dialog (dashed rules)', () {
+    // The layout of a real 2.1.293 screen (test/fixtures/prompts/claude/): the
+    // command sits between two dashed rules, at the same indent as the
+    // question, under a description.
+    String dialog({String header = ' Bash command', String command = ' touch /tmp/x.txt', String note = ''}) => '''
+$header
+ Tip: auto mode handles these prompts for you
+ Create empty file x.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+$command
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+$note Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for: touch
+   3. No
+''';
+
+    test('the command is the subject, without the description and the tip', () {
+      final p = _detect(dialog())!;
+      expect(p.question, 'Do you want to proceed?');
+      expect(p.subject, 'touch /tmp/x.txt');
+    });
+
+    test('a note between the rule and the question does not hide it', () {
+      final p = _detect(dialog(note: ' This command requires approval\n'))!;
+      expect(p.subject, 'touch /tmp/x.txt');
+    });
+
+    test('a subagent\'s title (after the dot) is still a title', () {
+      expect(_detect(dialog(header: ' Bash command · from the general-purpose agent'))!.subject, 'touch /tmp/x.txt');
+    });
+
+    test('a dangerous command is judged from the subject and needs its second tap', () {
+      final p = _detect(dialog(command: ' rm -rf /tmp/build'))!;
+      expect(p.replies.first.needsConfirm, isTrue);
+    });
+
+    test('a dialog about a file keeps its diff out of the subject', () {
+      final p = _detect('''
+ Edit file
+ note.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 1 -rm -rf /
+ 2 +hello there
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to make this edit to note.txt?
+ ❯ 1. Yes
+   2. No
+''')!;
+      expect(p.subject, isEmpty);
+      expect(p.replies.first.needsConfirm, isFalse, reason: 'the removed text is not a command');
+    });
+
+    test('a command row of dashes behind the bar is the command, not a rule that hides the rows above it', () {
+      final p = _detect('''
+ Bash command
+ Create a file
+${'╌' * 53}
+ │ rm -rf ~/work; cat <<'EOF'
+ │ Done
+ │ ${'╌' * 8}
+ │ EOF
+ │ echo ok
+${'╌' * 53}
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+''')!;
+      expect(p.subject, contains('rm -rf ~/work'));
+      expect(p.replies.first.needsConfirm, isTrue, reason: 'the dangerous row is judged, whatever follows');
+    });
+
+    test('a preview never shows the stand-in of a rule', () {
+      expect(isDashedRule(cleanPreviewRow('╌' * 30)!), isTrue);
+      expect(cleanPreviewRow('╌╌╌'), isNull, reason: 'a short run is not a rule');
+      expect(isDashedRule(cleanPreviewRow('──────────')??''), isFalse);
+    });
+  });
+
+  group('Codex approval', () {
+    test('a command that wraps is read whole, after its reason', () {
+      final p = _detect('''
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: need network
+
+  \$ rm -rf ~/work &&
+    echo done
+
+› 1. Yes, proceed (y)
+  2. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel
+''')!;
+      expect(p.subject, contains('rm -rf ~/work'));
+      expect(p.subject, contains('echo done'));
+      expect(p.subject, isNot(contains('Reason')));
+    });
+  });
+
+  group('Codex question tool', () {
+    test('a digit alone answers, because an enter after it would answer the next question', () {
+      final p = _detect('''
+  Question 1/2 (2 unanswered)
+  Which room is the desk in?
+
+  › 1. Office (Recommended)  The desk is in the office.
+    2. Bedroom               The desk is in the bedroom.
+
+  tab to add notes | enter to submit answer | esc to interrupt
+''')!;
+      expect(p.question, '1 of 2 · Which room is the desk in?', reason: 'the card is one question of a form');
+      expect(p.replies.map((r) => r.keys), [['1'], ['2']]);
+    });
+  });
+
   group('cleanPreviewRow', () {
     test('strips side bars, keeps indentation, drops rules and blanks', () {
       expect(cleanPreviewRow('│   hello   │'), '  hello');

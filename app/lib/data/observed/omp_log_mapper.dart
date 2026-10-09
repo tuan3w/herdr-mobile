@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../acp/acp_models.dart';
 import '../acp/background/background_work.dart';
+import 'log_mapping.dart';
 import 'observed_contracts.dart';
 
 /// Maps the lines of an `omp` session log (`~/.omp/agent/sessions/.../*.jsonl`)
@@ -48,10 +49,9 @@ import 'observed_contracts.dart';
 /// in the mapper: reset it together with the state it feeds.
 class OmpLogMapper implements SessionLogMapper {
   /// The longest text kept per field. The host already cuts a field to about
-  /// 16 KB; anything longer than this gets a visible [_cutMark] here.
-  static const maxFieldChars = 20000;
+  /// 16 KB; anything longer than this gets a visible marker here.
+  static const maxFieldChars = maxLogFieldChars;
 
-  static const _cutMark = '\n... [cut]';
   static const _titleChars = 120;
 
   /// Entry ids already mapped (those that produce updates).
@@ -162,14 +162,14 @@ class OmpLogMapper implements SessionLogMapper {
     if (title is! String) return const [];
     final t = title.trim();
     if (t.isEmpty) return const [];
-    return [SessionInfoUpdate(hasTitle: true, title: _cut(t, 200), hasUpdatedAt: false)];
+    return [SessionInfoUpdate(hasTitle: true, title: cutText(t, 200), hasUpdatedAt: false)];
   }
 
   /// One quiet agent message for a housekeeping entry.
   List<SessionUpdate> _note(Json e, String line, String text) {
     final key = _firstTime(e, line);
     if (key == null) return const [];
-    return [_upsert(MessageRole.agent, key, text)];
+    return [messageUpsert(MessageRole.agent, key, text)];
   }
 
   List<SessionUpdate> _customMessage(Json e, String line) {
@@ -199,7 +199,7 @@ class OmpLogMapper implements SessionLogMapper {
     final key = _firstTime(e, line);
     if (key == null) return const [];
     _turnEnded = false;
-    return [..._userClears(), _upsert(MessageRole.user, key, text)];
+    return [..._userClears(), messageUpsert(MessageRole.user, key, text)];
   }
 
   List<SessionUpdate> _custom(Json e, String line) {
@@ -213,7 +213,7 @@ class OmpLogMapper implements SessionLogMapper {
         return const [];
       case 'session_exit':
         if (_firstTime(e, line) == null) return const [];
-        _exitSession(_stamp(e));
+        _exitSession(parseStamp(e));
         return _cancelOpen();
       default:
         return const [];
@@ -230,7 +230,7 @@ class OmpLogMapper implements SessionLogMapper {
         final key = _firstTime(e, line);
         if (key == null) return const [];
         _turnEnded = false;
-        return [..._userClears(), _upsert(MessageRole.user, key, text)];
+        return [..._userClears(), messageUpsert(MessageRole.user, key, text)];
       case 'assistant':
         final key = _firstTime(e, line);
         if (key == null) return const [];
@@ -241,7 +241,7 @@ class OmpLogMapper implements SessionLogMapper {
         final key = _firstTime(e, line);
         if (key == null) return const [];
         _turnEnded = false;
-        return _toolResult(m, _stamp(e));
+        return _toolResult(m, parseStamp(e));
       case 'bashExecution':
         final key = _firstTime(e, line);
         if (key == null) return const [];
@@ -262,7 +262,7 @@ class OmpLogMapper implements SessionLogMapper {
     if (ask == null) return const [];
     _ask = null;
     if (_open.remove(ask.toolCallId) == null) return const [];
-    return [_cancelled(ask.toolCallId)];
+    return [cancelledPatch(ask.toolCallId)];
   }
 
   List<SessionUpdate> _assistant(String key, Json m) {
@@ -295,8 +295,8 @@ class OmpLogMapper implements SessionLogMapper {
     final stop = m['stopReason'];
     if (stop == 'error') {
       final err = m['errorMessage'];
-      final text = err is String && err.trim().isNotEmpty ? 'The turn failed: ${_capText(err.trim())}' : 'The turn failed.';
-      out.add(_upsert(MessageRole.agent, '$key:error', text));
+      final text = err is String && err.trim().isNotEmpty ? 'The turn failed: ${capText(err.trim())}' : 'The turn failed.';
+      out.add(messageUpsert(MessageRole.agent, '$key:error', text));
     }
     // An interrupted or failed message leaves its calls without a result.
     if (stop == 'error' || stop == 'aborted') out.addAll(_cancelOpen());
@@ -305,11 +305,9 @@ class OmpLogMapper implements SessionLogMapper {
 
   void _addText(List<SessionUpdate> out, MessageRole role, String id, String text) {
     if (text.trim().isEmpty) return;
-    out.add(_upsert(role, id, text));
+    out.add(messageUpsert(role, id, text));
   }
 
-  static MessageUpsert _upsert(MessageRole role, String id, String text) =>
-      MessageUpsert(role, id, hasContent: true, content: [TextBlock(_capText(text))]);
 
   /// What the person typed: a string, or the text blocks joined, with a
   /// placeholder line per image (the log holds a blob reference, not the
@@ -351,11 +349,11 @@ class OmpLogMapper implements SessionLogMapper {
       ToolCall(
         toolCallId: 'run:$key',
         name: name,
-        title: _cut(_firstLine(source), _titleChars),
+        title: cutText(firstLine(source), _titleChars),
         kind: ToolKind.execute,
         status: status,
-        rawInput: {inputKey: _capText(source)},
-        content: output.isEmpty ? const [] : [ToolContentBlock(TextBlock(_capText(output)))],
+        rawInput: {inputKey: capText(source)},
+        content: output.isEmpty ? const [] : [ToolContentBlock(TextBlock(capText(output)))],
       ),
     );
   }
@@ -379,10 +377,10 @@ class OmpLogMapper implements SessionLogMapper {
       ToolCall(
         toolCallId: id,
         name: name,
-        title: names.isEmpty ? _toolTitle(name, args, intent) : _cut('Subagents: ${names.join(', ')}', _titleChars),
+        title: names.isEmpty ? _toolTitle(name, args, intent) : cutText('Subagents: ${names.join(', ')}', _titleChars),
         kind: _kindOf(name),
         status: ToolStatus.inProgress,
-        rawInput: args == null ? null : _capJson(args),
+        rawInput: args == null ? null : capJson(args),
         content: roster.isEmpty ? diffs : [ToolContentBlock(TextBlock(roster))],
         locations: _locationsOfCall(name, args),
       ),
@@ -431,15 +429,15 @@ class OmpLogMapper implements SessionLogMapper {
     } else if (name == 'wait') {
       _noteWait(details);
     }
-    if (text.isNotEmpty) content.add(ToolContentBlock(TextBlock(_capText(text))));
+    if (text.isNotEmpty) content.add(ToolContentBlock(TextBlock(capText(text))));
 
     final locations = _locationsOfResult(details);
     final fields = <String, Object?>{
       'toolCallId': id,
-      if (!known) ...{'name': name, 'title': name, 'kind': _kindWire(_kindOf(name))},
+      if (!known) ...{'name': name, 'title': name, 'kind': kindWire(_kindOf(name))},
       'status': isError ? 'failed' : 'completed',
       'content': [for (final c in content) c.toJson()],
-      if (text.isNotEmpty) 'rawOutput': _capText(text),
+      if (text.isNotEmpty) 'rawOutput': capText(text),
       if (locations.isNotEmpty) 'locations': locations,
     };
     if (_ask?.toolCallId == id) _ask = null;
@@ -455,7 +453,7 @@ class OmpLogMapper implements SessionLogMapper {
   /// or the process exited).
   List<SessionUpdate> _cancelOpen() {
     if (_open.isEmpty) return const [];
-    final out = [for (final id in _open.keys) _cancelled(id)];
+    final out = [for (final id in _open.keys) cancelledPatch(id)];
     _open.clear();
     _ask = null;
     return out;
@@ -472,13 +470,6 @@ class OmpLogMapper implements SessionLogMapper {
   static final _cancelledText = RegExp(r'Cancelled background job (\S+?)\.(?:\s|$)');
   static final _jobHeader = RegExp(r'── Job (\S+)');
 
-  /// The entry's own time, by the host's clock; null when it has none.
-  static DateTime? _stamp(Json e) {
-    final t = e['timestamp'];
-    if (t is String) return DateTime.tryParse(t);
-    if (t is int) return DateTime.fromMillisecondsSinceEpoch(t, isUtc: true);
-    return null;
-  }
 
   static bool _endsTurn(Object? stopReason) =>
       stopReason == 'stop' || stopReason == 'length' || stopReason == 'aborted' || stopReason == 'error';
@@ -562,13 +553,13 @@ class OmpLogMapper implements SessionLogMapper {
         final id = p is Map<String, dynamic> ? p['id'] : null;
         if (id is! String || id.isEmpty) continue;
         final what = p['assignment'] is String ? p['assignment'] : p['task'];
-        starts.add((id, id, what is String && what.trim().isNotEmpty ? _cut(what.trim(), _assignmentChars) : null));
+        starts.add((id, id, what is String && what.trim().isNotEmpty ? cutText(what.trim(), _assignmentChars) : null));
       }
     }
     final jobId = async['jobId'];
     if (starts.isEmpty && jobId is String && jobId.isNotEmpty) {
       final command = open?.command?.trim() ?? '';
-      starts.add((jobId, command.isEmpty ? jobId : _cut(_firstLine(command), _titleChars), command.isEmpty ? null : _capText(command)));
+      starts.add((jobId, command.isEmpty ? jobId : cutText(firstLine(command), _titleChars), command.isEmpty ? null : capText(command)));
     }
     for (final (id, title, detail) in starts) {
       _put(
@@ -604,10 +595,10 @@ class OmpLogMapper implements SessionLogMapper {
       final id = j['jobId'] as String;
       final status = j['status'];
       if (status is String) {
-        if (!_stillRunning(status)) _finish(id, _statusOf(status), _stamp(e));
+        if (!_stillRunning(status)) _finish(id, _statusOf(status), parseStamp(e));
       } else {
         final failed = _failedText.hasMatch(bodies[id] ?? '');
-        _finish(id, failed ? BackgroundStatus.failed : BackgroundStatus.finished, _stamp(e));
+        _finish(id, failed ? BackgroundStatus.failed : BackgroundStatus.finished, parseStamp(e));
       }
     }
   }
@@ -687,7 +678,7 @@ class OmpLogMapper implements SessionLogMapper {
         () => SubagentInfo(
           name: name,
           agent: agent is String ? agent : 'task',
-          assignment: assignment is String ? _cut(assignment, _assignmentChars) : '',
+          assignment: assignment is String ? cutText(assignment, _assignmentChars) : '',
         ),
       );
     }
@@ -719,7 +710,7 @@ class OmpLogMapper implements SessionLogMapper {
         name: name,
         agent: p['agent'] is String ? p['agent'] as String : (old?.agent ?? ''),
         status: p['status'] is String ? p['status'] as String : (old?.status ?? 'pending'),
-        assignment: assignment is String ? _cut(assignment, _assignmentChars) : (old?.assignment ?? ''),
+        assignment: assignment is String ? cutText(assignment, _assignmentChars) : (old?.assignment ?? ''),
         toolCount: count is num ? count.toInt() : (old?.toolCount ?? 0),
         recentTools: _toolNames(p['recentTools']) ?? old?.recentTools ?? const [],
       );
@@ -731,7 +722,7 @@ class OmpLogMapper implements SessionLogMapper {
     final out = <String>[];
     for (final t in v) {
       final name = t is String ? t : (t is Map ? (t['tool'] ?? t['name'] ?? t['toolName']) : null);
-      if (name is String && name.isNotEmpty) out.add(_cut(name, 60));
+      if (name is String && name.isNotEmpty) out.add(cutText(name, 60));
     }
     return out.length <= 5 ? out : out.sublist(out.length - 5);
   }
@@ -781,9 +772,9 @@ class OmpLogMapper implements SessionLogMapper {
         lines.add(name);
         continue;
       }
-      final what = _firstLine(s.assignment.trim());
+      final what = firstLine(s.assignment.trim());
       lines.add(
-        '${s.name}${s.agent.isEmpty ? '' : ' (${s.agent})'}: ${s.status}${what.isEmpty ? '' : ' - ${_cut(what, 100)}'}',
+        '${s.name}${s.agent.isEmpty ? '' : ' (${s.agent})'}: ${s.status}${what.isEmpty ? '' : ' - ${cutText(what, 100)}'}',
       );
     }
     return lines.join('\n');
@@ -798,8 +789,8 @@ class OmpLogMapper implements SessionLogMapper {
     final from = d['from'];
     final key = _firstTime(e, line);
     if (key == null) return const [];
-    final who = from is String && from.isNotEmpty ? _cut(from, 80) : 'another agent';
-    return [_upsert(MessageRole.agent, key, '$who → this agent: ${_cut(message.trim(), _assignmentChars)}')];
+    final who = from is String && from.isNotEmpty ? cutText(from, 80) : 'another agent';
+    return [messageUpsert(MessageRole.agent, key, '$who → this agent: ${cutText(message.trim(), _assignmentChars)}')];
   }
 
   /// A `write` to `agent://<name>` is a message to another agent: a note, not
@@ -815,15 +806,13 @@ class OmpLogMapper implements SessionLogMapper {
     }
     _hidden.add(id);
     final to = path.substring('agent://'.length);
-    return _upsert(
+    return messageUpsert(
       MessageRole.agent,
       noteId,
-      'this agent → ${to == 'all' ? 'all agents' : _cut(to, 80)}: ${_cut(content.trim(), _assignmentChars)}',
+      'this agent → ${to == 'all' ? 'all agents' : cutText(to, 80)}: ${cutText(content.trim(), _assignmentChars)}',
     );
   }
 
-  static SessionUpdate _cancelled(String id) =>
-      ToolCallPatchUpdate(ToolCallPatch(id, {'toolCallId': id, 'status': 'cancelled'}));
 
   static String _resultText(Object? content) {
     if (content is String) return content;
@@ -867,35 +856,23 @@ class OmpLogMapper implements SessionLogMapper {
     }
   }
 
-  static String _kindWire(ToolKind k) => switch (k) {
-    ToolKind.read => 'read',
-    ToolKind.edit => 'edit',
-    ToolKind.delete => 'delete',
-    ToolKind.move => 'move',
-    ToolKind.search => 'search',
-    ToolKind.execute => 'execute',
-    ToolKind.think => 'think',
-    ToolKind.fetch => 'fetch',
-    ToolKind.switchMode => 'switch_mode',
-    ToolKind.other => 'other',
-  };
 
   /// The call's own words (`intent` / `i`), else what it works on.
   static String _toolTitle(String name, Json? args, String? intent) {
-    final i = intent == null ? '' : _firstLine(intent.trim());
-    if (i.isNotEmpty) return _cut(i, _titleChars);
+    final i = intent == null ? '' : firstLine(intent.trim());
+    if (i.isNotEmpty) return cutText(i, _titleChars);
     String? str(String key) => args?[key] is String && (args![key] as String).trim().isNotEmpty ? args[key] as String : null;
     final kind = _kindOf(name);
     final command = str('command');
-    if (kind == ToolKind.execute && command != null) return _cut(_firstLine(command.trim()), _titleChars);
+    if (kind == ToolKind.execute && command != null) return cutText(firstLine(command.trim()), _titleChars);
     if (name == 'ask') {
       final qs = args?['questions'];
       if (qs is List && qs.isNotEmpty && qs.first is Map && (qs.first as Map)['question'] is String) {
-        return _cut(_firstLine(((qs.first as Map)['question'] as String).trim()), _titleChars);
+        return cutText(firstLine(((qs.first as Map)['question'] as String).trim()), _titleChars);
       }
     }
     final subject = str('path') ?? command ?? str('pattern') ?? str('query');
-    if (subject != null) return _cut('$name: ${_firstLine(subject.trim())}', _titleChars);
+    if (subject != null) return cutText('$name: ${firstLine(subject.trim())}', _titleChars);
     return name;
   }
 
@@ -973,11 +950,11 @@ class OmpLogMapper implements SessionLogMapper {
     final path = args['path'];
     if (path is! String || path.isEmpty) return const [];
     ToolDiff? one(Object? from, Object? to) =>
-        from is String && to is String ? ToolDiff(path: _abs(path), oldText: _capText(from), newText: _capText(to)) : null;
+        from is String && to is String ? ToolDiff(path: _abs(path), oldText: capText(from), newText: capText(to)) : null;
 
     final out = <ToolDiff>[];
     if (name == 'write' && args['content'] is String) {
-      out.add(ToolDiff(path: _abs(path), newText: _capText(args['content'] as String)));
+      out.add(ToolDiff(path: _abs(path), newText: capText(args['content'] as String)));
       return out;
     }
     if (_kindOf(name) != ToolKind.edit) return const [];
@@ -1014,8 +991,8 @@ class OmpLogMapper implements SessionLogMapper {
       out.add(
         ToolDiff(
           path: _abs(path),
-          oldText: from is String ? _capText(from) : null,
-          newText: to is String ? _capText(to) : '',
+          oldText: from is String ? capText(from) : null,
+          newText: to is String ? capText(to) : '',
         ),
       );
     }
@@ -1037,7 +1014,7 @@ class OmpLogMapper implements SessionLogMapper {
         if (t is! Map<String, dynamic>) continue;
         final content = t['content'];
         if (content is! String || content.isEmpty) continue;
-        entries.add(PlanEntry(content: _cut(content, 300), status: _planStatus(t['status'])));
+        entries.add(PlanEntry(content: cutText(content, 300), status: _planStatus(t['status'])));
       }
     }
     return PlanUpdate(entries);
@@ -1064,10 +1041,10 @@ class OmpLogMapper implements SessionLogMapper {
       if (raw is List) {
         for (final o in raw) {
           if (o is String) {
-            options.add(AskOption(label: _cut(o, 300)));
+            options.add(AskOption(label: cutText(o, 300)));
           } else if (o is Map<String, dynamic> && o['label'] is String) {
             final d = o['description'];
-            options.add(AskOption(label: _cut(o['label'] as String, 300), description: d is String ? _capText(d) : ''));
+            options.add(AskOption(label: cutText(o['label'] as String, 300), description: d is String ? capText(d) : ''));
           }
         }
       }
@@ -1078,7 +1055,7 @@ class OmpLogMapper implements SessionLogMapper {
       out.add(
         AskQuestion(
           id: qid is String && qid.isNotEmpty ? qid : 'q$i',
-          question: question is String ? _capText(question) : '',
+          question: question is String ? capText(question) : '',
           options: options,
           multi: q['multi'] == true,
           recommended: recommended,
@@ -1094,52 +1071,10 @@ class OmpLogMapper implements SessionLogMapper {
   /// line), or null when this mapper has mapped it before.
   String? _firstTime(Json e, String line) {
     final id = e['id'];
-    final key = id is String && id.isNotEmpty ? id : 'h${_fnv(line)}';
+    final key = id is String && id.isNotEmpty ? id : 'h${fnv(line)}';
     return _seen.add(key) ? key : null;
   }
 
-  static String _fnv(String s) {
-    var h = 0x811c9dc5;
-    for (var i = 0; i < s.length; i++) {
-      h ^= s.codeUnitAt(i);
-      h = (h * 0x01000193) & 0xFFFFFFFF;
-    }
-    return h.toRadixString(16);
-  }
-
-  static String _firstLine(String s) {
-    final i = s.indexOf('\n');
-    return i < 0 ? s : s.substring(0, i);
-  }
-
-  /// [s] cut to [max] characters with an ellipsis.
-  static String _cut(String s, int max) {
-    if (s.length <= max) return s;
-    return '${s.substring(0, _safeEnd(s, max - 1))}…';
-  }
-
-  /// [s] cut at [maxFieldChars] with a visible marker; whole when shorter.
-  static String _capText(String s) {
-    if (s.length <= maxFieldChars) return s;
-    return '${s.substring(0, _safeEnd(s, maxFieldChars))}$_cutMark';
-  }
-
-  /// [end], or one less when it would split a surrogate pair.
-  static int _safeEnd(String s, int end) {
-    if (end > 0 && end < s.length) {
-      final u = s.codeUnitAt(end - 1);
-      if (u >= 0xD800 && u <= 0xDBFF) return end - 1;
-    }
-    return end;
-  }
-
-  /// A copy of [v] whose strings are capped.
-  static Object? _capJson(Object? v) {
-    if (v is String) return _capText(v);
-    if (v is List) return [for (final e in v) _capJson(e)];
-    if (v is Map) return {for (final e in v.entries) e.key.toString(): _capJson(e.value)};
-    return v;
-  }
 }
 
 class _OpenCall {

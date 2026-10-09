@@ -1238,6 +1238,47 @@ class AgentSessionState {
     );
   }
 
+  /// This state, a wider read of the same log made from scratch, with the keys
+  /// [shown] gave the items both have: the reducer's keys count from 0 in
+  /// every read, so without this the same message would get another key and
+  /// a list anchored on keys would jump. Items are paired by [_signature] from
+  /// the end (the last of a repeated message with the last); the older items
+  /// only this read has get a prefix (`eN.`), so they cannot meet a key of
+  /// [shown] or one the reducer makes later.
+  AgentSessionState withKeysOf(AgentSessionState shown) {
+    final theirs = <String, List<String>>{};
+    var epoch = 0;
+    for (final i in shown.items) {
+      if (_signature(i) case final s?) (theirs[s] ??= []).add(i.key);
+      final m = _earlierKey.firstMatch(i.key);
+      if (m != null) epoch = epoch > int.parse(m[1]!) ? epoch : int.parse(m[1]!);
+    }
+    final prefix = 'e${epoch + 1}.';
+    final out = List<TranscriptItem>.of(items);
+    for (var at = out.length - 1; at >= 0; at--) {
+      final item = out[at];
+      final keys = switch (_signature(item)) {
+        final s? => theirs[s],
+        null => null,
+      };
+      if (keys != null && keys.isNotEmpty) {
+        final key = keys.removeLast();
+        if (key != item.key) out[at] = _rekeyed(item, key);
+      } else {
+        out[at] = _earlier(item, prefix);
+      }
+    }
+    return _copy(items: out, nextKey: nextKey > shown.nextKey ? nextKey : shown.nextKey);
+  }
+
+  static TranscriptItem _rekeyed(TranscriptItem item, String key) => switch (item) {
+    TranscriptMessage m => m._with(key: key),
+    TranscriptStop s => TranscriptStop(key: key, reason: s.reason, at: s.at),
+    TranscriptNote n => TranscriptNote(key: key, text: n.text, modeId: n.modeId, at: n.at),
+    // A call's key is its id, the same in every read.
+    TranscriptTool() => item,
+  };
+
   static final _earlierKey = RegExp(r'^e(\d+)\.');
   static final _generatedKey = RegExp(r'^[mn]\d+$');
 

@@ -1,0 +1,7 @@
+question:
+  2 of 2 · What material is the desk?
+replies:
+  1. Wood (Recommended) · The desk is… | keys: 1 | confirm: no
+  2. Glass · The desk is made of glass. | keys: 2 | confirm: no
+  3. Metal · The desk is made of metal. | keys: 3 | confirm: no
+  4. None of the above | keys: 4 | confirm: no

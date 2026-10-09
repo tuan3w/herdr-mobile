@@ -25,6 +25,10 @@ class FakeLogSource implements SessionLogSource {
   /// Fails the next `follow` at once with this.
   Object? openError;
 
+  /// A `follow` without `from` delivers nothing by itself: the test hands
+  /// out the tail with [tailOf] when it wants to.
+  bool holdTails = false;
+
   /// What the file holds: a `follow` without `from` starts with all of it.
   final lines = <String>[];
   final _ends = <int>[];
@@ -43,16 +47,45 @@ class FakeLogSource implements SessionLogSource {
         c.addError(error);
         unawaited(c.close());
       });
-    } else if (from == null && lines.isNotEmpty) {
-      scheduleMicrotask(() => c.add(LogBatch(List.of(lines), _end)));
+    } else if (from == null && lines.isNotEmpty && !holdTails) {
+      final tail = tailOf(tailBytes);
+      scheduleMicrotask(() {
+        for (final batch in tail) {
+          c.add(batch);
+        }
+      });
     } else if (from != null) {
       final at = _ends.indexWhere((e) => e > from);
-      if (at >= 0) scheduleMicrotask(() => c.add(LogBatch(lines.sublist(at), _end)));
+      final rest = at >= 0 ? lines.sublist(at) : const <String>[];
+      final end = _end;
+      scheduleMicrotask(() {
+        if (rest.isNotEmpty) c.add(LogBatch(rest, end));
+        c.add(LogBatch(const [], end, caughtUp: true));
+      });
     }
     return c.stream;
   }
 
   StreamController<LogBatch> get last => streams.last;
+
+  /// What a tail read of [tailBytes] (the host's 192 KB by default) sends:
+  /// the lines from the first line start inside the window, then the
+  /// caught-up note. [batchLines] splits the lines into batches of that many.
+  List<LogBatch> tailOf(int? tailBytes, {int? batchLines}) {
+    final want = _end - (tailBytes ?? 192 * 1024);
+    var at = 0;
+    while (at < lines.length && (at == 0 ? 0 : _ends[at - 1]) < want) {
+      at++;
+    }
+    final head = at == 0 ? 0 : _ends[at - 1];
+    final step = batchLines ?? lines.length;
+    return [
+      for (var i = at; i < lines.length; i += step)
+        LogBatch(lines.sublist(i, i + step > lines.length ? lines.length : i + step),
+            _ends[(i + step > lines.length ? lines.length : i + step) - 1], head: i == at ? head : null),
+      LogBatch(const [], _end, caughtUp: true),
+    ];
+  }
 
   /// The channel of the latest `follow` is open.
   bool get open => streams.isNotEmpty && !cancelled.contains(streams.length - 1) && !last.isClosed;
@@ -179,6 +212,12 @@ class ScreenTransport extends FakeTransport {
 
   String screen = '';
 
+  /// When set, the screen is what this says, read at every `pane.read` (a model
+  /// of a dialog that reacts to the keys), and [onInput] sees every
+  /// `pane.send_input` and `pane.send_keys`.
+  String Function()? liveScreen;
+  void Function(Map<String, dynamic> params)? onInput;
+
   /// When set, the screen is `screens[min(sends, last)]`, `sends` counting
   /// the input and key requests so far.
   List<String>? screens;
@@ -193,10 +232,11 @@ class ScreenTransport extends FakeTransport {
 
   @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) {
+    if (method == 'pane.send_input' || method == 'pane.send_keys') onInput?.call(params);
     if (method != 'pane.read') return super.request(method, params);
     calls.add((method, params));
     final list = screens;
-    final text = list == null ? screen : list[sends < list.length ? sends : list.length - 1];
+    final text = liveScreen != null ? liveScreen!() : (list == null ? screen : list[sends < list.length ? sends : list.length - 1]);
     return Future.value({
       'type': 'pane_read',
       'read': {'text': text, 'truncated': false},

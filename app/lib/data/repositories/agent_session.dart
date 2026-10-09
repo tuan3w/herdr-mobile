@@ -33,6 +33,23 @@ enum AgentLink {
   failed,
 }
 
+/// What a session knows of its transcript before the first item of
+/// `state.items`.
+enum EarlierHistory {
+  /// Nothing: the transcript starts where the session did.
+  none,
+
+  /// The agent's log holds earlier messages the phone has not read
+  /// ([AgentSessionView.loadEarlier] reads them).
+  available,
+
+  /// They are being read.
+  loading,
+
+  /// The log holds earlier messages, but more than the phone reads at once.
+  tooLong,
+}
+
 /// One agent session as the screens see it. A `ChangeNotifier`-style
 /// [Listenable]: it notifies when [state], [link] or [error] change. Notifies
 /// at most once per frame's worth of updates (the implementation batches a
@@ -68,6 +85,14 @@ abstract interface class AgentSessionView implements Listenable {
   /// known to be right. Null once the live replay has replaced it, and for a
   /// session that never showed one. Nothing in a saved copy can be answered.
   DateTime? get cachedAsOf;
+
+  /// Whether there are earlier messages than [state] holds.
+  EarlierHistory get earlier;
+
+  /// Reads the earlier messages ([earlier] is [EarlierHistory.available]);
+  /// otherwise nothing happens. What [state] holds now stays shown until they
+  /// are all there, and nothing already shown moves.
+  void loadEarlier();
 
   /// Why [link] is [AgentLink.failed], [AgentLink.reconnecting] or
   /// [AgentLink.ended]; null otherwise.

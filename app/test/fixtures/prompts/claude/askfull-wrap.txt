@@ -1,0 +1,38 @@
+# agent: claude
+# herdr: 0.9.3
+# status: blocked
+# captured: 2026-10-09T14:23:03Z
+# source: herdr pane read --source recent --lines 60 --ansi
+
+[0m[38;2;215;119;87m ▐[0m[38;2;215;119;87m[48;2;0;0;0m▛███▛█   [0m[1mClaude Code [0m[38;2;153;153;153mv2.1.295[0m
+[0m[38;2;215;119;87m▝▜[0m[38;2;215;119;87m[48;2;0;0;0m█████[0m[38;2;215;119;87m█▀  [0m[38;2;153;153;153mHaiku 5.5 · Claude Max[0m
+[0m[38;2;215;119;87m ▝▝   ▝▝   [0m[38;2;153;153;153m/private/tmp/hm-capture-claude[0m
+
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯[0m[48;2;55;55;55m [0m[38;2;255;255;255m[48;2;55;55;55m/clear[0m[48;2;55;55;55m                                                                                                 [0m
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the AskUserQuestion tool to ask ONE single-choice question with exactly 3 options. The question [0m[48;2;55;55;55m   [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mtext must be EXACTLY this 130-character sentence: 'Which of the following deployment strategies would [0m[48;2;55;55;55m [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55myou prefer to use for the next production release of the mobile backend service?'. Option 1 label must[0m[48;2;55;55;55m [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mbe EXACTLY this 90-character text: 'Blue-green deployment with automated smoke tests and an instant [0m[48;2;55;55;55m   [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mrollback path if errors rise'. Option 2 label: 'Canary'. Option 3 label: 'Rolling'. Give every option [0m[48;2;55;55;55m [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55ma one-sentence description. Header: Deploy. Do nothing else.[0m[48;2;55;55;55m                                           [0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+[0m[38;2;0;0;0m[48;2;177;185;249m ☐ Deploy [0m
+
+[0m[2m│[0m [0m[1m[38;2;255;255;255mWhich of the following deployment strategies would you prefer to use for the next production release of[0m
+[0m[2m│ [0m[1m[38;2;255;255;255mthe mobile backend service?[0m
+
+[0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mBlue-green deployment with automated smoke tests and an instant rollback path if errors rise[0m
+     [0m[38;2;153;153;153mRun the new version alongside the current one, verify it with automated smoke tests, then switch [0m
+     [0m[38;2;153;153;153mtraffic over and roll back instantly if errors increase.[0m
+  [0m[38;2;153;153;153m2.[0m Canary
+     [0m[38;2;153;153;153mSend a small share of traffic to the new version first, then widen the rollout gradually as metrics [0m
+     [0m[38;2;153;153;153mstay healthy.[0m
+  [0m[38;2;153;153;153m3. [0mRolling
+     [0m[38;2;153;153;153mReplace instances of the old version with the new one in batches until the whole fleet is updated.[0m
+  [0m[38;2;153;153;153m4. Type something.[0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  5. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · ↑/↓ to navigate · Esc to cancel[0m

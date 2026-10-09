@@ -369,6 +369,13 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   @override
   DateTime? get cachedAsOf => _cachedAsOf;
 
+  /// The keeper replays everything it kept ([hostDroppedKey] notes the rest).
+  @override
+  EarlierHistory get earlier => EarlierHistory.none;
+
+  @override
+  void loadEarlier() {}
+
   @override
   bool get unseenDone => phase == AgentPhase.idle && (_unseen || _listedUnseen);
 

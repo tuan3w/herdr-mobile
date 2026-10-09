@@ -127,7 +127,7 @@ class _AppearanceSection extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Open omp agents as', style: Type.row.copyWith(color: ds.text)),
+            Text('Open agents as', style: Type.row.copyWith(color: ds.text)),
             const SizedBox(height: Gap.sm),
             Segmented<OpenAgentsAs>(
               options: const [
@@ -140,8 +140,8 @@ class _AppearanceSection extends StatelessWidget {
             const SizedBox(height: Gap.sm),
             Text(
               openAs == OpenAgentsAs.chat
-                  ? 'A running omp opens as a chat you can read and answer; the terminal is one tap away.'
-                  : 'A running omp opens as its terminal, like any other agent.',
+                  ? 'omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it cannot find, opens as a terminal.'
+                  : 'A running agent opens as its terminal.',
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
           ],

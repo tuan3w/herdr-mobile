@@ -11,6 +11,7 @@ import '../../../data/acp/turns/turns.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/app_settings.dart';
 import '../../../data/repositories/last_seen.dart' show SinceLeft;
+import '../../core/controls.dart';
 import '../../core/markdown/markdown.dart';
 import '../../core/motion.dart';
 import '../../core/theme.dart';
@@ -81,6 +82,11 @@ const _awayFrom = 120.0;
 /// pixels of slide, nothing else); one that closes just goes. The list
 /// anchors to the rows in view, so a fold above them changing does not move
 /// what the reader is looking at.
+///
+/// **Earlier messages.** When the session has more before its first item
+/// (`AgentSessionView.earlier`), a row above it says so, and coming within a
+/// screen of it reads them: scrolling up goes on as far as the log does. The
+/// older rows arrive above the ones in view, which stay where they are.
 class TranscriptView extends StatefulWidget {
   const TranscriptView({super.key, required this.session, this.sinceLeft});
 
@@ -169,6 +175,7 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
   late List<TranscriptItem> _items = widget.session.state.items;
   late bool _live = widget.session.state.turnActive;
   late Set<String> _waiting = attentionToolIds(widget.session);
+  late EarlierHistory _earlier = widget.session.earlier;
   late TranscriptPlan _plan = TranscriptPlan(open: _open, notes: _notes);
 
   /// The plan covers every item. A long transcript is planned from its last
@@ -260,6 +267,7 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
       _items = widget.session.state.items;
       _live = widget.session.state.turnActive;
       _waiting = attentionToolIds(widget.session);
+      _earlier = widget.session.earlier;
       _plan = TranscriptPlan(open: _open, notes: _notes);
       _warmup.cancel();
       _whole = _short(_items) || widget.sinceLeft != null;
@@ -450,7 +458,13 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
     final items = state.items;
     final live = state.turnActive;
     final waiting = attentionToolIds(widget.session);
+    final earlier = widget.session.earlier;
     if (live != _live) _trackPlan(state);
+    if (earlier != _earlier) {
+      setState(() => _earlier = earlier);
+      // Read on when the older rows came and the top is still in sight.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _nearTop());
+    }
     if (identical(items, _items) && live == _live && waiting.length == _waiting.length && waiting.containsAll(_waiting)) {
       return;
     }
@@ -499,6 +513,17 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
     final away = position.extentAfter > _awayFrom;
     if (away && !_away.value) _base = _completed();
     _away.value = away;
+    _nearTop();
+  }
+
+  /// Within a screen of the top of everything there is: read the earlier
+  /// messages. Only once the plan covers every item, as before that the top
+  /// of the list is not the top of the transcript.
+  void _nearTop() {
+    if (!mounted || !_whole || _earlier != EarlierHistory.available || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (!position.hasContentDimensions) return;
+    if (position.extentBefore < position.viewportDimension) widget.session.loadEarlier();
   }
 
   _StickyPosition? get _sticky {
@@ -718,9 +743,22 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     notifyRegionBuilt('transcript');
-    if (_rows.isEmpty) return const _EmptyTranscript();
+    if (_rows.isEmpty) {
+      if (_earlier == EarlierHistory.none) return const _EmptyTranscript();
+      // The end of the log is all tool output with nothing to show: what was
+      // said is earlier, so read it rather than say nothing was.
+      if (_earlier == EarlierHistory.available) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _rows.isEmpty) widget.session.loadEarlier();
+        });
+      }
+      return Center(child: _EarlierRow(earlier: _earlier, onLoad: widget.session.loadEarlier));
+    }
     final center = _center;
     final index = _plan.index;
+    final earlierRow = _earlier == EarlierHistory.none
+        ? null
+        : _EarlierRow(earlier: _earlier, onLoad: widget.session.loadEarlier);
     return Stack(
       children: [
         NotificationListener<ScrollMetricsNotification>(
@@ -744,6 +782,15 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
                   controller: _scroll,
                   center: _centerKey,
                   slivers: [
+                    // Above the oldest row. With no older rows it is the
+                    // center itself: what comes before the center is above
+                    // the screen of a list that starts at the center.
+                    if (earlierRow != null)
+                      SliverPadding(
+                        key: center == 0 ? _centerKey : null,
+                        padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.sm, Gap.lg, 0),
+                        sliver: SliverToBoxAdapter(child: earlierRow),
+                      ),
                     if (center > 0)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.sm, Gap.lg, 0),
@@ -761,8 +808,8 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
                         ),
                       ),
                     SliverPadding(
-                      key: _centerKey,
-                      padding: EdgeInsets.fromLTRB(Gap.lg, center == 0 ? Gap.sm : 0, Gap.lg, 0),
+                      key: center == 0 && earlierRow != null ? null : _centerKey,
+                      padding: EdgeInsets.fromLTRB(Gap.lg, center == 0 && earlierRow == null ? Gap.sm : 0, Gap.lg, 0),
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, j) => _row(context, center + j),
@@ -852,6 +899,56 @@ class _RevealState extends State<_Reveal> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) =>
       FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: widget.child));
+}
+
+/// Above the first row, when the log holds earlier messages: reading them
+/// (the one spinner), a tap to read them for a reader who stopped short of
+/// the top, or why they are not read.
+class _EarlierRow extends StatelessWidget {
+  const _EarlierRow({required this.earlier, required this.onLoad});
+
+  final EarlierHistory earlier;
+  final VoidCallback onLoad;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final style = Type.secondary.copyWith(color: ds.textSecondary);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Gap.md),
+      child: Center(
+        child: switch (earlier) {
+          EarlierHistory.available => AppButton(
+            label: 'Load earlier messages',
+            kind: AppButtonKind.ghost,
+            compact: true,
+            onPressed: onLoad,
+          ),
+          EarlierHistory.loading => Semantics(
+            liveRegion: true,
+            child: SizedBox(
+              height: 36,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const BusySpinner(),
+                  const SizedBox(width: Gap.sm),
+                  Text('Loading earlier messages…', style: style),
+                ],
+              ),
+            ),
+          ),
+          // 64 MB: `_maxTail` of the observed session and the host's ceiling.
+          EarlierHistory.tooLong => Text(
+            'Earlier messages are not shown: the phone reads the last 64 MB of a log.',
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+          EarlierHistory.none => const SizedBox.shrink(),
+        },
+      ),
+    );
+  }
 }
 
 class _EmptyTranscript extends StatelessWidget {

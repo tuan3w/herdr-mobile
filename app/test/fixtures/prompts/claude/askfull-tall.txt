@@ -1,0 +1,55 @@
+# agent: claude
+# herdr: 0.9.3
+# status: blocked
+# captured: 2026-10-09T14:23:30Z
+# source: herdr pane read --source recent --lines 60 --ansi
+
+[0m[38;2;215;119;87m ▐[0m[38;2;215;119;87m[48;2;0;0;0m▛███▛█   [0m[1mClaude Code [0m[38;2;153;153;153mv2.1.295[0m
+[0m[38;2;215;119;87m▝▜[0m[38;2;215;119;87m[48;2;0;0;0m█████[0m[38;2;215;119;87m█▀  [0m[38;2;153;153;153mHaiku 5.5 · Claude Max[0m
+[0m[38;2;215;119;87m ▝▝   ▝▝   [0m[38;2;153;153;153m/private/tmp/hm-capture-claude[0m
+
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯[0m[48;2;55;55;55m [0m[38;2;255;255;255m[48;2;55;55;55m/clear[0m[48;2;55;55;55m                                                                                                 [0m
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the AskUserQuestion tool to ask ONE single-choice question with exactly 4 options, header Plan, [0m[48;2;55;55;55m   [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mquestion: Which rollout plan do you want?. Make EVERY option label about 110 characters long (so it [0m[48;2;55;55;55m   [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mwraps in a 105-column terminal) and EVERY option description about 300 characters long. Do nothing [0m[48;2;55;55;55m    [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55melse.[0m[48;2;55;55;55m                                                                                                  [0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+[0m[38;2;0;0;0m[48;2;177;185;249m ☐ Plan [0m
+
+[0m[1m[38;2;255;255;255mWhich rollout plan do you want?[0m
+
+[0m[38;2;177;185;249m❯[0m [0m[38;2;153;153;153m1.[0m [0m[38;2;177;185;249mPhased rollout: ship to a small internal canary group first, then expand to all users over two weeks[0m
+     [0m[38;2;177;185;249monce error rates and latency hold steady[0m
+     [0m[38;2;153;153;153mStart with a canary cohort of internal employees and a few trusted beta users, watching error rates,[0m
+     [0m[38;2;153;153;153mlatency, and support tickets closely at each stage. Expand in measured increments over roughly two [0m
+     [0m[38;2;153;153;153mweeks, pausing automatically if any health metric crosses its threshold. Roll back quickly by [0m
+     [0m[38;2;153;153;153mflipping the feature flag if a regression appears, so the blast radius stays small while you gather [0m
+     [0m[38;2;153;153;153mreal-world signal before general availability.[0m
+  [0m[38;2;153;153;153m2. [0mBig-bang release: enable the feature for every user at once on a single scheduled date with a
+     coordinated announcement and support staffing
+     [0m[38;2;153;153;153mTurn the feature on for all users simultaneously on one pre-agreed launch date, paired with a [0m
+     [0m[38;2;153;153;153mcoordinated announcement, updated help documentation, and extra support staffing for the first [0m
+     [0m[38;2;153;153;153mseveral days. This is the simplest plan to coordinate and communicate, but any defect reaches the [0m
+     [0m[38;2;153;153;153mwhole user base at once, so it relies heavily on thorough pre-launch testing and a tested rollback [0m
+     [0m[38;2;153;153;153mpath in case something goes wrong.[0m
+  [0m[38;2;153;153;153m3. [0mRegion-by-region rollout: release market by market, starting with one smaller region and adding
+     larger regions only after each one is verified stable
+     [0m[38;2;153;153;153mLaunch first in a single lower-risk region with a smaller user population, verify functionality, [0m
+     [0m[38;2;153;153;153mdata correctness, and performance there, then add remaining regions one at a time in order of [0m
+     [0m[38;2;153;153;153mincreasing size and complexity. This matches localization and compliance review timing per market [0m
+     [0m[38;2;153;153;153mand lets each regional team own its launch, though overall completion takes longer and requires [0m
+     [0m[38;2;153;153;153mtracking several separate go-live checkpoints.[0m
+  [0m[38;2;153;153;153m4. [0mOpt-in beta program: keep the feature hidden behind a settings toggle and let users choose to enable
+     it, collecting feedback before any default change
+     [0m[38;2;153;153;153mRelease the feature as an optional toggle that users must actively switch on, so only motivated [0m
+     [0m[38;2;153;153;153mearly adopters encounter it at first. Collect structured feedback through in-product prompts and a [0m
+     [0m[38;2;153;153;153mdedicated channel, and only change the default to on after adoption and satisfaction data justify [0m
+     [0m[38;2;153;153;153mit. This minimizes risk to the wider audience and keeps the existing experience untouched, but [0m
+     [0m[38;2;153;153;153madoption signal arrives slowly and the timeline to full availability is open-ended.[0m
+  [0m[38;2;153;153;153m5. Type something.[0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  6. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · ↑/↓ to navigate · Esc to cancel[0m

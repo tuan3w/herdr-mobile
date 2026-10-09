@@ -1,0 +1,5 @@
+question:
+  Claude has written up a plan and is ready to execute. Would you like to proceed?
+replies:
+  1. Yes, and use auto mode | keys: 1 enter | confirm: standing permission
+  2. Yes, manually approve edits | keys: 2 enter | confirm: no

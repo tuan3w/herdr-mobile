@@ -40,11 +40,12 @@ import 'command_risk.dart';
 /// above a block that runs to its top, the affirmative answers also ask for a
 /// second tap ([longCommand]) unless a more specific reason applies.
 PromptInfo? detectPrompt(List<String> rows) {
-  final lines = <String>[];
+  var lines = <String>[];
   for (final raw in rows) {
     final c = cleanPreviewRow(raw);
     if (c != null) lines.add(c);
   }
+  lines = _withoutDashedRules(lines);
   // The window drops the older rows: a block of rows that runs to the top of
   // what is left may go on above it (see [_subjectAbove]).
   final scrolled = lines.length > _window;
@@ -72,8 +73,84 @@ PromptInfo? detectPrompt(List<String> rows) {
 String? cleanPreviewRow(String raw) {
   var t = raw.replaceFirstMapped(_leftBar, (m) => m[1]!);
   t = t.replaceFirst(_rightBar, '').trimRight();
+  // A rule is a whole row of them with no bar: a row of a multi-line command
+  // that is only dashes (drawn behind ` │ `) is the command's, not a rule.
+  if (_dashedRule.hasMatch(raw.trim()) || raw == dashedRuleRow) return dashedRuleRow;
   if (t.isEmpty || _ruleOnly.hasMatch(t)) return null;
   return t;
+}
+
+/// What a dashed rule (`╌╌╌`) cleans to. Claude Code draws the command of a
+/// permission dialog between two of them, under a description that is not part
+/// of it: [detectPrompt] needs them to tell the command from the rows around.
+/// Every other rule is dropped. This row is never shown (see [isDashedRule]).
+const dashedRuleRow = '\uE000rule\uE000';
+
+final _dashedRule = RegExp(r'^[╌┄┈]{20,}$');
+
+/// Whether [row] is the stand-in of a dashed rule: a preview leaves it out.
+bool isDashedRule(String row) => row == dashedRuleRow;
+
+/// A title row of a dialog about a command (`Bash command`, `Bash command ·
+/// from the general-purpose agent`).
+final _commandHeader = RegExp(r'^[A-Z][A-Za-z ]{1,24}?(?:\s+·\s+.*)?$');
+
+/// The header of a dialog about a file: its two rules hold a diff or the new
+/// content, which is not a command.
+final _fileHeader = RegExp(
+  r'^\s*(?:edit|create|overwrite|update|delete|read|write)\s+(?:file|notebook)s?(?:\s+·.*)?\s*$',
+  caseSensitive: false,
+);
+
+/// [lines] without the dashed rules. Claude Code's dialog about a command is
+/// drawn as
+///
+/// ```
+///  Bash command
+///  Tip: ...                       (sometimes)
+///  <the description>
+///  ╌╌╌╌╌╌╌╌
+///  <the command>
+///  ╌╌╌╌╌╌╌╌
+///  This command requires approval    (sometimes)
+///  Do you want to proceed?
+/// ```
+///
+/// The command becomes the block the rest of the detector reads (rows indented
+/// under the header, the description and the tip left out); a dialog about a
+/// file, or one that does not look like this, only loses its rules.
+List<String> _withoutDashedRules(List<String> lines) {
+  List<String> plain() => [for (final l in lines) if (!isDashedRule(l)) l];
+  final marks = [for (var i = 0; i < lines.length; i++) if (isDashedRule(lines[i])) i];
+  if (marks.isEmpty) return lines;
+  if (marks.length < 2) return plain();
+  final a = marks[marks.length - 2];
+  final b = marks.last;
+  // The question, or a note ("This command requires approval") and then it.
+  var q = b + 1;
+  if (q + 1 < lines.length && !_questionish(lines[q]) && _questionish(lines[q + 1])) q++;
+  if (b - a < 2 || q >= lines.length || !_questionish(lines[q])) return plain();
+  for (var i = a - 1; i >= 0 && i >= a - 3; i--) {
+    if (_fileHeader.hasMatch(lines[i])) return plain();
+  }
+  var header = -1;
+  for (var i = a - 1; i >= 0 && i >= a - 3; i--) {
+    final t = lines[i].trim();
+    if (_commandHeader.hasMatch(t) && !t.endsWith('.') && !t.contains('?')) {
+      header = i;
+      break;
+    }
+  }
+  if (header < 0) return plain();
+  return [
+    for (var i = 0; i < header; i++)
+      if (!isDashedRule(lines[i])) lines[i],
+    // "Bash command · from the general-purpose agent": the title is the part
+    // before the dot (a title row is short, see [_isHeader]).
+    lines[header].split(' · ').first,
+    for (var i = a + 1; i < b; i++) '  ${lines[i]}',
+    ...lines.sublist(q),
+  ];
 }
 
 const _window = 12;
@@ -92,6 +169,7 @@ final _ruleOnly = RegExp(r'^[\s─━═╭╮╰╯┌┐└┘├┤┬┴┼�
 
 // indent, pointer, number, text
 final _numbered = RegExp(r'^(\s*)([❯›▶▸➤>→]?)\s*(\d{1,2})[.)]\s+(\S.*)$');
+final _codexQuestionHeader = RegExp(r'^\s*Question (\d+)/(\d+)\b');
 final _strongPointer = RegExp(r'^[❯›▶▸➤→]$');
 final _pointerRow = RegExp(r'^(\s*)([❯›▶▸➤])\s*(\S.*)$');
 final _radioRow = RegExp(r'^(\s*)([●◉○◯])\s+(\S.*)$');
@@ -202,6 +280,10 @@ List<_Opt>? _parseNumbered(List<String> body, int start) {
 }
 
 PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options, bool scrolled) {
+  // Claude Code's question tool (a `Chat about this` row): its rows toggle
+  // boxes and type text, which no reply of a card can say. It is answered by
+  // the question driver from the log, or in the terminal.
+  if (options.any((o) => o.text.startsWith('Chat about this'))) return null;
   final pointers = options.where((o) => o.pointer.isNotEmpty).toList();
   if (pointers.length > 1) return null;
   final strong = pointers.length == 1 && _strongPointer.hasMatch(pointers.single.pointer);
@@ -217,18 +299,28 @@ PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options, boo
       ? const <String>[]
       : at == above.length - 1
           ? _subjectAbove(above, at)
-          // Codex: the command is the row between the question and the menu.
-          : [above.last];
-  return _promptOf(
+          // Codex: the command is the rows between the question and the menu,
+          // after its `Environment:` / `Reason:` rows.
+          : _rowsAfterReason(above, at);
+  // Codex's question tool ("Question 1/2" above the question): the digit
+  // selects, and on the last question submits; with more questions to come an
+  // `enter` after it would answer the next one with its first option.
+  final header = at != null && at > 0 ? _codexQuestionHeader.firstMatch(above[at - 1]) : null;
+  final digitOnly = header != null;
+  // A row that is a place to type feedback ("Tell Claude what to change") is
+  // not an answer a tap can give.
+  final offered = [for (final o in options) if (!_needsTyping.hasMatch(o.text)) o];
+  if (offered.length < 2) return null;
+  final prompt = _promptOf(
     body: above,
     q: q,
     block: block,
     scrolled: scrolled,
     replies: (reason, cut) => [
-      for (final o in options)
+      for (final o in offered)
         _quickReply(
           label: '${o.number}. ${_shortLabel(o.text)}',
-          keys: ['${o.number}', 'enter'],
+          keys: digitOnly ? ['${o.number}'] : ['${o.number}', 'enter'],
           optionText: o.full,
           negativeText: o.text,
           scopeRisk: reason,
@@ -236,6 +328,30 @@ PromptInfo? _buildNumbered(List<String> body, int start, List<_Opt> options, boo
         ),
     ],
   );
+  // Which question of the form this is: the card is one at a time.
+  if (header == null) return prompt;
+  return PromptInfo(
+    question: _cap('${header[1]} of ${header[2]} · ${prompt.question}', _questionMax),
+    subject: prompt.subject,
+    replies: prompt.replies,
+  );
+}
+
+/// A reply that opens a field for the person's own words: it cannot be given by
+/// a tap (`Tell Claude what to change`, `Yes, and tell Claude what to do next`).
+final _needsTyping = RegExp(r'^(?:tell\b|yes,? and tell\b)', caseSensitive: false);
+
+final _reasonRow = RegExp(r'^\s*(?:Environment|Reason|Description|Permissions?|Working directory):');
+
+/// The rows under the question at [q] that are the command: all of them, after
+/// the last row that gives a reason or an environment; the last row when that
+/// leaves none.
+List<String> _rowsAfterReason(List<String> above, int q) {
+  var from = q + 1;
+  for (var i = q + 1; i < above.length; i++) {
+    if (_reasonRow.hasMatch(above[i])) from = i + 1;
+  }
+  return from < above.length ? above.sublist(from) : [above.last];
 }
 
 /// The question at row [q] of [body] with what it is about, and its replies
@@ -399,7 +515,10 @@ final _yesDontAsk = RegExp(
 );
 
 String _shortLabel(String text) {
-  var t = text.replaceFirst(_trailingHint, '').trim();
+  // Codex's question rows pad the label and its description into columns, and
+  // tell about notes the phone cannot add.
+  var t = text.replaceFirst(RegExp(r'\s+Optionally, add details in notes \(tab\)\.?'), '').replaceFirst(_trailingHint, '').trim();
+  t = t.replaceAll(RegExp(r'\s{2,}'), ' · ');
   t = t.replaceFirstMapped(_noAndTell, (m) => m[1]!);
   t = t.replaceFirstMapped(_yesDontAsk, (m) => "${m[1]}, ${m[2]!.toLowerCase()}");
   return _capAtWord(t, _labelMax - 3);

@@ -1,0 +1,8 @@
+question:
+  Would you like to run the following command?
+subject:
+  $ curl -sI https://example.com | head -1
+replies:
+  1. Yes, proceed | keys: 1 enter | confirm: no
+  2. Yes, don't ask again | keys: 2 enter | confirm: standing permission
+  3. No | keys: 3 enter | confirm: no
