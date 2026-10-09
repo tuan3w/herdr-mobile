@@ -4,6 +4,14 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.8] - 2026-10-09
+
+### A release to try updating with
+
+- Nothing else changed since 0.1.7. If you are on 0.1.7, Settings now shows the
+  dot and the Update panel: tap Download, then Install, to try the in-app update
+  from start to finish.
+
 ## [0.1.7] - 2026-10-09
 
 ### Update from inside the app
