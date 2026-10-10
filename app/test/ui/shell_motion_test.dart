@@ -13,6 +13,7 @@ import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 
+import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts;
 import 'board_support.dart';
 import 'ui_harness.dart';
@@ -205,7 +206,45 @@ void main() {
       await teardownBoard(tester, h);
     });
 
-    testWidgets('at the top it stays put; Settings and Machines ignore a re-tap', (tester) async {
+    // The Update row is the first thing on Settings, and the page keeps its
+    // place between visits: a person who had scrolled down found no sign of it
+    // above the screen but a dot on the tab. (Look is opened first: closed, the
+    // four rows fit the screen and there is nothing to scroll.)
+    testWidgets('Settings scrolls to the top too, with no tab change, no fade and no haptic', (tester) async {
+      final h = await pump(tester);
+      await tapTab(tester, 'Settings');
+      await tester.pumpAndSettle();
+      await openSettingsGroup(tester, 'Look');
+      await tester.drag(find.byType(SettingsScreen), const Offset(0, -600));
+      await tester.pumpAndSettle();
+      final position = tester
+          .state<ScrollableState>(find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first)
+          .position;
+      expect(position.pixels, greaterThan(200));
+      platformCalls.clear();
+
+      await tapTab(tester, 'Settings');
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(position.pixels, greaterThan(0), reason: 'animated, not a jump');
+      await tester.pumpAndSettle();
+      expect(position.pixels, 0);
+      expect(tabIndex(tester), 2);
+      expect(opacityOf(tester, SettingsScreen), 1);
+      expect(platformCalls.where((c) => c.method == 'HapticFeedback.vibrate'), isEmpty);
+
+      // Leaving and coming back is still not "back to the top".
+      await tester.drag(find.byType(SettingsScreen), const Offset(0, -600));
+      await tester.pumpAndSettle();
+      final before = position.pixels;
+      await tapTab(tester, 'Machines');
+      await tester.pumpAndSettle();
+      await tapTab(tester, 'Settings');
+      await tester.pumpAndSettle();
+      expect(position.pixels, before);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('at the top it stays put; a re-tap on Settings changes nothing else either', (tester) async {
       final h = await pump(tester);
       await tapTab(tester, 'Agents');
       await tester.pumpAndSettle();

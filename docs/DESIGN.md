@@ -1655,10 +1655,14 @@ rising count pops (`PopOnRise`). Tests find a tab with
 
 The shell (`HomeShell`) fades the incoming tab in over `Motion.fade` (120 ms,
 opacity only; none under reduced motion); the outgoing tab just goes. Tapping
-the active tab changes nothing and gives no haptic; on Agents it scrolls the
-board to the top (`Motion.standard`, a jump under reduced motion) through a
-`ScrollController` the shell owns and hands to the board as its
-`PrimaryScrollController`. Back on Machines or Settings returns to Agents
+the active tab changes nothing and gives no haptic; on every tab it scrolls to
+the top (`Motion.standard`, a jump under reduced motion) through a
+`ScrollController` per tab that the shell owns and hands to the tab as its
+`PrimaryScrollController`. A single tap, not a double: a double tap would hold
+the single one back to wait for a second. Why on Settings too: it keeps its
+place between visits, and the Update row is its first row, so a person who
+had scrolled down had only a dot on the tab to say a newer version was there.
+Back on Machines or Settings returns to Agents
 first; on Agents it is as before (background while watching, else leave), and
 the board's selection mode still takes it first.
 
