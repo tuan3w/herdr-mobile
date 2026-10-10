@@ -122,31 +122,40 @@ class SessionBar extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 1),
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        sessionWhere(session, title: title),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Type.secondary.copyWith(color: ds.textSecondary),
-                                      ),
-                                    ),
-                                    // The context window is nearly full: said in words,
-                                    // in the danger tone, and only then.
-                                    if (contextPercent != null) ...[
-                                      const SizedBox(width: Gap.sm),
-                                      Text(
-                                        'Context $contextPercent%',
-                                        maxLines: 1,
-                                        style: Type.secondary.copyWith(
-                                          color: ds.dangerText,
-                                          fontWeight: FontWeight.w600,
-                                          fontFeatures: Type.tabular,
+                                // Where yields first; the context warning keeps its
+                                // words until the row is narrower than they are, then
+                                // it ends in an ellipsis instead of overflowing.
+                                LayoutBuilder(
+                                  builder: (context, box) => Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          sessionWhere(session, title: title),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Type.secondary.copyWith(color: ds.textSecondary),
                                         ),
                                       ),
+                                      // The context window is nearly full: said in words,
+                                      // in the danger tone, and only then.
+                                      if (contextPercent != null) ...[
+                                        const SizedBox(width: Gap.sm),
+                                        ConstrainedBox(
+                                          constraints: BoxConstraints(maxWidth: box.maxWidth - Gap.sm),
+                                          child: Text(
+                                            'Context $contextPercent%',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Type.secondary.copyWith(
+                                              color: ds.dangerText,
+                                              fontWeight: FontWeight.w600,
+                                              fontFeatures: Type.tabular,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
-                                  ],
+                                  ),
                                 ),
                               ],
                             ),
@@ -165,9 +174,12 @@ class SessionBar extends StatelessWidget {
             ),
           ],
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [SubagentsChip(session: session), BackgroundChip(session: session)],
+        Padding(
+          // Under the title, past the back button: where the status glyph starts.
+          padding: const EdgeInsets.only(left: Gap.md + 44),
+          // The subagents chip yields (its label ends in an ellipsis); the
+          // background chip only shows in the compact layout, which is wide.
+          child: Row(children: [Flexible(child: SubagentsChip(session: session)), BackgroundChip(session: session)]),
         ),
           ],
         ),
