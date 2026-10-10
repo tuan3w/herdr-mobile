@@ -137,6 +137,27 @@ phone, `./autoresearch-keyboard.sh` measures the keyboard and `./autoresearch-st
 measures streaming; `./autoresearch.sh` needs no phone and measures what watching
 agents costs the radio (virtual time, modelled). Each script's header says how to run it.
 
+## Commits
+
+Semantic (Conventional Commits) subjects: `type(scope): summary`, imperative,
+lower case, no full stop, about 70 characters. Why: the history is the
+changelog's source and the way to find what broke a thing; "Fix two tests that
+failed when the machine was busy" and "Show pictures taken while the app runs"
+cannot be filtered, `fix(test):` and `feat(gallery):` can.
+
+- **Types:** `feat` (the person notices something new), `fix` (a bug the person
+  could hit), `perf`, `refactor` (no behaviour change), `test`, `docs`, `build`
+  (pubspec, Gradle, tool scripts), `ci`, `chore` (everything else).
+- **Scope** is the area, not the file: `observed`, `claude`, `codex`, `omp`,
+  `pane`, `board`, `ssh`, `keeper`, `settings`, `update`. Leave it out when a
+  change spans many.
+- **Breaking** a stored format or a wire contract: `!` after the type
+  (`feat(keeper)!:`) and a `BREAKING CHANGE:` line in the body.
+- **Body** says why, and what was measured or left unverified, when the subject
+  cannot. One logical change per commit; do not mix a fix with a reformat.
+- **Release commits** are `chore(release): x.y.z, <headline>`. The tag, not the
+  subject, is what `release.yml` reads.
+
 ## Releasing
 
 1. Bump the version (see "Versions") and add a `## [x.y.z] - date` section at
