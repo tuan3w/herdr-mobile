@@ -226,6 +226,8 @@ Everything is built from `app/lib/ui/core/` (`tokens`, `controls`, `rows`,
 
 ## Reviewing
 
+For a code review (bugs, maintainability, and UX read from code) use herdr-review. This section is the findings format for a design review.
+
 Default to flagging; approval is earned. Report:
 
 1. The journeys touched, one line each: the moment, and the path today.

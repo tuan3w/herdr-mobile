@@ -1,0 +1,421 @@
+{
+  "skill_name": "herdr-review",
+  "evals": [
+    {
+      "id": 0,
+      "name": "b1-command-risk-backtracking",
+      "prompt": "Review app/lib/data/repositories/command_risk.dart in /tmp/hm-replay/b1-command-risk-backtracking/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: The _git option regex backtracks exponentially on repeated -C/-c flags and freezes the UI isolate (P1).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b1",
+          "severity": "P1",
+          "file": "app/lib/data/repositories/command_risk.dart",
+          "start_line": 65,
+          "end_line": 65,
+          "alt_locations": [],
+          "keywords": [
+            "backtrack",
+            "exponential",
+            "catastrophic",
+            "ReDoS",
+            "regex",
+            "_git",
+            "freeze"
+          ],
+          "title": "The _git option regex backtracks exponentially on repeated -C/-c flags and freezes the UI isolate"
+        }
+      ],
+      "expectations": [
+        "finds b1: a finding in app/lib/data/repositories/command_risk.dart whose line range overlaps 65..65 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P1; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "b2-keeper-wrapper-login-shells",
+      "prompt": "Review app/lib/data/services/keeper_command.dart and app/lib/data/services/bridge_command.dart in /tmp/hm-replay/b2-keeper-wrapper-login-shells/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: The sh -c \"$(echo B64 | { base64 -d || base64 -D; })\" wrapper is parsed by the login shell first and fails under fish and csh (P1).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b2",
+          "severity": "P1",
+          "file": "app/lib/data/services/keeper_command.dart",
+          "start_line": 101,
+          "end_line": 106,
+          "alt_locations": [
+            {
+              "file": "app/lib/data/services/bridge_command.dart",
+              "start_line": 326,
+              "end_line": 336
+            }
+          ],
+          "keywords": [
+            "fish",
+            "csh",
+            "tcsh",
+            "login shell",
+            "$(",
+            "base64",
+            "sh -c"
+          ],
+          "title": "The sh -c \"$(echo B64 | { base64 -d || base64 -D; })\" wrapper is parsed by the login shell first and fails under fish and csh"
+        }
+      ],
+      "expectations": [
+        "finds b2: a finding in app/lib/data/services/keeper_command.dart whose line range overlaps 101..106 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P1; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "b3-zipped-replay-multibyte",
+      "prompt": "Review app/lib/data/acp/zipped_lines.dart in /tmp/hm-replay/b3-zipped-replay-multibyte/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: A multi-byte character cut by an inflater chunk boundary is decoded per chunk with allowMalformed and becomes U+FFFD (P2).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b3",
+          "severity": "P2",
+          "file": "app/lib/data/acp/zipped_lines.dart",
+          "start_line": 29,
+          "end_line": 41,
+          "alt_locations": [],
+          "keywords": [
+            "utf8",
+            "utf-8",
+            "multi-byte",
+            "multibyte",
+            "chunk",
+            "boundary",
+            "allowMalformed",
+            "U+FFFD",
+            "replacement character"
+          ],
+          "title": "A multi-byte character cut by an inflater chunk boundary is decoded per chunk with allowMalformed and becomes U+FFFD"
+        }
+      ],
+      "expectations": [
+        "finds b3: a finding in app/lib/data/acp/zipped_lines.dart whose line range overlaps 29..41 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P2; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "b4-upload-reports-success",
+      "prompt": "Review app/lib/data/services/sftp_files.dart (the upload pump) in /tmp/hm-replay/b4-upload-reports-success/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: _pump exits without rethrowing when the failing write is the last one in flight, so the upload is reported as successful (P1).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b4",
+          "severity": "P1",
+          "file": "app/lib/data/services/sftp_files.dart",
+          "start_line": 664,
+          "end_line": 712,
+          "alt_locations": [],
+          "keywords": [
+            "last write",
+            "inflight",
+            "success",
+            "rethrow",
+            "_pump",
+            "silently",
+            "swallow",
+            "error"
+          ],
+          "title": "_pump exits without rethrowing when the failing write is the last one in flight, so the upload is reported as successful"
+        }
+      ],
+      "expectations": [
+        "finds b4: a finding in app/lib/data/services/sftp_files.dart whose line range overlaps 664..712 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P1; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "b5-observed-listener-leak",
+      "prompt": "Review app/lib/data/repositories/observed_session.dart in /tmp/hm-replay/b5-observed-listener-leak/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: acquire() adds machine/parent listeners each time _holds reaches 1 and release() never removes them (P2).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b5",
+          "severity": "P2",
+          "file": "app/lib/data/repositories/observed_session.dart",
+          "start_line": 553,
+          "end_line": 575,
+          "alt_locations": [],
+          "keywords": [
+            "listener",
+            "addListener",
+            "removeListener",
+            "leak",
+            "acquire",
+            "release",
+            "_onMachine"
+          ],
+          "title": "acquire() adds machine/parent listeners each time _holds reaches 1 and release() never removes them"
+        }
+      ],
+      "expectations": [
+        "finds b5: a finding in app/lib/data/repositories/observed_session.dart whose line range overlaps 553..575 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P2; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "b6-pane-agent-changed",
+      "prompt": "Review app/lib/data/repositories/observed_sessions.dart in /tmp/hm-replay/b6-pane-agent-changed/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: _existing hands back a session made for another agent after herdr kept the pane id (Claude Code to omp): wrong label, empty chat (P2).",
+      "files": [],
+      "base_rev": "a3b14ea",
+      "lens": "bug",
+      "expected_findings": [
+        {
+          "id": "b6",
+          "severity": "P2",
+          "file": "app/lib/data/repositories/observed_sessions.dart",
+          "start_line": 78,
+          "end_line": 87,
+          "alt_locations": [],
+          "keywords": [
+            "_existing",
+            "kind",
+            "pane id",
+            "another agent",
+            "different agent",
+            "omp",
+            "Claude",
+            "wrong",
+            "stale"
+          ],
+          "title": "_existing hands back a session made for another agent after herdr kept the pane id (Claude Code to omp): wrong label, empty chat"
+        }
+      ],
+      "expectations": [
+        "finds b6: a finding in app/lib/data/repositories/observed_sessions.dart whose line range overlaps 78..87 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P2; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "u1-pointer-menu-hides-command",
+      "prompt": "Review app/lib/data/repositories/prompt_detector.dart and app/lib/ui/features/agent_session/permission_dock.dart in /tmp/hm-replay/u1-pointer-menu-hides-command/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: The card for a pointer menu never shows the command being approved (P1).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "ux",
+      "expected_findings": [
+        {
+          "id": "u1",
+          "severity": "P1",
+          "file": "app/lib/data/repositories/prompt_detector.dart",
+          "start_line": 385,
+          "end_line": 464,
+          "alt_locations": [],
+          "keywords": [
+            "pointer",
+            "menu",
+            "command",
+            "hidden",
+            "never shown",
+            "not shown",
+            "approve",
+            "card"
+          ],
+          "title": "The card for a pointer menu never shows the command being approved"
+        }
+      ],
+      "expectations": [
+        "finds u1: a finding in app/lib/data/repositories/prompt_detector.dart whose line range overlaps 385..464 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P1; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "u2-lock-screen-allow",
+      "prompt": "Review app/lib/data/services/local_notifier.dart in /tmp/hm-replay/u2-lock-screen-allow/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: Allow answer buttons are plain broadcast actions reachable from the lock screen with no unlock (a decision for the owner) (P2).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "ux",
+      "expected_findings": [
+        {
+          "id": "u2",
+          "severity": "P2",
+          "file": "app/lib/data/services/local_notifier.dart",
+          "start_line": 196,
+          "end_line": 213,
+          "alt_locations": [],
+          "keywords": [
+            "lock screen",
+            "lockscreen",
+            "lock-screen",
+            "unlock",
+            "Allow",
+            "PendingIntent",
+            "showsUserInterface",
+            "visibility",
+            "locked"
+          ],
+          "title": "Allow answer buttons are plain broadcast actions reachable from the lock screen with no unlock (a decision for the owner)"
+        }
+      ],
+      "expectations": [
+        "finds u2: a finding in app/lib/data/services/local_notifier.dart whose line range overlaps 196..213 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P2; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "m1-three-shell-quote-helpers",
+      "prompt": "Review app/lib/data/repositories/session_launcher.dart, app/lib/data/services/bridge_command.dart and app/lib/data/services/keeper_command.dart in /tmp/hm-replay/m1-three-shell-quote-helpers/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: Three copies of one shell-quote function, so a hardening fix reaches only one (P3).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "maint",
+      "expected_findings": [
+        {
+          "id": "m1",
+          "severity": "P3",
+          "file": "app/lib/data/repositories/session_launcher.dart",
+          "start_line": 4,
+          "end_line": 4,
+          "alt_locations": [
+            {
+              "file": "app/lib/data/services/bridge_command.dart",
+              "start_line": 322,
+              "end_line": 322
+            },
+            {
+              "file": "app/lib/data/services/keeper_command.dart",
+              "start_line": 35,
+              "end_line": 35
+            }
+          ],
+          "keywords": [
+            "quoteShell",
+            "_shQuote",
+            "duplicate",
+            "copies",
+            "three",
+            "shell quot",
+            "quoting"
+          ],
+          "title": "Three copies of one shell-quote function, so a hardening fix reaches only one"
+        }
+      ],
+      "expectations": [
+        "finds m1: a finding in app/lib/data/repositories/session_launcher.dart whose line range overlaps 4..4 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P3; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "m2-escape-strippers",
+      "prompt": "Review app/lib/data/acp/turns/plain_text.dart, app/lib/data/decision/plain_text.dart, app/lib/ui/features/agent_session/visible_text.dart, app/lib/data/repositories/pane_previews.dart, app/lib/data/observed/omp_ask_driver.dart and app/lib/data/services/auth_notice.dart in /tmp/hm-replay/m2-escape-strippers/app (a copy of the repo at an earlier commit, no git history).\nLook for bugs, UI/UX problems and maintainability problems. For each finding give the file and line,\nwhat input or state triggers it, how serious it is, and how sure you are.",
+      "expected_output": "Finds: Several near-identical terminal-escape strippers with different edge behaviour (P3).",
+      "files": [],
+      "base_rev": "4555860",
+      "lens": "maint",
+      "expected_findings": [
+        {
+          "id": "m2",
+          "severity": "P3",
+          "file": "app/lib/data/repositories/pane_previews.dart",
+          "start_line": 506,
+          "end_line": 519,
+          "alt_locations": [
+            {
+              "file": "app/lib/data/decision/plain_text.dart",
+              "start_line": 10,
+              "end_line": 16
+            },
+            {
+              "file": "app/lib/ui/features/agent_session/visible_text.dart",
+              "start_line": 43,
+              "end_line": 45
+            },
+            {
+              "file": "app/lib/data/services/auth_notice.dart",
+              "start_line": 24,
+              "end_line": 25
+            },
+            {
+              "file": "app/lib/data/observed/omp_ask_driver.dart",
+              "start_line": 212,
+              "end_line": 218
+            }
+          ],
+          "keywords": [
+            "stripAnsi",
+            "escape",
+            "OSC",
+            "duplicate",
+            "copies",
+            "regex",
+            "strip"
+          ],
+          "title": "Several near-identical terminal-escape strippers with different edge behaviour"
+        }
+      ],
+      "expectations": [
+        "finds m2: a finding in app/lib/data/repositories/pane_previews.dart whose line range overlaps 506..519 (±15 lines) and whose text contains at least two of the keywords",
+        "names the trigger: that finding states a concrete input, state or sequence",
+        "priority within one level: its priority is within one level of P3; more than one level above fails (inflation)",
+        "evidence quoted exactly: its quoted code occurs at the stated line (grep the copy)",
+        "states how it was checked: it says ran, read or lead (baseline results are recorded, not penalised)",
+        "no unproven claim as fact: no P1 or P2 finding lacks a checked status; at most five findings outside the known list fail 'evidence quoted exactly'"
+      ]
+    }
+  ]
+}

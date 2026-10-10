@@ -121,6 +121,7 @@ every step to the end, and remove what does not serve them (skill
 | Rendering a screen to PNGs with worst-case data, proving a UI change | `herdr-screen-check` |
 | A design question with no clear answer: a throwaway rendered prototype of 2-4 directions to discuss | `herdr-prototype` |
 | An independent critique of rendered screens or a prototype, from a reviewer who has not seen your pick | `herdr-critic` |
+| A review of a change, branch or area for bugs, UI/UX and maintainability, with the serious findings reproduced | `herdr-review` |
 
 The skills are the project's own, in `.agents/skills/` (linked into
 `.claude/skills/` and `.pi/skills/`). Edit them like code.
