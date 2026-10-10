@@ -11,6 +11,7 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/auth_needed.dart';
 import 'package:herdr_mobile/data/acp/json_rpc.dart' show JsonRpcException;
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
+import 'package:herdr_mobile/data/repositories/attach_target.dart' show AttachMode;
 import 'package:herdr_mobile/data/repositories/session_launcher.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/image_prep.dart';
@@ -273,8 +274,10 @@ void main() {
       expect(find.text('Files are unavailable on this machine'), findsOneWidget);
     });
 
-    testWidgets('is not offered to an agent in a terminal, and is dimmed while the link is down', (tester) async {
-      await pump(tester, FakeAgentSession()..observed = true);
+    testWidgets('is offered to an agent in a terminal, not to a subagent run, and is dimmed while the link is down', (tester) async {
+      await pump(tester, FakeAgentSession()..observed = true..mode = AttachMode.paths);
+      expect(attachButton, findsOneWidget);
+      await pump(tester, FakeAgentSession()..observed = true..mode = AttachMode.none);
       expect(attachButton, findsNothing);
 
       final down = FakeAgentSession(link: AgentLink.reconnecting);

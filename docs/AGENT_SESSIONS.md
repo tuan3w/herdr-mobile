@@ -1478,8 +1478,9 @@ path. Data side only; the attach sheet is another piece (`docs/DESIGN.md`).
 
 - **Slash commands.** `available_commands_update` replaces the whole list; omp
   sends 98 including `skill:<name>` and an input `hint`. The palette
-  (`SlashViewModel`) takes `AgentSessionState.commands` for agent sessions and
-  keeps the built-in tables for terminal sessions only. The agent decides what a
+  (`CommandPaletteModel`) takes `AgentSessionState.commands` for ACP sessions;
+  an observed session adds the machine's catalog and what its log listed. The
+  agent decides what a
   typed `/name` means; the client sends it as prompt text.
 - **Questions.** `elicitation/create` in form mode is the question tool of all
   three agents (omp, Claude AskUserQuestion, Codex request_user_input). The UI
@@ -1520,7 +1521,7 @@ Cancel request answers `cancelled`. Questions render the elicitation schema
 (string, number, boolean, single and multi enum) with validation; URL mode is
 never offered. The composer's send button is a stop button while the phase is
 not idle; a lone `/word` opens a palette built from `AgentSessionState.commands`
-(its own small palette: `SlashViewModel` is terminal-only). Link states show a
+(the same palette as the terminal view's: `CommandPalette`). Link states show a
 strip: reconnecting, ended with the reason, failed with Retry, and "Opened on
 another device" with Take over.
 

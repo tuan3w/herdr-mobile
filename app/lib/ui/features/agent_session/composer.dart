@@ -1,18 +1,15 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/acp/prompt_queue.dart' show SendDelivery;
 import '../../../data/acp/session_state.dart';
 import '../../../data/repositories/agent_session.dart';
-import '../../core/controls.dart';
-import '../../core/motion.dart';
+import '../../../data/repositories/attach_target.dart' show AttachMode;
 import '../../core/tap_guard.dart';
-import '../../core/theme.dart';
+import '../composer/composer_frame.dart';
 import '../dictation/dictation_language_sheet.dart';
 import '../dictation/dictation_session.dart';
 import '../pane/quick_phrases_row.dart';
@@ -23,25 +20,6 @@ import 'queued_hint.dart';
 import 'queued_messages.dart';
 import 'session_chips_row.dart';
 import 'session_select.dart';
-
-const _minHeight = 48.0;
-const _buttonSize = 36.0;
-const _buttonHit = 44.0;
-
-/// The text of the field. The line is fixed (a strut), so the field's one-line
-/// height is known at any text size and the round buttons can be centred on it.
-const _fontSize = 15.5;
-const _lineHeight = 1.4;
-
-/// Asks for the keyboard now. Focus brings it up; a field that kept its focus
-/// while the keyboard was dismissed needs the explicit request.
-void _showKeyboard(FocusNode focus) {
-  if (focus.hasFocus) {
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
-  } else {
-    focus.requestFocus();
-  }
-}
 
 /// Why the composer cannot send, in the words of its hint; null when it can.
 String? composerReason(AgentLink link) => switch (link) {
@@ -62,8 +40,8 @@ String? composerReason(AgentLink link) => switch (link) {
 /// and what waits shows above it ([QueuedMessages]). Send never moves: Stop is
 /// its own round button to its left, drawn when a turn runs and deaf for
 /// [tapGuard] after it appears, so the tap that sent a message cannot land on
-/// it. An observed session (an agent in a terminal) has no queue and no
-/// attachments: Stop takes the place of Send.
+/// it. An observed session (an agent in a terminal) has no queue: Stop takes
+/// the place of Send.
 ///
 /// Pictures and files wait as chips above the field ([AttachmentChips]) and
 /// go out with the text; the message cannot be sent while one is still being
@@ -110,7 +88,6 @@ class Composer extends StatelessWidget {
     select: (s) => (s.link, s.phase, s.state.cancelRequested, s.sendBlocked, s.relayNote, s.delivery, s.waitingOnBackground),
     builder: (context, snapshot) {
       final (link, phase, stopping, blocked, relay, delivery, waiting) = snapshot;
-      final ds = context.ds;
       final live = link == AgentLink.live;
       final typing = live && blocked == null;
       final reason = composerReason(link);
@@ -118,148 +95,92 @@ class Composer extends StatelessWidget {
       // would end nothing, and an agent in a terminal still says `working`).
       final working = live && phase != AgentPhase.idle && relay == null && !waiting;
       final observed = session.isObserved;
+      final attaches = session.attachMode != AttachMode.none;
       final queuing = working && !observed;
       final hint = reason ?? blocked ?? (relay != null ? '$relay…' : 'Message ${session.agentLabel}…');
-      const none = InputBorder.none;
-      // One line of the field is `inner` tall at any text size (the strut
-      // below fixes the line). The field is a stadium of that height and the
-      // round buttons sit the same distance from every edge, so its corner is
-      // concentric with them (radius = disc radius + that distance).
-      final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
-      final inner = math.max(_minHeight - 2, 2 * 12.5 + line);
-      final vpad = (inner - line) / 2;
-      final vb = (inner - _buttonHit) / 2;
-      final radius = (inner + 2) / 2;
-      final inset = (inner + 2 - _buttonSize) / 2;
-      final side = math.max(0.0, inset - 1 - (_buttonHit - _buttonSize) / 2);
-      final field = Container(
-        constraints: const BoxConstraints(minHeight: _minHeight),
-        decoration: BoxDecoration(
-          color: ds.surface,
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: ds.hairline),
+      final field = ComposerFrame(
+        // A subagent's run takes no attachments. In the compact layout the
+        // chips are gone, and the paperclip says how many go along.
+        leading: !attaches
+            ? null
+            : ListenableBuilder(
+                listenable: attachments,
+                builder: (context, _) {
+                  void open() =>
+                      unawaited(showAttachSheet(context, target: session, attachments: attachments));
+                  return HideWhenCompact(
+                    compact: ComposerAttachButton(enabled: typing, count: attachments.items.length, onPressed: open, onWarm: attachments.warm),
+                    child: ComposerAttachButton(enabled: typing, onPressed: open, onWarm: attachments.warm),
+                  );
+                },
+              ),
+        field: ListenableBuilder(
+          // The hint says why Send waits while a picture or a file is still
+          // on its way.
+          listenable: attachments,
+          builder: (context, _) => ComposerField(
+            controller: controller,
+            focusNode: focusNode,
+            enabled: typing,
+            keyboardOnPointerDown: live,
+            keyboardType: TextInputType.multiline,
+            hint: reason ?? blocked ?? attachments.waitingReason ?? hint,
+            onSubmit: onSubmit,
+            hasLeading: attaches,
+          ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // An agent in a terminal takes text only. In the compact layout
-            // the chips are gone, and the paperclip says how many go along.
-            if (!observed)
-              Padding(
-                padding: EdgeInsets.fromLTRB(side, vb, side, vb),
-                child: ListenableBuilder(
-                  listenable: attachments,
-                  builder: (context, _) {
-                    void open() =>
-                        unawaited(showAttachSheet(context, session: session, attachments: attachments));
-                    return HideWhenCompact(
-                      compact: _AttachButton(enabled: typing, count: attachments.items.length, onPressed: open, onWarm: attachments.warm),
-                      child: _AttachButton(enabled: typing, onPressed: open, onWarm: attachments.warm),
-                    );
-                  },
-                ),
-              ),
-            Expanded(
-              // The keyboard takes ~300 ms to start moving once it is asked
-              // for: ask when the finger lands, not when it lifts.
-              child: Listener(
-                onPointerDown: live ? (_) => _showKeyboard(focusNode) : null,
-                child: ListenableBuilder(
-                  // The hint says why Send waits while a picture or a file is
-                  // still on its way.
-                  listenable: attachments,
-                  builder: (context, _) => TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  enabled: typing,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: TextInputAction.send,
-                  keyboardType: TextInputType.multiline,
-                  // Not onSubmitted: a send action given only that unfocuses
-                  // the field and drops the keyboard after every message.
-                  onEditingComplete: onSubmit,
-                  strutStyle: const StrutStyle(fontSize: _fontSize, height: _lineHeight, forceStrutHeight: true),
-                  style: Type.body.copyWith(fontSize: _fontSize, height: _lineHeight, color: live ? ds.text : ds.textMuted),
-                  cursorColor: ds.accent,
-                  decoration: InputDecoration(
-                    hintText: reason ?? blocked ?? attachments.waitingReason ?? hint,
-                    hintStyle: Type.body.copyWith(height: 1.4, color: ds.textMuted),
-                    hintMaxLines: 1,
-                    filled: false,
-                    isDense: true,
-                    // The strut fixes the line, so the field's one-line height is
-                    // exactly `inner` at any text size and the buttons beside it
-                    // are centred on it.
-                    contentPadding: EdgeInsets.fromLTRB(observed ? Gap.lg : Gap.xs, vpad, Gap.sm, vpad),
-                    border: none,
-                    enabledBorder: none,
-                    focusedBorder: none,
-                    disabledBorder: none,
-                    errorBorder: none,
-                    focusedErrorBorder: none,
+        trailing: ListenableBuilder(
+          listenable: Listenable.merge([controller, attachments, ?dictation]),
+          builder: (context, _) {
+            final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
+            final (sendLabel, sendIcon) = switch (delivery) {
+              SendDelivery.queued => ('Queue', LucideIcons.listPlus),
+              SendDelivery.steered => ('Send to the running turn', LucideIcons.arrowUp),
+              SendDelivery.now => ('Send', LucideIcons.arrowUp),
+            };
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (working)
+                  _StopButton(
+                    key: const ValueKey('stop'),
+                    stopping: stopping,
+                    onPressed: () {
+                      onStop?.call();
+                      session.cancel();
+                    },
+                    // Beside Send it is the secondary action; alone (a
+                    // terminal agent) it is the only one.
+                    quiet: queuing,
                   ),
-                ),
-                ),
-              ),
-            ),
-            ListenableBuilder(
-              listenable: Listenable.merge([controller, attachments, ?dictation]),
-              builder: (context, _) {
-                final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
-                final (sendLabel, sendIcon) = switch (delivery) {
-                  SendDelivery.queued => ('Queue', LucideIcons.listPlus),
-                  SendDelivery.steered => ('Send to the running turn', LucideIcons.arrowUp),
-                  SendDelivery.now => ('Send', LucideIcons.arrowUp),
-                };
-                return Padding(
-                  padding: EdgeInsets.fromLTRB(side, vb, side, vb),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (working)
-                        _StopButton(
-                          key: const ValueKey('stop'),
-                          stopping: stopping,
-                          onPressed: () {
-                            onStop?.call();
-                            session.cancel();
-                          },
-                          // Beside Send it is the secondary action; alone (a
-                          // terminal agent) it is the only one.
-                          quiet: queuing,
-                        ),
-                      if (!working || queuing)
-                        if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
-                          // The mic is Send's place while there is nothing to send;
-                          // a long press picks the language.
-                          _RoundButton(
-                            key: const ValueKey('mic'),
-                            label: dictate.listening ? 'Stop dictating' : 'Dictate',
-                            icon: LucideIcons.mic,
-                            iconSize: 18,
-                            ready: true,
-                            quiet: !dictate.listening,
-                            onPressed: () => unawaited(dictate.toggle()),
-                            onLongPress: dictate.listening
-                                ? null
-                                : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
-                          )
-                        else
-                          _RoundButton(
-                            key: const ValueKey('send'),
-                            label: sendLabel,
-                            icon: sendIcon,
-                            iconSize: 18,
-                            ready: typing && hasContent && attachments.canSend,
-                            onPressed: onSubmit,
-                          ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
+                if (!working || queuing)
+                  if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
+                    // The mic is Send's place while there is nothing to send;
+                    // a long press picks the language.
+                    ComposerRoundButton(
+                      key: const ValueKey('mic'),
+                      label: dictate.listening ? 'Stop dictating' : 'Dictate',
+                      icon: LucideIcons.mic,
+                      iconSize: 18,
+                      ready: true,
+                      quiet: !dictate.listening,
+                      onPressed: () => unawaited(dictate.toggle()),
+                      onLongPress: dictate.listening
+                          ? null
+                          : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                    )
+                  else
+                    ComposerRoundButton(
+                      key: const ValueKey('send'),
+                      label: sendLabel,
+                      icon: sendIcon,
+                      iconSize: 18,
+                      ready: typing && hasContent && attachments.canSend,
+                      onPressed: onSubmit,
+                    ),
+              ],
+            );
+          },
         ),
       );
       return Column(
@@ -369,7 +290,7 @@ class _StopButton extends StatefulWidget {
 
 class _StopButtonState extends State<_StopButton> with TapGuardState<_StopButton> {
   @override
-  Widget build(BuildContext context) => _RoundButton(
+  Widget build(BuildContext context) => ComposerRoundButton(
         label: 'Stop',
         icon: LucideIcons.square,
         iconSize: 14,
@@ -395,134 +316,4 @@ class _QueueShare extends StatelessWidget {
     constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.28),
     child: SingleChildScrollView(child: child),
   );
-}
-
-/// The paperclip at the field's left: the same soft disc as the round buttons
-/// at its right, so both ends of the field weigh the same and sit the same 6 dp
-/// inside the edge; 44 dp to touch. With [count] (the compact layout, which has
-/// no chips) a small round badge says how many pictures and files go along.
-class _AttachButton extends StatelessWidget {
-  const _AttachButton({required this.enabled, required this.onPressed, this.onWarm, this.count = 0});
-
-  final bool enabled;
-  final VoidCallback onPressed;
-  final VoidCallback? onWarm;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return Listener(
-      // A finger landing starts the library query and the first thumbnails, so
-      // the sheet that opens a moment later finds them.
-      onPointerDown: enabled ? (_) => onWarm?.call() : null,
-      child: PressBuilder(
-        onTap: enabled ? onPressed : null,
-        scale: 0.92,
-        semanticLabel: count == 0 ? 'Attach' : 'Attach, $count attached',
-        builder: (context, pressed) => SizedBox.square(
-          dimension: _buttonHit,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedContainer(
-                duration: Motion.standard,
-                curve: Motion.easeOut,
-                width: _buttonSize,
-                height: _buttonSize,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: enabled && pressed ? ds.fillPressed : ds.fill),
-                alignment: Alignment.center,
-                // The clip's ink is heavier at its lower left, so a centred
-                // glyph reads low; lift it a hair.
-                child: Transform.translate(
-                  offset: const Offset(0.5, -1),
-                  child: Icon(
-                    LucideIcons.paperclip,
-                    size: 18,
-                    color: !enabled ? ds.textTertiary : (pressed ? ds.text : ds.textSecondary),
-                  ),
-                ),
-              ),
-              if (count > 0)
-                Positioned(
-                  top: 2,
-                  right: 0,
-                  child: ExcludeSemantics(
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: ds.accent, borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        '$count',
-                        style: Type.caption.copyWith(color: ds.onAccent, fontSize: 10, height: 1.2, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoundButton extends StatelessWidget {
-  const _RoundButton({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.iconSize,
-    required this.ready,
-    required this.onPressed,
-    this.onLongPress,
-    this.busy = false,
-    this.quiet = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final double iconSize;
-  final bool ready;
-  final bool busy;
-
-  /// A neutral fill instead of the accent: a secondary action beside the
-  /// primary one.
-  final bool quiet;
-  final VoidCallback onPressed;
-  final VoidCallback? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return PressBuilder(
-      onTap: ready ? onPressed : null,
-      onLongPress: ready ? onLongPress : null,
-      scale: 0.92,
-      semanticLabel: label,
-      builder: (context, pressed) => SizedBox.square(
-        dimension: _buttonHit,
-        child: Center(
-          child: AnimatedContainer(
-            duration: Motion.standard,
-            curve: Motion.easeOut,
-            width: _buttonSize,
-            height: _buttonSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ready
-                  ? (quiet
-                        ? (pressed ? ds.fillPressed : ds.fill)
-                        : (pressed ? Color.alphaBlend(Colors.black.withValues(alpha: 0.12), ds.accent) : ds.accent))
-                  : ds.fill,
-            ),
-            alignment: Alignment.center,
-            child: busy
-                ? const BusySpinner()
-                : Icon(icon, size: iconSize, color: ready ? (quiet ? ds.text : ds.onAccent) : ds.textTertiary),
-          ),
-        ),
-      ),
-    );
-  }
 }

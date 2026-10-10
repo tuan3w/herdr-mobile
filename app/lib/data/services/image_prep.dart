@@ -7,6 +7,12 @@ import 'package:image/image.dart' as img;
 
 import '../acp/acp_models.dart';
 
+/// The file extensions of the pictures the phone prepares and the agents take
+/// (lower case, no dot). One list for the Files tab, the viewer and the paste
+/// into a terminal. HEIC is not in it: the phone does not prepare it, and no
+/// agent was seen to take a pasted HEIC path (unverified).
+const pictureExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
+
 /// The largest picture the phone reads (bytes): a camera photo is a few MB.
 const maxImageInputBytes = 25 * 1024 * 1024;
 

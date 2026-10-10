@@ -64,7 +64,7 @@ Widget _tab(_Rig rig, FakeAgentSession session) => SheetScope(
   child: Builder(
     builder: (context) => ColoredBox(
       color: context.ds.bg,
-      child: HostTab(session: session, tray: rig.tray, onProblem: rig.problems.add, clock: () => _now),
+      child: HostTab(target: session, tray: rig.tray, onProblem: rig.problems.add, clock: () => _now),
     ),
   ),
 );

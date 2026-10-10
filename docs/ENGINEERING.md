@@ -153,7 +153,7 @@ needed once `snap_dp` read 0.8.
 
 ### Asking for the keyboard
 
-The composer asks for the keyboard on pointer-down (`_showKeyboard`, test in
+The composer asks for the keyboard on pointer-down (`showComposerKeyboard`, test in
 `pane_screen_test.dart`): the keyboard app needs ~280 ms from the request to
 the first movement, and the finger's press (typically ~100 ms) was pure
 waiting. The rest of that wait is the keyboard app's (a bare `TextField` waits
@@ -257,10 +257,20 @@ Tailscale.
     `pane.send_text` is the raw route for those.
   - `pane.send_input` brackets text when the pane asks, so a newline in the
     composer does not submit.
-- **Slash palette** (`SlashCatalog`, `SlashViewModel`, `SlashPalette`).
-  - Shown only for a lone `/word` in an agent pane's composer, loaded on the
-    first slash (not at pane open) and re-read after 2 minutes. Hidden in the
-    compact (landscape + keyboard) layout.
+- **Command palette** (`SlashCatalog`, `CommandSource`, `CommandPaletteModel`,
+  `CommandPalette`): one palette for the pane's composer and the chat's.
+  - Shown only for a lone `/word` (or Codex's `$word`) in an agent's composer.
+    A pane reads the catalog (`CatalogCommandSource`), loaded on the first
+    trigger (not at pane open) and re-read after 2 minutes; a chat takes the
+    session's commands (`SessionCommandSource`): an ACP session's advertised
+    list, an observed session's catalog plus the skills its log listed (Claude's
+    `skill_listing` attachment: plugin and bundled skills have no folder, so a
+    pane, which has no log open, lacks them: accepted). Hidden in the compact
+    (landscape + keyboard) layout of the pane.
+  - Codex skills are `$name`, found in `.agents/skills` of the folder and the
+    ones above it (6 levels, not the home), `~/.agents/skills` and
+    `~/.codex/skills`. Pins and usage remember a skill as `$name`, so it never
+    collides with `/name`.
   - Discovery is SFTP, best effort, never throws.
   - The built-in tables are hand-written per herdr agent label and WILL drift
     from the agents: they only fill the composer, the agent decides on send.
@@ -272,6 +282,39 @@ Tailscale.
     agent with no table (omp, pi, ...) still gets a palette.
 
 ## Files, photos and attach
+
+### Attaching to an agent in a terminal
+
+The attach flow needs only an `AttachTarget` (key, machine, folder, what the
+agent takes, `AttachMode`): a chat session is one, and so is a pane
+(`PaneAttachTarget`). `blocks` (ACP) sends content blocks; `paths` (an agent in
+a terminal, in the chat view or the pane view) uploads the file to the host
+inbox and types its path, as a person would.
+
+- A picture is downscaled and stripped of EXIF like for ACP, uploaded as a small
+  JPEG and pasted by its absolute path alone (`TerminalPrompt.pastes`): Claude
+  Code and Codex turn a pasted image path into `[Image #N]` (captured, Claude
+  Code 2.1.296 and Codex 0.153.4). The message's line follows after `pasteSettle`:
+  sent at once, Claude Code submits it before the image has attached and the
+  message goes without the picture (100 ms and up works; 250 ms kept).
+- A file is typed as an `@` mention: `@relative/path` inside the folder,
+  `@/absolute/path` outside it (every phone file lands in
+  `~/.herdr-mobile/inbox`). Captured with Claude Code: `@path` is attached with
+  no permission prompt, inside or outside the folder; a bare absolute path is
+  NOT attached (it answers from memory), and Claude's own Read of an inbox path
+  prompts. A name with whitespace is `@"a b/c.txt"` (unverified in Claude Code).
+  A name with a control character or a `"` cannot be quoted: the message is
+  refused with the reason (`terminalAttachmentRefusal`), chips kept.
+- A pane that stopped being an agent keeps its chips and refuses to send them
+  (nothing typed into a shell, said in a toast); the paperclip is gone.
+- Every agent label gets `paths`, but only Claude Code and Codex were captured;
+  another agent receives the picture's path as plain text.
+- A failure after the paste leaves the picture in the agent's input: the failure
+  text says so, nothing tries to clear it (no key clears an input line in every
+  agent).
+- The chat shows the sent picture from the agent's log: both agents write the
+  placeholder into the user message; `withImageMarkers` adds `[image]` where
+  none is written, so a message with a picture is never empty.
 
 ### Files are SFTP, never a shell
 

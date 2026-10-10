@@ -1,21 +1,27 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/acp/prompt_content.dart' show composePrompt;
 import '../../../data/models/herdr_models.dart';
-import '../../../data/models/slash_command.dart';
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/observed_sessions.dart';
+import '../../../data/repositories/attach_target.dart' show AttachMode;
 import '../../../data/repositories/sent_phrases.dart';
+import '../../../data/repositories/pane_attach_target.dart';
+import '../../../data/repositories/command_source.dart';
 import '../../../data/repositories/slash_catalog.dart';
 import '../../../data/repositories/slash_usage.dart';
+import '../../../data/repositories/terminal_prompt.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/services/dictation.dart';
+import '../../../data/services/image_prep.dart' show PreparedImage, prepareImage;
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/glyphs.dart';
@@ -28,6 +34,12 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../agents/agent_navigation.dart';
 import '../agents/agent_swipe.dart';
+import '../agent_session/attach_chips.dart';
+import '../agent_session/attach_model.dart';
+import '../agent_session/attach_picker.dart';
+import '../agent_session/attach_sheet.dart';
+import '../attach/attach_kit.dart';
+import '../composer/composer_frame.dart';
 import '../create/new_agent_session_screen.dart' show openNewAgentSession;
 import '../create/session_prefill.dart' show SessionPrefill;
 import '../dictation/dictation_language_sheet.dart';
@@ -42,21 +54,12 @@ import 'pane_bar.dart';
 import 'pane_view_model.dart';
 import 'quick_keys.dart';
 import 'quick_phrases_row.dart';
-import 'slash_palette.dart';
-import 'slash_view_model.dart';
+import '../composer/command_model.dart';
+import '../composer/command_palette.dart';
 
 /// Screens shorter than this (a phone on its side) get a lower bar and no
 /// docked answers: a question and its chips would leave the terminal a few rows.
 const shortScreen = 520.0;
-
-/// Height of the composer with one line.
-const _composerMinHeight = 48.0;
-const _composerRadius = 20.0;
-
-/// The send button is drawn at 36 inside a 44 hit area, in the composer's
-/// 46px of inner height (48 less the hairline).
-const _sendSize = 36.0;
-const _sendHit = 44.0;
 
 /// One agent's terminal, one screen: the slim bar ([PaneTopBar]), then the
 /// pane's banner, terminal, answer dock, quick keys and composer. A swipe on
@@ -69,9 +72,30 @@ const _sendHit = 44.0;
 /// was edited). The draft lives in [AgentScreens], not here, so it is there
 /// again when the person comes back to this agent.
 class PaneScreen extends StatefulWidget {
-  const PaneScreen({super.key, required this.agent});
+  const PaneScreen({
+    super.key,
+    required this.agent,
+    this.picker = const DevicePicker(),
+    this.prepare = prepareImage,
+    this.attachKit,
+    this.readFile,
+  });
 
   final PaneAgent agent;
+
+  /// Where the attach button's pictures come from (a test swaps it).
+  final AttachPicker picker;
+
+  /// Turns a picked picture into what is sent: `prepareImage` (a test swaps
+  /// it; the real one needs the engine's codec and an isolate).
+  final Future<PreparedImage> Function(Uint8List input) prepare;
+
+  /// The attach sheet's library, files and uploads (the phone's own unless a
+  /// test hands in fakes).
+  final AttachKit? attachKit;
+
+  /// Reads a picture of the phone's storage; null reads the file.
+  final Future<Uint8List> Function(String path)? readFile;
 
   @override
   State<PaneScreen> createState() => _PaneScreenState();
@@ -134,7 +158,15 @@ class _PaneScreenState extends State<PaneScreen> {
           ? null
           : KeyedSubtree(
               key: ObjectKey(vm),
-              child: _PaneBody(machine: machine, agent: widget.agent, viewModel: vm),
+              child: _PaneBody(
+                machine: machine,
+                agent: widget.agent,
+                viewModel: vm,
+                picker: widget.picker,
+                prepare: widget.prepare,
+                attachKit: widget.attachKit,
+                readFile: widget.readFile,
+              ),
             );
     }
     final title = paneTitle(
@@ -300,11 +332,23 @@ class _MissingMachine extends StatelessWidget {
 /// The pane itself under the bar: its machine and view model as providers for
 /// the regions, and the page that composes them.
 class _PaneBody extends StatelessWidget {
-  const _PaneBody({required this.machine, required this.agent, required this.viewModel});
+  const _PaneBody({
+    required this.machine,
+    required this.agent,
+    required this.viewModel,
+    required this.picker,
+    required this.prepare,
+    this.attachKit,
+    this.readFile,
+  });
 
   final MachineConnection machine;
   final PaneAgent agent;
   final PaneViewModel viewModel;
+  final AttachPicker picker;
+  final Future<PreparedImage> Function(Uint8List input) prepare;
+  final AttachKit? attachKit;
+  final Future<Uint8List> Function(String path)? readFile;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
@@ -312,7 +356,7 @@ class _PaneBody extends StatelessWidget {
       ChangeNotifierProvider.value(value: machine),
       ChangeNotifierProvider.value(value: viewModel),
     ],
-    child: _PaneView(agent: agent),
+    child: _PaneView(agent: agent, picker: picker, prepare: prepare, attachKit: attachKit, readFile: readFile),
   );
 }
 
@@ -350,9 +394,13 @@ bool compactLayout(BuildContext context) =>
 /// composes the regions. Every region selects only what it shows, so a
 /// notify about some other pane rebuilds nothing here.
 class _PaneView extends StatefulWidget {
-  const _PaneView({required this.agent});
+  const _PaneView({required this.agent, required this.picker, required this.prepare, this.attachKit, this.readFile});
 
   final PaneAgent agent;
+  final AttachPicker picker;
+  final Future<PreparedImage> Function(Uint8List input) prepare;
+  final AttachKit? attachKit;
+  final Future<Uint8List> Function(String path)? readFile;
 
   @override
   State<_PaneView> createState() => _PaneViewState();
@@ -364,7 +412,18 @@ class _PaneViewState extends State<_PaneView> {
   final _mods = StickyModifiers();
   late final PaneViewModel _vm = context.read<PaneViewModel>();
   late final _typing = ModifierTypingFormatter(_mods, _pressChord);
-  late final _slash = _newSlash(context.read<MachineConnection>());
+  late final _target = PaneAttachTarget(context.read<MachineConnection>(), _paneId);
+
+  /// Pictures and files of the draft, as long as this page lives: a replaced
+  /// connection builds a new page and drops them.
+  late final ComposerAttachments _attachments = ComposerAttachments(
+    target: _target,
+    picker: widget.picker,
+    prepare: widget.prepare,
+    kit: widget.attachKit,
+    readFile: widget.readFile ?? ComposerAttachments.readDeviceFile,
+    onProblem: (m) => showToast(context, m, kind: ToastKind.failed),
+  );
   late final AgentScreens? _screens = context.read<AgentScreens?>();
   bool _keysOpen = false;
 
@@ -376,11 +435,13 @@ class _PaneViewState extends State<_PaneView> {
 
   String get _paneId => widget.agent.paneId;
 
-  SlashViewModel _newSlash(MachineConnection machine) => SlashViewModel(
+  late final _commandSource = _newCommandSource(context.read<MachineConnection>());
+  late final _commands = CommandPaletteModel(source: _commandSource, usage: context.read<SlashUsage?>());
+
+  CatalogCommandSource _newCommandSource(MachineConnection machine) => CatalogCommandSource(
         agent: () => machine.paneById(_paneId)?.agent,
         cwd: () => machine.paneById(_paneId)?.cwd,
         catalog: SlashCatalog(machine.files),
-        usage: context.read<SlashUsage?>(),
       );
 
   @override
@@ -390,6 +451,15 @@ class _PaneViewState extends State<_PaneView> {
     // of its views.
     _input.text = _screens?.draftOf(widget.agent) ?? '';
     _input.addListener(_onInput);
+    // The gallery query and the first thumbnails are started now, so the
+    // attach sheet opens onto pictures (never asks the system for anything;
+    // only on the phone, or with a kit a test handed in).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_target.attachMode != AttachMode.none && (widget.attachKit != null || Platform.isAndroid)) {
+        _attachments.warm();
+      }
+    });
     if (context.read<Dictation?>() case final dictation?) {
       _dictation = DictationSession(dictation: dictation, input: _input, focus: _focus, onProblem: _dictationProblem);
     }
@@ -402,26 +472,19 @@ class _PaneViewState extends State<_PaneView> {
     _input.dispose();
     _focus.dispose();
     _mods.dispose();
-    _slash.dispose();
+    _commands.dispose();
+    _commandSource.dispose();
+    _attachments.dispose();
     _dockAsking.dispose();
     super.dispose();
   }
 
-  /// A slash at the start of the composer is the cue to learn the commands.
+  /// A `/` or `$` at the start of the composer is the cue to learn the commands.
   /// The draft is kept outside the screen as it is typed.
   void _onInput() {
     _screens?.keepDraft(widget.agent, _input.text);
-    if (_input.text.startsWith('/')) _slash.ensureLoaded();
-  }
-
-  /// Puts the chosen command into the composer, ready for its arguments.
-  void _pickSlash(SlashCommand command) {
-    final text = '${command.text} ';
-    _input.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    _focus.requestFocus();
+    final text = _input.text;
+    if (text.startsWith('/') || text.startsWith(r'$')) _commands.ensureLoaded();
   }
 
   /// A key row key, with Ctrl/Alt in front when one is armed.
@@ -462,14 +525,23 @@ class _PaneViewState extends State<_PaneView> {
     _focus.requestFocus();
   }
 
+  /// Opens the attach sheet for this pane's agent.
+  void _openAttach() => unawaited(showAttachSheet(context, target: _target, attachments: _attachments));
+
   /// Types the composer's text and presses enter. With nothing but whitespace
   /// in it, only presses enter (what the keyboard's send key does on an empty
   /// field), so a stray space is never typed into the pane; not while the dock
   /// shows a question (see [_refusesEnter]).
+  ///
+  /// With pictures or files attached the message goes as a prompt: each
+  /// picture's path pasted, then the line with the text and the files' paths
+  /// ([terminalPrompt]); it waits while one is still being prepared or
+  /// uploaded, and the chips come back when the send fails.
   Future<void> _submit() async {
     if (_vm.sending) return;
     final text = _input.text;
-    if (text.trim().isEmpty) {
+    final chips = _attachments.items;
+    if (text.trim().isEmpty && chips.isEmpty) {
       if (_refusesEnter(const ['enter'])) {
         Haptics.tick();
         return;
@@ -485,15 +557,37 @@ class _PaneViewState extends State<_PaneView> {
       }
       return;
     }
-    final sent = await _vm.sendLine(text);
+    final bool sent;
+    if (chips.isEmpty) {
+      sent = await _vm.sendLine(text);
+    } else {
+      // The paperclip is gone from a pane that stopped being an agent, but the
+      // chips are the person's: they stay, and nothing is typed into a shell.
+      if (context.read<MachineConnection>().paneById(_paneId)?.agent == null) {
+        showToast(context, 'This pane no longer runs an agent. Remove the attachments to send the line.', kind: ToastKind.failed);
+        Haptics.failed();
+        return;
+      }
+      if (!_attachments.canSend) return;
+      final prompt = terminalPrompt(composePrompt(text.trim(), _attachments.take()));
+      if (prompt == null) {
+        // A file whose name no mention can carry (a quote, a newline).
+        _attachments.restore(chips);
+        showToast(context, terminalAttachmentRefusal, kind: ToastKind.failed);
+        Haptics.failed();
+        return;
+      }
+      sent = await _vm.sendPrompt(prompt);
+      if (!sent) _attachments.restore(chips);
+    }
     if (sent) {
       Haptics.sent();
     } else {
       Haptics.failed();
     }
-    if (sent) _slash.recordSent(text);
+    if (sent) _commands.recordSent(text);
     // A line typed into a shell is a command, not a phrase: only an agent's prompt is learned.
-    if (sent && mounted && context.read<MachineConnection>().paneById(_paneId)?.agent != null) {
+    if (sent && text.trim().isNotEmpty && mounted && context.read<MachineConnection>().paneById(_paneId)?.agent != null) {
       unawaited(context.read<SentPhrases?>()?.learn(text) ?? Future<void>.value());
     }
     // Leaving mid-send disposes the controller. What was typed while it was in
@@ -561,7 +655,11 @@ class _PaneViewState extends State<_PaneView> {
           onSwipe: (delta) => swipeToAgent(context, widget.agent, delta),
           child: _TerminalPanel(paneId: _paneId, onLinkTap: _openLink),
         ),
-        palette: SlashPalette(input: _input, model: _slash, onPick: _pickSlash),
+        palette: CommandPalette(
+          input: _input,
+          model: _commands,
+          onPick: (command) => fillCommand(_input, _focus, command),
+        ),
         dock: AnswerDock(paneId: _paneId, asking: _dockAsking),
         keys: QuickKeys(
           paneId: _paneId,
@@ -574,6 +672,7 @@ class _PaneViewState extends State<_PaneView> {
           focus: _focus,
           padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
         ),
+        chips: AttachmentChips(attachments: _attachments),
         composer: _Composer(
           paneId: _paneId,
           controller: _input,
@@ -581,6 +680,8 @@ class _PaneViewState extends State<_PaneView> {
           typing: _typing,
           onSubmit: _submit,
           dictation: _dictation,
+          attachments: _attachments,
+          onAttach: _openAttach,
         ),
       );
 }
@@ -601,6 +702,7 @@ class _PaneLayout extends StatelessWidget {
     required this.dock,
     required this.phrases,
     required this.keys,
+    required this.chips,
     required this.composer,
     required this.keysOpen,
     required this.onToggleKeys,
@@ -612,6 +714,7 @@ class _PaneLayout extends StatelessWidget {
   final Widget dock;
   final Widget keys;
   final Widget phrases;
+  final Widget chips;
   final Widget composer;
   final bool keysOpen;
   final VoidCallback onToggleKeys;
@@ -646,6 +749,7 @@ class _PaneLayout extends StatelessWidget {
           if (!compact && !short) dock,
           if (!compact || keysOpen) keys,
           if (!compact && !short) phrases,
+          if (!compact) Padding(padding: const EdgeInsets.symmetric(horizontal: Gap.lg), child: chips),
           SafeArea(
             top: false,
             child: Padding(
@@ -655,7 +759,7 @@ class _PaneLayout extends StatelessWidget {
                 children: [
                   if (compact)
                     SizedBox(
-                      height: _composerMinHeight,
+                      height: composerMinHeight,
                       child: Center(
                         child: Padding(
                           padding: const EdgeInsets.only(right: Gap.sm),
@@ -880,18 +984,8 @@ class _BannerState extends State<_Banner> {
   }
 }
 
-/// Asks for the keyboard now. Focus brings it up; a field that kept its focus
-/// while the keyboard was dismissed needs the explicit request.
-void _showKeyboard(FocusNode focus) {
-  if (focus.hasFocus) {
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
-  } else {
-    focus.requestFocus();
-  }
-}
-
-/// Rounded multi-line input with a round send button at its right. Grows to
-/// five lines, then scrolls.
+/// Rounded multi-line input between a paperclip (an agent's prompt only) and a
+/// round send button. Grows to five lines, then scrolls.
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.paneId,
@@ -899,6 +993,8 @@ class _Composer extends StatelessWidget {
     required this.focusNode,
     required this.typing,
     required this.onSubmit,
+    required this.attachments,
+    required this.onAttach,
     this.dictation,
   });
 
@@ -908,6 +1004,12 @@ class _Composer extends StatelessWidget {
   final TextInputFormatter typing;
   final VoidCallback onSubmit;
 
+  /// Pictures and files that go out with the draft.
+  final ComposerAttachments attachments;
+
+  /// The paperclip was tapped.
+  final VoidCallback onAttach;
+
   /// Dictation into the field, offered for an agent's prompt only (a line for a
   /// shell is not something to speak). The mic takes Send's place while the
   /// field is empty.
@@ -915,7 +1017,6 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ds = context.ds;
     final (state, open, agent) = context.select<MachineConnection, (LinkState, bool, String?)>(
       (m) {
         final pane = m.paneById(paneId);
@@ -932,179 +1033,68 @@ class _Composer extends StatelessWidget {
       LinkState.attention => 'Needs attention — see above',
       LinkState.disabled => 'Machine disabled',
     };
-    const inputStyle = TextStyle(
-      fontFamily: monoFamily,
-      fontSize: 14,
-      height: 1.5,
-    );
-    const none = InputBorder.none;
-    return Container(
-      constraints: const BoxConstraints(minHeight: _composerMinHeight),
-      decoration: BoxDecoration(
-        color: ds.surface,
-        borderRadius: BorderRadius.circular(_composerRadius),
-        border: Border.all(color: ds.hairline),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            // The keyboard takes ~300 ms to start moving once it is asked for
-            // (the keyboard app's own start-up): ask when the finger lands, not
-            // when it lifts. A tap's press (typically ~100 ms) is part of that wait.
-            child: Listener(
-              onPointerDown: enabled ? (_) => _showKeyboard(focusNode) : null,
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                inputFormatters: [typing],
-                // Autocorrect rewrites commands, paths and flags; it only helps
-                // when the line is a prompt for an agent.
-                autocorrect: agent != null,
-                enableSuggestions: agent != null,
+    return ComposerFrame(
+      // An agent's prompt takes pictures and files, as the chat's does; a
+      // shell's line takes none, as it takes no dictation. In the compact
+      // layout the chips are gone and the paperclip says how many go along.
+      leading: agent == null
+          ? null
+          : ListenableBuilder(
+              listenable: attachments,
+              builder: (context, _) => ComposerAttachButton(
                 enabled: enabled,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.send,
-                // Not onSubmitted: a send action given only that unfocuses the
-                // field and drops the keyboard after every message.
-                onEditingComplete: onSubmit,
-                style: inputStyle.copyWith(
-                  color: enabled ? ds.text : ds.textTertiary,
-                ),
-                cursorColor: ds.accent,
-                decoration: InputDecoration(
-                  hintText: hint,
-                  hintStyle: Type.body.copyWith(height: 1.4, color: ds.textMuted),
-                  hintMaxLines: 1,
-                  filled: false,
-                  isDense: true,
-                  // 1px border + 12.5 + 21px line + 12.5 + 1px = the 48px minimum.
-                  contentPadding: const EdgeInsets.fromLTRB(Gap.lg, 12.5, Gap.sm, 12.5),
-                  border: none,
-                  enabledBorder: none,
-                  focusedBorder: none,
-                  disabledBorder: none,
-                  errorBorder: none,
-                  focusedErrorBorder: none,
-                ),
+                count: compactLayout(context) ? attachments.items.length : 0,
+                onPressed: onAttach,
+                onWarm: attachments.warm,
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(1),
-            child: ListenableBuilder(
-              listenable: Listenable.merge([controller, ?dictation]),
-              builder: (context, _) {
-                final hasText = controller.text.trim().isNotEmpty;
-                final dictate = agent == null ? null : dictation;
-                if (dictate != null && enabled && (dictate.listening || !hasText)) {
-                  return _MicButton(
-                    listening: dictate.listening,
-                    onPressed: () => unawaited(dictate.toggle()),
-                    onLongPress: dictate.listening
-                        ? null
-                        : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
-                  );
-                }
-                return _SendButton(
-                  ready: enabled && !sending && hasText,
-                  sending: sending,
-                  onPressed: onSubmit,
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SendButton extends StatelessWidget {
-  const _SendButton({
-    required this.ready,
-    required this.sending,
-    required this.onPressed,
-  });
-
-  final bool ready;
-  final bool sending;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return PressBuilder(
-      onTap: ready ? onPressed : null,
-      scale: 0.92,
-      semanticLabel: 'Send',
-      builder: (context, pressed) => SizedBox.square(
-        dimension: _sendHit,
-        child: Center(
-          child: AnimatedContainer(
-            duration: Motion.standard,
-            curve: Motion.easeOut,
-            width: _sendSize,
-            height: _sendSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ready
-                  ? (pressed
-                      ? Color.alphaBlend(Colors.black.withValues(alpha: 0.12), ds.accent)
-                      : ds.accent)
-                  : ds.fill,
-            ),
-            alignment: Alignment.center,
-            child: sending
-                ? const BusySpinner()
-                : Icon(
-                    LucideIcons.arrowUp,
-                    size: 18,
-                    color: ready ? ds.onAccent : ds.textTertiary,
-                  ),
-          ),
+      field: ListenableBuilder(
+        // The hint says why Send waits while a picture or a file is still on
+        // its way.
+        listenable: attachments,
+        builder: (context, _) => ComposerField(
+          controller: controller,
+          focusNode: focusNode,
+          enabled: enabled,
+          hint: enabled ? attachments.waitingReason ?? hint : hint,
+          onSubmit: onSubmit,
+          // A shell's line stays in the terminal's font; an agent's prompt is
+          // prose, as in the chat.
+          mono: agent == null,
+          inputFormatters: [typing],
+          autocorrect: agent != null,
+          enableSuggestions: agent != null,
+          hasLeading: agent != null,
+          keyboardOnPointerDown: enabled,
         ),
       ),
-    );
-  }
-}
-
-/// The mic in Send's place while the field is empty: the same disc, neutral
-/// at rest and the accent while it listens. A long press picks the language.
-class _MicButton extends StatelessWidget {
-  const _MicButton({required this.listening, required this.onPressed, this.onLongPress});
-
-  final bool listening;
-  final VoidCallback onPressed;
-  final VoidCallback? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return PressBuilder(
-      onTap: onPressed,
-      onLongPress: onLongPress,
-      scale: 0.92,
-      semanticLabel: listening ? 'Stop dictating' : 'Dictate',
-      builder: (context, pressed) => SizedBox.square(
-        dimension: _sendHit,
-        child: Center(
-          child: AnimatedContainer(
-            duration: Motion.standard,
-            curve: Motion.easeOut,
-            width: _sendSize,
-            height: _sendSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: listening
-                  ? (pressed ? Color.alphaBlend(Colors.black.withValues(alpha: 0.12), ds.accent) : ds.accent)
-                  : (pressed ? ds.fillPressed : ds.fill),
-            ),
-            alignment: Alignment.center,
-            child: Icon(LucideIcons.mic, size: 18, color: listening ? ds.onAccent : ds.text),
-          ),
-        ),
+      trailing: ListenableBuilder(
+        listenable: Listenable.merge([controller, attachments, ?dictation]),
+        builder: (context, _) {
+          final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
+          final dictate = agent == null ? null : dictation;
+          if (dictate != null && enabled && (dictate.listening || !hasContent)) {
+            return ComposerRoundButton(
+              label: dictate.listening ? 'Stop dictating' : 'Dictate',
+              icon: LucideIcons.mic,
+              iconSize: 18,
+              ready: true,
+              quiet: !dictate.listening,
+              onPressed: () => unawaited(dictate.toggle()),
+              onLongPress: dictate.listening
+                  ? null
+                  : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+            );
+          }
+          return ComposerRoundButton(
+            label: 'Send',
+            icon: LucideIcons.arrowUp,
+            iconSize: 18,
+            ready: enabled && !sending && hasContent && attachments.canSend,
+            busy: sending,
+            onPressed: onSubmit,
+          );
+        },
       ),
     );
   }

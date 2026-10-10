@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/repositories/attach_target.dart' show AttachMode;
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
@@ -8,6 +9,7 @@ import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrApiException;
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/ui/features/agent_session/permission_subject.dart';
 
@@ -220,6 +222,87 @@ void main() {
       final again = session.state.pending.single as PendingQuestion;
       expect(again.id, isNot(first.id), reason: 'a new request, so its panel takes taps afresh');
       expect(again.draftId, first.draftId);
+    });
+  });
+
+  group('a message with pictures and files goes into the terminal as a person would type it', () {
+    const picture = 'file:///h/.herdr-mobile/inbox/ab/x.jpg';
+
+    test('the picture path is pasted alone, then the text and enter', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      final ok = await session.sendBlocks([
+        const TextBlock('look'),
+        const ResourceLinkBlock(uri: picture, name: '/h/.herdr-mobile/inbox/ab/x.jpg'),
+      ]);
+
+      expect(ok, isTrue);
+      expect(rig.sent('pane.send_input'), [
+        {'pane_id': 'w1:p1', 'text': '/h/.herdr-mobile/inbox/ab/x.jpg'},
+        {'pane_id': 'w1:p1', 'text': ' look', 'keys': ['enter']},
+      ]);
+    });
+
+    test('a file inside the folder is an @mention in the line', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      await session.sendBlocks([
+        const TextBlock('read'),
+        const ResourceLinkBlock(uri: 'file:///w/lib/a.dart', name: 'lib/a.dart'),
+      ]);
+      expect(rig.sent('pane.send_input'), [
+        {'pane_id': 'w1:p1', 'text': 'read @lib/a.dart', 'keys': ['enter']},
+      ]);
+    });
+
+    test('text alone is one line, as before', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      expect(await session.sendBlocks([const TextBlock('hello')]), isTrue);
+      expect(rig.sent('pane.send_input'), [
+        {'pane_id': 'w1:p1', 'text': 'hello', 'keys': ['enter']},
+      ]);
+    });
+
+    test('a picture sent as bytes is refused, with the reason, and nothing is typed', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      final ok = await session.sendBlocks([const ImageBlock(data: 'AAAA', mimeType: 'image/png')]);
+
+      expect(ok, isFalse);
+      expect(session.error, contains('cannot be sent to it'));
+      expect(rig.sent('pane.send_input'), isEmpty);
+    });
+
+    test('a failure after the paste says the input may still hold the picture', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      var calls = 0;
+      rig.transport.onInput = (_) {
+        if (++calls == 2) throw const HerdrApiException('pane_gone', 'boom');
+      };
+      final ok = await session.sendBlocks([
+        const TextBlock('look'),
+        const ResourceLinkBlock(uri: picture, name: '/h/.herdr-mobile/inbox/ab/x.jpg'),
+      ]);
+
+      expect(ok, isFalse);
+      expect(session.error, contains('may still hold the picture'));
+    });
+
+    test('an agent takes attachments as paths; a subagent run takes none', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      expect(session.attachMode, AttachMode.paths);
+      expect(session.acceptsImages, isFalse, reason: 'bytes never go into a terminal');
+
+      final child = ObservedAgentSession(
+        machine: rig.machine,
+        paneId: 'w1:p1',
+        kind: ompKind,
+        source: FakeLogSource(),
+        mapper: OmpLogMapper.new,
+        parent: session,
+        subagentName: 'helper',
+      );
+      addTearDown(child.dispose);
+      expect(child.attachMode, AttachMode.none);
+      expect(await child.sendBlocks([const ResourceLinkBlock(uri: picture, name: 'x.jpg')]), isFalse);
+      expect(rig.sent('pane.send_input'), isEmpty);
     });
   });
 }

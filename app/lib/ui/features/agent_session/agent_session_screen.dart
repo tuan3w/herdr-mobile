@@ -12,9 +12,12 @@ import '../../../data/services/image_prep.dart' show PreparedImage, prepareImage
 import '../../../data/acp/session_state.dart';
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart' show AttachMode;
 import '../../../data/repositories/last_seen.dart';
 import '../../../data/repositories/machine_connection.dart' show LinkState;
+import '../../../data/repositories/command_source.dart';
 import '../../../data/repositories/sent_phrases.dart';
+import '../../../data/repositories/slash_usage.dart';
 import '../../../data/services/dictation.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../core/chrome.dart';
@@ -31,7 +34,6 @@ import 'auth_panel.dart';
 import 'background_format.dart' show stoppedToast;
 import 'background_sheet.dart' show showBackgroundToast, showBackgroundWork;
 import 'background_strip.dart';
-import 'command_palette.dart';
 import 'continue_button.dart';
 import 'composer.dart';
 import 'danger_announce.dart';
@@ -45,6 +47,8 @@ import 'saved_copy.dart';
 import 'session_bar.dart';
 import 'session_select.dart';
 import 'transcript_view.dart';
+import '../composer/command_model.dart';
+import '../composer/command_palette.dart';
 import '../dictation/dictation_session.dart';
 
 /// The bottom region (palette, request, composer) never takes more than this
@@ -112,20 +116,26 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   /// Null without a speech service (tests).
   DictationSession? _dictation;
   late final ComposerAttachments _attachments = ComposerAttachments(
-    session: widget.session,
+    target: widget.session,
     picker: widget.picker,
     prepare: widget.prepare,
     onProblem: _problem,
     kit: widget.attachKit,
     readFile: widget.readFile ?? ComposerAttachments.readDeviceFile,
   );
+  late final _commandSource = SessionCommandSource(widget.session);
+  late final _commands = CommandPaletteModel(source: _commandSource, usage: context.read<SlashUsage?>());
 
   late final Widget _plan = PlanHeader(session: widget.session);
 
   /// Built again once, when [_resolveSinceLeft] has the divider's data.
   late Widget _transcript = TranscriptView(session: widget.session);
   late final Widget _bottom = _Bottom(
-    palette: CommandPalette(session: widget.session, input: _input, onPick: _pickCommand),
+    palette: CommandPalette(
+      input: _input,
+      model: _commands,
+      onPick: (command) => fillCommand(_input, _focus, command),
+    ),
     dock: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -186,6 +196,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (context.read<Dictation?>() case final dictation?) {
       _dictation = DictationSession(dictation: dictation, input: _input, focus: _focus, onProblem: _dictationProblem);
     }
+    _input.addListener(_onInput);
     WidgetsBinding.instance.addObserver(this);
     widget.session
       ..acquire()
@@ -209,7 +220,9 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       // The gallery query and the first thumbnails are started now, so the
       // attach sheet opens onto pictures (never asks the system for anything;
       // only on the phone, or with a kit a test handed in).
-      if (!widget.session.isObserved && (widget.attachKit != null || Platform.isAndroid)) _attachments.warm();
+      if (widget.session.attachMode != AttachMode.none && (widget.attachKit != null || Platform.isAndroid)) {
+        _attachments.warm();
+      }
     });
   }
 
@@ -231,6 +244,9 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       ..removeListener(_onSession)
       ..release();
     _stopWindow?.cancel();
+    _input.removeListener(_onInput);
+    _commands.dispose();
+    _commandSource.dispose();
     _input.dispose();
     _attachments.dispose();
     _focus.dispose();
@@ -239,6 +255,12 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
 
   void _keepDraft() {
     if (widget.agent case final agent?) _screens?.keepDraft(agent, _input.text);
+  }
+
+  /// A `/` or `$` at the start of the composer is the cue to learn the commands.
+  void _onInput() {
+    final text = _input.text;
+    if (text.startsWith('/') || text.startsWith(r'$')) _commands.ensureLoaded();
   }
 
   @override
@@ -368,12 +390,6 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     showBackgroundToast(context, text, onView: () => unawaited(showBackgroundWork(context, session)));
   }
 
-  void _pickCommand(AcpCommand command) {
-    final text = '/${command.name} ';
-    _input.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
-    _focus.requestFocus();
-  }
-
   /// An attachment that could not be made (too large, unreadable, no camera):
   /// said once, plainly, with the failure haptic.
   void _problem(String message) {
@@ -442,6 +458,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     final sent = await session.sendBlocks(blocks);
     if (sent) {
       Haptics.sent();
+      _commands.recordSent(text);
       if (learned != null) unawaited(learned.learn(text));
       return;
     }

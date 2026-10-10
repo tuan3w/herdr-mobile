@@ -186,7 +186,7 @@ void main() {
       final session = FakeAgentSession();
       final jpeg = jpegWithExif(64, 48);
       final attachments = ComposerAttachments(
-        session: session,
+        target: session,
         picker: _Picker(PickedPhoto(path: '/cache/image_picker/IMG_2031.jpg', name: 'IMG_2031.jpg', size: jpeg.length)),
         prepare: (input) async => PreparedImage(bytes: input, width: 64, height: 48),
         readFile: (_) async => jpeg,

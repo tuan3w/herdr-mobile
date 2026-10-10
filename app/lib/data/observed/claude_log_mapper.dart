@@ -82,6 +82,10 @@ class ClaudeLogMapper implements SessionLogMapper {
   final _tasks = <String, BackgroundTask>{};
   List<BackgroundTask>? _taskView;
 
+  /// The skills Claude lists for the session (user, project, plugin and
+  /// bundled ones), by name, in the order listed.
+  final _skills = <String, AcpCommand>{};
+
   @override
   PendingAsk? get pendingAsk => _ask;
 
@@ -118,6 +122,7 @@ class ClaudeLogMapper implements SessionLogMapper {
     _subagents.clear();
     _tasks.clear();
     _taskView = null;
+    _skills.clear();
   }
 
   @override
@@ -231,6 +236,7 @@ class ClaudeLogMapper implements SessionLogMapper {
 
   List<SessionUpdate> _attachment(Json e, String key) {
     final a = e['attachment'];
+    if (a is Map<String, dynamic> && a['type'] == 'skill_listing') return _skillListing(a);
     if (a is! Map<String, dynamic> || a['type'] != 'queued_command') return const [];
     final prompt = a['prompt'];
     if (prompt is! String || prompt.trim().isEmpty) return const [];
@@ -241,6 +247,34 @@ class ClaudeLogMapper implements SessionLogMapper {
     }
     _turnEnded = false;
     return [..._userClears(), messageUpsert(MessageRole.user, _messageKey(key, prompt), prompt)];
+  }
+
+  /// `- name: description` per skill; a name may hold `:` (`plugin:skill`) but
+  /// never `: `.
+  static final _skillLine = RegExp(r'^- (.+?): (.*)$', multiLine: true);
+  static final _skillName = RegExp(r'^[\w:.\-]{1,64}$');
+
+  /// The skills Claude lists in a `skill_listing` attachment: `names`, and a
+  /// description for each in `content`. The first listing of a session
+  /// (`isInitial`) is the whole set; a later one adds to it. What is sent is
+  /// always the whole set. A listing with neither names nor lines (a trimmed
+  /// capture) says nothing.
+  List<SessionUpdate> _skillListing(Json a) {
+    final described = <String, String>{};
+    final content = a['content'];
+    if (content is String) {
+      for (final m in _skillLine.allMatches(content)) {
+        described[m[1]!.trim()] = cutText(m[2]!.trim(), 140);
+      }
+    }
+    final names = a['names'];
+    final listed = names is List ? [for (final n in names) if (n is String && _skillName.hasMatch(n)) n] : [...described.keys.where(_skillName.hasMatch)];
+    if (listed.isEmpty) return const [];
+    if (a['isInitial'] != false) _skills.clear();
+    for (final name in listed) {
+      _skills[name] = AcpCommand(name: name, description: described[name] ?? '');
+    }
+    return [CommandsUpdate([..._skills.values])];
   }
 
   // -- assistant ---------------------------------------------------------------
@@ -292,7 +326,7 @@ class ClaudeLogMapper implements SessionLogMapper {
       _turnEnded = false;
       return out;
     }
-    final text = _textOf(content);
+    final text = withImageMarkers(_textOf(content), _imagesOf(content));
     final head = text.trimLeft();
     if (head.startsWith('<task-notification>')) return _taskNotification(head, parseStamp(e), wakes: true);
     if (e['isMeta'] == true || e['isCompactSummary'] == true) return const [];
@@ -368,6 +402,10 @@ class ClaudeLogMapper implements SessionLogMapper {
     final m = RegExp('<$tag>(.*?)</$tag>', dotAll: true).firstMatch(s);
     return m?.group(1)?.trim();
   }
+
+  /// How many pictures a content list carries.
+  static int _imagesOf(Object? content) =>
+      content is List ? content.where((b) => b is Map && b['type'] == 'image').length : 0;
 
   /// A string, or the text blocks of a content list joined. A block that is
   /// only a `<system-reminder>` is Claude's own context, not the person's words:

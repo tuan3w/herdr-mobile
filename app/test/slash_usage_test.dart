@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/slash_command.dart';
+import 'package:herdr_mobile/data/repositories/command_source.dart';
 import 'package:herdr_mobile/data/repositories/slash_catalog.dart';
 import 'package:herdr_mobile/data/repositories/slash_usage.dart';
-import 'package:herdr_mobile/ui/features/pane/slash_view_model.dart';
+import 'package:herdr_mobile/ui/features/composer/command_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_fs.dart';
@@ -249,25 +250,27 @@ void main() {
     });
   });
 
-  group('SlashViewModel with usage', () {
+  group('CommandPaletteModel with usage', () {
     late SlashUsage usage;
     var agent = 'claude';
 
-    SlashViewModel vm({SlashUsage? withUsage, FakeFs? fs}) => SlashViewModel(
-          agent: () => agent,
-          cwd: () => '/work/app',
-          catalog: SlashCatalog(machineWithFiles(fs).files),
+    CommandPaletteModel vm({SlashUsage? withUsage, FakeFs? fs}) => CommandPaletteModel(
+          source: CatalogCommandSource(
+            agent: () => agent,
+            cwd: () => '/work/app',
+            catalog: SlashCatalog(machineWithFiles(fs).files),
+          ),
           usage: withUsage ?? usage,
         );
 
-    Future<SlashViewModel> loaded({FakeFs? fs}) async {
+    Future<CommandPaletteModel> loaded({FakeFs? fs}) async {
       final m = vm(fs: fs);
       m.ensureLoaded();
       await pumpEventQueue();
       return m;
     }
 
-    List<String> names(SlashViewModel m, String input) =>
+    List<String> names(CommandPaletteModel m, String input) =>
         [for (final c in m.match(input)) c.name];
 
     setUp(() {
@@ -400,10 +403,12 @@ void main() {
     });
 
     test('without a usage there is nothing to pin and the order is the catalog', () async {
-      final m = SlashViewModel(
-        agent: () => 'claude',
-        cwd: () => '/work/app',
-        catalog: SlashCatalog(machineWithFiles(null).files),
+      final m = CommandPaletteModel(
+        source: CatalogCommandSource(
+          agent: () => 'claude',
+          cwd: () => '/work/app',
+          catalog: SlashCatalog(machineWithFiles(null).files),
+        ),
       );
       m.ensureLoaded();
       await pumpEventQueue();
@@ -422,14 +427,16 @@ void main() {
     });
   });
 
-  group('SlashViewModel.recordSent', () {
+  group('CommandPaletteModel.recordSent', () {
     late SlashUsage usage;
     String? agent = 'omp';
 
-    SlashViewModel vm() => SlashViewModel(
-          agent: () => agent,
-          cwd: () => null,
-          catalog: SlashCatalog(machineWithFiles(null).files),
+    CommandPaletteModel vm() => CommandPaletteModel(
+          source: CatalogCommandSource(
+            agent: () => agent,
+            cwd: () => null,
+            catalog: SlashCatalog(machineWithFiles(null).files),
+          ),
           usage: usage,
         );
 
@@ -487,6 +494,48 @@ void main() {
       await pumpEventQueue();
 
       expect(usage.count('omp', 'ship'), 2);
+    });
+
+    Future<CommandPaletteModel> codexWithSkill() async {
+      final fs = FakeFs()..addFile('/work/app/.agents/skills/review/SKILL.md', '---\ndescription: Review\n---\n');
+      final m = CommandPaletteModel(
+        source: CatalogCommandSource(
+          agent: () => 'codex',
+          cwd: () => '/work/app',
+          catalog: SlashCatalog(machineWithFiles(fs).files),
+        ),
+        usage: usage,
+      );
+      addTearDown(m.dispose);
+      m.ensureLoaded();
+      await pumpEventQueue();
+      return m;
+    }
+
+    test('a skill is remembered with its dollar, apart from the command of that name', () async {
+      final m = await codexWithSkill();
+      m.recordSent(r'$review the diff');
+      m.recordSent('/review now');
+      m.recordSent(r'$review');
+      await pumpEventQueue();
+
+      expect(usage.count('codex', r'$review'), 2);
+      expect(usage.count('codex', 'review'), 1);
+    });
+
+    test('a line that starts with a shell variable is a sentence, not a skill nobody has', () async {
+      final m = await codexWithSkill();
+      m.recordSent(r'$PATH is wrong on this box');
+      m.recordSent(r'$HOME');
+      await pumpEventQueue();
+      expect(usage.used('codex'), isEmpty);
+
+      // Nor for an agent whose source knows no skills at all.
+      final plain = vm();
+      plain.recordSent(r'$PATH is wrong on this box');
+      await pumpEventQueue();
+      expect(usage.used('omp'), isEmpty);
+      expect(m.match(r'$').map((c) => c.name), ['review'], reason: 'the palette lists only the skill that exists');
     });
   });
 }

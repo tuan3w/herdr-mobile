@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/prompt_content.dart';
 import '../../../data/models/remote_file.dart' show RemoteFileException;
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../../data/repositories/attach_upload.dart';
 import '../../../data/repositories/recent_phone_files.dart';
 import '../../../data/services/attach_limits.dart';
@@ -166,16 +166,18 @@ class _Transfer {
 /// takes it and the file is small text.
 class ComposerAttachments extends ChangeNotifier {
   ComposerAttachments({
-    required this.session,
+    required this.target,
     required this.picker,
     this.prepare = prepareImage,
     this.readFile = readDeviceFile,
+    this.writeTemp = writeTempFile,
+    this.deleteTemp = deleteTempFile,
     this.onProblem,
     this._kit,
     this._uploader,
   });
 
-  final AgentSessionView session;
+  final AttachTarget target;
   final AttachPicker picker;
 
   /// `prepareImage`; a test swaps it (the real one needs the engine's codec).
@@ -184,6 +186,13 @@ class ComposerAttachments extends ChangeNotifier {
   /// Reads a picture of the phone's storage (a test swaps it: file I/O needs
   /// the real clock).
   final Future<Uint8List> Function(String path) readFile;
+
+  /// Writes a prepared picture to a temporary file for upload (a terminal
+  /// agent's picture goes up as a file). A test swaps it with the others.
+  final Future<String> Function(Uint8List bytes, String name) writeTemp;
+
+  /// Removes what [writeTemp] wrote, once the upload is done or given up.
+  final Future<void> Function(String path) deleteTemp;
 
   static Future<Uint8List> readDeviceFile(String path) => File(path).readAsBytes();
 
@@ -196,7 +205,7 @@ class ComposerAttachments extends ChangeNotifier {
   /// The phone's library, files and uploads (the device's unless a test gave
   /// its own).
   AttachKit get kit => _kit ?? AttachKit.device();
-  AttachUploader get uploader => _uploader ??= kit.uploaderFor(session);
+  AttachUploader get uploader => _uploader ??= kit.uploaderFor(target);
 
   /// The attach sheet is up (a second tap on the paperclip does not push another).
   var sheetOpen = false;
@@ -279,7 +288,7 @@ class ComposerAttachments extends ChangeNotifier {
   /// picture is read and encoded the moment it is picked, so Attach has
   /// nothing left to wait for. [GalleryPick.work] cancels it when undone.
   void speculate(TrayItem item) {
-    if (item is! GalleryPick || !session.acceptsImages || _disposed) return;
+    if (item is! GalleryPick || !target.preparesPictures || _disposed) return;
     item.work.future = _gate.run(() => _prepareGallery(item));
     // Errors surface where the result is used; nothing listens until then.
     unawaited(item.work.future!.then<void>((_) {}, onError: (Object _) {}));
@@ -419,7 +428,7 @@ class ComposerAttachments extends ChangeNotifier {
 
   /// The second line of a picture's chip: an agent that takes no images gets
   /// it as a file, and the chip says so from the start.
-  String? get _pictureNote => session.acceptsImages ? null : _noImagesNote;
+  String? get _pictureNote => target.preparesPictures ? null : _noImagesNote;
 
   /// `report.pdf is 312 MB. Files up to 200 MB can be attached.`
   static String tooLargeMessage(String name, int bytes) =>
@@ -431,15 +440,15 @@ class ComposerAttachments extends ChangeNotifier {
 
   void _stageHost(int id, String path) {
     final name = path.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => path);
-    final detail = relativeToCwd(path, session.cwd);
-    if (!session.acceptsEmbeddedContext) {
+    final detail = relativeToCwd(path, target.cwd);
+    if (!target.acceptsEmbeddedContext) {
       _items.add(
         Attachment(
           id: id,
           kind: AttachmentKind.file,
           label: name,
           detail: detail,
-          block: fileLinkBlock(path, cwd: session.cwd),
+          block: fileLinkBlock(path, cwd: target.cwd),
           phase: AttachPhase.ready,
         ),
       );
@@ -449,12 +458,12 @@ class ComposerAttachments extends ChangeNotifier {
   }
 
   Future<void> _startHost(int id, String path) async {
-    if (!session.acceptsEmbeddedContext) return;
+    if (!target.acceptsEmbeddedContext) return;
     final text = await _smallText(path);
     _replace(
       id,
       (a) => a._with(
-        block: fileBlock(path, cwd: session.cwd, text: text, embeddedContext: true),
+        block: fileBlock(path, cwd: target.cwd, text: text, embeddedContext: true),
         phase: AttachPhase.ready,
       ),
     );
@@ -477,10 +486,10 @@ class ComposerAttachments extends ChangeNotifier {
   }
 
   Future<void> _beginGallery(int id, GalleryPick pick) async {
-    if (session.acceptsImages) {
+    if (target.preparesPictures) {
       try {
         final image = await (pick.work.future ?? _gate.run(() => _prepareGallery(pick)));
-        _replace(id, (a) => a._with(block: image.toBlock(), thumb: image.bytes, phase: AttachPhase.ready, size: image.bytes.length));
+        await _pictureReady(id, image);
         return;
       } on _TooBigForImage catch (e) {
         await _fileFromGallery(id, pick, known: e.file);
@@ -544,7 +553,7 @@ class ComposerAttachments extends ChangeNotifier {
     Future<void> Function(String path)? release,
     required bool recent,
   }) async {
-    if (session.acceptsImages && size <= maxImageInputBytes) {
+    if (target.preparesPictures && size <= maxImageInputBytes) {
       await _imageFromFile(id, path);
     } else {
       _beginUpload(id, path: path, name: name, size: size, release: release, recent: recent);
@@ -556,7 +565,7 @@ class ComposerAttachments extends ChangeNotifier {
       final bytes = await readFile(path);
       if (_disposed || !_items.any((a) => a.id == id)) return;
       final image = await prepare(bytes);
-      _replace(id, (a) => a._with(block: image.toBlock(), thumb: image.bytes, phase: AttachPhase.ready, size: image.bytes.length));
+      await _pictureReady(id, image);
     } on ImagePrepException catch (e) {
       _drop(id);
       _problem(e.message);
@@ -565,6 +574,66 @@ class ComposerAttachments extends ChangeNotifier {
       _problem('Could not read that picture.');
     }
   }
+
+  /// A prepared picture is what goes: as an image block for an agent that
+  /// takes them, else (an agent in a terminal) as a small JPEG uploaded to the
+  /// host, whose path is typed into the terminal. The upload is the prepared
+  /// copy, not the original: downscaled, and without its metadata (location).
+  Future<void> _pictureReady(int id, PreparedImage image) async {
+    if (target.attachMode == AttachMode.blocks) {
+      _replace(id, (a) => a._with(block: image.toBlock(), thumb: image.bytes, phase: AttachPhase.ready, size: image.bytes.length));
+      return;
+    }
+    final chip = _items.where((a) => a.id == id).firstOrNull;
+    if (chip == null) return;
+    final name = '${_stem(chip.label)}.jpg';
+    final String path;
+    try {
+      path = await writeTemp(image.bytes, name);
+    } on Object {
+      _drop(id);
+      _problem('Could not prepare that picture.');
+      return;
+    }
+    if (_disposed || !_items.any((a) => a.id == id)) {
+      // The person removed the chip while it was written.
+      unawaited(deleteTemp(path));
+      return;
+    }
+    _replace(id, (a) => a._with(thumb: image.bytes));
+    _beginUpload(id, path: path, name: name, size: image.bytes.length, release: deleteTemp, recent: false);
+  }
+
+  /// `IMG_1234.HEIC` → `IMG_1234`.
+  static String _stem(String name) {
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// A picture's copy for upload, in a folder of its own so the host sees the
+  /// picture's name.
+  static Future<String> writeTempFile(Uint8List bytes, String name) async {
+    final dir = await Directory.systemTemp.createTemp(_tempPrefix);
+    final file = File('${dir.path}/$name');
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  /// Deletes [path] and the folder [writeTempFile] made for it. Never throws.
+  static Future<void> deleteTempFile(String path) async {
+    try {
+      final file = File(path);
+      final dir = file.parent;
+      if (await file.exists()) await file.delete();
+      if (dir.uri.pathSegments.where((s) => s.isNotEmpty).last.startsWith(_tempPrefix)) {
+        await dir.delete(recursive: true);
+      }
+    } on Object {
+      // A temp file that stays is the system's to clear.
+    }
+  }
+
+  static const _tempPrefix = 'herdr-attach-';
 
   void _beginUpload(
     int id, {
@@ -604,7 +673,7 @@ class ComposerAttachments extends ChangeNotifier {
           id,
           (a) => a._with(
             phase: AttachPhase.ready,
-            block: fileLinkBlock(remote, cwd: session.cwd, size: t.size),
+            block: fileLinkBlock(remote, cwd: target.cwd, size: t.size),
             detail: remote,
             size: t.size,
             note: a.note ?? 'Uploaded \u00b7 ${formatBytes(t.size)}',
@@ -613,7 +682,7 @@ class ComposerAttachments extends ChangeNotifier {
         if (_recent[id] ?? false) {
           unawaited(
             kit.recents.add(
-              RecentPhoneFile(name: t.name, size: t.size, machineId: session.machine.profile.id, hostPath: remote),
+              RecentPhoneFile(name: t.name, size: t.size, machineId: target.machine.profile.id, hostPath: remote),
             ),
           );
         }
@@ -636,7 +705,7 @@ class ComposerAttachments extends ChangeNotifier {
   /// the file goes as a link). Never throws.
   Future<String?> _smallText(String path) async {
     try {
-      final files = session.machine.files;
+      final files = target.machine.files;
       final size = (await files.stat(path)).size;
       if (size == null || size == 0 || size > maxEmbeddedBytes) return null;
       final bytes = await files.readAll(path, size: size);

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../core/motion.dart';
 import 'attach_bars.dart';
 import 'attach_kit.dart';
@@ -28,14 +28,14 @@ enum AttachOutcome {
 class AttachSheetController {
   AttachSheetController({
     required this.kit,
-    required this.session,
+    required this.target,
     required this.tray,
     required this.onProblem,
     required this.finish,
   }) : tab = ValueNotifier<AttachTab>(kit.tab);
 
   final AttachKit kit;
-  final AgentSessionView session;
+  final AttachTarget target;
   final AttachTray tray;
   final void Function(String message) onProblem;
 
@@ -63,13 +63,13 @@ class AttachSheetController {
       build: (t) => switch (t) {
         AttachTab.gallery => GalleryTab(
           kit: kit,
-          session: session,
+          target: target,
           tray: tray,
           onCamera: () => finish(AttachOutcome.camera),
           onSystemPicker: () => finish(AttachOutcome.systemPicker),
         ),
-        AttachTab.files => FilesTab(kit: kit, session: session, tray: tray, onProblem: onProblem),
-        AttachTab.host => HostTab(session: session, tray: tray, onProblem: onProblem),
+        AttachTab.files => FilesTab(kit: kit, target: target, tray: tray, onProblem: onProblem),
+        AttachTab.host => HostTab(target: target, tray: tray, onProblem: onProblem),
       },
     ),
   );

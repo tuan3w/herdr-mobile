@@ -187,7 +187,7 @@ class CodexLogMapper implements SessionLogMapper {
     final id = item['id'] is String && (item['id'] as String).isNotEmpty ? item['id'] as String : key;
     switch (item['type']) {
       case 'UserMessage':
-        return _userMessage(_textParts(item['content'], 'text'), id);
+        return _userMessage(withImageMarkers(_textParts(item['content'], 'text'), _imagesOf(item['content'])), id);
       case 'AgentMessage':
         final text = _textParts(item['content'], 'Text');
         if (text.isEmpty) return _questions(item['questions'], id);
@@ -264,6 +264,11 @@ class CodexLogMapper implements SessionLogMapper {
     ];
     return titles.isEmpty ? const [] : [messageUpsert(MessageRole.agent, id, 'Asked: ${titles.join('; ')}')];
   }
+
+  /// How many pictures a content list carries (`image` by URL, `local_image` by path).
+  static int _imagesOf(Object? content) => content is List
+      ? content.where((p) => p is Map && (p['type'] == 'image' || p['type'] == 'local_image')).length
+      : 0;
 
   /// The text parts (`{type: <type>, text}`) of a content list, joined.
   static String _textParts(Object? content, String type) {

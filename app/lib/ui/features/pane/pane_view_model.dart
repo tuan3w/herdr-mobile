@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/terminal_prompt.dart';
 import '../../../data/services/herdr_api.dart' show ReadSource;
 import '../../../data/services/herdr_transport.dart';
 import '../../core/terminal_view.dart' show TerminalTop;
@@ -42,6 +43,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     required this.paneId,
     required this._read,
     required this._sendLine,
+    required this._sendPrompt,
     required this._sendKeys,
     this.minReadInterval = const Duration(milliseconds: 120),
     this.deepReadInterval = const Duration(milliseconds: 1500),
@@ -73,6 +75,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
           ansi: true,
         ),
         sendLine: (text) => machine.api.sendLine(paneId, text),
+        sendPrompt: (p) => sendTerminalPrompt(machine.api, paneId, p),
         sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
         wrap: wrap,
       );
@@ -80,6 +83,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   final String paneId;
   final PaneReader _read;
   final Future<void> Function(String text) _sendLine;
+  final Future<void> Function(TerminalPrompt prompt) _sendPrompt;
   final Future<void> Function(List<String> keys) _sendKeys;
 
   /// The time of day, for [lastRead]; a test passes its own.
@@ -301,6 +305,12 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// Types [text] and presses enter.
   Future<bool> sendLine(String text) => _send(() => _sendLine(text));
 
+  /// Types a message with pictures: their paths pasted, then the line and
+  /// enter ([sendTerminalPrompt]). A failure may leave a picture in the
+  /// agent's input, and says so.
+  Future<bool> sendPrompt(TerminalPrompt p) =>
+      _send(() => _sendPrompt(p), failure: p.pastes.isEmpty ? null : terminalPromptFailure);
+
   /// Sends herdr key-combo strings (`esc`, `ctrl+c`, `up` …).
   ///
   /// Keys are not a "send": they never mark the model as [sending], so a
@@ -322,7 +332,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _keysTail = Future.value();
 
-  Future<bool> _send(Future<void> Function() action, {bool track = true}) async {
+  Future<bool> _send(Future<void> Function() action, {bool track = true, String? failure}) async {
     if (track) {
       _sending = true;
       notifyListeners();
@@ -338,12 +348,12 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
       refresh();
       return true;
     } on HerdrApiException catch (e) {
-      _error = e.toString();
+      _error = failure ?? e.toString();
       _sendFailed = true;
       failed = true;
       return false;
     } on HerdrTransportException catch (e) {
-      _error = e.message;
+      _error = failure ?? e.message;
       _sendFailed = true;
       failed = true;
       return false;

@@ -19,6 +19,7 @@ import '../services/transcript_cache.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../streaming/flush_scheduler.dart';
 import 'agent_session.dart';
+import 'attach_target.dart' show AttachMode;
 import 'machine_connection.dart';
 import 'reviewed_state.dart';
 import 'subagent_transcripts.dart';
@@ -608,6 +609,9 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   bool get acceptsEmbeddedContext => _acceptsEmbeddedContext;
+
+  @override
+  AttachMode get attachMode => AttachMode.blocks;
 
   @override
   AuthNeeded? get authNeeded => _authNeeded;

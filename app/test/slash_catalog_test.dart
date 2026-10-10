@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/slash_command.dart';
+import 'package:herdr_mobile/data/repositories/command_source.dart';
 import 'package:herdr_mobile/data/repositories/slash_catalog.dart';
-import 'package:herdr_mobile/ui/features/pane/slash_view_model.dart';
+import 'package:herdr_mobile/ui/features/composer/command_model.dart';
 
 import 'support/fake_fs.dart';
 import 'support/files_support.dart';
@@ -133,18 +134,22 @@ void main() {
     });
   });
 
-  group('SlashViewModel', () {
+  group('the command palette over a catalog', () {
     var clock = DateTime(2026);
     late FakeFs fs;
     String? agent = 'claude';
+    late CatalogCommandSource source;
 
-    SlashViewModel vm({Duration maxAge = const Duration(minutes: 2)}) => SlashViewModel(
-          agent: () => agent,
-          cwd: () => _cwd,
-          catalog: _catalog(fs),
-          maxAge: maxAge,
-          now: () => clock,
-        );
+    CommandPaletteModel vm({Duration maxAge = const Duration(minutes: 2)}) {
+      source = CatalogCommandSource(
+        agent: () => agent,
+        cwd: () => _cwd,
+        catalog: _catalog(fs),
+        maxAge: maxAge,
+        now: () => clock,
+      );
+      return CommandPaletteModel(source: source);
+    }
 
     setUp(() {
       clock = DateTime(2026);
@@ -154,7 +159,7 @@ void main() {
         ..addFile('$_cwd/.claude/commands/ship.md', 'Ship it\n');
     });
 
-    Future<SlashViewModel> loaded() async {
+    Future<CommandPaletteModel> loaded() async {
       final m = vm();
       m.ensureLoaded();
       await pumpEventQueue();
@@ -243,8 +248,67 @@ void main() {
       final m = vm();
       m.ensureLoaded();
       m.dispose();
+      source.dispose();
 
       await pumpEventQueue();
+    });
+  });
+
+  group('Codex skills', () {
+    const home = '/home/dev';
+
+    Future<List<SlashCommand>> load(FakeFs fs, {String cwd = _cwd}) => _catalog(fs).load(agent: 'codex', cwd: cwd);
+
+    FakeFs skills(Map<String, String> byDir) {
+      final fs = FakeFs();
+      for (final MapEntry(:key, :value) in byDir.entries) {
+        fs.addFile('$key/SKILL.md', '---\ndescription: $value\n---\n');
+      }
+      return fs;
+    }
+
+    test('are read from the folder, the home and ~/.codex, all as \$name', () async {
+      final fs = skills({
+        '$_cwd/.agents/skills/here': 'In the folder',
+        '$home/.agents/skills/mine': 'Home skill',
+        '$home/.codex/skills/legacy': 'Old place',
+      });
+      final all = await load(fs);
+
+      expect(all.where((c) => c.trigger == r'$').map((c) => c.name), containsAll(['here', 'mine', 'legacy']));
+      expect(_find(all, 'here')?.source, SlashSource.project);
+      expect(_find(all, 'here')?.text, r'$here');
+      expect(_find(all, 'mine')?.source, SlashSource.user);
+      expect(_find(all, 'legacy')?.source, SlashSource.user);
+      expect(_find(all, 'legacy')?.description, 'Old place');
+    });
+
+    test('a folder above the working folder counts as the project, the home never does', () async {
+      final fs = skills({'$home/.agents/skills/mine': 'Home', '$_cwd/.agents/skills/x': 'x'});
+      final all = await load(fs, cwd: '$_cwd/lib');
+
+      expect(_find(all, 'x')?.source, SlashSource.project);
+      expect(_find(all, 'mine')?.source, SlashSource.user, reason: 'the home folder is the user\'s own');
+
+      final deeper = await load(skills({'/work/repo/.agents/skills/root-skill': 'Repo'}), cwd: '/work/repo/pkg/sub');
+      expect(_find(deeper, 'root-skill')?.source, SlashSource.project);
+    });
+
+    test('the first of a name wins, and a skill does not replace a command of that name', () async {
+      final fs = skills({
+        '$_cwd/.agents/skills/review': 'Project review',
+        '$home/.agents/skills/review': 'User review',
+      });
+      final all = await load(fs);
+
+      final reviews = all.where((c) => c.name == 'review').toList();
+      expect([for (final c in reviews) (c.trigger, c.description)], [(r'$', 'Project review'), ('/', 'Review the working tree')]);
+    });
+
+    test('a machine with none of the folders adds only the built-in commands', () async {
+      final all = await load(FakeFs());
+      expect(all, isNotEmpty);
+      expect(all.every((c) => c.source == SlashSource.builtIn && c.trigger == '/'), isTrue);
     });
   });
 }

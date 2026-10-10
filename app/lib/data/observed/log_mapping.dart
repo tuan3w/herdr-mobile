@@ -48,6 +48,16 @@ String cutText(String s, int max) {
   return '${s.substring(0, safeEnd(s, max - 1))}…';
 }
 
+/// [text] of a message that carried [images] pictures: one `[image]` line for
+/// each, unless the agent's own text already marks them (`[Image #1]`). A
+/// message with a picture never shows empty and never loses the picture
+/// silently.
+String withImageMarkers(String text, int images) {
+  if (images <= 0 || text.contains('[Image #')) return text;
+  final markers = List.filled(images, '[image]').join('\n');
+  return text.isEmpty ? markers : '$text\n$markers';
+}
+
 /// [s] cut at [maxLogFieldChars] with a visible marker; whole when shorter.
 String capText(String s) {
   if (s.length <= maxLogFieldChars) return s;

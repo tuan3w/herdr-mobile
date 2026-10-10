@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../../data/services/image_prep.dart' show pictureExtensions;
+
 /// How the viewer shows a file.
 enum FileKind {
   /// Source, logs, config and anything else that reads as text.
@@ -34,7 +36,7 @@ class FileType {
   String toString() => 'FileType($kind, $label)';
 }
 
-const _imageExt = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
+const _imageExt = pictureExtensions;
 
 const _binaryExt = {
   'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'zst', 'jar', 'war', 'apk', 'aab', 'ipa', 'deb', 'rpm',
