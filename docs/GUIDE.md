@@ -317,9 +317,11 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
 - **Ctrl and Alt** apply to the next key only: tap ctrl, then type `r`, and
   the pane gets ctrl+r.
 - **Slash palette.** Type `/` at the start of the message box in an agent
-  pane to list the agent's commands. A tap fills in the command; you still
-  send it. Long-press a command to pin it; pinned and recently sent commands
-  come first.
+  pane to list the agent's commands. A tap fills in the command, and what it
+  takes shows after it in grey; you still send it. Long-press a command to pin
+  it; pinned and recently sent commands come first. A `/word` the agent does
+  not list is held once ("Send as message" sends it as typed), so a typo does
+  not cost a turn.
 - **Quick phrases.** Chips above the empty message box. A tap fills the box
   and never sends. Edit them in Settings > Agents > `Quick phrases`. Up to three
   messages you send to an agent at least twice join them, most sent first
