@@ -1459,7 +1459,35 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       return failure == null;
     }
     final before = _userMessages();
-    return _afterSend(before, await _sendPrompt(trimmed));
+    final failure = await _sendPrompt(trimmed);
+    // `/clear` and `/new` open another log and are never a message in it.
+    if (failure == null && _opensNewLog.hasMatch(trimmed)) {
+      _setProblem(null);
+      markSeen();
+      unawaited(_followNewLog());
+      return true;
+    }
+    return _afterSend(before, failure);
+  }
+
+  /// Commands that start another conversation, and with it another log file.
+  static final _opensNewLog = RegExp(r'^/(clear|new)$', caseSensitive: false);
+
+  /// After `/clear`: the agent opens a new file while the pane's status stays
+  /// idle, so nothing else says the session changed. Looks for it a few
+  /// times (each look is one small read, and costs nothing when the file is
+  /// the same); the chat then shows the new, empty conversation.
+  Future<void> _followNewLog() async {
+    for (final wait in const [
+      Duration(milliseconds: 400),
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ]) {
+      await Future<void>.delayed(wait);
+      if (_disposed || !held) return;
+      await _relocate();
+    }
   }
 
   /// Text and file paths are one line; a picture's path is pasted first
