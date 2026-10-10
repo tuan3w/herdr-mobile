@@ -743,10 +743,14 @@ class AppRefresh extends StatelessWidget {
 /// Colours come from the theme (`bottomSheetTheme`, `modalBarrierColor`), so a
 /// light/dark switch while a sheet is open restyles it. The body scrolls when
 /// it does not fit (large text, landscape). A tall sheet stops below the
-/// status bar (`useSafeArea`): the session overview used to grow under the
-/// clock, its grabber and title drawn over the status icons. Under reduced
-/// motion the sheet appears and goes without sliding (drag to dismiss still
-/// works).
+/// status bar: the session overview used to grow under the clock, its grabber
+/// and title drawn over the status icons. Its height is capped rather than
+/// `useSafeArea` set, which also takes the side insets off the sheet itself,
+/// so a landscape phone with a side navigation bar showed the page in a strip
+/// beside it. The cap reads the top inset from the navigator that hosts the
+/// sheet (inside the route the sheet's own top padding is already removed);
+/// the size dependency rebuilds it on rotation. Under reduced motion the
+/// sheet appears and goes without sliding (drag to dismiss still works).
 Future<T?> showAppSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -754,7 +758,6 @@ Future<T?> showAppSheet<T>(
 }) => showModalBottomSheet<T>(
   context: context,
   isScrollControlled: true,
-  useSafeArea: true,
   isDismissible: dismissible,
   sheetAnimationStyle: Motion.reduced(context)
       ? AnimationStyle.noAnimation
@@ -764,22 +767,27 @@ Future<T?> showAppSheet<T>(
           duration: Motion.sheetIn,
           reverseDuration: Motion.sheetOut,
         ),
-  builder: (ctx) => SafeArea(
-    top: false,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 8),
-        Container(
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: ctx.ds.textTertiary.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(2),
+  builder: (ctx) => ConstrainedBox(
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(ctx).height - MediaQuery.paddingOf(Navigator.of(ctx).context).top,
+    ),
+    child: SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: ctx.ds.textTertiary.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-        ),
-        Flexible(child: SingleChildScrollView(child: builder(ctx))),
-      ],
+          Flexible(child: SingleChildScrollView(child: builder(ctx))),
+        ],
+      ),
     ),
   ),
 );
