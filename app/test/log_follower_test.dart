@@ -64,7 +64,11 @@ String? _pythonDir() {
 
 /// One output record of `follow`.
 class _Rec {
-  _Rec(this.text);
+  _Rec(this.text) : at = DateTime.now();
+
+  /// When the test read it off the pipe: a gap between two records is timed
+  /// from these, not from when the test happened to act.
+  final DateTime at;
 
   final String text;
 
@@ -134,6 +138,24 @@ class _Follow {
   }
 
   Future<List<_Rec>> take(int n) async => [for (var i = 0; i < n; i++) await next()];
+
+  /// Every record of the follower's first read to the end of the file. It says
+  /// when that read is over (the `C` note, sent after the last record), so a
+  /// slow start on a busy machine cannot end the wait early the way a quiet
+  /// period of a few hundred milliseconds does.
+  Future<List<_Rec>> firstRead({Duration timeout = const Duration(seconds: 30)}) async {
+    final end = DateTime.now().add(timeout);
+    while (caughtUp.isEmpty) {
+      if (_done) fail('output ended before the first read was over; stderr: $stderr');
+      final left = end.difference(DateTime.now());
+      if (left <= Duration.zero) fail('the first read was not over within $timeout');
+      final w = _waiting = Completer<void>();
+      await w.future.timeout(left, onTimeout: () {});
+    }
+    final out = _records.sublist(_taken);
+    _taken = _records.length;
+    return out;
+  }
 
   /// Every record until the output has been quiet for [quiet].
   Future<List<_Rec>> settle({Duration quiet = const Duration(milliseconds: 400)}) async {
@@ -300,7 +322,7 @@ void main() {
       final offsets = _write(f, lines);
       final size = f.lengthSync();
       final run = await host.follow(f.path);
-      final got = await run.settle();
+      final got = await run.firstRead();
       expect(got.every((r) => !r.isReset), isTrue);
       final first = got.first.json['n']! as int;
       final firstStart = first == 0 ? 0 : offsets[first - 1];
@@ -333,7 +355,7 @@ void main() {
         final shifted = skewBytes == 0 ? lines : [...lines, ''];
         _write(f, shifted);
         final run = await host.follow(f.path, tailBytes: tailBytes);
-        final got = await run.settle();
+        final got = await run.firstRead();
         await run.stop();
         return got;
       }
@@ -353,7 +375,7 @@ void main() {
         final f = File(host.path());
         _write(f, [for (var i = 0; i < 10000; i++) _json(i, pad: 'y' * (48 - '$i'.length))]);
         final run = await host.follow(f.path, tailBytes: tailBytes);
-        final got = await run.settle();
+        final got = await run.firstRead();
         await run.stop();
         return got.length;
       }
@@ -455,11 +477,13 @@ void main() {
       // start, a slow runner can deliver the first line late, just before the
       // next look, and the line after it comes at once.
       _write(f, [_json(2)], mode: FileMode.append);
-      await run.next(timeout: const Duration(seconds: 5));
-      final watch = Stopwatch()..start();
+      final second = await run.next(timeout: const Duration(seconds: 5));
       _write(f, [_json(3)], mode: FileMode.append);
-      await run.next(timeout: const Duration(seconds: 5));
-      expect(watch.elapsedMilliseconds, greaterThan(1000), reason: 'it only looks every 2 s');
+      final third = await run.next(timeout: const Duration(seconds: 5));
+      // From record to record as the test read them: a stall between reading
+      // line 2 and writing line 3 (a busy runner) shortens a gap timed from
+      // the write, and the line would look as if it came sooner than a poll.
+      expect(third.at.difference(second.at).inMilliseconds, greaterThan(1000), reason: 'it only looks every 2 s');
       await run.stop();
     });
 
