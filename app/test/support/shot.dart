@@ -65,8 +65,9 @@ Future<void> shoot(
   List<NavigatorObserver> observers = const [],
   Widget Function(Widget app)? wrap,
   double imageScale = 1.5,
+  Size size = phone,
 }) async {
-  tester.view.physicalSize = phone * phoneDpr;
+  tester.view.physicalSize = size * phoneDpr;
   tester.view.devicePixelRatio = phoneDpr;
   tester.view.padding = const FakeViewPadding(top: 24 * phoneDpr, bottom: 20 * phoneDpr);
   tester.view.viewPadding = tester.view.padding;

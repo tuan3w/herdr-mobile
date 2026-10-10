@@ -17,6 +17,7 @@ import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 
+import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts;
 import 'board_support.dart';
 import 'ui_harness.dart';
@@ -453,7 +454,7 @@ void main() {
       await teardownBoard(tester, h);
     });
 
-    testWidgets('Settings > Appearance > Agent list sets Auto, Cards or Compact, so Auto can come back',
+    testWidgets('Settings > Look > Agent list sets Auto, Cards or Compact, so Auto can come back',
         (tester) async {
       final h = await BoardHarness.create([
         _machine('a', [for (var i = 1; i <= 6; i++) _pane(i, 'working')]),
@@ -475,14 +476,12 @@ void main() {
         await settle(tester);
       }
 
+      // The control is in the Look group, which starts closed; the tab keeps
+      // it open from here on.
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
       await settle(tester);
+      await openSettingsGroup(tester, 'Look');
       expect(find.text('Agent list'), findsOneWidget);
-      expect(
-        find.text('Auto uses cards up to 4 agents and the compact list from 5; '
-            'a blocked agent always keeps its answers.'),
-        findsOneWidget,
-      );
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Agents')));
       await settle(tester);
 

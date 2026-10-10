@@ -15,9 +15,39 @@ import '../../core/rows.dart';
 import '../../core/tokens.dart';
 import 'app_switch.dart';
 
-/// Settings > Quick phrases: the lines offered as chips above the composers.
-/// A row opens the editor sheet (edit, delete); Add opens it empty. Changes
-/// apply and are remembered at once.
+/// Settings > Agents > Quick phrases: its own page, because the list grows
+/// with the person (up to [QuickPhrases.maxCount]) and would stretch the group
+/// it belongs to.
+class QuickPhrasesPage extends StatelessWidget {
+  const QuickPhrasesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: context.ds.bg,
+        body: CustomScrollView(
+          slivers: [
+            SliverLargeTitle(
+              title: 'Quick phrases',
+              leading: CircleButton(
+                icon: LucideIcons.chevronLeft,
+                tooltip: 'Back',
+                onPressed: () => unawaited(Navigator.of(context).maybePop()),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + Gap.lg),
+                child: const QuickPhrasesSection(),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// The lines offered as chips above the composers. A row opens the editor
+/// sheet (edit, delete); Add opens it empty. Changes apply and are remembered
+/// at once.
 ///
 /// Absent when the app runs without the phrases (tests).
 class QuickPhrasesSection extends StatelessWidget {
@@ -30,8 +60,7 @@ class QuickPhrasesSection extends StatelessWidget {
     final phrases = context.select<QuickPhrases, List<String>>((q) => q.phrases);
     final full = phrases.length >= QuickPhrases.maxCount;
     final sent = context.watch<SentPhrases?>();
-    return FormSection(
-      label: 'Quick phrases',
+    return FormPanel(
       endsWithField: false,
       children: [
         Text(

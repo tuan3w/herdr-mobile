@@ -56,6 +56,8 @@ class ListRow extends StatelessWidget {
     this.divider = true,
     this.dim = false,
     this.titleMaxLines = 2,
+    this.subtitleMaxLines = 1,
+    this.subtitleColor,
     this.padding = const EdgeInsets.symmetric(vertical: 12),
     this.semanticLabel,
   });
@@ -84,6 +86,13 @@ class ListRow extends StatelessWidget {
   /// Titles wrap to two lines by default: the tail of a long task title is
   /// often what tells two agents apart.
   final int titleMaxLines;
+
+  /// The line under the title ends in an ellipsis by default (a row is a
+  /// glance); a row whose second line is the answer, not a detail, lets it wrap.
+  final int subtitleMaxLines;
+
+  /// The line under the title in a colour of its own: a failure in red.
+  final Color? subtitleColor;
   final EdgeInsetsGeometry padding;
   final String? semanticLabel;
 
@@ -111,9 +120,9 @@ class ListRow extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               subtitle!,
-              maxLines: 1,
+              maxLines: subtitleMaxLines,
               overflow: TextOverflow.ellipsis,
-              style: Type.secondary.copyWith(color: ds.textSecondary),
+              style: Type.secondary.copyWith(color: subtitleColor ?? ds.textSecondary),
             ),
           ),
         if (subtitle2 != null && subtitle2!.isNotEmpty)

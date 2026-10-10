@@ -185,7 +185,7 @@ the app is in the background. An idle omp pane with a good title costs one
 **Cards or compact.** Cards show the last lines of the agent's terminal and
 how long it has been in its state; the compact list shows one row per agent.
 Switch with the button in the header (`Compact list` / `Cards with preview`),
-or pick a default in Settings > Appearance > `Agent list`: `Auto` (cards up to
+or pick a default in Settings > Look > `Agent list`: `Auto` (cards up to
 four agents, compact from five), `Cards` or `Compact`. A blocked agent always
 keeps its answers.
 
@@ -308,7 +308,7 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
 - **Width.** herdr can't resize a pane to the phone over its API, so a wide
   pane is either pinch-zoomed or re-flowed by wrap. Wrap keeps table and box
   rows whole and scrolls them sideways. Default font size and wrap are in
-  Settings > Terminal.
+  Settings > Look.
 - **Message box.** Type and send: the text goes to the pane as a line.
 - **Key row** (`Show keys` / `Hide keys`). Keys a phone keyboard lacks. For
   an agent: esc, arrows, Enter, space, new line, `/`, `@`, ctrl, alt, tab,
@@ -321,7 +321,7 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
   send it. Long-press a command to pin it; pinned and recently sent commands
   come first.
 - **Quick phrases.** Chips above the empty message box. A tap fills the box
-  and never sends. Edit them in Settings > `Quick phrases`. Up to three
+  and never sends. Edit them in Settings > Agents > `Quick phrases`. Up to three
   messages you send to an agent at least twice join them, most sent first
   (before the built-in phrases while you have not edited the list). They are
   learned and kept on this phone only; turn that off or forget them in the
@@ -455,7 +455,7 @@ An omp, Claude Code or Codex agent running in a herdr pane can be read both
 ways: as its terminal, or as a chat built from the agent's own session log.
 Switch with `Show chat` in `Pane options` or `Show terminal` in `Session
 options`. The choice is remembered for that agent until the app restarts; the
-default is in Settings > Appearance > `Open agents as`. Other terminal agents
+default is in Settings > Agents > `Open agents as`. Other terminal agents
 have only the terminal.
 
 The chat needs the app to find the agent's log. omp tells herdr where it is.

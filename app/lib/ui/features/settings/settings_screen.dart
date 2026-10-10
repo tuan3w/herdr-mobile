@@ -8,12 +8,11 @@ import '../../../data/app_info.dart';
 import '../../../data/repositories/app_settings.dart';
 import '../../../data/repositories/app_update.dart';
 import '../../../data/repositories/notification_settings.dart';
+import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/services/notifier.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
-import '../../core/form_sections.dart';
-import '../../core/motion.dart';
 import '../../core/open_link.dart';
 import '../../core/rows.dart';
 import '../../core/toast.dart';
@@ -21,11 +20,21 @@ import '../../core/tokens.dart';
 import 'app_switch.dart';
 import 'font_size_control.dart';
 import 'quick_phrases_editor.dart';
-import 'update_panel.dart';
+import 'settings_group.dart';
+import 'update_group.dart';
 
-/// The third root tab: how the app looks, how the terminal is drawn, and what
-/// this app is. Everything here applies at once and is remembered.
-class SettingsScreen extends StatelessWidget {
+/// The groups of Settings, top to bottom. The page opens one at a time.
+enum _Open { update, look, agents, notifications, about }
+
+/// The third root tab: four groups (Look, Agents, Notifications, About), each
+/// a row that says what it is set to and opens in place, one at a time, with
+/// a newer version's row above them. Everything here applies at once and is
+/// remembered.
+///
+/// Why groups, not a long page: the page was about 1,800 dp, and every new
+/// setting made the next one harder to find. Four rows fit one screen at any
+/// text size; a group grows without lengthening the page.
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.update});
 
   /// Looks for and installs a newer version; null where the app cannot (not
@@ -33,247 +42,248 @@ class SettingsScreen extends StatelessWidget {
   final AppUpdate? update;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        backgroundColor: context.ds.bg,
-        body: CustomScrollView(
-          slivers: [
-            const SliverLargeTitle(title: 'Settings'),
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (update case final update?) UpdatePanel(update: update),
-                  const _AppearanceSection(),
-                  const _TerminalSection(),
-                  const QuickPhrasesSection(),
-                  const _NotificationsSection(),
-                  _AboutSection(update: update),
-                  SizedBox(height: FloatingBar.clearance(context) + Gap.md),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _AppearanceSection extends StatelessWidget {
-  const _AppearanceSection();
+class _SettingsScreenState extends State<SettingsScreen> {
+  // Closed on the first visit, except that a newer version is open: it is the
+  // one thing that came to the person, and Download is then one tap away, not
+  // two. A version found while this tab is behind another opens it too (the
+  // tab's dot is what brings the person here; the state outlives a visit). Not
+  // when found while the page is showing: nothing moves under the thumb.
+  late _Open? _open = widget.update?.release != null ? _Open.update : null;
+  late bool _hadRelease = widget.update?.release != null;
 
-  static String _hint(ThemeChoice choice) => switch (choice) {
-        ThemeChoice.light => 'Warm paper, easy to read in daylight.',
-        ThemeChoice.dark => 'Near-black, easy on the eyes at night.',
-        ThemeChoice.system => 'Follows your phone\u2019s dark mode.',
+  @override
+  void initState() {
+    super.initState();
+    widget.update?.addListener(_onUpdate);
+  }
+
+  @override
+  void didUpdateWidget(SettingsScreen old) {
+    super.didUpdateWidget(old);
+    if (old.update == widget.update) return;
+    old.update?.removeListener(_onUpdate);
+    widget.update?.addListener(_onUpdate);
+  }
+
+  @override
+  void dispose() {
+    widget.update?.removeListener(_onUpdate);
+    super.dispose();
+  }
+
+  void _onUpdate() {
+    final has = widget.update?.release != null;
+    final found = has && !_hadRelease;
+    _hadRelease = has;
+    final showing = TickerMode.getValuesNotifier(context).value.enabled;
+    if (found && !showing && mounted) setState(() => _open = _Open.update);
+  }
+
+  void _toggle(_Open group) => setState(() => _open = _open == group ? null : group);
+
+  @override
+  Widget build(BuildContext context) {
+    final update = widget.update;
+    return Scaffold(
+      backgroundColor: context.ds.bg,
+      body: CustomScrollView(
+        slivers: [
+          const SliverLargeTitle(title: 'Settings'),
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (update != null)
+                  UpdateGroup(
+                    update: update,
+                    open: _open == _Open.update,
+                    onToggle: () => _toggle(_Open.update),
+                  ),
+                _LookGroup(open: _open == _Open.look, onToggle: () => _toggle(_Open.look)),
+                _AgentsGroup(open: _open == _Open.agents, onToggle: () => _toggle(_Open.agents)),
+                _NotificationsGroup(
+                  open: _open == _Open.notifications,
+                  onToggle: () => _toggle(_Open.notifications),
+                ),
+                _AboutGroup(
+                  update: update,
+                  open: _open == _Open.about,
+                  onToggle: () => _toggle(_Open.about),
+                ),
+                SizedBox(height: FloatingBar.clearance(context) + Gap.md),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A switch row inset to the page gutter, as a group's body holds it.
+class _Inset extends StatelessWidget {
+  const _Inset(this.child);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.symmetric(horizontal: Gap.gutter), child: child);
+}
+
+/// How the app and the terminal look: theme, the agent list, the terminal's
+/// size and wrapping, and how an answer is shown.
+class _LookGroup extends StatelessWidget {
+  const _LookGroup({required this.open, required this.onToggle});
+
+  final bool open;
+  final VoidCallback onToggle;
+
+  static String _theme(ThemeChoice choice) => switch (choice) {
+        ThemeChoice.light => 'Light',
+        ThemeChoice.dark => 'Dark',
+        ThemeChoice.system => 'System',
+      };
+
+  static String _density(BoardDensity density) => switch (density) {
+        BoardDensity.auto => 'Auto',
+        BoardDensity.cards => 'Cards',
+        BoardDensity.compact => 'Compact',
       };
 
   @override
   Widget build(BuildContext context) {
-    final ds = context.ds;
     final settings = context.read<AppSettings>();
-    final choice = context.select<AppSettings, ThemeChoice>((s) => s.theme);
+    final terminal = context.read<TerminalSettings>();
+    final theme = context.select<AppSettings, ThemeChoice>((s) => s.theme);
     final density = context.select<AppSettings, BoardDensity>((s) => s.density);
-    final openAs = context.select<AppSettings, OpenAgentsAs>((s) => s.openAgentsAs);
     final smoothText = context.select<AppSettings, bool>((s) => s.smoothText);
-    return FormSection(
-      label: 'Appearance',
-      endsWithField: false,
+    final darkTerminal = context.select<AppSettings, bool>((s) => s.darkTerminal);
+    final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
+    final fontSize = context.select<TerminalSettings, double>((s) => s.fontSize);
+    return SettingsGroup(
+      icon: LucideIcons.sunMoon,
+      title: 'Look',
+      summary: '${_theme(theme)} \u00b7 ${_density(density)} \u00b7 ${FontSizeControl.format(fontSize)} pt',
+      open: open,
+      onToggle: onToggle,
       children: [
-        // Two groups, each a title over its control and its hint; the gap
-        // between groups is wider than the gaps inside one.
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Theme', style: Type.row.copyWith(color: ds.text)),
-            const SizedBox(height: Gap.sm),
-            Segmented<ThemeChoice>(
-              options: const [
-                SegmentOption(ThemeChoice.light, 'Light', LucideIcons.sun),
-                SegmentOption(ThemeChoice.dark, 'Dark', LucideIcons.moon),
-                SegmentOption(ThemeChoice.system, 'System', LucideIcons.smartphone),
-              ],
-              value: choice,
-              onChanged: (next) => unawaited(settings.setTheme(next)),
-            ),
-            const SizedBox(height: Gap.md),
-            _ThemePreview(choice: choice),
-            const SizedBox(height: Gap.sm),
-            Text(_hint(choice), style: Type.secondary.copyWith(color: ds.textSecondary)),
-          ],
+        SettingsField(
+          title: 'Theme',
+          child: Segmented<ThemeChoice>(
+            options: const [
+              SegmentOption(ThemeChoice.light, 'Light', LucideIcons.sun),
+              SegmentOption(ThemeChoice.dark, 'Dark', LucideIcons.moon),
+              SegmentOption(ThemeChoice.system, 'System', LucideIcons.smartphone),
+            ],
+            value: theme,
+            onChanged: (next) => unawaited(settings.setTheme(next)),
+          ),
         ),
+        SettingsField(
+          title: 'Agent list',
+          // Only where the setting hides a rule: Cards and Compact say it all.
+          hint: density == BoardDensity.auto
+              ? 'Cards up to ${AppSettings.autoCompactFrom - 1} agents, the compact list from '
+                  '${AppSettings.autoCompactFrom}; a blocked agent always keeps its answers.'
+              : null,
+          child: Segmented<BoardDensity>(
+            options: const [
+              SegmentOption(BoardDensity.auto, 'Auto', LucideIcons.sparkles),
+              SegmentOption(BoardDensity.cards, 'Cards', LucideIcons.layoutGrid),
+              SegmentOption(BoardDensity.compact, 'Compact', LucideIcons.list),
+            ],
+            value: density,
+            onChanged: (next) => unawaited(settings.setDensity(next)),
+          ),
+        ),
+        const _Inset(Padding(padding: EdgeInsets.only(top: Gap.sm), child: FontSizeControl())),
         const SizedBox(height: Gap.sm),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Agent list', style: Type.row.copyWith(color: ds.text)),
-            const SizedBox(height: Gap.sm),
-            Segmented<BoardDensity>(
-              options: const [
-                SegmentOption(BoardDensity.auto, 'Auto', LucideIcons.sparkles),
-                SegmentOption(BoardDensity.cards, 'Cards', LucideIcons.layoutGrid),
-                SegmentOption(BoardDensity.compact, 'Compact', LucideIcons.list),
-              ],
-              value: density,
-              onChanged: (next) => unawaited(settings.setDensity(next)),
-            ),
-            const SizedBox(height: Gap.sm),
-            Text(
-              'Auto uses cards up to ${AppSettings.autoCompactFrom - 1} agents and the compact '
-              'list from ${AppSettings.autoCompactFrom}; a blocked agent always keeps its answers.',
-              style: Type.secondary.copyWith(color: ds.textSecondary),
-            ),
-          ],
+        _Inset(
+          SwitchRow(
+            title: 'Wrap long lines',
+            subtitle: 'Fit lines to the screen instead of scrolling sideways.',
+            value: wrap,
+            onChanged: (next) => unawaited(terminal.setWrap(next)),
+          ),
         ),
-        const SizedBox(height: Gap.sm),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Open agents as', style: Type.row.copyWith(color: ds.text)),
-            const SizedBox(height: Gap.sm),
-            Segmented<OpenAgentsAs>(
-              options: const [
-                SegmentOption(OpenAgentsAs.chat, 'Chat', LucideIcons.messageSquare),
-                SegmentOption(OpenAgentsAs.terminal, 'Terminal', LucideIcons.terminal),
-              ],
-              value: openAs,
-              onChanged: (next) => unawaited(settings.setOpenAgentsAs(next)),
-            ),
-            const SizedBox(height: Gap.sm),
-            Text(
-              openAs == OpenAgentsAs.chat
-                  ? 'omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it cannot find, opens as a terminal.'
-                  : 'A running agent opens as its terminal.',
-              style: Type.secondary.copyWith(color: ds.textSecondary),
-            ),
-          ],
+        _Inset(
+          SwitchRow(
+            title: 'Dark terminal',
+            subtitle: 'Keep it dark when the app is light.',
+            value: darkTerminal,
+            onChanged: (next) => unawaited(settings.setDarkTerminal(next)),
+          ),
         ),
-        SwitchRow(
-          title: 'Smooth text',
-          subtitle: 'Show an answer at an even pace as it is written, not in bursts.',
-          value: smoothText,
-          onChanged: (next) => unawaited(settings.setSmoothText(next)),
+        _Inset(
+          SwitchRow(
+            title: 'Smooth text',
+            subtitle: 'Show answers at an even pace, not in bursts.',
+            value: smoothText,
+            onChanged: (next) => unawaited(settings.setSmoothText(next)),
+          ),
         ),
       ],
     );
   }
 }
 
-/// Two miniature screens, paper and ink, with the one in use outlined. For
-/// `system` it is the one the phone currently picks. Decorative: the control
-/// above carries the names.
-class _ThemePreview extends StatelessWidget {
-  const _ThemePreview({required this.choice});
+/// How an agent opens, and the one-tap phrases for talking to one.
+class _AgentsGroup extends StatelessWidget {
+  const _AgentsGroup({required this.open, required this.onToggle});
 
-  final ThemeChoice choice;
-
-  @override
-  Widget build(BuildContext context) {
-    final inUse = switch (choice) {
-      ThemeChoice.light => Brightness.light,
-      ThemeChoice.dark => Brightness.dark,
-      ThemeChoice.system => MediaQuery.platformBrightnessOf(context),
-    };
-    return ExcludeSemantics(
-      child: Row(
-        children: [
-          Expanded(child: _MiniScreen(look: Ds.paper, inUse: inUse == Brightness.light)),
-          const SizedBox(width: Gap.sm),
-          Expanded(child: _MiniScreen(look: Ds.ink, inUse: inUse == Brightness.dark)),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniScreen extends StatelessWidget {
-  const _MiniScreen({required this.look, required this.inUse});
-
-  final Ds look;
-  final bool inUse;
+  final bool open;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final reduced = Motion.reduced(context);
-    Widget bar(double widthFactor, double height, Color color) => FractionallySizedBox(
-          widthFactor: widthFactor,
-          alignment: Alignment.centerLeft,
-          child: Container(
-            height: height,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(height / 2),
-            ),
+    final settings = context.read<AppSettings>();
+    final openAs = context.select<AppSettings, OpenAgentsAs>((s) => s.openAgentsAs);
+    // Absent where the app runs without them (tests).
+    final phrases = context.watch<QuickPhrases?>()?.phrases.length;
+    final opens = openAs == OpenAgentsAs.chat ? 'Opens as chat' : 'Opens as terminal';
+    return SettingsGroup(
+      icon: LucideIcons.messagesSquare,
+      title: 'Agents',
+      summary: phrases == null ? opens : '$opens \u00b7 $phrases ${phrases == 1 ? 'phrase' : 'phrases'}',
+      open: open,
+      onToggle: onToggle,
+      children: [
+        SettingsField(
+          title: 'Open agents as',
+          hint: openAs == OpenAgentsAs.chat
+              ? 'omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it cannot find, opens as a terminal.'
+              : 'A running agent opens as its terminal.',
+          child: Segmented<OpenAgentsAs>(
+            options: const [
+              SegmentOption(OpenAgentsAs.chat, 'Chat', LucideIcons.messageSquare),
+              SegmentOption(OpenAgentsAs.terminal, 'Terminal', LucideIcons.terminal),
+            ],
+            value: openAs,
+            onChanged: (next) => unawaited(settings.setOpenAgentsAs(next)),
           ),
-        );
-    return AnimatedContainer(
-      duration: reduced ? Duration.zero : Motion.standard,
-      curve: Motion.easeOut,
-      height: 72,
-      padding: const EdgeInsets.all(Gap.sm + 2),
-      decoration: BoxDecoration(
-        color: look.bg,
-        borderRadius: BorderRadius.circular(Radii.control),
-        border: Border.all(color: inUse ? ds.accent : ds.hairline, width: 2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          bar(0.5, 8, look.text),
-          const SizedBox(height: 5),
-          bar(0.8, 6, look.textSecondary.withValues(alpha: 0.55)),
-          const Spacer(),
-          Container(
-            height: 16,
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            decoration: BoxDecoration(
-              color: look.surface,
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: look.hairline),
-            ),
-            child: Row(
+        ),
+        if (phrases != null)
+          ListRow(
+            title: 'Quick phrases',
+            titleMaxLines: 1,
+            divider: false,
+            onTap: () => unawaited(Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const QuickPhrasesPage()),
+            )),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(color: look.blocked, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 5),
-                Expanded(child: bar(0.6, 4, look.textMuted.withValues(alpha: 0.6))),
+                Text('$phrases', style: Type.secondary.copyWith(color: ds.textSecondary)),
+                const SizedBox(width: Gap.xs),
+                Icon(LucideIcons.chevronRight, size: 16, color: ds.textTertiary),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TerminalSection extends StatelessWidget {
-  const _TerminalSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final settings = context.read<TerminalSettings>();
-    final wrap = context.select<TerminalSettings, bool>((s) => s.wrap);
-    final app = context.read<AppSettings>();
-    final darkTerminal = context.select<AppSettings, bool>((s) => s.darkTerminal);
-    return FormSection(
-      label: 'Terminal',
-      endsWithField: false,
-      children: [
-        const FontSizeControl(),
-        SwitchRow(
-          title: 'Wrap long lines',
-          subtitle: 'Fit lines to the screen instead of scrolling sideways.',
-          value: wrap,
-          onChanged: (next) => unawaited(settings.setWrap(next)),
-        ),
-        SwitchRow(
-          title: 'Dark terminal',
-          subtitle: 'Keep the terminal dark when the app is light.',
-          value: darkTerminal,
-          onChanged: (next) => unawaited(app.setDarkTerminal(next)),
-        ),
       ],
     );
   }
@@ -282,14 +292,21 @@ class _TerminalSection extends StatelessWidget {
 /// Local notifications: off until the person turns them on, which asks Android
 /// for the permission first. The notifications themselves are posted by the
 /// app (`AttentionNotifier`), nothing leaves the phone.
-class _NotificationsSection extends StatefulWidget {
-  const _NotificationsSection();
+///
+/// The row is always built, so it can say "Blocked by Android" with the group
+/// closed: it checks the permission when the page opens, not when the group
+/// does.
+class _NotificationsGroup extends StatefulWidget {
+  const _NotificationsGroup({required this.open, required this.onToggle});
+
+  final bool open;
+  final VoidCallback onToggle;
 
   @override
-  State<_NotificationsSection> createState() => _NotificationsSectionState();
+  State<_NotificationsGroup> createState() => _NotificationsGroupState();
 }
 
-class _NotificationsSectionState extends State<_NotificationsSection> {
+class _NotificationsGroupState extends State<_NotificationsGroup> {
   /// Android refused (or was taken back) the permission the switch needs.
   bool _blocked = false;
   bool _asking = false;
@@ -335,35 +352,68 @@ class _NotificationsSectionState extends State<_NotificationsSection> {
     final settings = context.read<NotificationSettings>();
     final enabled = context.select<NotificationSettings, bool>((s) => s.enabled);
     final alsoDone = context.select<NotificationSettings, bool>((s) => s.alsoDone);
-    return FormSection(
-      label: 'Notifications',
-      endsWithField: false,
+    return SettingsGroup(
+      icon: _blocked ? LucideIcons.bellOff : LucideIcons.bell,
+      // The orange that means "needs you", only while it does.
+      tint: _blocked ? ds.blocked : null,
+      title: 'Notifications',
+      summary: _blocked
+          ? 'Blocked by Android'
+          : !enabled
+              ? 'Off'
+              : alsoDone
+                  ? 'When an agent needs me or finishes'
+                  : 'When an agent needs me',
+      open: widget.open,
+      onToggle: widget.onToggle,
       children: [
-        SwitchRow(
-          title: 'Notify me when an agent needs me',
-          value: enabled,
-          onChanged: (next) => unawaited(_setEnabled(next)),
-        ),
         if (_blocked)
-          Semantics(
-            liveRegion: true,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: Gap.sm),
-              child: Text(
-                'Android is blocking notifications for herdr. '
-                'Allow them in the system settings for this app.',
-                style: Type.secondary.copyWith(color: ds.blockedText),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.sm, Gap.gutter, Gap.xs),
+            child: Semantics(
+              liveRegion: true,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ds.blockedWash,
+                  borderRadius: BorderRadius.circular(Radii.chip),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(Gap.md),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(LucideIcons.bellOff, size: 18, color: ds.blockedText),
+                      const SizedBox(width: Gap.md),
+                      Expanded(
+                        child: Text(
+                          'Android is blocking notifications for herdr. '
+                          'Allow them in the system settings for this app.',
+                          style: Type.secondary.copyWith(color: ds.blockedText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        SwitchRow(
-          title: 'Also when an agent finishes',
-          value: alsoDone,
-          enabled: enabled,
-          onChanged: (next) => unawaited(settings.setAlsoDone(next)),
+        _Inset(
+          SwitchRow(
+            title: 'Notify me when an agent needs me',
+            value: enabled,
+            onChanged: (next) => unawaited(_setEnabled(next)),
+          ),
+        ),
+        _Inset(
+          SwitchRow(
+            title: 'Also when an agent finishes',
+            value: alsoDone,
+            enabled: enabled,
+            onChanged: (next) => unawaited(settings.setAlsoDone(next)),
+          ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.gutter, vertical: Gap.sm),
           child: Text(
             'While agents work, herdr keeps a quiet \u201cWatching\u201d notice so '
             'Android keeps the connection alive. Notifications clear when you open the app.',
@@ -375,10 +425,12 @@ class _NotificationsSectionState extends State<_NotificationsSection> {
   }
 }
 
-class _AboutSection extends StatelessWidget {
-  const _AboutSection({this.update});
+class _AboutGroup extends StatelessWidget {
+  const _AboutGroup({this.update, required this.open, required this.onToggle});
 
   final AppUpdate? update;
+  final bool open;
+  final VoidCallback onToggle;
 
   static const _repoLabel = 'github.com/tuan3w/herdr-mobile · GPL-3.0';
 
@@ -404,36 +456,41 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final update = this.update;
-    return FormSection(
-      label: 'About',
+    return SettingsGroup(
+      icon: LucideIcons.info,
+      title: 'About',
+      // A newer version is said once, on its own row at the top.
+      summary: 'Version $appVersion',
+      open: open,
+      onToggle: onToggle,
+      divider: false,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _InfoRow(title: 'herdr mobile', subtitle: 'Version $appVersion'),
-            if (update != null) _UpdateRows(update: update),
-            _InfoRow(
-              title: 'Connection',
-              subtitle: update == null
-                  ? 'Talks to herdr over SSH and sends nothing anywhere else. '
-                      'Dictation uses your phone\'s own speech service.'
-                  : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
-                      'to look for a new version and, when you tap Download, to fetch it. '
-                      'Dictation uses your phone\'s own speech service.',
-            ),
-            _InfoRow(
-              title: 'Source code',
-              subtitle: _repoLabel,
-              trailing: LucideIcons.externalLink,
-              onTap: () => unawaited(_openRepo(context)),
-            ),
-            _InfoRow(
-              title: 'Licenses',
-              trailing: LucideIcons.chevronRight,
-              onTap: () => _openLicenses(context),
-              divider: false,
-            ),
-          ],
+        if (update != null) _UpdateRows(update: update),
+        ListRow(
+          title: 'Connection',
+          titleMaxLines: 1,
+          subtitleMaxLines: 8,
+          subtitle: update == null
+              ? 'Talks to herdr over SSH and sends nothing anywhere else. '
+                  'Dictation uses your phone\'s own speech service.'
+              : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
+                  'to look for a new version and, when you tap Download, to fetch it. '
+                  'Dictation uses your phone\'s own speech service.',
+        ),
+        ListRow(
+          title: 'Source code',
+          titleMaxLines: 1,
+          subtitle: _repoLabel,
+          subtitleMaxLines: 2,
+          trailing: Icon(LucideIcons.externalLink, size: 16, color: context.ds.textTertiary),
+          onTap: () => unawaited(_openRepo(context)),
+        ),
+        ListRow(
+          title: 'Licenses',
+          titleMaxLines: 1,
+          trailing: Icon(LucideIcons.chevronRight, size: 16, color: context.ds.textTertiary),
+          onTap: () => _openLicenses(context),
+          divider: false,
         ),
       ],
     );
@@ -441,7 +498,7 @@ class _AboutSection extends StatelessWidget {
 }
 
 /// Looking for a newer version: the check, and whether it happens by itself.
-/// What a newer version offers is the panel at the top of the screen.
+/// What a newer version offers is the row at the top of the screen.
 class _UpdateRows extends StatelessWidget {
   const _UpdateRows({required this.update});
 
@@ -466,106 +523,29 @@ class _UpdateRows extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _InfoRow(
+              ListRow(
                 title: 'Check for updates',
+                titleMaxLines: 1,
                 subtitle: subtitle,
+                subtitleMaxLines: 4,
                 subtitleColor: problem != null ? ds.dangerText : null,
-                trailing: LucideIcons.refreshCw,
-                busy: checking,
+                trailing: checking
+                    ? const BusySpinner(size: 18)
+                    : Icon(LucideIcons.refreshCw, size: 16, color: ds.textTertiary),
                 onTap: update.stage == UpdateStage.idle ? () => unawaited(update.check()) : null,
               ),
-              SwitchRow(
-                title: 'Check automatically',
-                subtitle: 'Asks github.com about twice a day while you use the app, with this '
-                    'app\'s name and version. A download comes from GitHub\'s file servers.',
-                value: update.autoCheck,
-                onChanged: (on) => unawaited(update.setAutoCheck(on)),
+              _Inset(
+                SwitchRow(
+                  title: 'Check automatically',
+                  subtitle: 'Asks github.com about twice a day while you use the app, with this '
+                      'app\'s name and version. A download comes from GitHub\'s file servers.',
+                  value: update.autoCheck,
+                  onChanged: (on) => unawaited(update.setAutoCheck(on)),
+                ),
               ),
-              const Hairline(),
+              const Hairline(indent: Gap.gutter),
             ],
           );
         },
       );
-}
-
-/// A line of an About panel: title, an optional wrapping line under it, an
-/// optional trailing icon. Tappable when [onTap] is set. At least 56 high.
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
-    this.divider = true,
-    this.busy = false,
-    this.subtitleColor,
-  });
-
-  final String title;
-  final String? subtitle;
-  final IconData? trailing;
-  final VoidCallback? onTap;
-  final bool divider;
-
-  /// A spinner in place of the trailing icon: the row's work is running.
-  final bool busy;
-
-  /// The subtitle's colour when it is not the usual one (a failure).
-  final Color? subtitleColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final subtitle = this.subtitle;
-    final trailing = this.trailing;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PressBuilder(
-          onTap: onTap,
-          haptic: onTap != null,
-          builder: (context, pressed) => AnimatedContainer(
-            duration: Motion.pressing(pressed),
-            curve: Motion.easeOut,
-            constraints: const BoxConstraints(minHeight: 56),
-            padding: const EdgeInsets.symmetric(vertical: Gap.sm),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              color: pressed ? ds.fill : Colors.transparent,
-              borderRadius: BorderRadius.circular(Radii.row),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(title, style: Type.row.copyWith(color: ds.text)),
-                      if (subtitle != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            subtitle,
-                            style: Type.secondary.copyWith(color: subtitleColor ?? ds.textSecondary),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (busy) ...[
-                  const SizedBox(width: Gap.md),
-                  const BusySpinner(size: 18),
-                ] else if (trailing != null) ...[
-                  const SizedBox(width: Gap.md),
-                  Icon(trailing, size: 18, color: ds.textTertiary),
-                ],
-              ],
-            ),
-          ),
-        ),
-        if (divider) const Hairline(),
-      ],
-    );
-  }
 }
