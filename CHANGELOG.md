@@ -4,6 +4,27 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.11] - 2026-10-10
+
+### One bottom bar, nothing off the screen
+
+- Picking agents on the board (long press) puts Interrupt, Message and Close
+  in the tab bar's own pill, exactly where the tabs were, instead of a
+  full-width bar: the bottom keeps its shape and the thumb finds the actions
+  where it left the tabs.
+- The tab bar, the "need you" pill, the attach sheet's bars and toasts share
+  one soft shadow, one shape and one text size limit. The attach sheet's
+  selected tab is visible in dark mode.
+- The session overview (tap a session's title) no longer runs under the
+  status bar when it is taller than the screen; the clock and the sheet's
+  title stop overlapping. Every sheet does the same, and in landscape a
+  sheet still reaches both screen edges.
+- On a small phone with large text, the subagents chip under a session's
+  title and the `Context 91%` warning beside it end in "…" instead of
+  running off the screen.
+- The model and mode chips above the message box and the quick phrases are
+  cut at the same width.
+
 ## [0.1.10] - 2026-10-10
 
 ### Pictures, files and commands for terminal agents
