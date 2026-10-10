@@ -208,7 +208,7 @@ String? commandOf(ToolCall call) {
 String? outputTextOf(ToolCall call) {
   final printed = call.output?.text;
   if (printed != null && printed.isNotEmpty) return printed;
-  final raw = _textOfRaw(call.rawOutput);
+  final raw = rawOutputText(call.rawOutput);
   if (raw != null && raw.trim().isNotEmpty) return raw;
   final b = StringBuffer();
   for (final c in call.content) {
@@ -220,9 +220,15 @@ String? outputTextOf(ToolCall call) {
   return b.isEmpty ? null : b.toString();
 }
 
-String? _textOfRaw(Object? raw) {
+/// The text of a tool's `rawOutput` when it has a shape that carries text: a
+/// string, a list of content parts (omp's `{content: [{type: text, text}],
+/// details}` envelope, Claude's parts), or a map with `content`, `output` or
+/// `stdout`. An empty string when the shape is known and holds no text yet
+/// (an omp `wait` still running); null for a shape that carries no text,
+/// which a row may show as data.
+String? rawOutputText(Object? raw) {
   if (raw is String) return raw;
-  if (raw is Map) return _textOfRaw(raw['content']) ?? _textOfRaw(raw['output']) ?? _textOfRaw(raw['stdout']);
+  if (raw is Map) return rawOutputText(raw['content']) ?? rawOutputText(raw['output']) ?? rawOutputText(raw['stdout']);
   if (raw is List) {
     final parts = <String>[];
     for (final e in raw) {
@@ -232,7 +238,7 @@ String? _textOfRaw(Object? raw) {
         parts.add(e['text'] as String);
       }
     }
-    return parts.isEmpty ? null : parts.join('\n');
+    return parts.join('\n');
   }
   return null;
 }
