@@ -21,6 +21,14 @@ release.
   `$skills`. A Claude Code chat lists the plugin and bundled skills the agent
   announces. Pins and recents are shared between the two views.
 
+### Smaller things
+
+- A chat the agent never titled (every omp chat started from the phone) is
+  named after the first line of your first message, at once, as Zed does. Any
+  title the agent sends replaces it. The app no longer sends `/rename` to omp
+  to ask for one, so omp's "Could not generate a session title" no longer
+  appears in the chat and no model call is spent on naming.
+
 ## [0.1.9] - 2026-10-10
 
 ### Claude Code and Codex as chats

@@ -122,25 +122,28 @@ client, one tiny turn each, stores redirected to temp dirs:**
 
 **Titles.** ACP has no request that sets or generates a session title (the
 schema's methods end at `session/set_model`); `session_info_update.title` goes
-agent to client only, and `null` clears it. Zed takes nothing else: an external
-agent that never sends one stays "New Thread" (zed-industries/zed#53743). Claude
+agent to client only, and `null` clears it. Zed asks the agent for nothing: it
+shows the first line of the first message (200 characters) as a provisional
+title, local only, and any `session_info_update.title` replaces it
+(`agent_ui/.../thread_view.rs` `set_provisional_title`, `acp_thread.rs`). Claude
 Code sends the first message as the title, then its own summary; **omp's ACP
 mode sends none**: its title generator starts from the terminal UI and the
 command line (`maybeStartTitleGeneration` in `main.ts` and the input
 controller), never from the ACP prompt path, so a phone session's `title`
 record in omp's own file stays empty and every `session_info_update` carries
-none (11 of 11 seen). omp does list a `rename [title]` command, and `/rename`
-without an argument generates a title with omp's title model and announces it
-in a `session_info_update`. So `AcpAgentSession._maybeNameIt` sends `/rename`
-once per session per app run, to an omp session that lists `rename`, has no
-title, and has had an answer (not while the person's turn runs or messages
-wait). It is a prompt like any other, so its `/rename` row and omp's "Session
-renamed to …" stay in the transcript and replay (hiding them live would make a
-reload show what the live view did not), but it is the app's own errand
-(`_housekeeping`): no Done to review, no "ended without an answer", no failure
-shown, never held in the queue. omp declines a first message such as "hi"; that
-costs one model call per app run. **Not seen against a real omp**: the broker
-omp needs was unreachable, so only the fake keeper exercised it.
+none (11 of 11 seen). So `AcpAgentSession.title` falls back, after the agent's
+title and the keeper's, to the first line of the first user message
+(`_firstMessageTitle`, 120 characters, derived from the transcript, so it holds
+on replay and cached copies), then the folder name. An un-attached session in the
+list has no transcript, so it shows the folder until it attaches.
+
+The app once sent omp `/rename` after the first answer to make omp generate a
+title. Against a real omp it declined a first message such as "hi" and replied
+"Could not generate a session title. Use /rename <title> to set one.", which sat
+in the chat as an error nobody caused; hiding it would have meant matching the
+text of the person's own `/rename` on replay. It cost a model call per session
+and was dropped. omp does still list `rename [title]`, and a title from it
+arrives as a normal `session_info_update`.
 
 Other adapters read: `acp-adapter` (Go, ACP over `codex app-server`, `claude -p`,
 `pi --mode rpc`) answers a `session/cancel` *request* and drops notifications
