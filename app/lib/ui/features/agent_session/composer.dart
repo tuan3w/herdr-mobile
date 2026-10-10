@@ -12,6 +12,8 @@ import '../../core/tap_guard.dart';
 import '../composer/composer_frame.dart';
 import '../dictation/dictation_language_sheet.dart';
 import '../dictation/dictation_session.dart';
+import '../composer/command_model.dart' show CommandPaletteModel;
+import '../composer/command_palette.dart' show HideWhileCommanding;
 import '../pane/quick_phrases_row.dart';
 import 'attach_chips.dart';
 import 'attach_model.dart';
@@ -62,7 +64,12 @@ class Composer extends StatelessWidget {
     required this.onSubmit,
     this.onStop,
     this.dictation,
+    this.commands,
   });
+
+  /// The palette the field feeds: while it lists something, the rows between
+  /// it and the field step aside.
+  final CommandPaletteModel? commands;
 
   final AgentSessionView session;
   final TextEditingController controller;
@@ -188,16 +195,21 @@ class Composer extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Mode, model and the switches, then the quick phrases and what
-          // waits to be sent: all go in the compact layout.
+          // waits to be sent: all go in the compact layout, and while the
+          // command palette is open (they are not what is being acted on).
           HideWhenCompact(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SessionChipsRow(session: session, focus: focusNode),
-                if (live) QuickPhrasesRow(input: controller, focus: focusNode),
-                if (live) _QueueShare(child: QueuedMessages(session: session)),
-              ],
+            child: HideWhileCommanding(
+              input: controller,
+              model: commands,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SessionChipsRow(session: session, focus: focusNode),
+                  if (live) QuickPhrasesRow(input: controller, focus: focusNode),
+                  if (live) _QueueShare(child: QueuedMessages(session: session)),
+                ],
+              ),
             ),
           ),
           // What goes out with the draft, above the field; the quiet line
@@ -206,10 +218,14 @@ class Composer extends StatelessWidget {
           // under an answer that is being read.
           HideWhenCompact(child: AttachmentChips(attachments: attachments)),
           HideWhenCompact(
-            child: ListenableBuilder(
-              listenable: Listenable.merge([focusNode, controller]),
-              builder: (context, _) => DeliveryHint(
-                delivery: queuing && typing && (focusNode.hasFocus || controller.text.isNotEmpty) ? delivery : null,
+            child: HideWhileCommanding(
+              input: controller,
+              model: commands,
+              child: ListenableBuilder(
+                listenable: Listenable.merge([focusNode, controller]),
+                builder: (context, _) => DeliveryHint(
+                  delivery: queuing && typing && (focusNode.hasFocus || controller.text.isNotEmpty) ? delivery : null,
+                ),
               ),
             ),
           ),
