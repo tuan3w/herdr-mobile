@@ -434,13 +434,7 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
         color: ds.surface,
         borderRadius: BorderRadius.circular(Radii.toast),
         border: Border.all(color: ds.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: ds.isDark ? 0.45 : 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: ds.floatShadow,
       ),
       // The root overlay sits above every route, so no `Scaffold` is above the
       // text: without a `Material` it takes `MaterialApp`'s fallback style, a

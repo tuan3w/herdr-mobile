@@ -48,7 +48,7 @@ class SettingsScreen extends StatelessWidget {
                   const QuickPhrasesSection(),
                   const _NotificationsSection(),
                   _AboutSection(update: update),
-                  SizedBox(height: FloatingTabBar.clearance(context) + Gap.md),
+                  SizedBox(height: FloatingBar.clearance(context) + Gap.md),
                 ],
               ),
             ),

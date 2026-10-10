@@ -662,7 +662,7 @@ class _WaitsUntilLive extends StatelessWidget {
     builder: (context, waits) {
       if (!waits) return const SizedBox.shrink();
       return Padding(
-        padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.xs),
+        padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.sm),
         child: StatusStrip(
           color: context.ds.blocked,
           title: 'Needs you',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/theme.dart';
@@ -32,47 +33,30 @@ extension AttachTabLook on AttachTab {
 
 /// The pill at the bottom of the sheet: Gallery | Files | Host, each an icon
 /// and a label, the selected one on a soft capsule. Floats over the content
-/// (a hairline and the app's one shadow, as the main tab bar).
+/// in the main tab bar's pill ([FloatingBarPill]), sized to its tabs.
 class AttachTabBar extends StatelessWidget {
   const AttachTabBar({super.key, required this.selected, required this.onChanged});
 
   final AttachTab selected;
   final ValueChanged<AttachTab> onChanged;
 
-  static const height = 56.0;
-  static const margin = 12.0;
-
   static Key tabKey(AttachTab tab) => ValueKey('attach-tab:${tab.name}');
 
   @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
-      child: Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: ds.surface,
-            borderRadius: BorderRadius.circular(height / 2),
-            border: Border.all(color: ds.hairline),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: ds.isDark ? 0.45 : 0.07), blurRadius: 28, offset: const Offset(0, 6)),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final tab in AttachTab.values)
-                  _TabItem(key: tabKey(tab), tab: tab, selected: tab == selected, onTap: () => onChanged(tab)),
-              ],
-            ),
-          ),
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: kBarTextScale,
+    child: Center(
+      child: FloatingBarPill(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final tab in AttachTab.values)
+              _TabItem(key: tabKey(tab), tab: tab, selected: tab == selected, onTap: () => onChanged(tab)),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _TabItem extends StatelessWidget {
@@ -94,11 +78,12 @@ class _TabItem extends StatelessWidget {
       builder: (context, pressed) => AnimatedContainer(
         duration: Motion.pressing(pressed),
         curve: Motion.easeOut,
-        height: 48,
+        height: FloatingBar.cell,
         padding: const EdgeInsets.symmetric(horizontal: 13),
         decoration: BoxDecoration(
-          color: selected ? ds.fill : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
+          // `fill` on the pill's surface is about 1.1:1 and vanishes in dark.
+          color: selected ? ds.fillPressed : Colors.transparent,
+          borderRadius: BorderRadius.circular(FloatingBar.cell / 2),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -125,8 +110,6 @@ class AttachActionBar extends StatefulWidget {
 
   final AttachTray tray;
   final VoidCallback onAttach;
-
-  static const height = 56.0;
 
   @override
   State<AttachActionBar> createState() => _AttachActionBarState();
@@ -177,34 +160,40 @@ class _AttachActionBarState extends State<AttachActionBar> with SingleTickerProv
       builder: (context, _) {
         if (_slide.isDismissed) return const SizedBox(width: double.infinity);
         final count = tray.isEmpty ? _count : tray.length;
-        Widget bar = Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: ds.surface,
-              borderRadius: BorderRadius.circular(Radii.panel + 4),
-              border: Border.all(color: ds.hairline),
-            ),
-            child: SizedBox(
-              height: AttachActionBar.height,
-              child: Padding(
-                padding: const EdgeInsets.only(left: Gap.xs, right: Gap.sm),
-                child: Row(
-                  children: [
-                    AppButton(label: 'Clear', kind: AppButtonKind.ghost, compact: true, onPressed: tray.clear),
-                    Expanded(
-                      child: Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          '$count / ${tray.capacity}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Type.secondary.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
+        Widget bar = MediaQuery.withClampedTextScaling(
+          maxScaleFactor: kBarTextScale,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(FloatingBar.side, 0, FloatingBar.side, Gap.sm),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: ds.surface,
+                // Not the pill's stadium: the compact buttons sit 10 dp inside
+                // it, and a 28 dp radius would cut their corners.
+                borderRadius: BorderRadius.circular(Radii.panel + 4),
+                border: Border.all(color: ds.hairline),
+                boxShadow: ds.floatShadow,
+              ),
+              child: SizedBox(
+                height: FloatingBar.height,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: Gap.xs, right: Gap.sm),
+                  child: Row(
+                    children: [
+                      AppButton(label: 'Clear', kind: AppButtonKind.ghost, compact: true, onPressed: tray.clear),
+                      Expanded(
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            '$count / ${tray.capacity}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Type.secondary.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
+                          ),
                         ),
                       ),
-                    ),
-                    AppButton(label: 'Attach ($count)', icon: LucideIcons.paperclip, onPressed: widget.onAttach, compact: true),
-                  ],
+                      AppButton(label: 'Attach ($count)', icon: LucideIcons.paperclip, onPressed: widget.onAttach, compact: true),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -10,7 +10,6 @@ import '../../data/repositories/attention_set.dart';
 import '../../data/repositories/fleet_repository.dart';
 import '../core/chrome.dart';
 import '../core/home_tabs.dart';
-import '../core/tokens.dart';
 import 'arrival_cue.dart';
 import '../core/motion.dart';
 import '../features/agents/agents_screen.dart';
@@ -140,7 +139,6 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final ds = context.ds;
     // Only what needs an answer and can be given one: the loud colour is for
     // a question, so finished work to review is not in the badge (the board's
     // Done section and the pill carry it). The same set as the pill, the
@@ -195,34 +193,18 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
               ),
             ],
           ),
-          // Rows fade out into the page just above the tab bar and are gone
-          // behind it and the system navigation: the scrim is solid under the
-          // pill and the gesture inset, so no text shows beside or below the
-          // pill. It ends where the triage chip begins (the chip sits at
-          // `clearance`): the scrim is drawn above the board, and a taller one
-          // dimmed the chip, the one loud shortcut, from its bottom edge up.
-          // Picking agents puts the board's own action bar in the tab bar's
-          // place.
+          // The scrim under the tab bar (see [FloatingBarScrim]). Picking
+          // agents puts the board's own action bar, with its own scrim, in the
+          // tab bar's place.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: FloatingTabBar.clearance(context),
+            height: FloatingBar.clearance(context),
             child: ValueListenableBuilder<bool>(
               valueListenable: _selecting,
               builder: (context, selecting, child) => selecting ? const SizedBox.shrink() : child!,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [ds.bg.withValues(alpha: 0), ds.bg, ds.bg],
-                      stops: const [0, 0.5, 1],
-                    ),
-                  ),
-                ),
-              ),
+              child: const FloatingBarScrim(),
             ),
           ),
           Positioned(

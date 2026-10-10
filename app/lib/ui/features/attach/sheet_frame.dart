@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../../core/chrome.dart' show FloatingBar;
 import '../../core/motion.dart';
 import '../../core/theme.dart';
 
@@ -274,9 +275,10 @@ class SheetFrame extends StatefulWidget {
   State<SheetFrame> createState() => _SheetFrameState();
 }
 
-/// Height of the bars region's reserve (the tab bar and the action bar);
-/// tabs add it to their end padding via [SheetScope.bottomClearance].
-const sheetBarsReserve = 56.0 + 12 + 12 + 56.0;
+/// Height of the bars region's reserve: the action bar, its 8 dp gap, the tab
+/// pill and the margin under it; tabs add it to their end padding via
+/// [SheetScope.bottomClearance].
+const sheetBarsReserve = FloatingBar.height * 2 + Gap.sm + FloatingBar.margin;
 
 class _SheetFrameState extends State<SheetFrame> with SingleTickerProviderStateMixin {
   late final SheetPosition _position = SheetPosition(

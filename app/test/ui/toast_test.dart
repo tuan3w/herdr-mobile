@@ -481,7 +481,7 @@ void main() {
       final toast = tester.getRect(_toast);
       expect(toast.bottom, lessThanOrEqualTo(bar.top));
       expect(toast.bottom, bar.top - 8, reason: 'the bar margin again, above the pill');
-      expect(toast.bottom, tester.view.physicalSize.height / tester.view.devicePixelRatio - FloatingTabBar.clearance(_ctx));
+      expect(toast.bottom, tester.view.physicalSize.height / tester.view.devicePixelRatio - FloatingBar.clearance(_ctx));
       await _end(tester);
     });
 

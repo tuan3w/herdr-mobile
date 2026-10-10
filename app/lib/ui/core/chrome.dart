@@ -154,7 +154,7 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
     // Bars clamp text scale like iOS navigation bars: their blocks are fixed
     // height, so unbounded system scaling would clip the title.
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
+      maxScaleFactor: kBarTextScale,
       child: ClipRect(
         child: Container(
           color: ds.bg,
@@ -298,23 +298,124 @@ class TabSpec {
   final String markLabel;
 }
 
-/// Floating pill tab bar: three equal cells, an icon over a name in each, the
-/// selected one on a soft capsule. Content scrolls under it, so lists must
-/// reserve [clearance] at the bottom. A hairline and no shadow (a shadow
-/// rendered as a hard grey band under the pill, and the app is flat), and no
-/// backdrop blur, which costs a full-screen blur pass per frame on mid-range
-/// GPUs.
+/// The floating pill at the bottom of a root screen: the tab bar, and the
+/// batch actions that take its place while the board picks. One slot, one
+/// look, so the bottom never changes shape when the board starts picking.
 ///
-/// Slim on purpose: 56 dp tall, at most [_maxWidth] wide and centred, so it
+/// Slim on purpose: 56 dp tall, at most [maxWidth] wide and centred, so it
 /// sits in the thumb's reach without spreading edge to edge over the board it
-/// serves (the first version was 64 dp and the full width, and read as big).
+/// serves (the first tab bar was 64 dp and the full width, and read as big).
+abstract final class FloatingBar {
+  static const height = 56.0;
+  static const pad = 4.0;
+  static const cell = height - pad * 2;
+  static const margin = 8.0;
+  static const side = 12.0;
+  static const maxWidth = 312.0;
+
+  /// Space a scrolling list keeps free at its bottom.
+  static double clearance(BuildContext context) => height + margin * 2 + MediaQuery.paddingOf(context).bottom;
+}
+
+/// Where a [FloatingBarPill] stands: [FloatingBar.margin] above the system
+/// inset, [FloatingBar.side] from the edges, centred, at most
+/// [FloatingBar.maxWidth] wide. Text stops growing at [kBarTextScale].
+class FloatingBarSlot extends StatelessWidget {
+  const FloatingBarSlot({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.paddingOf(context);
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: kBarTextScale,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          inset.left + FloatingBar.side,
+          0,
+          inset.right + FloatingBar.side,
+          inset.bottom + FloatingBar.margin,
+        ),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: FloatingBar.maxWidth),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The pill itself: the surface, a hairline and the one float shadow
+/// ([Ds.floatShadow]), no backdrop blur (a full-screen blur pass per frame on
+/// mid-range GPUs). [child] is one row of [FloatingBar.cell] height.
+class FloatingBarPill extends StatelessWidget {
+  const FloatingBarPill({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: ds.surface,
+        borderRadius: BorderRadius.circular(FloatingBar.height / 2),
+        border: Border.all(color: ds.hairline),
+        boxShadow: ds.floatShadow,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(FloatingBar.pad),
+        child: SizedBox(height: FloatingBar.cell, child: child),
+      ),
+    );
+  }
+}
+
+/// Rows fade out into the page just above the floating bar and are gone
+/// behind it and the system navigation: the scrim is solid under the pill and
+/// the gesture inset, so no text shows beside or below the pill. It is
+/// [FloatingBar.clearance] tall and ends where the triage chip begins: the
+/// scrim is drawn above the board, and a taller one dimmed the chip, the one
+/// loud shortcut, from its bottom edge up.
+class FloatingBarScrim extends StatelessWidget {
+  const FloatingBarScrim({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [ds.bg.withValues(alpha: 0), ds.bg, ds.bg],
+            stops: const [0, 0.5, 1],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating pill tab bar ([FloatingBarPill] in a [FloatingBarSlot]): three
+/// equal cells, an icon over a name in each, the selected one on a soft
+/// capsule. Content scrolls under it, so lists must reserve
+/// [FloatingBar.clearance] at the bottom. Its shadow is the app's one float
+/// shadow; judge it on a phone: `flutter test` renders draw a `BoxShadow`
+/// without its blur, as a hard offset band.
 ///
 /// Every tab is named and every cell is the same width, so nothing moves when a
 /// tab is chosen (a second tap from memory lands where the first did) and a
 /// count badge, which rides the icon's corner, never meets a label. Three
-/// cells fit a 320 dp phone: the text is clamped at 1.15x, and a cell holds
-/// "Machines" at that. Every tab keeps its full name for screen readers, and
-/// [tabKey] finds one by label in tests.
+/// cells fit a 320 dp phone: the text is clamped at [kBarTextScale], and a
+/// cell holds "Machines" at that. Every tab keeps its full name for screen
+/// readers, and [tabKey] finds one by label in tests.
 ///
 /// One number, the capsule's place in tab units, drives the capsule and every
 /// cell's colour, so the text warms as the capsule arrives under it and cools
@@ -338,17 +439,6 @@ class FloatingTabBar extends StatefulWidget {
 
   /// Key of the selection capsule, for tests.
   static const capsuleKey = ValueKey('tab:capsule');
-
-  static const _height = 56.0;
-  static const _pad = 4.0;
-  static const _cell = _height - _pad * 2;
-  static const _margin = 8.0;
-  static const _side = 12.0;
-  static const _maxWidth = 312.0;
-
-  /// Space a scrolling list should keep free at its bottom.
-  static double clearance(BuildContext context) =>
-      _height + _margin * 2 + MediaQuery.paddingOf(context).bottom;
 
   @override
   State<FloatingTabBar> createState() => _FloatingTabBarState();
@@ -440,91 +530,66 @@ class _FloatingTabBarState extends State<FloatingTabBar> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) =>
-      ToastShelf(lift: FloatingTabBar.clearance(context), child: _bar(context));
+      ToastShelf(lift: FloatingBar.clearance(context), child: _bar(context));
 
   Widget _bar(BuildContext context) {
     final ds = context.ds;
-    final inset = MediaQuery.paddingOf(context);
     final n = widget.tabs.length;
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          inset.left + FloatingTabBar._side,
-          0,
-          inset.right + FloatingTabBar._side,
-          inset.bottom + FloatingTabBar._margin,
-        ),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: FloatingTabBar._maxWidth),
-            child: GestureDetector(
-              // The capsule is an object in the hand: drag it along the bar and
-              // it follows the finger; the tab changes where it is let go. A tap
-              // on a cell does the same without it.
-              onHorizontalDragStart: _scrubStart,
-              onHorizontalDragUpdate: _scrubUpdate,
-              onHorizontalDragEnd: (d) => _scrubEnd(d.velocity.pixelsPerSecond.dx),
-              onHorizontalDragCancel: () => _scrubEnd(0),
-              child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: ds.surface,
-                borderRadius: BorderRadius.circular(FloatingTabBar._height / 2),
-                border: Border.all(color: ds.hairline),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(FloatingTabBar._pad),
-                child: SizedBox(
-                  key: _cellsKey,
-                  height: FloatingTabBar._cell,
-                  child: AnimatedBuilder(
-                    animation: _place,
-                    builder: (context, _) {
-                      final at = _place.value;
-                      return Stack(
-                        children: [
-                          // One capsule under the cells that travels from where
-                          // it was to where it is, so the eye follows it; the
-                          // cells themselves never move. [ds.fill] on the pill's
-                          // surface was about 1.1:1 and vanished in dark.
-                          Align(
-                            alignment: Alignment(n < 2 ? 0 : -1 + 2 * at / (n - 1), 0),
-                            child: FractionallySizedBox(
-                              key: FloatingTabBar.capsuleKey,
-                              widthFactor: 1 / n,
-                              heightFactor: 1,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: ds.fillPressed,
-                                  borderRadius: BorderRadius.circular(FloatingTabBar._cell / 2),
-                                ),
-                              ),
+    return FloatingBarSlot(
+      child: GestureDetector(
+        // The capsule is an object in the hand: drag it along the bar and
+        // it follows the finger; the tab changes where it is let go. A tap
+        // on a cell does the same without it. Around the pill, so a drag
+        // that starts on its rim still carries the capsule.
+        onHorizontalDragStart: _scrubStart,
+        onHorizontalDragUpdate: _scrubUpdate,
+        onHorizontalDragEnd: (d) => _scrubEnd(d.velocity.pixelsPerSecond.dx),
+        onHorizontalDragCancel: () => _scrubEnd(0),
+        child: FloatingBarPill(
+          child: SizedBox(
+            key: _cellsKey,
+            child: AnimatedBuilder(
+              animation: _place,
+              builder: (context, _) {
+                final at = _place.value;
+                return Stack(
+                  children: [
+                    // One capsule under the cells that travels from where
+                    // it was to where it is, so the eye follows it; the
+                    // cells themselves never move. [ds.fill] on the pill's
+                    // surface was about 1.1:1 and vanished in dark.
+                    Align(
+                      alignment: Alignment(n < 2 ? 0 : -1 + 2 * at / (n - 1), 0),
+                      child: FractionallySizedBox(
+                        key: FloatingTabBar.capsuleKey,
+                        widthFactor: 1 / n,
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: ds.fillPressed,
+                            borderRadius: BorderRadius.circular(FloatingBar.cell / 2),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (final (i, tab) in widget.tabs.indexed)
+                          Expanded(
+                            child: _TabItem(
+                              key: FloatingTabBar.tabKey(tab.label),
+                              tab: tab,
+                              selected: i == widget.index,
+                              // 1 with the capsule centred under this cell, 0 a cell away.
+                              near: (1 - (at - i).abs()).clamp(0.0, 1.0).toDouble(),
+                              onTap: () => widget.onChanged(i),
                             ),
                           ),
-                          Row(
-                            children: [
-                              for (final (i, tab) in widget.tabs.indexed)
-                                Expanded(
-                                  child: _TabItem(
-                                    key: FloatingTabBar.tabKey(tab.label),
-                                    tab: tab,
-                                    selected: i == widget.index,
-                                    // 1 with the capsule centred under this cell, 0 a cell away.
-                                    near: (1 - (at - i).abs()).clamp(0.0, 1.0).toDouble(),
-                                    onTap: () => widget.onChanged(i),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
+                      ],
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -563,7 +628,7 @@ class _TabItem extends StatelessWidget {
               ? '${tab.label}, ${tab.markLabel}'
               : tab.label,
       builder: (context, pressed) => SizedBox(
-        height: FloatingTabBar._cell,
+        height: FloatingBar.cell,
         // The press warms the text at once; the capsule's place does the rest.
         child: TweenAnimationBuilder<double>(
           tween: Tween(end: pressed ? 1 : 0),
@@ -689,6 +754,7 @@ Future<T?> showAppSheet<T>(
 }) => showModalBottomSheet<T>(
   context: context,
   isScrollControlled: true,
+  useSafeArea: true,
   isDismissible: dismissible,
   sheetAnimationStyle: Motion.reduced(context)
       ? AnimationStyle.noAnimation
@@ -754,7 +820,6 @@ class SheetActionRow extends StatelessWidget {
       // A dimmed row is still read as a button, a disabled one.
       button: inert ? true : null,
       builder: (context, pressed) => AnimatedContainer(
-  useSafeArea: true,
         duration: Motion.pressing(pressed),
         curve: Motion.easeOut,
         height: inert ? null : 52,

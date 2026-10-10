@@ -9,10 +9,6 @@ import '../../../data/repositories/sent_phrases.dart';
 import '../../core/controls.dart';
 import '../../core/tokens.dart';
 
-/// The widest a chip grows; a longer phrase ends in an ellipsis on its chip
-/// (the whole line still goes into the composer).
-const _maxChipWidth = 240.0;
-
 /// The person's quick phrases as one row of chips above a composer, for the
 /// agent session and the pane alike.
 ///
@@ -70,6 +66,9 @@ class QuickPhrasesRow extends StatelessWidget {
       listenable: Listenable.merge([input, focus]),
       builder: (context, _) {
         if (!focus.hasFocus || input.text.isNotEmpty) return const SizedBox.shrink();
+        // A longer phrase ends in an ellipsis on its chip; the whole line
+        // still goes into the composer.
+        final maxWidth = AppChip.maxRowWidth(context);
         return SizedBox(
           height: AppChip.height,
           child: ListView.separated(
@@ -81,7 +80,7 @@ class QuickPhrasesRow extends StatelessWidget {
             itemCount: phrases.length,
             separatorBuilder: (_, _) => const SizedBox(width: Gap.sm),
             itemBuilder: (_, i) => ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _maxChipWidth),
+              constraints: BoxConstraints(maxWidth: maxWidth),
               child: AppChip(label: phrases[i], onTap: () => _pick(phrases[i])),
             ),
           ),
