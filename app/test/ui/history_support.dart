@@ -47,10 +47,28 @@ class ScriptedSessions extends FakeAgentSessions {
   final historyCalls = <HistoryCall>[];
   final resumeCalls = <ResumeCall>[];
 
+  /// What `start` does; throws when a test did not say.
+  Future<AgentSessionView> Function(({String machineId, String agent, String cwd}) call)? onStart;
+
+  final startCalls = <({String machineId, String agent, String cwd})>[];
+
   /// Holds [session], as the repository does for a started keeper.
   void hold(AgentSessionView session) {
     sessions.add(session);
     notifyListeners();
+  }
+
+  @override
+  Future<AgentSessionView> start({
+    required MachineConnection machine,
+    required String agent,
+    required String cwd,
+  }) {
+    final call = (machineId: machine.profile.id, agent: agent, cwd: cwd);
+    startCalls.add(call);
+    final run = onStart;
+    if (run == null) throw StateError('no start scripted');
+    return run(call);
   }
 
   @override

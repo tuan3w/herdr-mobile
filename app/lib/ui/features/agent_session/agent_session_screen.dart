@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/acp/agent_host.dart' show AgentHostException;
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/auth_needed.dart' show AuthNeeded;
 import '../../../data/acp/prompt_content.dart' show composePrompt;
@@ -445,12 +446,54 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens),
     );
   }
+    final sessions = context.read<AgentSessions?>();
+    if (chips.isEmpty && sessions != null && _wantsFresh(session, text)) {
+      if (_freshening) return;
+      _input.clear();
+      unawaited(_startFresh(session, sessions, text, toaster));
+      return;
+    }
 
   Future<void> _send(
     AgentSessionView session,
     String text,
     List<Attachment> chips,
     List<ContentBlock> blocks,
+  bool _freshening = false;
+
+  /// `/clear` or `/new` alone, to an agent that does not take it here. omp
+  /// handles both only in its terminal (over ACP they are not commands, so
+  /// the word went to the model as a prompt and nothing was cleared), and an
+  /// agent in a terminal runs them itself. An agent that advertises the
+  /// command is sent it as usual.
+  bool _wantsFresh(AgentSessionView session, String text) {
+    final word = text.toLowerCase();
+    if (word != '/clear' && word != '/new') return false;
+    if (session.isObserved) return false;
+    return !_commandSource.commands.any((c) => c.trigger == '/' && '/${c.name.toLowerCase()}' == word);
+  }
+
+  /// A new session of the same agent in the same folder, in place of this
+  /// chat. This one is not ended: its conversation is still on the board,
+  /// so nothing is cut (ending it is a deliberate act of its own). A failure
+  /// says why and puts the text back.
+  Future<void> _startFresh(AgentSessionView session, AgentSessions sessions, String text, Toaster? toaster) async {
+    _freshening = true;
+    try {
+      final next = await sessions.start(machine: session.machine, agent: session.agent, cwd: session.cwd);
+      Haptics.sent();
+      if (!mounted) return;
+      unawaited(openAgent(context, SessionAgent(next.key), replace: true));
+      toaster?.show('New conversation started. The previous one is still on the board.');
+    } on AgentHostException catch (e) {
+      Haptics.failed();
+      toaster?.show(e.message, kind: ToastKind.failed);
+      if (mounted) _giveBack(text);
+    } finally {
+      _freshening = false;
+    }
+  }
+
     SentPhrases? learned,
     Toaster? toaster,
     AgentScreens? screens,
