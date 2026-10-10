@@ -56,6 +56,8 @@ import 'quick_keys.dart';
 import 'quick_phrases_row.dart';
 import '../composer/command_model.dart';
 import '../composer/command_palette.dart';
+import '../composer/command_hint.dart';
+import '../composer/unknown_command.dart';
 
 /// Screens shorter than this (a phone on its side) get a lower bar and no
 /// docked answers: a question and its chips would leave the terminal a few rows.
@@ -407,7 +409,8 @@ class _PaneView extends StatefulWidget {
 }
 
 class _PaneViewState extends State<_PaneView> {
-  final _input = TextEditingController();
+  // Draws what a picked command takes after it (see [CommandHintController]).
+  late final _input = CommandHintController(hintFor: (text) => _commands.hintFor(text));
   final _focus = FocusNode();
   final _mods = StickyModifiers();
   late final PaneViewModel _vm = context.read<PaneViewModel>();
@@ -437,6 +440,7 @@ class _PaneViewState extends State<_PaneView> {
 
   late final _commandSource = _newCommandSource(context.read<MachineConnection>());
   late final _commands = CommandPaletteModel(source: _commandSource, usage: context.read<SlashUsage?>());
+  late final _unknown = UnknownCommandGuard(input: _input, model: _commands);
 
   CatalogCommandSource _newCommandSource(MachineConnection machine) => CatalogCommandSource(
         agent: () => machine.paneById(_paneId)?.agent,
@@ -469,6 +473,7 @@ class _PaneViewState extends State<_PaneView> {
   void dispose() {
     _dictation?.dispose();
     _input.removeListener(_onInput);
+    _unknown.dispose();
     _input.dispose();
     _focus.dispose();
     _mods.dispose();
@@ -557,6 +562,9 @@ class _PaneViewState extends State<_PaneView> {
       }
       return;
     }
+    // A `/word` the agent does not list waits for the person's word (see
+    // [UnknownCommandGuard]); the field keeps its text.
+    if (_unknown.holds(text)) return;
     final bool sent;
     if (chips.isEmpty) {
       sent = await _vm.sendLine(text);
@@ -655,10 +663,19 @@ class _PaneViewState extends State<_PaneView> {
           onSwipe: (delta) => swipeToAgent(context, widget.agent, delta),
           child: _TerminalPanel(paneId: _paneId, onLinkTap: _openLink),
         ),
-        palette: CommandPalette(
-          input: _input,
-          model: _commands,
-          onPick: (command) => fillCommand(_input, _focus, command),
+        palette: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            UnknownCommandNote(guard: _unknown, onSend: _submit),
+            Flexible(
+              child: CommandPalette(
+                input: _input,
+                model: _commands,
+                onPick: (command) => fillCommand(_input, _focus, command),
+              ),
+            ),
+          ],
         ),
         dock: AnswerDock(paneId: _paneId, asking: _dockAsking),
         keys: QuickKeys(

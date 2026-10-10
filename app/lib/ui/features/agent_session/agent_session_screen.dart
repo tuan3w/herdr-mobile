@@ -50,6 +50,8 @@ import 'session_select.dart';
 import 'transcript_view.dart';
 import '../composer/command_model.dart';
 import '../composer/command_palette.dart';
+import '../composer/command_hint.dart';
+import '../composer/unknown_command.dart';
 import '../dictation/dictation_session.dart';
 
 /// The bottom region (palette, request, composer) never takes more than this
@@ -111,7 +113,8 @@ class AgentSessionScreen extends StatefulWidget {
 }
 
 class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBindingObserver {
-  final _input = TextEditingController();
+  // Draws what a picked command takes after it (see [CommandHintController]).
+  late final _input = CommandHintController(hintFor: (text) => _commands.hintFor(text));
   final _focus = FocusNode();
 
   /// Null without a speech service (tests).
@@ -126,16 +129,26 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   );
   late final _commandSource = SessionCommandSource(widget.session);
   late final _commands = CommandPaletteModel(source: _commandSource, usage: context.read<SlashUsage?>());
+  late final _unknown = UnknownCommandGuard(input: _input, model: _commands);
 
   late final Widget _plan = PlanHeader(session: widget.session);
 
   /// Built again once, when [_resolveSinceLeft] has the divider's data.
   late Widget _transcript = TranscriptView(session: widget.session);
   late final Widget _bottom = _Bottom(
-    palette: CommandPalette(
-      input: _input,
-      model: _commands,
-      onPick: (command) => fillCommand(_input, _focus, command),
+    palette: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        UnknownCommandNote(guard: _unknown, onSend: _submit),
+        Flexible(
+          child: CommandPalette(
+            input: _input,
+            model: _commands,
+            onPick: (command) => fillCommand(_input, _focus, command),
+          ),
+        ),
+      ],
     ),
     dock: Column(
       mainAxisSize: MainAxisSize.min,
@@ -252,6 +265,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     _stopWindow?.cancel();
     _input.removeListener(_onInput);
     _commands.dispose();
+    _unknown.dispose();
     _commandSource.dispose();
     _input.dispose();
     _attachments.dispose();
@@ -440,6 +454,9 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (!_attachments.canSend) return;
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
+    // A `/word` the agent does not list waits for the person's word (see
+    // [UnknownCommandGuard]); nothing is cleared or sent.
+    if (_unknown.holds(text)) return;
     final chips = _attachments.items;
     // Taken before the send: if the person leaves while it is out, the screen
     // is gone when it fails, and neither the toast overlay nor the draft's

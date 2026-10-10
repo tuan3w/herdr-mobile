@@ -61,6 +61,57 @@ class CommandPaletteModel extends ChangeNotifier {
 
   static final _word = RegExp(r'^[/$]\S*$');
 
+  /// Commands every agent's terminal takes that its advertised table often
+  /// lacks (Claude's list has no `clear`; omp's has neither `clear` nor
+  /// `new`; none lists `help`). Not warned about: a wrong "unknown" costs the
+  /// person a tap, a missing one costs nothing.
+  static const _unlisted = {'clear', 'new', 'help', 'exit', 'quit'};
+
+  /// The word of a `/command` that [line] (about to be sent) starts with and
+  /// that this agent does not list, or null when the line is not a command, is
+  /// one the agent lists (or the person has sent before), or nothing can be
+  /// said because the agent's list has not arrived.
+  ///
+  /// Why: a typo (`/clera`) goes to the model as a message and costs a turn; a
+  /// real command the agent lists is run. Only `/` is checked: `$PATH is wrong`
+  /// is a sentence, and a path (`/usr/bin/env`) is not a command at all
+  /// ([_sentCommand] needs a space or the end after the word).
+  String? unknownCommand(String line) {
+    final agentName = source.agent;
+    final m = _sentCommand.firstMatch(line.trim());
+    if (agentName == null || m == null || m[1] != '/') return null;
+    final listed = [
+      for (final c in source.commands)
+        if (c.trigger == '/') c.name.toLowerCase(),
+    ];
+    if (listed.isEmpty) return null;
+    final word = m[2]!;
+    final lower = word.toLowerCase();
+    if (listed.contains(lower) || _unlisted.contains(lower)) return null;
+    final remembered = {...?_usage?.pinned(agentName), ...?_usage?.used(agentName)};
+    if (remembered.any((key) => key.toLowerCase() == lower)) return null;
+    return word;
+  }
+
+  static final _picked = RegExp(r'^([/$])(\w[\w:.\-]{0,63}) $');
+
+  /// What the command just picked takes, for the field to show after it: the
+  /// hint the agent advertised, while the composer holds exactly the command
+  /// and the space [fillCommand] left. Null once anything follows, or when the
+  /// command has no hint (a hint of its own is the agent's to give; nothing
+  /// is made up).
+  String? hintFor(String input) {
+    final m = _picked.firstMatch(input);
+    if (m == null) return null;
+    for (final c in source.commands) {
+      if (c.trigger == m[1] && c.name == m[2]) {
+        final hint = c.hint;
+        return hint == null || hint.isEmpty ? null : hint;
+      }
+    }
+    return null;
+  }
+
   /// Commands that [input] (the composer's whole text) is the start of.
   ///
   /// Empty unless [input] is a lone `/word` (or `$word`): once there is a space

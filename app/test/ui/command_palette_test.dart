@@ -40,9 +40,9 @@ class _Store implements SlashUsageStore {
 const _pane = 'w1:p1';
 
 class _PaneTransport extends FakeTransport {
-  _PaneTransport()
+  _PaneTransport({String agent = 'omp'})
       : super(snapshotJson(
-          panes: [(id: _pane, ws: 'w1', agent: 'omp', status: 'idle')],
+          panes: [(id: _pane, ws: 'w1', agent: agent, status: 'idle')],
         ));
 
   /// Fails every `pane.send_input` with this while set.
@@ -308,6 +308,34 @@ void main() {
       expect(usage.used('omp'), isEmpty, reason: 'the agent never got it');
       expect(tester.widget<TextField>(composer()).controller!.text, '/deploy now',
           reason: 'a failed send keeps what was typed');
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('a /word the agent does not list is held in a pane too, and goes on Send as message', (tester) async {
+      final semantics = tester.ensureSemantics();
+      transport = _PaneTransport(agent: 'claude');
+      machine = MachineConnection(
+        profile: MachineProfile(id: 'm', label: 'box', host: 'h', username: 'u'),
+        api: HerdrApi(transport),
+        backoff: (_) => const Duration(hours: 1),
+        pollInterval: const Duration(hours: 1),
+      );
+      await pumpPane(tester);
+      // A slash is the cue to learn the agent's commands.
+      await tester.enterText(composer(), '/');
+      await tester.pump();
+      await _settle(tester);
+
+      await send(tester, '/clera');
+      expect(transport.sent, isEmpty, reason: 'held, not typed into the pane');
+      expect(tester.widget<TextField>(composer()).controller!.text, '/clera');
+      expect(find.text('Send as message'), findsOneWidget);
+
+      await tester.tap(find.text('Send as message'));
+      await _settle(tester);
+      expect(transport.sent, ['/clera']);
+      expect(find.text('Send as message'), findsNothing);
       semantics.dispose();
       await teardown(tester);
     });

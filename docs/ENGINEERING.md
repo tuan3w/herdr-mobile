@@ -280,6 +280,23 @@ Tailscale.
     keyed by lower-case agent label): a bare `/` lists pinned, then the 5 most
     recent, then the catalog, and names the catalog lacks still complete, so an
     agent with no table (omp, pi, ...) still gets a palette.
+  - A picked command shows what it takes after it in the field
+    (`CommandHintController`: ghost text after `/review `, from the hint the
+    agent advertised; not in the text, so never sent; gone with the first
+    character; nothing is made up for a command with no hint).
+  - A send whose first word is a `/command` the agent does not list is held
+    once (`UnknownCommandGuard`, `CommandPaletteModel.unknownCommand`): a typo
+    would go to the model as a message and cost a turn. It says nothing when
+    the list has not arrived (no table: omp over a pane, a list still loading),
+    for `$word` (a sentence like `$PATH is wrong`), for a path, for a word the
+    person sent or pinned before, and for `clear new help exit quit`, which
+    every terminal takes and the tables often lack. "Send as message" sends
+    it as typed, once. Why no auto-send of a command that "takes no input":
+    the tables cannot say it. In the captured tables `input` is absent both for
+    `logout` (Codex) and for skills that take arguments (Claude's
+    `deep-research`, `ars-full`), so a tap that sent it could sign the person out
+    or run a skill with nothing; a pick fills the field and the send stays the
+    person's own act.
 
 ## Files, photos and attach
 
