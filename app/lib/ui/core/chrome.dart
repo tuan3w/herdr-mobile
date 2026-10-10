@@ -677,8 +677,11 @@ class AppRefresh extends StatelessWidget {
 ///
 /// Colours come from the theme (`bottomSheetTheme`, `modalBarrierColor`), so a
 /// light/dark switch while a sheet is open restyles it. The body scrolls when
-/// it does not fit (large text, landscape). Under reduced motion the sheet
-/// appears and goes without sliding (drag to dismiss still works).
+/// it does not fit (large text, landscape). A tall sheet stops below the
+/// status bar (`useSafeArea`): the session overview used to grow under the
+/// clock, its grabber and title drawn over the status icons. Under reduced
+/// motion the sheet appears and goes without sliding (drag to dismiss still
+/// works).
 Future<T?> showAppSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -751,6 +754,7 @@ class SheetActionRow extends StatelessWidget {
       // A dimmed row is still read as a button, a disabled one.
       button: inert ? true : null,
       builder: (context, pressed) => AnimatedContainer(
+  useSafeArea: true,
         duration: Motion.pressing(pressed),
         curve: Motion.easeOut,
         height: inert ? null : 52,

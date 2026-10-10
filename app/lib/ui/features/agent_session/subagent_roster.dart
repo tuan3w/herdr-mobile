@@ -41,7 +41,7 @@ class _ChipSnap {
 /// running`, `1 waiting for you` (tinted), `1 of 3 failed`. The index of
 /// every subagent of the session, for an agent that talks ACP (their
 /// [SubagentRun]s) and for one followed through its log (the observed
-/// roster). Takes no room without subagents.
+/// roster). Takes no room without subagents; the bar places it.
 class SubagentsChip extends StatelessWidget {
   const SubagentsChip({super.key, required this.session});
 
@@ -77,15 +77,12 @@ class SubagentsChip extends StatelessWidget {
         label = total == 1 ? '1 subagent' : '$total subagents';
       }
       return Padding(
-        padding: const EdgeInsets.only(left: Gap.md + 44, bottom: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppChip(
-            label: label,
-            tint: tint,
-            leading: Icon(LucideIcons.bot, size: 14, color: tint ?? ds.textSecondary),
-            onTap: () => showSubagents(context, session),
-          ),
+        padding: const EdgeInsets.only(bottom: 2),
+        child: AppChip(
+          label: label,
+          tint: tint,
+          leading: Icon(LucideIcons.bot, size: 14, color: tint ?? ds.textSecondary),
+          onTap: () => showSubagents(context, session),
         ),
       );
     },

@@ -5,6 +5,7 @@ import 'package:herdr_mobile/data/repositories/agent_session.dart' show Subagent
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/acp/subagents/subagent_run.dart';
+import 'package:herdr_mobile/ui/core/controls.dart' show AppChip;
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/agent_session/permission_dock.dart';
 import 'package:herdr_mobile/ui/features/agent_session/session_bar.dart';
@@ -489,6 +490,13 @@ void main() {
       expect(find.byType(Chip), findsNothing);
       expect(find.textContaining('subagent'), findsNothing);
     });
+
+    testWidgets('the chip under the bar ellipsizes on a small phone at large text', (tester) async {
+      await _pump(tester, _app(SessionBar(session: many()), textScale: 2), size: const Size(320, 640));
+      expect(tester.takeException(), isNull);
+      expect(find.text('1 waiting for you'), findsOneWidget);
+      expect(tester.getRect(find.byType(AppChip)).right, lessThanOrEqualTo(320));
+    });
   });
 
   group('the overview', () {
@@ -502,6 +510,19 @@ void main() {
     }
 
     AgentSessionState rich() => overviewState();
+
+    testWidgets('a tall overview stops below the status bar', (tester) async {
+      tester.view.padding = const FakeViewPadding(top: 24 * 2);
+      tester.view.viewPadding = tester.view.padding;
+      await _pump(
+        tester,
+        _app(Builder(builder: (context) => GestureDetector(onTap: () => showSessionOverview(context, FakeAgentSession(state: rich())), child: const Text('open'))), textScale: 2),
+        size: const Size(320, 640),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(BottomSheet)).top, greaterThanOrEqualTo(24), reason: 'the grabber and the title clear the clock');
+    });
 
     testWidgets('everything present', (tester) async {
       await open(tester, FakeAgentSession(state: rich()));
@@ -580,6 +601,12 @@ void main() {
       expect(find.text('Context 91%'), findsOneWidget);
       await _pump(tester, _app(SessionBar(session: FakeAgentSession())));
       expect(_text('Context'), findsNothing, reason: 'no usage, nothing');
+    });
+
+    testWidgets('the context line fits a small phone at large text', (tester) async {
+      await _pump(tester, _app(SessionBar(session: withContext(91)), textScale: 2), size: const Size(320, 640));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Context 91%'), findsOneWidget);
     });
 
     testWidgets('a tap on the title opens the overview; the options sheet has it too', (tester) async {

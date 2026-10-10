@@ -138,8 +138,8 @@ class BackgroundChip extends StatelessWidget {
         final ((work, waiting, turnRunning, _), besideSubagents) = v;
         if (stripText(work, waiting: waiting, turnRunning: turnRunning) == null) return const SizedBox.shrink();
         return Padding(
-          // The subagents chip starts under the title; this one follows it.
-          padding: EdgeInsets.only(left: besideSubagents ? Gap.sm : Gap.md + 44, bottom: 2),
+          // The bar's row places the chips; this one follows the subagents chip.
+          padding: EdgeInsets.only(left: besideSubagents ? Gap.sm : 0, bottom: 2),
           child: AppChip(
             label: chipLabel(work),
             semanticLabel: stripSemantics(work, waiting: waiting, turnRunning: turnRunning),
