@@ -479,6 +479,32 @@ void main() {
       await _tearDown(tester, h);
     });
 
+    // A session started from the phone opens a tab at the end of its
+    // workspace: in herdr's order the one just started, and the ones still
+    // working, sat at the bottom under every finished one.
+    testWidgets('a workspace lists its newest tab first', (tester) async {
+      final j = snapshotWith(_agents(2));
+      (j['tabs'] as List).add({
+          'tab_id': 'w1:t2',
+          'workspace_id': 'w1',
+          'number': 2,
+          'label': 'newer',
+          'focused': false,
+          'pane_count': 1,
+          'agent_status': 'idle',
+        });
+      ((j['panes'] as List).last as Map<String, dynamic>)['tab_id'] = 'w1:t2';
+      final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: j)]);
+      await _pump(tester, MachineScreen(machine: h.fleet.connection('a')!), fleet: h);
+
+      expect(
+        tester.getTopLeft(find.text('title w1:p1')).dy,
+        lessThan(tester.getTopLeft(find.text('title w1:p0')).dy),
+        reason: 'tab 2 (newer) above tab 1',
+      );
+      await _tearDown(tester, h);
+    });
+
     testWidgets('a machine with no workspaces says so', (tester) async {
       final h = await UiHarness.create([(profile: _m('a', 'box'), snapshot: snapshotWith(const [], workspaces: const []))]);
       await _pump(tester, MachineScreen(machine: h.fleet.connection('a')!), fleet: h);

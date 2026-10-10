@@ -20,7 +20,8 @@ import '../create/management_sheets.dart';
 import '../create/new_agent_session_screen.dart';
 import '../files/files_navigation.dart';
 
-/// Everything running on one machine: workspaces → tabs → panes.
+/// Everything running on one machine: workspaces (herdr's order) → tabs
+/// (newest first) → panes.
 class MachineScreen extends StatelessWidget {
   const MachineScreen({super.key, required this.machine});
 
@@ -214,11 +215,15 @@ class _WorkspaceSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snap = machine.snapshot;
-    final tabs = snap.tabsOf(workspace.id);
+    // Newest tab first: herdr opens a tab at the end of its workspace, so in
+    // its order a session just started from the phone, and the ones still
+    // working, sat at the bottom under every finished one. Panes keep their
+    // order within a tab (splits of one place).
+    final tabs = [...snap.tabsOf(workspace.id)]..sort((a, b) => b.number.compareTo(a.number));
     final multiTab = tabs.length > 1;
     final live = machine.isLive;
 
-    // Panes in tab order; a tab label only matters when there is more than one.
+    // A tab label only matters when there is more than one.
     // These are widget descriptions only: [Collapse] builds nothing for a
     // workspace that is closed.
     final rows = <Widget>[];
