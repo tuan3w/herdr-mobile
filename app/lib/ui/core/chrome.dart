@@ -407,8 +407,8 @@ class FloatingBarScrim extends StatelessWidget {
 /// equal cells, an icon over a name in each, the selected one on a soft
 /// capsule. Content scrolls under it, so lists must reserve
 /// [FloatingBar.clearance] at the bottom. Its shadow is the app's one float
-/// shadow; judge it on a phone: `flutter test` renders draw a `BoxShadow`
-/// without its blur, as a hard offset band.
+/// shadow. A render shows it only with `debugDisableShadows` off (the test
+/// binding turns blur off and paints a hard offset band).
 ///
 /// Every tab is named and every cell is the same width, so nothing moves when a
 /// tab is chosen (a second tap from memory lands where the first did) and a

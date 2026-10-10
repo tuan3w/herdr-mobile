@@ -95,19 +95,28 @@ void main() {
       ),
       home: home(),
     );
-    await tester.pumpWidget(providers.isEmpty ? app : MultiProvider(providers: providers, child: app));
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
+    // `flutter test` paints a BoxShadow without its blur (`debugDisableShadows`,
+    // on in the test binding), as a hard offset band. These shots exist to
+    // judge the shadow, so they draw it as a phone does; the binding checks
+    // the flag is back before the test ends, so it is put back right here.
+    debugDisableShadows = false;
+    try {
+      await tester.pumpWidget(providers.isEmpty ? app : MultiProvider(providers: providers, child: app));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await then?.call();
+      await tester.pump(const Duration(milliseconds: 600));
+      final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        final tag = '${size.width.toInt()}x${size.height.toInt()}${scale == 1 ? '' : '-x${scale.toInt()}'}';
+        await File('$out/$name-${brightness.name}-$tag.png').writeAsBytes(data!.buffer.asUint8List());
+      });
+    } finally {
+      debugDisableShadows = true;
     }
-    await then?.call();
-    await tester.pump(const Duration(milliseconds: 600));
-    final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    await tester.runAsync(() async {
-      final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      final tag = '${size.width.toInt()}x${size.height.toInt()}${scale == 1 ? '' : '-x${scale.toInt()}'}';
-      await File('$out/$name-${brightness.name}-$tag.png').writeAsBytes(data!.buffer.asUint8List());
-    });
     expect(tester.takeException(), isNull, reason: '$name ${brightness.name} $size x$scale');
   }
 
