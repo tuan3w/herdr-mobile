@@ -4,6 +4,20 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.12] - 2026-10-10
+
+### A smaller download, newest sessions first
+
+- The app is a 23 MB download instead of 51 MB, for the first install and
+  every update. It takes about the same space on the phone once installed.
+- A machine's screen lists each workspace's newest session first, so the one
+  you just started, and the ones still working, are at the top instead of
+  under every finished one.
+- Changing the model, mode or effort from the chips above the message field
+  puts you back in the field with the keyboard up, ready to write.
+- An omp tool that is still waiting (for a background job, say) shows
+  "Waiting for output…" instead of a block of raw JSON.
+
 ## [0.1.11] - 2026-10-10
 
 ### One bottom bar, nothing off the screen
