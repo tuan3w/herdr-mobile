@@ -503,8 +503,15 @@ List<_Part> _partsOf(ToolCall call) {
   if (!content) {
     final output = call.rawOutput;
     if (output != null) {
-      final text = compactJson(output);
-      if (text.isNotEmpty) out.add(_TextPart(textLines(text, fromEnd: tail), label: 'Output', fromEnd: tail));
+      // The text of a known shape (omp's envelope, a string, content parts),
+      // nothing when it holds none yet (the empty note says waiting or none);
+      // only a shape with no text is shown as data. The envelope as JSON was
+      // an omp `wait`'s job ids and milliseconds where the result goes.
+      final printedText = rawOutputText(output);
+      final text = printedText ?? compactJson(output);
+      if (text.trim().isNotEmpty) {
+        out.add(_TextPart(textLines(text, fromEnd: tail), label: 'Output', fromEnd: tail));
+      }
     } else if (command == null && call.rawInput != null) {
       final text = compactJson(call.rawInput);
       if (text.isNotEmpty) out.add(_TextPart(textLines(text), label: 'Input'));

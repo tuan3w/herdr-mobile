@@ -299,6 +299,37 @@ void main() {
       expect(find.text('Waiting for output…'), findsOneWidget);
     });
 
+    // omp wraps every result as `{content: [{type: text, text}], details}`. A
+    // `wait` still running has empty text, and the row used to dump the whole
+    // envelope as JSON (job ids, milliseconds) where the person looks for
+    // what happened.
+    testWidgets('an omp result shows its text, never its envelope', (tester) async {
+      final session = FakeAgentSession(
+        state: stateWith(
+          items: [
+            toolItem('t1', title: 'Waiting for CI', status: ToolStatus.inProgress, rawOutput: {
+              'content': [{'type': 'text', 'text': ''}],
+              'details': {'op': 'wait', 'jobs': [{'id': 'bg_20', 'status': 'running', 'durationMs': 91542}]},
+            }),
+            toolItem('t2', title: 'Jobs', rawOutput: {
+              'content': [{'type': 'text', 'text': 'bg_20 finished: success'}],
+              'details': {'op': 'wait', 'jobs': [{'id': 'bg_20', 'status': 'completed'}]},
+            }),
+          ],
+          turnActive: true,
+        ),
+      );
+      await pumpScreen(tester, session);
+      await tester.tap(find.text('Waiting for CI').first);
+      await tester.pump();
+      expect(find.textContaining('"content"', findRichText: true), findsNothing);
+      expect(find.text('Waiting for output…'), findsOneWidget);
+      await tester.tap(find.text('Jobs'));
+      await tester.pump();
+      expect(find.textContaining('bg_20 finished: success', findRichText: true), findsOneWidget);
+      expect(find.textContaining('"details"', findRichText: true), findsNothing);
+    });
+
     testWidgets('a streaming answer is one live row: a chunk rebuilds it alone, a structural change rebuilds the rows it changed', (tester) async {
       final built = <String>[];
       debugRowBuilt = built.add;
