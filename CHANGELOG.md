@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.13] - 2026-10-10
+
+### Settings in four rows, and /clear starts fresh
+
+- Settings is four rows (Look, Agents, Notifications, About) that say what
+  they are set to and open in place, one at a time, instead of one long page.
+  Everything is still there; Quick phrases is a page of its own under Agents.
+- A newer version is a row at the top of Settings, open when you get there:
+  Download is one tap, and a download's progress stays under the row while
+  you look at another group.
+- Tapping the tab you are already on takes Machines and Settings back to the
+  top, as it already did on Agents.
+- `/clear` and `/new` in an omp or Claude Code chat now start a new
+  conversation, instead of leaving the old one on the screen.
+- The slash-command list no longer draws over the rows below it while you
+  type.
+
 ## [0.1.12] - 2026-10-10
 
 ### A smaller download, newest sessions first
