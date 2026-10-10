@@ -146,7 +146,11 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
         Flexible(child: PromptDock(session: widget.session)),
       ],
     ),
-    strip: BackgroundStrip(session: widget.session),
+    strip: HideWhileCommanding(
+      input: _input,
+      model: _commands,
+      child: BackgroundStrip(session: widget.session),
+    ),
     composer: Composer(
       dictation: _dictation,
       session: widget.session,
@@ -155,6 +159,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       attachments: _attachments,
       onSubmit: _submit,
       onStop: _stopTapped,
+      commands: _commands,
     ),
   );
 
@@ -441,11 +446,6 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     // store can be looked up from it then.
     final toaster = Toaster.maybeOf(context);
     final screens = _screens;
-    _input.clear();
-    unawaited(
-      _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens),
-    );
-  }
     final sessions = context.read<AgentSessions?>();
     if (chips.isEmpty && sessions != null && _wantsFresh(session, text)) {
       if (_freshening) return;
@@ -453,12 +453,12 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       unawaited(_startFresh(session, sessions, text, toaster));
       return;
     }
+    _input.clear();
+    unawaited(
+      _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens),
+    );
+  }
 
-  Future<void> _send(
-    AgentSessionView session,
-    String text,
-    List<Attachment> chips,
-    List<ContentBlock> blocks,
   bool _freshening = false;
 
   /// `/clear` or `/new` alone, to an agent that does not take it here. omp
@@ -494,6 +494,11 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     }
   }
 
+  Future<void> _send(
+    AgentSessionView session,
+    String text,
+    List<Attachment> chips,
+    List<ContentBlock> blocks,
     SentPhrases? learned,
     Toaster? toaster,
     AgentScreens? screens,
@@ -637,7 +642,9 @@ class _SessionLayout extends MultiChildLayoutDelegate {
 /// Palette, request and composer, stacked at the bottom. The palette and the
 /// request take the room the composer leaves (and scroll in it), so a phone
 /// on its side with the keyboard up overflows nothing; the composer is the
-/// last child and always stays in reach.
+/// last child and always stays in reach. The palette is flexible like the
+/// request: it was a fixed height in a column that is given what is left,
+/// so with little room it overflowed and was drawn over the rows below it.
 class _Bottom extends StatelessWidget {
   const _Bottom({required this.palette, required this.dock, required this.strip, required this.composer});
 
@@ -660,10 +667,18 @@ class _Bottom extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Flexible(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [palette, Flexible(child: dock)],
+        // The palette is capped at what the column is given, and the request
+        // takes what remains: two flexible children would split the room in
+        // half even while the palette is empty.
+        child: LayoutBuilder(
+          builder: (context, room) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ConstrainedBox(constraints: BoxConstraints(maxHeight: room.maxHeight), child: palette),
+              Flexible(child: dock),
+            ],
+          ),
         ),
       ),
       SafeArea(

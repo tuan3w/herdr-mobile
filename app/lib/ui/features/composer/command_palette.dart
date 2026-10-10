@@ -67,6 +67,30 @@ class CommandPalette extends StatelessWidget {
   );
 }
 
+/// Takes [child] out of the layout while the palette above the composer lists
+/// something. The rows that sit between the palette and the field (the
+/// settings chips, what waits in the queue, the background strip) are not
+/// what the person is acting on then, and the keyboard leaves little room: the
+/// palette used to be laid over them, its rows drawn on top of theirs.
+class HideWhileCommanding extends StatelessWidget {
+  const HideWhileCommanding({super.key, required this.input, required this.model, required this.child});
+
+  final TextEditingController input;
+  final CommandPaletteModel? model;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final model = this.model;
+    if (model == null) return child;
+    return ListenableBuilder(
+      listenable: Listenable.merge([input, model]),
+      builder: (context, child) => model.match(input.text).isEmpty ? child! : const SizedBox.shrink(),
+      child: child,
+    );
+  }
+}
+
 class _Row extends StatelessWidget {
   const _Row({required this.command, required this.pinned, required this.onTap, required this.onLongPress});
 
