@@ -63,10 +63,12 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
   // The Agents board is picking agents for a batch action: its own action bar
   // takes the tab bar's place.
   final _selecting = ValueNotifier<bool>(false);
-
-  // The Agents board's scroll position, for the tab bar's "tap the active tab
-  // to go to the top".
-  final _agentsScroll = ScrollController();
+  // Each tab's scroll position, for the tab bar's "tap the active tab to go to
+  // the top" (Agents, Machines and Settings alike). Settings kept its place
+  // between visits, so a newer version's Update panel, the first thing on the
+  // page, could be above the screen with only a dot on the tab to say it was
+  // there.
+  final _scrolls = List.generate(3, (_) => ScrollController());
 
   // A tab switch fades the incoming content in: opacity only, no slide, and
   // not at all under reduced motion. Rests at 1, so nothing is composited
@@ -101,7 +103,9 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
     widget.tabs?.detach(_selectTab);
     _tab.dispose();
     _selecting.dispose();
-    _agentsScroll.dispose();
+    for (final s in _scrolls) {
+      s.dispose();
+    }
     _opacity.dispose();
     _fade.dispose();
     super.dispose();
@@ -115,7 +119,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
     if (i == _tab.value) {
       // The tab bar already says "here": no state change, no haptic. On the
       // board it means "back to the top".
-      if (i == _agents) _agentsToTop();
+      _toTop(i);
       return;
     }
     // From zero before the new tab is built, so it never shows a frame at
@@ -125,9 +129,9 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
     widget.onTabChanged?.call(i);
   }
 
-  void _agentsToTop() {
+  void _toTop(int tab) {
     final reduced = Motion.reduced(context);
-    for (final p in _agentsScroll.positions) {
+    for (final p in _scrolls[tab].positions) {
       if (p.pixels <= 0) continue;
       if (reduced) {
         p.jumpTo(0);
@@ -169,7 +173,7 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
                 child: TickerMode(
                   enabled: index == _agents,
                   child: PrimaryScrollController(
-                    controller: _agentsScroll,
+                    controller: _scrolls[_agents],
                     child: AgentsScreen(
                       onShowMachines: () => _select(_machines),
                       onSelectingChanged: (selecting) => _selecting.value = selecting,
@@ -181,14 +185,21 @@ class _HomeShellState extends State<HomeShell> with RestorationMixin, SingleTick
                 opacity: _opacity,
                 child: TickerMode(
                   enabled: index == _machines,
-                  child: _machinesOpened ? const MachinesScreen() : const SizedBox.shrink(),
+                  child: _machinesOpened
+                      ? PrimaryScrollController(controller: _scrolls[_machines], child: const MachinesScreen())
+                      : const SizedBox.shrink(),
                 ),
               ),
               FadeTransition(
                 opacity: _opacity,
                 child: TickerMode(
                   enabled: index == _settings,
-                  child: _settingsOpened ? SettingsScreen(update: widget.update) : const SizedBox.shrink(),
+                  child: _settingsOpened
+                      ? PrimaryScrollController(
+                          controller: _scrolls[_settings],
+                          child: SettingsScreen(update: widget.update),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
             ],
