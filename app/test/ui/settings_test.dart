@@ -14,6 +14,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
@@ -32,9 +33,11 @@ import 'package:url_launcher_platform_interface/url_launcher_platform_interface.
 
 import '../support/fake_network.dart';
 import '../support/memory_app_settings_store.dart';
+import '../support/memory_quick_phrases_store.dart';
 import '../support/memory_snapshot_cache.dart';
 import '../support/memory_stores.dart';
 import '../support/memory_terminal_settings_store.dart';
+import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts;
 import 'ui_harness.dart';
 
@@ -127,6 +130,8 @@ Future<void> pumpScreen(
     ..physicalSize = Size(width, height) * 2
     ..devicePixelRatio = 2;
   addTearDown(tester.view.reset);
+  final phrases = QuickPhrases(MemoryQuickPhrasesStore(['continue', 'run the tests']));
+  await phrases.load();
   await tester.pumpWidget(
     MultiProvider(
       providers: [
@@ -134,6 +139,7 @@ Future<void> pumpScreen(
         ChangeNotifierProvider.value(value: terminal),
         ChangeNotifierProvider(create: (_) => NotificationSettings(MemoryNotificationStore())),
         Provider<Notifier>.value(value: const NullNotifier()),
+        ChangeNotifierProvider.value(value: phrases),
       ],
       child: MaterialApp(
         theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),
@@ -270,13 +276,14 @@ void main() {
       final app = AppSettings(store);
       await pumpScreen(tester, app: app, terminal: TerminalSettings(MemoryTerminalSettingsStore()));
       expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Warm paper, easy to read in daylight.'), findsOneWidget);
+      await openSettingsGroup(tester, 'Look');
+      expect(find.text('Light · Auto · 11.5 pt'), findsOneWidget);
 
       await tester.tap(find.text('Dark'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(app.theme, ThemeChoice.dark);
       expect(store.writes, ['theme dark']);
-      expect(find.text('Near-black, easy on the eyes at night.'), findsOneWidget);
+      expect(find.text('Dark · Auto · 11.5 pt'), findsOneWidget, reason: 'the row says what it is set to');
 
       await tester.tap(find.text('System'));
       await tester.pump(const Duration(milliseconds: 300));
@@ -288,6 +295,7 @@ void main() {
       final store = MemoryTerminalSettingsStore();
       final terminal = TerminalSettings(store);
       await pumpScreen(tester, app: AppSettings(MemoryAppSettingsStore()), terminal: terminal, height: 1200);
+      await openSettingsGroup(tester, 'Look');
       expect(find.text('11.5'), findsOneWidget);
 
       expect(FontSizeControl.format(12), '12');
@@ -334,6 +342,7 @@ void main() {
     testWidgets('the sample line is drawn in the terminal font at the chosen size', (tester) async {
       final terminal = TerminalSettings(MemoryTerminalSettingsStore());
       await pumpScreen(tester, app: AppSettings(MemoryAppSettingsStore()), terminal: terminal);
+      await openSettingsGroup(tester, 'Look');
       Text sample() => tester.widget<Text>(find.text(r'$ git status'));
       expect(sample().style!.fontFamily, monoFamily);
       expect(sample().style!.fontSize, 11.5);
@@ -352,6 +361,7 @@ void main() {
       final terminal = TerminalSettings(store);
       final handle = tester.ensureSemantics();
       await pumpScreen(tester, app: AppSettings(MemoryAppSettingsStore()), terminal: terminal, height: 1200);
+      await openSettingsGroup(tester, 'Look');
       Finder row() => find.widgetWithText(SwitchRow, 'Wrap long lines');
       expect(tester.getSemantics(row()).flagsCollection.isToggled, Tristate.isFalse);
 
@@ -375,6 +385,7 @@ void main() {
         app: AppSettings(MemoryAppSettingsStore()),
         terminal: TerminalSettings(MemoryTerminalSettingsStore()),
       );
+      await openSettingsGroup(tester, 'Look');
       final node = tester.getSemantics(find.widgetWithText(SwitchRow, 'Wrap long lines'));
       expect(node.label, contains('Wrap long lines'));
       expect(node.flagsCollection.isButton, isFalse);
@@ -391,6 +402,7 @@ void main() {
         terminal: TerminalSettings(MemoryTerminalSettingsStore()),
         height: 1800,
       );
+      await openSettingsGroup(tester, 'About');
       expect(find.text('Version $appVersion'), findsOneWidget);
       expect(find.textContaining('sends nothing anywhere else'), findsOneWidget);
       await tester.tap(find.text('Source code'));
@@ -405,6 +417,7 @@ void main() {
         terminal: TerminalSettings(MemoryTerminalSettingsStore()),
         height: 2000, // the whole screen on one page: it grows with every line of copy
       );
+      await openSettingsGroup(tester, 'About');
       await tester.tap(find.text('Licenses'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -423,14 +436,14 @@ void main() {
           brightness: brightness,
         );
         expect(tester.takeException(), isNull);
-        await tester.drag(find.byType(CustomScrollView), const Offset(0, -2000));
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(tester.takeException(), isNull);
-        expect(find.text('Licenses'), findsOneWidget);
+        // The four rows fit this screen at this size: nothing to scroll for.
+        for (final group in ['Look', 'Agents', 'Notifications', 'About']) {
+          expect(tester.getRect(find.text(group)).bottom, lessThan(640), reason: group);
+        }
 
+        await openSettingsGroup(tester, 'Look');
+        expect(tester.takeException(), isNull);
         // Every interactive piece keeps a 44 dp target.
-        await tester.drag(find.byType(CustomScrollView), const Offset(0, 2000));
-        await tester.pump(const Duration(milliseconds: 300));
         for (final target in [
           find.byWidgetPredicate((w) => w is PressBuilder && w.semanticLabel == 'Increase font size'),
           find.byWidgetPredicate((w) => w is PressBuilder && w.semanticLabel == 'Decrease font size'),
@@ -447,6 +460,27 @@ void main() {
           final text = tester.renderObject<RenderParagraph>(find.text(label));
           expect(text.didExceedMaxLines, isFalse, reason: label);
         }
+
+        // The Agents group too: its segmented control and the longest summary
+        // ("Opens as chat · 2 phrases") meet two lines at this size.
+        await openSettingsGroup(tester, 'Agents');
+        expect(tester.takeException(), isNull);
+        expect(tester.getSize(find.byType(Segmented<OpenAgentsAs>)).height, greaterThanOrEqualTo(44));
+        for (final label in ['Chat', 'Terminal']) {
+          final text = tester.renderObject<RenderParagraph>(find.text(label));
+          expect(text.didExceedMaxLines, isFalse, reason: label);
+        }
+        expect(
+          tester.renderObject<RenderParagraph>(find.textContaining('2 phrases')).didExceedMaxLines,
+          isFalse,
+          reason: 'the row shows the value, wrapping rather than cutting it',
+        );
+
+        await openSettingsGroup(tester, 'About');
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -2000));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull);
+        expect(find.text('Licenses'), findsOneWidget);
       });
     }
   });
@@ -707,7 +741,7 @@ void main() {
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
       await settle(tester);
       expect(find.byType(SettingsScreen).hitTestable(), findsOneWidget);
-      expect(find.text('Appearance'), findsOneWidget);
+      expect(find.text('Look'), findsOneWidget);
 
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
       await settle(tester);
@@ -759,6 +793,8 @@ void main() {
       final h = await UiHarness.create([]);
       await pumpUi(tester, h, brightness: Brightness.light);
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
+      await settle(tester);
+      await tester.tap(find.text('Look'));
       await settle(tester);
       await tester.tap(find.text('Dark'));
       await settle(tester);
@@ -859,6 +895,7 @@ void main() {
     testWidgets('the Dark terminal switch in Settings sets it', (tester) async {
       final app = AppSettings(MemoryAppSettingsStore());
       await pumpScreen(tester, app: app, terminal: TerminalSettings(MemoryTerminalSettingsStore()));
+      await openSettingsGroup(tester, 'Look');
       await tester.ensureVisible(find.text('Dark terminal'));
       await tester.pump();
       await tester.tap(find.text('Dark terminal'));

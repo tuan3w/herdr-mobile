@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 
 import '../support/memory_app_settings_store.dart';
 import '../support/memory_terminal_settings_store.dart';
+import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts;
 
 /// A notifier whose permission dialog the test answers by hand.
@@ -77,6 +78,8 @@ Future<NotificationSettings> _pump(
     ),
   );
   await tester.pump(const Duration(milliseconds: 100));
+  // The controls are in a group that starts closed.
+  await openSettingsGroup(tester, 'Notifications');
   return settings;
 }
 

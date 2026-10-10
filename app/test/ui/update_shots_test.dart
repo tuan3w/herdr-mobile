@@ -1,6 +1,8 @@
-// Renders the update panel (Settings, top), the About rows and the tab bar mark
-// to PNGs for review: every state, light and dark, 412 and 320 dp wide, text
-// scale 1 and 1.6. Off by default; it writes files:
+// Renders Settings to PNGs for review: the four groups (closed, each open, the
+// update row open, downloading behind another group, Android blocking
+// notifications), the update states and the tab bar mark. Light and dark, 412 dp
+// at text scale 1 and 1.6, and 320 dp at 2 for the groups. Off by default; it
+// writes files:
 //
 //   UPDATE_SHOTS=1 flutter test test/ui/update_shots_test.dart
 @TestOn('vm')
@@ -15,20 +17,23 @@ import 'package:herdr_mobile/data/models/release_info.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/app_update.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
+import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/apk_installer.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
-import 'package:herdr_mobile/data/services/release_feed.dart';
-import 'package:herdr_mobile/data/services/release_files.dart';
 import 'package:herdr_mobile/ui/core/chrome.dart';
 import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
-import 'package:herdr_mobile/ui/features/settings/update_panel.dart';
+import 'package:herdr_mobile/ui/features/settings/update_group.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../support/fake_notifier.dart';
 import '../support/memory_app_settings_store.dart';
+import '../support/memory_quick_phrases_store.dart';
 import '../support/memory_terminal_settings_store.dart';
+import '../support/settings_support.dart';
 import '../support/shot.dart';
+import '../support/update_fakes.dart';
 
 const _notes = '''
 ### Updates inside the app
@@ -50,43 +55,6 @@ final _release = ReleaseInfo(
   sha256: 'a' * 64,
 );
 
-class _Feed implements ReleaseFeed {
-  ReleaseInfo? answer;
-  Object? error;
-
-  @override
-  Future<ReleaseInfo?> newerThan(AppVersion current) async {
-    if (error != null) throw error!;
-    return answer;
-  }
-}
-
-class _Files implements ReleaseFiles {
-  Completer<File>? job;
-
-  @override
-  Future<bool> intact(ReleaseInfo release, File apk) async => true;
-  void Function(int)? report;
-
-  @override
-  Future<File?> verified(ReleaseInfo release) async => null;
-
-  @override
-  Future<void> prune({ReleaseInfo? keep}) async {}
-
-  @override
-  UpdateDownload download(ReleaseInfo release, void Function(int) onProgress) {
-    report = onProgress;
-    final c = job = Completer<File>();
-    return UpdateDownload(c.future, () => c.completeError(const UpdateCancelled()));
-  }
-}
-
-class _Installer implements ApkInstaller {
-  @override
-  Future<InstallStart> install(File apk) async => InstallStart.needsPermission;
-}
-
 void main() {
   if (Platform.environment['UPDATE_SHOTS'] == null) {
     test('update shots are off (set UPDATE_SHOTS=1)', () {}, skip: 'set UPDATE_SHOTS=1 to render PNGs');
@@ -98,19 +66,19 @@ void main() {
     Directory(out).createSync(recursive: true);
   });
 
-  Future<AppUpdate> make(_Feed feed, _Files files) async {
+  Future<AppUpdate> make(FakeReleaseFeed feed, FakeReleaseFiles files) async {
     final update = AppUpdate(
       store: MemoryUpdateStore(),
       feed: feed,
       files: files,
-      installer: _Installer(),
+      installer: FakeApkInstaller()..answer = InstallStart.needsPermission,
       current: AppVersion.tryParse('0.1.6'),
     );
     addTearDown(update.dispose);
     return update;
   }
 
-  final states = <String, Future<void> Function(AppUpdate u, _Feed f, _Files fl)>{
+  final states = <String, Future<void> Function(AppUpdate u, FakeReleaseFeed f, FakeReleaseFiles fl)>{
     'checking-none': (u, f, fl) async {},
     'uptodate': (u, f, fl) async => u.check(),
     'check-failed': (u, f, fl) async {
@@ -125,20 +93,20 @@ void main() {
       f.answer = _release;
       await u.check();
       unawaited(u.download());
-      fl.report!(20 * 1024 * 1024 + 100000);
+      fl.report(20 * 1024 * 1024 + 100000);
     },
     'ready': (u, f, fl) async {
       f.answer = _release;
       await u.check();
       final d = u.download();
-      fl.job!.complete(File('/x.apk'));
+      fl.running!.complete(File('/x.apk'));
       await d;
     },
     'permission': (u, f, fl) async {
       f.answer = _release;
       await u.check();
       final d = u.download();
-      fl.job!.complete(File('/x.apk'));
+      fl.running!.complete(File('/x.apk'));
       await d;
       await u.install();
     },
@@ -146,7 +114,7 @@ void main() {
       f.answer = _release;
       await u.check();
       final d = u.download();
-      fl.job!.completeError(const UpdateException(
+      fl.running!.completeError(const UpdateException(
         'The download stopped at 31 MB of 48 MB. It continues from there when you try again.',
       ));
       await d;
@@ -159,8 +127,8 @@ void main() {
       for (final MapEntry(key: name, value: setup) in states.entries) {
         if (dark && !{'available', 'downloading'}.contains(name)) continue;
         testWidgets('$name ${dark ? 'dark' : 'light'} x$scale', (tester) async {
-          final feed = _Feed();
-          final files = _Files();
+          final feed = FakeReleaseFeed();
+          final files = FakeReleaseFiles();
           final update = await make(feed, files);
           tester.platformDispatcher.textScaleFactorTestValue = scale;
           addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -179,11 +147,72 @@ void main() {
               ],
               child: app,
             ),
+            // The three states that differ only in About's check row.
             pump: (t) async {
-              if (name == 'available') {
-                // The About rows, the other half of the feature.
-                await t.drag(find.byType(CustomScrollView), const Offset(0, -3000));
-                await t.pump(const Duration(milliseconds: 300));
+              if (const {'checking-none', 'uptodate', 'check-failed'}.contains(name)) {
+                await openSettingsGroup(t, 'About');
+              }
+            },
+          );
+        });
+      }
+    }
+  }
+
+  // Settings as the person meets it: the four groups, one open at a time, a
+  // newer version's row on top and open. [taps] are what is tapped, in order,
+  // before the capture.
+  for (final dark in [false, true]) {
+    for (final (size, scale) in [(phone, 1.0), (const Size(320, 640), 2.0)]) {
+      final tag = '${dark ? 'dark' : 'light'}-${size.width.toInt()}-x$scale';
+      final cases = <String, ({List<String> taps, bool update, bool blocked, bool downloading})>{
+        'groups-update-open': (taps: [], update: true, blocked: false, downloading: false),
+        'groups-update-closed': (taps: ['Update available'], update: true, blocked: false, downloading: false),
+        'groups-downloading': (taps: ['Look'], update: true, blocked: false, downloading: true),
+        'groups-quiet': (taps: [], update: false, blocked: false, downloading: false),
+        'groups-look': (taps: ['Look'], update: false, blocked: false, downloading: false),
+        'groups-agents': (taps: ['Agents'], update: false, blocked: false, downloading: false),
+        'groups-notifications-blocked': (taps: ['Notifications'], update: false, blocked: true, downloading: false),
+        'groups-about': (taps: ['About'], update: true, blocked: false, downloading: false),
+      };
+      for (final MapEntry(key: name, value: c) in cases.entries) {
+        testWidgets('$name $tag', (tester) async {
+          final feed = FakeReleaseFeed();
+          final files = FakeReleaseFiles();
+          final update = await make(feed, files);
+          if (c.update) {
+            feed.answer = _release;
+            await update.check();
+          }
+          if (c.downloading) {
+            unawaited(update.download());
+            files.report(20 * 1024 * 1024 + 100000);
+          }
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          final notifications = NotificationSettings(MemoryNotificationStore(NotificationChoice(enabled: c.blocked)));
+          await notifications.load();
+          final phrases = QuickPhrases(MemoryQuickPhrasesStore(['continue', 'yes, go ahead', 'run the tests']));
+          await phrases.load();
+          await shoot(
+            tester,
+            SettingsScreen(update: c.update ? update : null),
+            '$out/$name-$tag.png',
+            brightness: dark ? Brightness.dark : Brightness.light,
+            size: size,
+            wrap: (app) => MultiProvider(
+              providers: [
+                ChangeNotifierProvider(create: (_) => AppSettings(MemoryAppSettingsStore())),
+                ChangeNotifierProvider(create: (_) => TerminalSettings(MemoryTerminalSettingsStore())),
+                ChangeNotifierProvider.value(value: notifications),
+                ChangeNotifierProvider.value(value: phrases),
+                Provider<Notifier>.value(value: c.blocked ? FakeNotifier(granted: false) : const NullNotifier()),
+              ],
+              child: app,
+            ),
+            pump: (t) async {
+              for (final label in c.taps) {
+                await openSettingsGroup(t, label);
               }
             },
           );

@@ -558,7 +558,7 @@ or the count. The frames while text is held back come from a `Ticker` that runs
 only then (never a loop). Snaps (everything pending shown at once, no
 animation): the message ends, the app resumes, a finger goes down on the
 transcript, the backlog passes 8 KB, Smooth text is off (Settings >
-Appearance, `AppSettings.smoothText`, on by default) or the transcript is
+Look, `AppSettings.smoothText`, on by default) or the transcript is
 hidden; reduced motion reveals whole lines. Text that is there when the row
 first shows is history and is never paced. No fade, no caret.
 
@@ -1550,37 +1550,57 @@ would lerp `ThemeData` per frame and rebuild every mounted screen, including
 the hidden Agents board. The system bars follow the resolved brightness, so
 `system` follows the phone.
 
-Settings is the third tab (`features/settings/`): Appearance (theme control and
-a paper / ink preview, the agent list density, how agents open, and the
-Smooth text switch: streaming answers at an even pace, on by default,
-`AppSettings.smoothText`), Terminal (font size stepper 8 to 22 with a sample
-line, wrap switch; both edit the pane's `TerminalSettings`), About (version,
-what it talks to, source link, licences). The version is `lib/data/app_info.dart`;
-`test/app_settings_test.dart` fails when it differs from `pubspec.yaml`.
-`AppSwitch` / `SwitchRow` live there until another screen needs a switch.
+Settings is the third tab (`features/settings/`): four rows, each saying what
+it is set to and opening in place (`SettingsGroup`, on `Collapse`), one at a
+time. Look (theme, agent list density, the terminal font size stepper 8 to 22
+with a sample line, wrap, Dark terminal, and Smooth text: streaming answers at
+an even pace, on by default, `AppSettings.smoothText`; the terminal ones edit
+the pane's `TerminalSettings`), Agents (how agents open, and Quick phrases, a
+row that opens its own page because the list grows), Notifications, and About
+(what it talks to, update checks, source link, licences). A newer version's row
+sits above them. Why four rows: the page was one long scroll of six sections
+(about 1,800 dp) and each new setting made the next harder to find; four rows
+fit a screen at 320 dp and 2x text, and a group grows without lengthening the
+page. A row shows values, not setting names ("Light · Auto · 11.5 pt",
+"Blocked by Android"), and a closed group is not built. Two tiles are tinted,
+and only two: notifications Android blocks (orange, the colour that means
+"needs you") and a newer version (the accent, a suggestion). The groups start
+closed; the tab keeps its state, so a later visit shows what was left open.
+The version is `lib/data/app_info.dart`; `test/app_settings_test.dart` fails
+when it differs from `pubspec.yaml`. `AppSwitch` / `SwitchRow` live there
+until another screen needs a switch.
 
-**Updates** (`features/settings/update_panel.dart`, `AppUpdate`). A newer
+**Updates** (`features/settings/update_group.dart`, `AppUpdate`). A newer
 version on GitHub is a suggestion, so it is quiet: a 10 dp accent dot on the
 Settings tab's icon (`TabSpec.mark`; the loud orange count stays the Agents
-badge's alone) and an `Update` panel at the top of Settings, absent when there
-is nothing newer. No toast, no notification, nothing on the board. The panel
-says the version and its size, and offers one step at a time: Download
-(`Try again` after a failure), a progress bar and Cancel, Install; `What's new`
-opens the release notes (the version's `CHANGELOG.md` section, rendered with
-the shared Markdown) in a sheet before anything is downloaded. A failure says
-what happened and what to do, in the panel, in red text; nothing is lost
-(a stopped download continues from its bytes). Install opens Android's own
-confirm dialog, so nothing is installed silently; if Android does not yet
-allow herdr to install apps, its settings page opens and the panel says to tap
-Install again after allowing it. The buttons stack at large text sizes (a cut
-"Try again" otherwise). About holds `Check for updates` (the manual check,
-with the reason when it fails) and `Check automatically` (on by default: at
-most every 12 h while the app is in front; the request carries the app name and
-version, and a download comes from GitHub's file servers). Why on by default and why About says so: the app used to
-say it "sends nothing anywhere else"; github.com is now the one other place it
-contacts, and the Connection line says it. The download is only ever started
-by a tap (it is ~50 MB of the person's radio). Android only: `bootApp` builds
-no updater elsewhere and the screen then shows nothing about updates.
+badge's alone) and an `Update available` row at the top of Settings, absent
+when there is nothing newer. No toast, no notification, nothing on the board.
+The row says the version and its size and is the one group open when the
+person gets there (Download is then one tap, not two): on entry, or, when the
+version is found while the tab is behind another, when it is next shown. A
+version found while the page is showing does not open it: nothing moves under
+the thumb. Its body offers one step at a time: Download (`Try again` after a
+failure), a progress bar and Cancel, Install; `What's new` opens the release
+notes (the version's `CHANGELOG.md` section, rendered with the shared
+Markdown) in a sheet before anything is downloaded. While bytes arrive the
+row carries the progress bar, open or not, so a download is never out of
+sight behind another group; "Ready to install" and a failure are said to a
+screen reader with the group closed. A failure says what happened and what to
+do, whole and in red, in the body (the row only says "Update failed, open to
+see why"); nothing is lost (a stopped download continues from its bytes).
+Install opens Android's own confirm dialog, so nothing is installed silently;
+if Android does not yet allow herdr to install apps, its settings page opens
+and the body says to tap Install again after allowing it. The buttons stack at
+large text sizes (a cut "Try again" otherwise). About holds `Check for
+updates` (the manual check, with the reason when it fails) and `Check
+automatically` (on by default: at most every 12 h while the app is in front;
+the request carries the app name and version, and a download comes from
+GitHub's file servers). Why on by default and why About says so: the app used
+to say it "sends nothing anywhere else"; github.com is now the one other place
+it contacts, and the Connection line says it. The download is only ever
+started by a tap (it is ~50 MB of the person's radio). Android only:
+`bootApp` builds no updater elsewhere and the screen then shows nothing about
+updates.
 
 The native launch window is the paper colour in day **and** night
 (`herdr_bg`, no `values-night`): the chosen theme is not readable before
@@ -1671,7 +1691,7 @@ so they read the OS flag; the transition itself reads `Motion.reduced`.
 ### The terminal follows the theme
 
 A pane is drawn on paper in the light theme and on ink in the dark one
-(`TerminalPalette.light/dark`, `context.terminal`); Settings > Terminal > Dark
+(`TerminalPalette.light/dark`, `context.terminal`); Settings > Look > Dark
 terminal keeps it dark on paper. The ANSI parser always yields the dark
 `TerminalColors`; `TerminalPalette.recolor` turns a row's runs into the
 palette's when the row is prepared (the dark palette returns the run itself, so

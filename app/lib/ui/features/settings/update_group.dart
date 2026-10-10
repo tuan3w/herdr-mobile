@@ -8,20 +8,26 @@ import '../../../data/models/release_info.dart';
 import '../../../data/repositories/app_update.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
-import '../../core/form_sections.dart';
 import '../../core/markdown/markdown.dart';
 import '../../core/open_link.dart';
 import '../../core/toast.dart';
 import '../../core/tokens.dart';
+import 'settings_group.dart';
 
-/// The top of Settings while a newer version exists: what it is, what is in
-/// it, and the one next step (Download, then Install). Absent otherwise, so
-/// nothing at rest says "update" when there is none. It is a suggestion and
-/// stays quiet: a plain panel, no colour that belongs to a question.
-class UpdatePanel extends StatelessWidget {
-  const UpdatePanel({super.key, required this.update});
+/// The top of Settings while a newer version exists: one row that says what
+/// it is, and opens to what is in it and the one next step (Download, then
+/// Install). Absent otherwise, so nothing at rest says "update" when there is
+/// none. It is a suggestion and stays quiet: a neutral row with the accent
+/// only on its tile, no colour that belongs to a question.
+///
+/// While bytes arrive the row carries the progress bar, open or not, so a
+/// download is never out of sight behind another group.
+class UpdateGroup extends StatelessWidget {
+  const UpdateGroup({super.key, required this.update, required this.open, required this.onToggle});
 
   final AppUpdate update;
+  final bool open;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -29,52 +35,64 @@ class UpdatePanel extends StatelessWidget {
         builder: (context, _) {
           final release = update.release;
           if (release == null) return const SizedBox.shrink();
-          return FormSection(
-            label: 'Update',
-            endsWithField: false,
+          final ds = context.ds;
+          final summary = switch (update.stage) {
+            UpdateStage.downloading => 'Downloading ${megabytes(update.received)} of ${megabytes(release.size)}',
+            UpdateStage.ready => 'Ready to install',
+            // The sentence itself (red, whole) is in the body; a row's line is
+            // a summary.
+            _ => update.problem != null
+                ? 'Update failed, open to see why'
+                : '${release.version} \u00b7 ${megabytes(release.size)}',
+          };
+          return SettingsGroup(
+            icon: LucideIcons.download,
+            title: 'Update available',
+            summary: summary,
+            tint: ds.accent,
+            // Ready, or stopped: news a screen reader says even with the group
+            // closed behind another one.
+            announce: update.stage == UpdateStage.ready || update.problem != null,
+            open: open,
+            onToggle: onToggle,
+            footer: update.stage == UpdateStage.downloading
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(Gap.gutter, 0, Gap.gutter, Gap.md),
+                    child: _ProgressBar(update.received / release.size),
+                  )
+                : null,
             children: [
-              _Summary(update: update, release: release),
-              if (update.stage == UpdateStage.downloading) _ProgressBar(update.received / release.size),
-              if (update.problem case final problem?) _Note(problem, failed: true),
-              if (update.needsInstallPermission)
-                const _Note(
-                  'Allow herdr under \u201cInstall unknown apps\u201d on the Android page that opened, '
-                  'then come back and tap Install.',
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.xs, Gap.gutter, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      update.stage == UpdateStage.ready
+                          ? 'Downloaded and compared with its checksum. Android asks you to confirm the install.'
+                          : 'From github.com. You have $appVersion.',
+                      style: Type.secondary.copyWith(color: ds.textSecondary),
+                    ),
+                    if (update.problem case final problem?) ...[
+                      const SizedBox(height: Gap.sm),
+                      _Note(problem, failed: true),
+                    ],
+                    if (update.needsInstallPermission) ...[
+                      const SizedBox(height: Gap.sm),
+                      const _Note(
+                        'Allow herdr under \u201cInstall unknown apps\u201d on the Android page that opened, '
+                        'then come back and tap Install.',
+                      ),
+                    ],
+                    const SizedBox(height: Gap.md),
+                    _Actions(update: update, release: release),
+                  ],
                 ),
-              _Actions(update: update, release: release),
+              ),
             ],
           );
         },
       );
-}
-
-class _Summary extends StatelessWidget {
-  const _Summary({required this.update, required this.release});
-
-  final AppUpdate update;
-  final ReleaseInfo release;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final line = switch (update.stage) {
-      UpdateStage.downloading =>
-        'Downloading ${megabytes(update.received)} of ${megabytes(release.size)}',
-      UpdateStage.ready => 'Downloaded and compared with its checksum. Android asks you to confirm the install.',
-      _ => '${megabytes(release.size)} from github.com. You have $appVersion.',
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Version ${release.version} is available', style: Type.row.copyWith(color: ds.text)),
-        const SizedBox(height: 2),
-        Semantics(
-          liveRegion: update.stage == UpdateStage.ready,
-          child: Text(line, style: Type.secondary.copyWith(color: ds.textSecondary)),
-        ),
-      ],
-    );
-  }
 }
 
 class _Note extends StatelessWidget {

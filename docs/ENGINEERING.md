@@ -485,7 +485,7 @@ and SFTP.
 - Pacing is `RevealPacer` driven by a `Ticker` that exists only while text is
   held back; it snaps (shows everything, no animation) when the message ends,
   the app resumes, a finger goes down on the transcript, the backlog passes
-  8 KB, Smooth text (`AppSettings.smoothText`, Settings > Appearance, on by
+  8 KB, Smooth text (`AppSettings.smoothText`, Settings > Look, on by
   default) is off, or the transcript is hidden; text already there when the
   row first shows is history and is not paced; reduced motion reveals whole
   lines. No fade, no caret, no looping animation.
