@@ -366,6 +366,16 @@ void main() {
       }
       await teardownBoard(tester, h);
     });
+
+    testWidgets('stands exactly where the tab bar stood, so the bottom keeps its shape', (tester) async {
+      final h = await _studio([_pane(1, 'working')]);
+      await _pump(tester, h, width: 320, height: 640, textScale: 2, bottomInset: 40);
+      final tabs = tester.getRect(find.byType(FloatingBarPill));
+      await _longPress(tester, _row('task 1'));
+      expect(find.byType(FloatingTabBar), findsNothing);
+      expect(tester.getRect(find.byType(FloatingBarPill)), tabs);
+      await teardownBoard(tester, h);
+    });
   });
 
   group('interrupt', () {

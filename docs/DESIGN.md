@@ -105,8 +105,8 @@ Terminal text is JetBrains Mono (`monoFamily`).
 | `glyphs.dart` | `StatusGlyph`, `LinkDot`, `IconTile`, status/link `color` (shapes), `textColor` (words) and `label` extensions |
 | `brand_mark.dart` | `BrandGeometry` (the mark, on the 108-unit adaptive-icon canvas) and `BrandMark` (the icon tile that draws itself once) |
 | `rows.dart` | `ListRow`, `SectionLabel`, `Collapse`, `Hairline`, `EmptyState`, `cwdTail` |
-| `controls.dart` | `PressBuilder`, `AppButton`, `CircleButton`, `AppChip`, `Segmented`, `LabeledField`, `BusySpinner`, `kMinTap` |
-| `chrome.dart` | `SliverLargeTitle`, `FloatingTabBar`, `AppRefresh`, `showAppSheet`, `showActionSheet`, `showConfirmSheet` |
+| `controls.dart` | `PressBuilder`, `AppButton`, `CircleButton`, `AppChip`, `Segmented`, `LabeledField`, `BusySpinner`, `kMinTap`, `kBarTextScale` |
+| `chrome.dart` | `SliverLargeTitle`, `FloatingBar` (metrics, `clearance`), `FloatingBarSlot`, `FloatingBarPill`, `FloatingBarScrim`, `FloatingTabBar`, `AppRefresh`, `showAppSheet`, `showActionSheet`, `showConfirmSheet` |
 | `status_panel.dart` | `StatusStrip` (one line), `StatusPanel` (multi-line), `StatusTint` |
 | `form_sections.dart` | `FormSection`, `FormPanel`, `FormActionBar` (grouped fields on a surface panel and the sticky action bar used by the machine and new-agent-session forms) |
 | `motion.dart` | easing/duration tokens, `Haptics` (the five haptic meanings) |
@@ -722,8 +722,8 @@ scroll position the person left.
 
 **Session overview** (`session_overview.dart`,
 `session_overview_model.dart`). A tap on the bar's title area, or `Session
-overview` in the options sheet, opens a sheet (`showAppSheet`: it scrolls when
-it is taller than the screen). In order: the status in words and how long
+overview` in the options sheet, opens a sheet (`showAppSheet`: it stops below
+the status bar and scrolls when it is taller than the room). In order: the status in words and how long
 (`Working · 4 min`), `Goal` (the first message, three lines), `Plan · 1 of 3
 done` with a thin bar and the step in progress, `Changed · 12 files +310 −42`
 (the files of every turn merged by path, eight, then `N more` in steps of 16;
@@ -1186,7 +1186,8 @@ tabs draw what they have (the bars, the camera tile) while the library answers.
   below the screen plus the bars) and are top-aligned, never centred, for the
   same reason.
 - **Tabs** (`attach_bars.dart`, `attach_sheet_view.dart`): Gallery | Files |
-  Host, each an icon and a label, the selected one on a soft `ds.fill` capsule.
+  Host, each an icon and a label, the selected one on a `ds.fillPressed` capsule,
+  in the tab bar's pill (`FloatingBarPill`).
   Built the first time they are shown, kept alive and out of layout while
   hidden (scroll position and state survive), cross-faded over `Motion.fade`
   (120 ms; nothing is wrapped in an opacity layer at rest). The last tab is
@@ -1590,7 +1591,7 @@ the first dark frame.
 `FloatingTabBar` is a slim floating pill (56 dp tall, 12 dp side margins, 8 dp
 below, at most 312 dp wide and centred) in equal cells: a 22 dp icon over the
 tab's name (`Type.label`), the selected one on a `ds.fillPressed` capsule with
-`ds.text`. A hairline and `Ds.floatShadow`, no blur. Every tab is named and every cell
+`ds.text`. A hairline and `Ds.floatShadow`, no backdrop blur. Every tab is named and every cell
 is the same width, so nothing moves when a tab is chosen, and the count badge
 (18 dp, on the icon's corner) never meets a label. Why: the bar used to show
 only the selected tab's label, which grew and slid the other two icons on every
@@ -1598,9 +1599,10 @@ tap, left two of three tabs as unlabelled icons, and put a `99+` badge on top of
 the word "Agents"; owner's call: floating, but equal cells. Why slim: at 64 dp
 and edge to edge it read as big (owner), and with its margins and scrim it
 reserved about 140 dp of a 892 dp board for two rarely used tabs. The shadow:
-a hard grey band was once reported under the pill; `flutter test` renders draw
-a `BoxShadow` without its blur (a crisp offset band), so judge it on a phone,
-never from a render. Why `fillPressed`: `ds.fill` on the pill's surface was about 1.1:1
+a hard grey band was once reported under the pill. `flutter test` paints a
+`BoxShadow` without its blur unless `debugDisableShadows` is turned off, which
+is what that band was; `bottom_bars_shots_test.dart` turns it off, and its
+renders match the phone (a soft falloff). Why `fillPressed`: `ds.fill` on the pill's surface was about 1.1:1
 and vanished in dark. Three cells fit 320 dp (text is clamped at 1.15x,
 `settings_test.dart`). `FloatingBar.clearance` is 56 + 16 + the bottom inset. Selection is
 one capsule under the cells that slides to the chosen one (`Motion.standard`,
