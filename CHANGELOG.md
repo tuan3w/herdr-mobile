@@ -4,6 +4,20 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.14] - 2026-10-10
+
+### A typo'd command is caught, and a picked command says what it takes
+
+- Sending a message that starts with a `/command` the agent does not list
+  (a typo like `/clera`) now stops once: a short note says so and "Send as
+  message" sends it as typed. Your text stays in the field. It does not stop
+  for commands every terminal takes, for paths, or for a command you have
+  sent before.
+- After you pick a command from the slash list, what it takes shows after it
+  in grey (`/review <pr number>`), until you type.
+- In Settings, opening a group scrolls it into view, so at a large text size
+  its first row is no longer hidden under the tab bar.
+
 ## [0.1.13] - 2026-10-10
 
 ### Settings in four rows, and /clear starts fresh
