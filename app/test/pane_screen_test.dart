@@ -1524,6 +1524,31 @@ void main() {
       await teardown(tester);
     });
 
+    testWidgets('chips are not typed into a pane that stopped being an agent: they stay, with the reason', (tester) async {
+      await pumpWithKit(tester);
+      await takePhoto(tester);
+      kit.uploader.last.finish();
+      await _settle(tester);
+      await tester.enterText(composer(), 'what is this?');
+      await tester.pump();
+
+      // The agent quits: herdr still lists the pane, as a shell.
+      transport.snapshot = snapshotJson(panes: [(id: _pane, ws: 'w1', agent: null, status: 'idle')]);
+      await tester.runAsync(() => machine.refresh());
+      await _settle(tester);
+      expect(find.byIcon(LucideIcons.paperclip), findsNothing);
+
+      await tester.tap(send());
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(transport.sent, isEmpty, reason: 'nothing typed into the shell');
+      expect(find.text('IMG_2031.jpg'), findsOneWidget, reason: 'the chip stays');
+      expect(tester.widget<TextField>(composer()).controller!.text, 'what is this?');
+      expect(find.textContaining('no longer runs an agent'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 6));
+      await teardown(tester);
+    });
+
     testWidgets('a send that fails keeps the chips and the text, and says the picture may be in the input', (tester) async {
       await pumpWithKit(tester);
       await takePhoto(tester);

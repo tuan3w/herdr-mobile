@@ -12,7 +12,9 @@ release.
   the phone, in the chat and in the terminal view: the paperclip, the chips and
   Send work as they do for an ACP agent. A picture is shrunk, stripped of its
   location, uploaded to the machine and reaches the agent as an image; a file
-  inside the project is mentioned as `@path`.
+  inside the project is mentioned as `@path`, one outside it as `@/full/path`.
+  Other agents in a pane get the same, but only Claude Code and Codex turn a
+  pasted picture path into an image; the rest receive the path as text.
 - The terminal view's composer looks like the chat's (same field, buttons and
   corner). A shell's line keeps the terminal font and has no paperclip.
 - One command palette for both views: `/commands` with their hints, and Codex's

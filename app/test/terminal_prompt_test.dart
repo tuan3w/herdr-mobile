@@ -59,22 +59,22 @@ void main() {
       expect(p.line, '');
     });
 
-    test('a file inside the folder is an @mention after the text, one outside is its absolute path', () {
+    test('a file inside the folder is an @mention after the text, one outside is @ and its absolute path', () {
       final p = terminalPrompt([
         const TextBlock('read'),
         _link('/work/app/lib/a.dart', name: 'lib/a.dart'),
         _link('/home/dev/.herdr-mobile/inbox/ab/report.pdf'),
       ])!;
       expect(p.pastes, isEmpty);
-      expect(p.line, 'read @lib/a.dart /home/dev/.herdr-mobile/inbox/ab/report.pdf');
+      expect(p.line, 'read @lib/a.dart @/home/dev/.herdr-mobile/inbox/ab/report.pdf');
     });
 
-    test('a path with whitespace is quoted', () {
+    test('a path with whitespace is quoted after the @', () {
       final p = terminalPrompt([
         _link('/work/a b/c.txt', name: 'a b/c.txt'),
         _link('/x y/z'),
       ])!;
-      expect(p.line, '@"a b/c.txt" "/x y/z"');
+      expect(p.line, '@"a b/c.txt" @"/x y/z"');
     });
 
     test('several pictures are pasted in order', () {
@@ -93,6 +93,20 @@ void main() {
       expect(terminalPrompt([const ImageBlock(data: 'AAAA', mimeType: 'image/png')]), isNull);
       expect(terminalPrompt([const EmbeddedResourceBlock(uri: 'file:///a.txt', text: 'x')]), isNull);
       expect(terminalPrompt([const ResourceLinkBlock(uri: 'https://example.com/a.png', name: 'a.png')]), isNull);
+    });
+
+    test('a name no mention can carry is refused whole: a quote, a newline, a control character', () {
+      for (final name in ['say "hi".txt', 'a\nb.txt', 'a\tb.txt', 'a\u0007b.txt']) {
+        expect(terminalPrompt([const TextBlock('read'), _link('/work/x.txt', name: name)]), isNull, reason: name.codeUnits.toString());
+      }
+      // A picture's path is pasted: the same rule on the path itself.
+      expect(terminalPrompt([_link('/i/a\nb.jpg')]), isNull);
+      expect(terminalPrompt([_link('/i/say "hi".jpg')]), isNull);
+    });
+
+    test('a file-only message starts with @, never with a slash an agent would take for a command', () {
+      final p = terminalPrompt([_link('/home/dev/.herdr-mobile/inbox/ab/report.pdf')])!;
+      expect(p.line, startsWith('@'));
     });
   });
 

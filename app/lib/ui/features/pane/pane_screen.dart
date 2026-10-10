@@ -561,11 +561,19 @@ class _PaneViewState extends State<_PaneView> {
     if (chips.isEmpty) {
       sent = await _vm.sendLine(text);
     } else {
+      // The paperclip is gone from a pane that stopped being an agent, but the
+      // chips are the person's: they stay, and nothing is typed into a shell.
+      if (context.read<MachineConnection>().paneById(_paneId)?.agent == null) {
+        showToast(context, 'This pane no longer runs an agent. Remove the attachments to send the line.', kind: ToastKind.failed);
+        Haptics.failed();
+        return;
+      }
       if (!_attachments.canSend) return;
       final prompt = terminalPrompt(composePrompt(text.trim(), _attachments.take()));
       if (prompt == null) {
+        // A file whose name no mention can carry (a quote, a newline).
         _attachments.restore(chips);
-        showToast(context, 'This agent runs in a terminal; one attachment cannot be sent to it.', kind: ToastKind.failed);
+        showToast(context, terminalAttachmentRefusal, kind: ToastKind.failed);
         Haptics.failed();
         return;
       }

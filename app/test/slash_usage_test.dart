@@ -496,15 +496,46 @@ void main() {
       expect(usage.count('omp', 'ship'), 2);
     });
 
+    Future<CommandPaletteModel> codexWithSkill() async {
+      final fs = FakeFs()..addFile('/work/app/.agents/skills/review/SKILL.md', '---\ndescription: Review\n---\n');
+      final m = CommandPaletteModel(
+        source: CatalogCommandSource(
+          agent: () => 'codex',
+          cwd: () => '/work/app',
+          catalog: SlashCatalog(machineWithFiles(fs).files),
+        ),
+        usage: usage,
+      );
+      addTearDown(m.dispose);
+      m.ensureLoaded();
+      await pumpEventQueue();
+      return m;
+    }
+
     test('a skill is remembered with its dollar, apart from the command of that name', () async {
-      final m = vm();
+      final m = await codexWithSkill();
       m.recordSent(r'$review the diff');
       m.recordSent('/review now');
       m.recordSent(r'$review');
       await pumpEventQueue();
 
-      expect(usage.count('omp', r'$review'), 2);
-      expect(usage.count('omp', 'review'), 1);
+      expect(usage.count('codex', r'$review'), 2);
+      expect(usage.count('codex', 'review'), 1);
+    });
+
+    test('a line that starts with a shell variable is a sentence, not a skill nobody has', () async {
+      final m = await codexWithSkill();
+      m.recordSent(r'$PATH is wrong on this box');
+      m.recordSent(r'$HOME');
+      await pumpEventQueue();
+      expect(usage.used('codex'), isEmpty);
+
+      // Nor for an agent whose source knows no skills at all.
+      final plain = vm();
+      plain.recordSent(r'$PATH is wrong on this box');
+      await pumpEventQueue();
+      expect(usage.used('omp'), isEmpty);
+      expect(m.match(r'$').map((c) => c.name), ['review'], reason: 'the palette lists only the skill that exists');
     });
   });
 }

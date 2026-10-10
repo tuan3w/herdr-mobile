@@ -8,7 +8,7 @@ import '../../core/theme.dart';
 import 'command_model.dart';
 
 /// Two lines of text: the row grows with the text size.
-const commandRowHeight = 52.0;
+const _commandRowHeight = 52.0;
 
 /// How many rows show before the list scrolls; the half row says it scrolls.
 const _visibleRows = 4.5;
@@ -35,7 +35,7 @@ class CommandPalette extends StatelessWidget {
       if (matches.isEmpty) return const SizedBox.shrink();
       final ds = context.ds;
       final rows = matches.length < _visibleRows ? matches.length.toDouble() : _visibleRows;
-      final rowHeight = MediaQuery.textScalerOf(context).scale(commandRowHeight);
+      final rowHeight = MediaQuery.textScalerOf(context).scale(_commandRowHeight);
       return Padding(
         padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.sm),
         child: DecoratedBox(

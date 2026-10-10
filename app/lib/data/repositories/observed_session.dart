@@ -1433,7 +1433,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     final log = _log.commands;
     final memo = _commandsMemo;
     if (memo != null && identical(log, _memoLog) && identical(_catalog, _memoCatalog)) return memo;
-    final known = {for (final c in _catalog) c.usageKey};
+    // The log's commands are `/` ones: only a `/` entry of the catalog hides one.
+    final known = {for (final c in _catalog) if (c.trigger == '/') c.name};
     final merged = [
       ..._catalog,
       for (final c in log)
@@ -1463,12 +1464,13 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
 
   /// Text and file paths are one line; a picture's path is pasted first
   /// ([terminalPrompt]). What cannot be typed (a picture's bytes, embedded
-  /// text) is refused, and so is anything but text for a subagent.
+  /// text, a file name with a quote or a newline) is refused, and so is
+  /// anything but text for a subagent.
   @override
   Future<bool> sendBlocks(List<ContentBlock> blocks, {bool queue = false}) async {
     final prompt = terminalPrompt(blocks);
     if (prompt == null || (_isSub && blocks.any((b) => b is! TextBlock))) {
-      _setProblem('This agent runs in a terminal; this kind of attachment cannot be sent to it. The message was not sent.');
+      _setProblem(terminalAttachmentRefusal);
       return false;
     }
     if (prompt.pastes.isEmpty) return send(prompt.line);

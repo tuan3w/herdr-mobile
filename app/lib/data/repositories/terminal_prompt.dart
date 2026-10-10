@@ -1,13 +1,12 @@
 import '../acp/acp_models.dart';
 import '../services/herdr_api.dart';
+import '../services/image_prep.dart' show pictureExtensions;
 
 /// How long the agent gets to turn a pasted picture path into its attachment
 /// before the message's line follows. Measured with Claude Code 2.1.x: a line
 /// sent at once beats the attaching and the message goes out without the
 /// picture; 100 ms and up works. Codex does not need it.
 const pasteSettle = Duration(milliseconds: 250);
-
-const _pictureExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic', 'heif'};
 
 /// A message as it is typed into an agent's terminal: each picture's host path
 /// pasted alone (the agent turns a pasted image path into an attachment:
@@ -24,8 +23,14 @@ class TerminalPrompt {
   final String line;
 }
 
+/// What a person is told when [terminalPrompt] gave null: the same sentence in
+/// the chat and in the pane.
+const terminalAttachmentRefusal =
+    'This agent runs in a terminal; this kind of attachment cannot be sent to it. The message was not sent.';
+
 /// [blocks] as what is typed into a terminal; null when a block cannot be
-/// typed (a picture's bytes, embedded text, anything but text and file links).
+/// typed: a picture's bytes, embedded text, anything but text and file links,
+/// or a file whose name no mention can carry ([_unsafeName]).
 TerminalPrompt? terminalPrompt(List<ContentBlock> blocks) {
   final texts = <String>[];
   final tokens = <String>[];
@@ -37,11 +42,13 @@ TerminalPrompt? terminalPrompt(List<ContentBlock> blocks) {
         texts.add(block.text);
       case ResourceLinkBlock():
         final path = _hostPath(block.uri);
-        if (path == null) return null;
+        if (path == null || _unsafeName.hasMatch(path)) return null;
         if (_isPicture(path)) {
           pastes.add(path);
         } else {
-          tokens.add(_token(block.name));
+          final token = _token(block.name);
+          if (token == null) return null;
+          tokens.add(token);
         }
       case ImageBlock() || AudioBlock() || EmbeddedResourceBlock() || UnknownBlock():
         return null;
@@ -62,15 +69,21 @@ bool _isPicture(String path) {
   final slash = path.lastIndexOf('/');
   final dot = path.lastIndexOf('.');
   if (dot <= slash + 1) return false;
-  return _pictureExtensions.contains(path.substring(dot + 1).toLowerCase());
+  return pictureExtensions.contains(path.substring(dot + 1).toLowerCase());
 }
 
-/// `@relative/path` (the agent's own file mention) or the absolute path; in
-/// double quotes when it holds whitespace.
-String _token(String name) {
-  final mention = name.startsWith('/') ? name : '@$name';
-  if (!name.contains(RegExp(r'\s'))) return mention;
-  return name.startsWith('/') ? '"$name"' : '@"$name"';
+/// Names no agent's mention syntax can carry: a control character (a newline
+/// would submit half a line) or a double quote (the quote that ends a quoted
+/// mention).
+final _unsafeName = RegExp(r'[\x00-\x1f\x7f"]');
+
+/// `@path`, the agent's own file mention, for a file under the folder
+/// (relative) and outside it (absolute) alike: Claude Code attaches `@/abs`
+/// with no permission prompt, and does not attach a bare path (captured). In
+/// double quotes when it holds whitespace. Null when the name cannot be typed.
+String? _token(String name) {
+  if (_unsafeName.hasMatch(name)) return null;
+  return name.contains(RegExp(r'\s')) ? '@"$name"' : '@$name';
 }
 
 /// Types [p] into [paneId]: each picture's path alone, a moment for the agent

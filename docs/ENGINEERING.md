@@ -153,7 +153,7 @@ needed once `snap_dp` read 0.8.
 
 ### Asking for the keyboard
 
-The composer asks for the keyboard on pointer-down (`_showKeyboard`, test in
+The composer asks for the keyboard on pointer-down (`showComposerKeyboard`, test in
 `pane_screen_test.dart`): the keyboard app needs ~280 ms from the request to
 the first movement, and the finger's press (typically ~100 ms) was pure
 waiting. The rest of that wait is the keyboard app's (a bare `TextField` waits
@@ -297,10 +297,18 @@ inbox and types its path, as a person would.
   Code 2.1.296 and Codex 0.153.4). The message's line follows after `pasteSettle`:
   sent at once, Claude Code submits it before the image has attached and the
   message goes without the picture (100 ms and up works; 250 ms kept).
-- A file inside the folder is typed as `@relative/path` (Claude Code reads it
-  without its own permission prompt, inside or outside the folder); one outside
-  as its absolute path (every phone file lands in `~/.herdr-mobile/inbox`).
-  Claude's own Read of such a path does prompt: it shows as the usual approval.
+- A file is typed as an `@` mention: `@relative/path` inside the folder,
+  `@/absolute/path` outside it (every phone file lands in
+  `~/.herdr-mobile/inbox`). Captured with Claude Code: `@path` is attached with
+  no permission prompt, inside or outside the folder; a bare absolute path is
+  NOT attached (it answers from memory), and Claude's own Read of an inbox path
+  prompts. A name with whitespace is `@"a b/c.txt"` (unverified in Claude Code).
+  A name with a control character or a `"` cannot be quoted: the message is
+  refused with the reason (`terminalAttachmentRefusal`), chips kept.
+- A pane that stopped being an agent keeps its chips and refuses to send them
+  (nothing typed into a shell, said in a toast); the paperclip is gone.
+- Every agent label gets `paths`, but only Claude Code and Codex were captured;
+  another agent receives the picture's path as plain text.
 - A failure after the paste leaves the picture in the agent's input: the failure
   text says so, nothing tries to clear it (no key clears an input line in every
   agent).

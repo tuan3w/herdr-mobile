@@ -1521,7 +1521,7 @@ Cancel request answers `cancelled`. Questions render the elicitation schema
 (string, number, boolean, single and multi enum) with validation; URL mode is
 never offered. The composer's send button is a stop button while the phase is
 not idle; a lone `/word` opens a palette built from `AgentSessionState.commands`
-(its own small palette: `SlashViewModel` is terminal-only). Link states show a
+(the same palette as the terminal view's: `CommandPalette`). Link states show a
 strip: reconnecting, ended with the reason, failed with Retry, and "Opened on
 another device" with Take over.
 

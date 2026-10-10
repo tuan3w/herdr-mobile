@@ -42,12 +42,19 @@ class CommandPaletteModel extends ChangeNotifier {
 
   /// Notes the command a composer [line] starts with, once it was sent. A line
   /// that does not begin with `/name` or `$name` (a path, plain text) is not a
-  /// command.
+  /// command, and neither is a `$name` the source has no skill of: `$PATH is
+  /// wrong` is a sentence, not a Codex skill.
   void recordSent(String line) {
     final name = source.agent;
     final m = _sentCommand.firstMatch(line);
     if (name == null || m == null) return;
-    unawaited(_usage?.record(name, m[1] == '/' ? m[2]! : '\$${m[2]}'));
+    if (m[1] == r'$') {
+      final known = source.commands.any((c) => c.trigger == r'$' && c.name == m[2]);
+      if (!known) return;
+      unawaited(_usage?.record(name, '\$${m[2]}'));
+    } else {
+      unawaited(_usage?.record(name, m[2]!));
+    }
   }
 
   static final _sentCommand = RegExp(r'^([/$])(\w[\w:.\-]{0,63})(?:\s|$)');
