@@ -194,7 +194,7 @@ class Composer extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SessionChipsRow(session: session),
+                SessionChipsRow(session: session, focus: focusNode),
                 if (live) QuickPhrasesRow(input: controller, focus: focusNode),
                 if (live) _QueueShare(child: QueuedMessages(session: session)),
               ],

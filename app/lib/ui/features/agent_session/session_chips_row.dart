@@ -9,6 +9,7 @@ import '../../../data/decision/session_chips.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../core/controls.dart';
 import '../../core/theme.dart';
+import '../composer/composer_frame.dart' show showComposerKeyboard;
 import 'session_bar.dart' show showSessionOptions;
 import 'session_select.dart';
 
@@ -24,10 +25,18 @@ import 'session_select.dart';
 /// chips still say what it was left in). It selects the options and modes
 /// only, so a streaming answer rebuilds nothing here, and the composer leaves
 /// it out in the compact layout.
+///
+/// A pick from the sheet puts the person back in [focus] with the keyboard
+/// up: a model or mode is changed to write the next message with it. Only
+/// focus already there came back, so a field that had lost it (the chat
+/// scrolled, the keyboard put away) left the person tapping it again.
 class SessionChipsRow extends StatelessWidget {
-  const SessionChipsRow({super.key, required this.session});
+  const SessionChipsRow({super.key, required this.session, this.focus});
 
   final AgentSessionView session;
+
+  /// The message field the chips belong to.
+  final FocusNode? focus;
 
   @override
   Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?, AgentLink)>(
@@ -45,7 +54,7 @@ class SessionChipsRow extends StatelessWidget {
           : AppChip(
               label: '+$overflow',
               semanticLabel: '$overflow more ${overflow == 1 ? 'setting' : 'settings'}',
-              onTap: live ? () => unawaited(showSessionOptions(context, session)) : null,
+              onTap: live ? () => unawaited(_choose(context, session, focus)) : null,
             );
       final maxWidth = AppChip.maxRowWidth(context);
       return SizedBox(
@@ -68,7 +77,7 @@ class SessionChipsRow extends StatelessWidget {
                         constraints: BoxConstraints(
                           maxWidth: chip.risk == ModeRisk.dangerous ? double.infinity : maxWidth,
                         ),
-                        child: _ChipView(chip: chip, session: session, live: live),
+                        child: _ChipView(chip: chip, session: session, live: live, focus: focus),
                       ),
                     ],
                   ],
@@ -83,12 +92,20 @@ class SessionChipsRow extends StatelessWidget {
   );
 }
 
+/// The options sheet ([at]: on that chip's choices); a pick sends the person
+/// back to the message field with the keyboard up.
+Future<void> _choose(BuildContext context, AgentSessionView session, FocusNode? focus, {SessionChip? at}) async {
+  final picked = await showSessionOptions(context, session, at: at);
+  if (picked && focus != null && context.mounted) showComposerKeyboard(focus);
+}
+
 class _ChipView extends StatelessWidget {
-  const _ChipView({required this.chip, required this.session, required this.live});
+  const _ChipView({required this.chip, required this.session, required this.live, this.focus});
 
   final SessionChip chip;
   final AgentSessionView session;
   final bool live;
+  final FocusNode? focus;
 
   @override
   Widget build(BuildContext context) {
@@ -147,5 +164,5 @@ class _ChipView extends StatelessWidget {
   /// The words of a risky mode, with why.
   String _said(String head) => chip.reason == null ? head : '$head. ${chip.reason}';
 
-  VoidCallback? _open(BuildContext context) => live ? () => unawaited(showSessionOptions(context, session, at: chip)) : null;
+  VoidCallback? _open(BuildContext context) => live ? () => unawaited(_choose(context, session, focus, at: chip)) : null;
 }
