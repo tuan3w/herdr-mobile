@@ -66,6 +66,7 @@ class ClaudeLogMapper implements SessionLogMapper {
   PendingAsk? _ask;
   String? _cwd;
   String? _lastTyped;
+  bool _customTitled = false;
 
   /// Prompts shown when they were typed, waiting for their second record.
   final _queued = <String>{};
@@ -110,6 +111,7 @@ class ClaudeLogMapper implements SessionLogMapper {
     _ask = null;
     _cwd = null;
     _lastTyped = null;
+    _customTitled = false;
     _queued.clear();
     _turnEnded = false;
     _taskList.clear();
@@ -145,7 +147,12 @@ class ClaudeLogMapper implements SessionLogMapper {
     final type = e['type'];
     if (type is! String) return const [];
     switch (type) {
-      case 'assistant' || 'user' || 'attachment' || 'system' || 'ai-title' || 'queue-operation':
+      case 'ai-title' || 'custom-title':
+        // No uuid, and Claude writes them again later (a rename back to an
+        // earlier name is the same line): setting a title twice is harmless,
+        // so they skip the seen-set.
+        return _title(e, custom: type == 'custom-title');
+      case 'assistant' || 'user' || 'attachment' || 'system' || 'queue-operation':
         final key = _firstTime(e, line);
         if (key == null) return const [];
         return switch (type) {
@@ -153,8 +160,7 @@ class ClaudeLogMapper implements SessionLogMapper {
           'user' => _user(e, key),
           'attachment' => _attachment(e, key),
           'system' => _system(e, key),
-          'queue-operation' => _enqueued(e),
-          _ => _title(e),
+          _ => _enqueued(e),
         };
       default:
         return const [];
@@ -187,9 +193,15 @@ class ClaudeLogMapper implements SessionLogMapper {
   /// was typed.
   String _messageKey(String key, String text) => _queued.remove(text.trim()) ? _queuedKey(text) : key;
 
-  List<SessionUpdate> _title(Json e) {
-    final t = e['aiTitle'];
-    if (t is! String || t.trim().isEmpty) return const [];
+  static const _housekeeping = {'/clear', '/rename'};
+
+  /// `/rename` writes `custom-title`; it wins over Claude's own `ai-title`, which
+  /// Claude keeps writing (and re-appends after the custom one) afterwards.
+  List<SessionUpdate> _title(Json e, {required bool custom}) {
+    final t = e[custom ? 'customTitle' : 'aiTitle'];
+    final blank = t is! String || t.trim().isEmpty;
+    if (custom) _customTitled = !blank;
+    if (blank || (!custom && _customTitled)) return const [];
     return [SessionInfoUpdate(hasTitle: true, title: cutText(t.trim(), 200), hasUpdatedAt: false)];
   }
 
@@ -210,6 +222,7 @@ class ClaudeLogMapper implements SessionLogMapper {
     }
   }
 
+  static final _teammate = RegExp(r'^<teammate-message\s+teammate_id="([^"]+)"([^>]*)>([\s\S]*?)</teammate-message>');
   static final _tag = RegExp(r'<[^<>]{1,200}>');
   static final _ansi = RegExp('\u001b\\[[0-9;]*[A-Za-z]');
 
@@ -287,14 +300,44 @@ class ClaudeLogMapper implements SessionLogMapper {
     if (origin is Map && origin['kind'] != null && origin['kind'] != 'human') return const [];
     if (head.isEmpty ||
         head.startsWith('<local-command-caveat>') ||
-        head.startsWith('<system-reminder>')) {
+        head.startsWith('<system-reminder>') ||
+        head.startsWith('<user-prompt-submit-hook>')) {
       return const [];
     }
-    if (head.startsWith('<local-command-stdout>')) {
+    if (head.startsWith('<local-command-stdout>') || head.startsWith('<local-command-stderr>')) {
       final inner = cutText(firstLine(_strip(head.replaceAll(_ansi, ''))), 300);
       return inner.isEmpty ? const [] : [messageUpsert(MessageRole.agent, key, inner)];
     }
-    if (head.startsWith('<command-name>')) {
+    // The person's `!command` (bash mode): what they typed, then its output.
+    // Neither starts a turn, so `turnEnded` stays as it was.
+    if (head.startsWith('<bash-input>')) {
+      final cmd = _between(head, 'bash-input');
+      return cmd == null || cmd.isEmpty ? const [] : [messageUpsert(MessageRole.user, key, '!$cmd')];
+    }
+    if (head.startsWith('<bash-stdout>') || head.startsWith('<bash-stderr>')) {
+      final out = _between(head, 'bash-stdout')?.replaceAll(_ansi, '') ?? '';
+      final err = _between(head, 'bash-stderr')?.replaceAll(_ansi, '') ?? '';
+      final text = [out, if (err.isNotEmpty) 'stderr:\n$err'].where((s) => s.isNotEmpty).join('\n');
+      return text.isEmpty ? const [] : [messageUpsert(MessageRole.agent, key, capText(text))];
+    }
+    // `# note` (memory): the person typed the note.
+    if (head.startsWith('<user-memory-input>')) {
+      final note = _between(head, 'user-memory-input');
+      return note == null || note.isEmpty ? const [] : [messageUpsert(MessageRole.user, key, '# $note')];
+    }
+    // Agent teams: another agent's message, not the person's. Shape from
+    // claude-devtools' parser (UNVERIFIED against a real capture).
+    final teammate = _teammate.firstMatch(head);
+    if (teammate != null) {
+      final attrs = teammate.group(2) ?? '';
+      final summary = RegExp('summary="([^"]*)"').firstMatch(attrs)?.group(1)?.trim();
+      final body = cutText(firstLine(_strip(teammate.group(3) ?? '')), 300);
+      final text = summary != null && summary.isNotEmpty ? summary : body;
+      return text.isEmpty ? const [] : [messageUpsert(MessageRole.agent, key, '${teammate.group(1)}: $text')];
+    }
+    // Built-in commands write `<command-name>` first; skills and custom
+    // commands write `<command-message>` first. Same record, either order.
+    if (head.startsWith('<command-name>') || head.startsWith('<command-message>')) {
       final name = _between(head, 'command-name');
       final args = _between(head, 'command-args');
       if (name == null || name.isEmpty) return const [];
@@ -305,6 +348,10 @@ class ClaudeLogMapper implements SessionLogMapper {
         _lastTyped = null;
         return const [];
       }
+      // Housekeeping that says nothing the chat does not show better: `/clear`
+      // starts a new session (its file opens with this echo, so every fresh chat
+      // would begin with "/clear"); `/rename` is the title.
+      if (_housekeeping.contains(name)) return _userClears();
       _turnEnded = false;
       return [..._userClears(), messageUpsert(MessageRole.user, key, typed)];
     }
@@ -322,13 +369,19 @@ class ClaudeLogMapper implements SessionLogMapper {
     return m?.group(1)?.trim();
   }
 
-  /// A string, or the text blocks of a content list joined.
+  /// A string, or the text blocks of a content list joined. A block that is
+  /// only a `<system-reminder>` is Claude's own context, not the person's words:
+  /// it must not hide the prompt that comes with it.
   static String _textOf(Object? content) {
     if (content is String) return content;
     if (content is! List) return '';
     final parts = [
       for (final b in content)
-        if (b is Map<String, dynamic> && b['type'] == 'text' && b['text'] is String) b['text'] as String,
+        if (b is Map<String, dynamic> &&
+            b['type'] == 'text' &&
+            b['text'] is String &&
+            !(b['text'] as String).trimLeft().startsWith('<system-reminder>'))
+          b['text'] as String,
     ];
     return parts.join('\n');
   }

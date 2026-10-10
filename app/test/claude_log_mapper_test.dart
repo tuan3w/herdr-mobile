@@ -147,6 +147,87 @@ void main() {
       expect(_texts(s, MessageRole.agent), contains('Earlier messages were summarised'));
     });
 
+    test('/clear is not a message of the chat: every captured fresh session file opens with it', () {
+      final names = [
+        for (final f in Directory(_dir).listSync().whereType<File>())
+          if (f.path.endsWith('.jsonl') && f.readAsStringSync().contains('<command-name>/clear</command-name>'))
+            f.uri.pathSegments.last.replaceAll('.jsonl', ''),
+      ];
+      expect(names, isNotEmpty);
+      for (final name in names) {
+        final (s, _) = _run(name);
+        expect(_texts(s, MessageRole.user), isNot(contains('/clear')), reason: name);
+      }
+    });
+
+    test('/rename sets the title, beats the AI title however often it is rewritten, and is not a message', () {
+      String user(String id, String content) => jsonEncode({
+        'type': 'user',
+        'uuid': id,
+        'message': {'role': 'user', 'content': content},
+      });
+      final m = ClaudeLogMapper();
+      var s = _feed(m, [
+        jsonEncode({'type': 'ai-title', 'aiTitle': 'Auto title', 'sessionId': 'x'}),
+        user('a', '<command-name>/rename</command-name>\n<command-message>rename</command-message>\n<command-args>My name</command-args>'),
+        user('b', '<local-command-stdout>Session renamed to: My name</local-command-stdout>'),
+        jsonEncode({'type': 'custom-title', 'customTitle': 'My name', 'sessionId': 'x'}),
+        // Claude appends both titles again later, the AI one last.
+        jsonEncode({'type': 'custom-title', 'customTitle': 'My name', 'sessionId': 'x'}),
+        jsonEncode({'type': 'ai-title', 'aiTitle': 'Auto title', 'sessionId': 'x'}),
+      ]);
+
+      expect(s.title, 'My name');
+      expect(_texts(s, MessageRole.user), isEmpty);
+      expect(_texts(s, MessageRole.agent), ['Session renamed to: My name']);
+
+      // Renamed back to an earlier name: the same line as before must still count.
+      s = _feed(m, [
+        jsonEncode({'type': 'custom-title', 'customTitle': 'Other', 'sessionId': 'x'}),
+        jsonEncode({'type': 'custom-title', 'customTitle': 'My name', 'sessionId': 'x'}),
+      ], s);
+      expect(s.title, 'My name');
+    });
+
+    test('a skill or custom command (command-message first) shows as typed, not as raw tags', () {
+      final s = _feed(ClaudeLogMapper(), [
+        jsonEncode({
+          'type': 'user',
+          'uuid': 'u1',
+          'message': {
+            'role': 'user',
+            'content':
+                '<command-message>review is running…</command-message>\n<command-name>/review</command-name>\n<command-args>the diff</command-args>',
+          },
+        }),
+      ]);
+
+      expect(_texts(s, MessageRole.user), ['/review the diff']);
+    });
+
+    test('bash mode, memory notes, stderr and teammates show as what they are, never as raw tags', () {
+      String user(String id, Object content) => jsonEncode({
+        'type': 'user',
+        'uuid': id,
+        'message': {'role': 'user', 'content': content},
+      });
+      final s = _feed(ClaudeLogMapper(), [
+        user('a', '<bash-input>ls /tmp</bash-input>'),
+        user('b', '<bash-stdout>one\ntwo</bash-stdout><bash-stderr></bash-stderr>'),
+        user('c', '<bash-stdout></bash-stdout><bash-stderr>nope</bash-stderr>'),
+        user('d', '<user-memory-input>use tabs</user-memory-input>'),
+        user('e', '<local-command-stderr>boom</local-command-stderr>'),
+        user('f', [
+          {'type': 'text', 'text': '<system-reminder>context</system-reminder>'},
+          {'type': 'text', 'text': 'fix the build'},
+        ]),
+        user('g', '<teammate-message teammate_id="reviewer" color="blue" summary="Found 2 issues">long body</teammate-message>'),
+      ]);
+
+      expect(_texts(s, MessageRole.user), ['!ls /tmp', '# use tabs', 'fix the build']);
+      expect(_texts(s, MessageRole.agent), ['one\ntwo', 'stderr:\nnope', 'boom', 'reviewer: Found 2 issues']);
+    });
+
     test('a prompt typed during a turn shows when it was typed, once', () {
       final (s, _) = _run('queued-tool');
       expect(_messages(s, MessageRole.user).where((m) => m.text.contains('PINEAPPLE')), hasLength(1));

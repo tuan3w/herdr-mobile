@@ -9,7 +9,8 @@ key.properties
 __pycache__/
 *.pyc
 
-# Local helper scripts, not part of the project
+# Local helper scripts and reference clones of other projects (local/refs/<name>,
+# `git clone --depth 1`), not part of the project
 /local/
 
 # Private writing the keyboard-prediction eval collects (tool/predict-eval)
