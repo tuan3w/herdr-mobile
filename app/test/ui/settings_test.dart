@@ -794,8 +794,10 @@ void main() {
       await pumpUi(tester, h, brightness: Brightness.light);
       await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
       await settle(tester);
-      await tester.tap(find.text('Look'));
-      await settle(tester);
+      // The group folds open, then scrolls itself into view: the next tap is
+      // after the page has stopped, as a person's would be.
+      await openSettingsGroup(tester, 'Look');
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Dark'));
       await settle(tester);
       expect(h.appSettings.theme, ThemeChoice.dark);
