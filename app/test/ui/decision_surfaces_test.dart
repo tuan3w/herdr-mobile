@@ -322,6 +322,68 @@ void main() {
       expect(session.configs, [('model', 'opus')]);
     });
 
+    // Seen on a phone: a model changed from the chip, and the person had to
+    // tap the field to write with it. A pick from the chip now always puts
+    // them back in the field with the keyboard up, focused before or not.
+    testWidgets('a pick from the chip puts the person in the message field, keyboard up', (tester) async {
+      final session = withOptions([modeOption('default'), modelOption]);
+      await pumpScreen(tester, session);
+      final composer = tester.state<EditableTextState>(find.byType(EditableText).first).widget.focusNode;
+      expect(composer.hasFocus, isFalse);
+
+      await tester.tap(find.widgetWithText(AppChip, 'Claude Sonnet'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Claude Opus'));
+      await tester.pumpAndSettle();
+      expect(session.configs, [('model', 'opus')]);
+      expect(composer.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+    });
+
+    testWidgets('closing the sheet without a pick leaves the field as it was', (tester) async {
+      final session = withOptions([modeOption('default'), modelOption]);
+      await pumpScreen(tester, session);
+      final composer = tester.state<EditableTextState>(find.byType(EditableText).first).widget.focusNode;
+
+      await tester.tap(find.widgetWithText(AppChip, 'Claude Sonnet'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('Claude Opus'), findsNothing, reason: 'the sheet closed');
+      expect(session.configs, isEmpty);
+      expect(composer.hasFocus, isFalse);
+    });
+
+    testWidgets('after a pick found through the search the message field has the focus again', (tester) async {
+      final session = withOptions([
+        modeOption('default'),
+        SelectConfigOption(
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          value: 'm0',
+          choices: [for (var i = 0; i < 40; i++) ConfigChoice(value: 'm$i', name: 'Model $i')],
+        ),
+      ]);
+      await pumpScreen(tester, session);
+      final composer = tester.state<EditableTextState>(find.byType(EditableText).first).widget.focusNode;
+      await tester.tap(find.byType(EditableText).first);
+      await tester.pump();
+      expect(composer.hasFocus, isTrue);
+
+      await tester.tap(find.widgetWithText(AppChip, 'Model 0'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Search 40 choices'), findsOneWidget);
+      await tester.tap(find.byType(EditableText).last);
+      await tester.enterText(find.byType(EditableText).last, 'Model 33');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Model 33').last);
+      await tester.pumpAndSettle();
+      expect(session.configs, [('model', 'm33')]);
+      expect(composer.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue, reason: 'the keyboard comes back with it');
+    });
+
     testWidgets('a mode the agent lists only as modes opens the same picker', (tester) async {
       final session = FakeAgentSession(
         state: stateWith(

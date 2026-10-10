@@ -273,8 +273,9 @@ List<_Setting> _settings(AgentSessionState state) {
 /// The session's options as a sheet: each mode and option of the agent as a
 /// row showing its current choice (tap to pick; a long list such as a model
 /// catalogue scrolls lazily and can be searched) or a switch, then Duplicate.
-Future<void> showSessionOptions(BuildContext context, AgentSessionView session, {SessionChip? at}) =>
-    showAppSheet<void>(context, builder: (ctx) => _OptionsSheet(session: session, at: at));
+/// True when a choice was picked (the sheet closes on a pick).
+Future<bool> showSessionOptions(BuildContext context, AgentSessionView session, {SessionChip? at}) async =>
+    await showAppSheet<bool>(context, builder: (ctx) => _OptionsSheet(session: session, at: at)) == true;
 
 class _OptionsSheet extends StatefulWidget {
   const _OptionsSheet({required this.session, this.at});
@@ -301,7 +302,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     } else {
       widget.session.setConfigOption(setting.id, choice.value);
     }
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(true);
   }
 
   /// Another session of the same agent in the same folder on the same machine,
