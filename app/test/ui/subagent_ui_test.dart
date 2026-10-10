@@ -524,6 +524,22 @@ void main() {
       expect(tester.getRect(find.byType(BottomSheet)).top, greaterThanOrEqualTo(24), reason: 'the grabber and the title clear the clock');
     });
 
+    testWidgets('in landscape with side insets the sheet still reaches the screen edges', (tester) async {
+      tester.view.padding = const FakeViewPadding(top: 24 * 2, left: 48 * 2, right: 48 * 2);
+      tester.view.viewPadding = tester.view.padding;
+      await _pump(
+        tester,
+        _app(Builder(builder: (context) => GestureDetector(onTap: () => showSessionOverview(context, FakeAgentSession(state: rich())), child: const Text('open')))),
+        size: const Size(600, 360),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final sheet = tester.getRect(find.byType(BottomSheet));
+      expect(sheet.left, 0, reason: 'no strip of the page beside the sheet');
+      expect(sheet.right, 600);
+      expect(sheet.top, greaterThanOrEqualTo(24), reason: 'and still below the status bar');
+    });
+
     testWidgets('everything present', (tester) async {
       await open(tester, FakeAgentSession(state: rich()));
       expect(find.text('Session overview'), findsOneWidget);
