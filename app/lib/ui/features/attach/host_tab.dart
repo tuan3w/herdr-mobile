@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/remote_file.dart';
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../../data/services/remote_files.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
@@ -37,14 +37,14 @@ import 'tray.dart';
 class HostTab extends StatefulWidget {
   const HostTab({
     super.key,
-    required this.session,
+    required this.target,
     required this.tray,
     required this.onProblem,
     this.clock,
     this.thumbs,
   });
 
-  final AgentSessionView session;
+  final AttachTarget target;
   final AttachTray tray;
 
   /// Says why a pick was refused (the composer shows it as a toast).
@@ -67,8 +67,8 @@ class _HostTabState extends State<HostTab> {
   final _focus = FocusNode();
   var _browsing = false;
 
-  bool get _supported => widget.session.machine.files.supported;
-  String get _startPath => widget.session.cwd.isEmpty ? '/' : widget.session.cwd;
+  bool get _supported => widget.target.machine.files.supported;
+  String get _startPath => widget.target.cwd.isEmpty ? '/' : widget.target.cwd;
   FileBrowserViewModel get _vm => _stack.last;
 
   @override
@@ -99,7 +99,7 @@ class _HostTabState extends State<HostTab> {
 
   void _push(String path) {
     final vm = FileBrowserViewModel(
-      files: widget.session.machine.files,
+      files: widget.target.machine.files,
       path: path,
       options: _options,
       clock: widget.clock,
@@ -179,7 +179,7 @@ class _HostTabState extends State<HostTab> {
       final path = await navigator.push<String>(
         MaterialPageRoute<String>(
           builder: (_) => FileBrowserScreen(
-            machine: widget.session.machine,
+            machine: widget.target.machine,
             path: _startPath,
             mode: FileBrowserMode.pickFile,
             clock: widget.clock,

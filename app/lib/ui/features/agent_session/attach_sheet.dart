@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../core/toast.dart';
 import '../attach/attach_sheet_view.dart';
 import '../attach/sheet_frame.dart';
@@ -23,7 +23,7 @@ const noImagesReason = 'This agent does not take images';
 /// toast says so.
 Future<void> showAttachSheet(
   BuildContext context, {
-  required AgentSessionView session,
+  required AttachTarget target,
   required ComposerAttachments attachments,
 }) async {
   if (attachments.full) {
@@ -48,7 +48,7 @@ Future<void> showAttachSheet(
   );
   controller = AttachSheetController(
     kit: attachments.kit,
-    session: session,
+    target: target,
     tray: tray,
     onProblem: (m) => toaster.show(m),
     finish: (o) {

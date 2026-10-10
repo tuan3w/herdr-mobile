@@ -6,19 +6,21 @@ import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/repositories/command_source.dart';
 import 'package:herdr_mobile/data/repositories/slash_catalog.dart';
 import 'package:herdr_mobile/data/repositories/slash_usage.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/composer/command_model.dart';
+import 'package:herdr_mobile/ui/features/composer/command_palette.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
-import 'package:herdr_mobile/ui/features/pane/slash_palette.dart';
-import 'package:herdr_mobile/ui/features/pane/slash_view_model.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../support/fake_fs.dart';
 import '../support/fake_network.dart';
 import '../support/fake_transport.dart';
 import '../support/files_support.dart';
@@ -78,30 +80,33 @@ Future<void> _settle(WidgetTester tester) async {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  group('SlashPalette', () {
+  group('CommandPalette', () {
     late SlashUsage usage;
     late TextEditingController input;
     final picked = <String>[];
 
-    Future<SlashViewModel> pumpPalette(WidgetTester tester, {SlashUsage? withUsage}) async {
-      final model = SlashViewModel(
+    Future<CommandPaletteModel> pumpPalette(WidgetTester tester, {SlashUsage? withUsage}) async {
+      final source = CatalogCommandSource(
         agent: () => 'claude',
         cwd: () => null,
         catalog: SlashCatalog(machineWithFiles(null).files),
-        usage: withUsage,
       );
+      final model = CommandPaletteModel(source: source, usage: withUsage);
       await tester.runAsync(() async {
         model.ensureLoaded();
         await pumpEventQueue();
       });
-      addTearDown(model.dispose);
+      addTearDown(() {
+        model.dispose();
+        source.dispose();
+      });
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.dark(),
           home: Scaffold(
             body: Align(
               alignment: Alignment.bottomCenter,
-              child: SlashPalette(
+              child: CommandPalette(
                 input: input,
                 model: model,
                 onPick: (c) => picked.add(c.name),
@@ -121,7 +126,7 @@ void main() {
 
     tearDown(() => input.dispose());
 
-    Finder row(String name) => find.text('/$name');
+    Finder row(String name) => find.text('/$name', findRichText: true);
     Finder pins() => find.byIcon(LucideIcons.pin);
 
     testWidgets('a long press pins the row, shows the pin, and moves it to the top', (tester) async {
@@ -270,7 +275,7 @@ void main() {
       await tester.enterText(composer(), '/');
       await tester.pump();
       await tester.pump();
-      expect(find.text('/review'), findsNothing, reason: 'omp has no table and nothing was sent');
+      expect(find.text('/review', findRichText: true), findsNothing, reason: 'omp has no table and nothing was sent');
 
       await send(tester, '/review the diff');
 
@@ -279,9 +284,9 @@ void main() {
       await tester.enterText(composer(), '/');
       await tester.pump();
       await tester.pump();
-      expect(find.text('/review'), findsOneWidget);
+      expect(find.text('/review', findRichText: true), findsOneWidget);
 
-      await tester.longPress(find.text('/review'));
+      await tester.longPress(find.text('/review', findRichText: true));
       await tester.pump();
       expect(usage.isPinned('omp', 'review'), isTrue);
       expect(find.byIcon(LucideIcons.pin), findsOneWidget);
@@ -303,6 +308,46 @@ void main() {
       expect(usage.used('omp'), isEmpty, reason: 'the agent never got it');
       expect(tester.widget<TextField>(composer()).controller!.text, '/deploy now',
           reason: 'a failed send keeps what was typed');
+      semantics.dispose();
+      await teardown(tester);
+    });
+
+    testWidgets('with a Codex agent a dollar lists its skills and a slash only its commands; pins stay apart', (tester) async {
+      final semantics = tester.ensureSemantics();
+      transport.snapshot = snapshotJson(panes: [(id: _pane, ws: 'w1', agent: 'codex', status: 'idle')]);
+      transport.fs = FakeFs()..addFile('/work/w1/.agents/skills/ship/SKILL.md', '---\ndescription: Ship it\n---\n');
+      await pumpPane(tester);
+
+      Future<void> type(String text) async {
+        await tester.enterText(composer(), text);
+        await tester.runAsync(() => pumpEventQueue());
+        await tester.pump();
+        await tester.pump();
+      }
+
+      await type(r'$');
+      expect(find.text(r'$ship', findRichText: true), findsOneWidget);
+      expect(find.text('Ship it'), findsOneWidget);
+      expect(find.text('/new', findRichText: true), findsNothing, reason: 'a dollar lists skills');
+
+      await type('/');
+      expect(find.text('/new', findRichText: true), findsOneWidget);
+      expect(find.text(r'$ship', findRichText: true), findsNothing, reason: 'a slash lists commands');
+
+      await type(r'$');
+      await tester.longPress(find.text(r'$ship', findRichText: true));
+      await tester.pump();
+      expect(usage.isPinned('codex', r'$ship'), isTrue);
+      expect(usage.isPinned('codex', 'ship'), isFalse);
+
+      await tester.tap(find.text(r'$ship', findRichText: true));
+      await tester.pump();
+      expect(tester.widget<TextField>(composer()).controller!.text, r'$ship ');
+
+      await send(tester, r'$ship the release');
+      expect(transport.sent.last, r'$ship the release');
+      expect(usage.count('codex', r'$ship'), 1);
+      expect(usage.count('codex', 'ship'), 0);
       semantics.dispose();
       await teardown(tester);
     });

@@ -395,4 +395,35 @@ void main() {
       expect([for (final e in s.plan) (e.content, e.status)], [('one', PlanStatus.completed), ('two', PlanStatus.inProgress)]);
     });
   });
+
+  group('a message with a picture', () {
+    test('the captured paste shows once per turn, with Codex\'s own placeholder', () {
+      final s = _feed(CodexLogMapper(), _lines('image-paste'));
+      final texts = [for (final m in s.items.whereType<TranscriptMessage>()) if (m.role == MessageRole.user) m.text];
+      expect(texts, isNotEmpty);
+      expect(texts, everyElement('[Image #1]  what colour is this picture?'));
+      expect(texts.where((t) => t.contains('[image]')), isEmpty);
+    });
+
+    test('a picture the text does not mark gets an [image] line; a picture alone is not an empty message', () {
+      String item(String id, List<Object> content) => jsonEncode({
+        'type': 'event_msg',
+        'payload': {
+          'type': 'item_completed',
+          'item': {'type': 'UserMessage', 'id': id, 'content': content},
+        },
+      });
+      final s = _feed(CodexLogMapper(), [
+        item('a', [
+          {'type': 'text', 'text': 'what is this?'},
+          {'type': 'local_image', 'path': '/h/x.jpg'},
+        ]),
+        item('b', [
+          {'type': 'image', 'image_url': 'data:image/png;base64,<trimmed>'},
+        ]),
+      ]);
+      final texts = [for (final m in s.items.whereType<TranscriptMessage>()) if (m.role == MessageRole.user) m.text];
+      expect(texts, ['what is this?\n[image]', '[image]']);
+    });
+  });
 }

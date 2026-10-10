@@ -8,6 +8,7 @@ import '../acp/prompt_queue.dart';
 import '../acp/session_state.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../observed/observed_contracts.dart' show SubagentInfo;
+import 'attach_target.dart';
 import 'machine_connection.dart';
 
 /// Where an agent session's link to its keeper stands.
@@ -57,10 +58,12 @@ enum EarlierHistory {
 ///
 /// Implemented by `AcpAgentSession` (repository layer); screens and tests use
 /// this interface only.
-abstract interface class AgentSessionView implements Listenable {
+abstract interface class AgentSessionView implements Listenable, AttachTarget {
   /// `<machineId>/<keeperId>`: stable, a list key and the route argument.
+  @override
   String get key;
 
+  @override
   MachineConnection get machine;
 
   /// A route id (`omp`, `claude`, `codex`, `pi`).
@@ -69,6 +72,7 @@ abstract interface class AgentSessionView implements Listenable {
   /// `Claude Code`.
   String get agentLabel;
 
+  @override
   String get cwd;
 
   /// The session's title when the agent sent one, else the folder's name.
@@ -179,10 +183,18 @@ abstract interface class AgentSessionView implements Listenable {
   /// The agent takes pictures in a prompt (`promptCapabilities.image`). Codex
   /// says yes and refuses on a text-only model: that arrives as an error
   /// message on the send. False while no attach has told.
+  @override
   bool get acceptsImages;
 
   /// The agent takes embedded text resources (`promptCapabilities.embeddedContext`).
+  @override
   bool get acceptsEmbeddedContext;
+
+  /// How a message's pictures and files reach the agent: as content blocks
+  /// (ACP), as host paths typed into its terminal (an observed agent), or not
+  /// at all (a subagent's run).
+  @override
+  AttachMode get attachMode;
 
   /// What waits to be sent, oldest first; a new list whenever it changes. A
   /// message is [QueuedState.waiting] (goes out when the turn ends) or

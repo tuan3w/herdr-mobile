@@ -13,11 +13,14 @@ import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/services/image_prep.dart';
+import 'package:herdr_mobile/data/services/phone_gallery.dart';
 import 'package:herdr_mobile/data/services/dictation.dart';
 import 'package:herdr_mobile/ui/core/controls.dart';
 import 'package:herdr_mobile/ui/core/terminal_cells.dart';
 import 'package:herdr_mobile/ui/core/terminal_view.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
+import 'package:herdr_mobile/ui/features/agent_session/attach_picker.dart';
 import 'package:herdr_mobile/ui/features/agents/agent_navigation.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
@@ -32,6 +35,7 @@ import 'support/fake_fs.dart';
 import 'support/fake_network.dart';
 import 'support/fake_transport.dart';
 import 'support/memory_quick_phrases_store.dart';
+import 'support/attach_fakes.dart';
 import 'support/memory_stores.dart';
 import 'support/memory_terminal_settings_store.dart';
 import 'support/terminal_rows.dart';
@@ -108,6 +112,19 @@ class _PaneTransport extends FakeTransport {
       'read': {'text': text, 'truncated': custom?.$2 ?? false},
     });
   }
+}
+
+/// Hands out the one photo the camera gave.
+class _CameraPicker implements AttachPicker {
+  _CameraPicker(this.shot);
+
+  final PickedPhoto shot;
+
+  @override
+  Future<PickedPhoto?> camera() async => shot;
+
+  @override
+  Future<PickedPhoto?> photo() async => shot;
 }
 
 Future<void> _settle(WidgetTester tester) async {
@@ -1024,7 +1041,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('landscape with the keyboard up keeps six lines of terminal and '
+    testWidgets('landscape with the keyboard up keeps five rows of terminal and '
         'folds the keys behind a toggle', (tester) async {
       tester.view.physicalSize = const Size(740, 360);
       tester.view.devicePixelRatio = 1;
@@ -1034,9 +1051,10 @@ void main() {
 
       expect(find.byTooltip('Back'), findsNothing);
       expect(find.text('esc'), findsNothing);
-      // Six rows of the terminal at its default size (about 14dp each) plus
-      // its own 16dp of padding.
-      expect(tester.getSize(find.byType(TerminalView)).height, greaterThanOrEqualTo(100));
+      // Five whole rows of the terminal at its default size plus its own 16dp
+      // of padding (the window is 360dp tall with 200dp of keyboard).
+      final row = CellMetrics.measure(settings.fontSize, 1).lineHeight;
+      expect(tester.getSize(find.byType(TerminalView)).height, greaterThanOrEqualTo(5 * row + 16));
 
       await tester.tap(find.byTooltip('Show keys'));
       await tester.pump();
@@ -1399,6 +1417,129 @@ void main() {
       expect(find.byIcon(LucideIcons.mic), findsNothing);
       expect(send(), findsOneWidget);
       semantics.dispose();
+      await teardown(tester);
+    });
+  });
+
+  group('pictures and files', () {
+    final jpeg = fakePicture(2);
+    late FakeKit kit;
+
+    Future<void> pumpWithKit(WidgetTester tester, {String? kind = 'claude'}) async {
+      kit = FakeKit(gallery: FakeGallery(state: GalleryAccess.unavailable));
+      transport.snapshot = snapshotJson(panes: [(id: _pane, ws: 'w1', agent: kind, status: 'idle')]);
+      await pumpPane(
+        tester,
+        home: PaneScreen(
+          agent: agent(),
+          picker: _CameraPicker(PickedPhoto(path: '/cache/image_picker/IMG_2031.jpg', name: 'IMG_2031.jpg', size: jpeg.length)),
+          prepare: (input) async => PreparedImage(bytes: input, width: 8, height: 8),
+          attachKit: kit.kit,
+          readFile: (_) async => jpeg,
+        ),
+      );
+    }
+
+    /// Takes the photo through the sheet and lets the copy for the upload be
+    /// written (real file I/O, outside the fake clock).
+    Future<void> takePhoto(WidgetTester tester) async {
+      await tester.tap(find.byIcon(LucideIcons.paperclip));
+      await _settle(tester);
+      await tester.tap(find.text('Take a photo'));
+      await _settle(tester);
+      for (var i = 0; i < 300 && kit.uploader.started.isEmpty; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      expect(kit.uploader.started, hasLength(1), reason: 'the picture is on its way to the host');
+    }
+
+    testWidgets('an agent pane has the paperclip', (tester) async {
+      await pumpWithKit(tester);
+      expect(find.byIcon(LucideIcons.paperclip), findsOneWidget);
+      await teardown(tester);
+    });
+
+    testWidgets('a shell pane has none: its line takes no attachments', (tester) async {
+      await pumpWithKit(tester, kind: null);
+      expect(find.byIcon(LucideIcons.paperclip), findsNothing);
+      await teardown(tester);
+    });
+
+    testWidgets('Send waits, and the hint says why, while a picture uploads', (tester) async {
+      await pumpWithKit(tester);
+      await takePhoto(tester);
+      await tester.enterText(composer(), 'what is this?');
+      await tester.pump();
+
+      expect(find.text('IMG_2031.jpg'), findsOneWidget, reason: 'the chip');
+      await tester.enterText(composer(), '');
+      await tester.pump();
+      expect(find.text('Uploading IMG_2031.jpg…'), findsOneWidget);
+      await tester.enterText(composer(), 'what is this?');
+      await tester.pump();
+      await tester.tap(send());
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(transport.sent, isEmpty, reason: 'nothing goes while the upload runs');
+      await teardown(tester);
+    });
+
+    testWidgets('a ready picture and text: the path is pasted, then the line goes, and the chips are gone', (tester) async {
+      await pumpWithKit(tester);
+      await takePhoto(tester);
+      kit.uploader.last.finish();
+      await _settle(tester);
+      await tester.enterText(composer(), 'what is this?');
+      await tester.pump();
+
+      await tester.tap(send());
+      await tester.pump(const Duration(milliseconds: 400));
+      await _settle(tester);
+
+      expect(transport.sent, [
+        'line:/home/dev/.herdr-mobile/inbox/abc/2026-05-20-IMG_2031.jpg',
+        'line: what is this?',
+      ]);
+      final calls = transport.calls.where((c) => c.$1 == 'pane.send_input').toList();
+      expect(calls[0].$2.containsKey('keys'), isFalse, reason: 'a paste, not a line');
+      expect(calls[1].$2['keys'], ['enter']);
+      expect(find.text('IMG_2031.jpg'), findsNothing, reason: 'the chip went with the message');
+      expect(tester.widget<TextField>(composer()).controller!.text, isEmpty);
+      await teardown(tester);
+    });
+
+    testWidgets('a picture alone can be sent: the paste, then enter', (tester) async {
+      await pumpWithKit(tester);
+      await takePhoto(tester);
+      kit.uploader.last.finish();
+      await _settle(tester);
+
+      await tester.tap(send());
+      await tester.pump(const Duration(milliseconds: 400));
+      await _settle(tester);
+
+      final calls = transport.calls.where((c) => c.$1 == 'pane.send_input').toList();
+      expect(calls, hasLength(2));
+      expect(calls[1].$2, {'pane_id': _pane, 'keys': ['enter']});
+      await teardown(tester);
+    });
+
+    testWidgets('a send that fails keeps the chips and the text, and says the picture may be in the input', (tester) async {
+      await pumpWithKit(tester);
+      await takePhoto(tester);
+      kit.uploader.last.finish();
+      await _settle(tester);
+      await tester.enterText(composer(), 'what is this?');
+      await tester.pump();
+
+      transport.sendFailure = const HerdrTransportException('network down');
+      await tester.tap(send());
+      await tester.pump(const Duration(milliseconds: 400));
+      await _settle(tester);
+
+      expect(find.text('IMG_2031.jpg'), findsOneWidget, reason: 'the chip is back');
+      expect(tester.widget<TextField>(composer()).controller!.text, 'what is this?');
+      expect(banner('may still hold the picture'), findsOneWidget);
       await teardown(tester);
     });
   });

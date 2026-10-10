@@ -14,6 +14,7 @@ import '../acp/session_state.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../models/herdr_models.dart';
 import '../models/pane_preview.dart';
+import '../models/slash_command.dart';
 import '../models/remote_file.dart' show RemoteFileException;
 import '../observed/background_view.dart';
 import '../observed/observed_contracts.dart';
@@ -23,10 +24,14 @@ import '../observed/session_log_locator.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
+import 'attach_target.dart' show AttachMode;
+import 'command_source.dart' show SessionCommands;
 import 'machine_connection.dart';
 import 'observed_requests.dart';
 import 'pane_previews.dart';
 import 'prompt_detector.dart';
+import 'slash_catalog.dart';
+import 'terminal_prompt.dart';
 
 /// Opens the stream of an agent's session log on a machine.
 typedef LogSourceFor = SessionLogSource Function(MachineConnection machine);
@@ -99,7 +104,7 @@ bool _patchTouches(Object? input, String path) {
 /// Listeners are told at most once per [notifyEvery] (and per
 /// [backgroundNotifyEvery] for streaming text when the app is away and the
 /// session is kept alive).
-class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
+class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, SessionCommands {
   ObservedAgentSession({
     required this.machine,
     required this.paneId,
@@ -518,7 +523,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   // An agent in a pane has its own composer: the terminal queues or steers as
   // that agent does, and the phone only types into it. No queue, no login
-  // flow, no attachments here.
+  // flow; pictures and files go as host paths (see [attachMode]).
   @override
   SendDelivery get delivery => SendDelivery.now;
 
@@ -530,6 +535,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   bool get acceptsEmbeddedContext => false;
+
+  /// A subagent's run takes nothing; the agent's own pane takes host paths.
+  @override
+  AttachMode get attachMode => _isSub ? AttachMode.none : AttachMode.paths;
 
   @override
   List<QueuedMessage> get queued => const [];
@@ -1378,6 +1387,63 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
     });
   }
 
+  // -- commands and skills ------------------------------------------------------------
+
+  /// What the machine's files say (`SlashCatalog`: project and user commands
+  /// and skills, the agent's own table), read when a command is first begun
+  /// and again once it is two minutes old.
+  List<SlashCommand> _catalog = const [];
+  DateTime? _catalogAt;
+  bool _catalogLoading = false;
+  static const _catalogMaxAge = Duration(minutes: 2);
+
+  List<SlashCommand>? _commandsMemo;
+  List<AcpCommand>? _memoLog;
+  List<SlashCommand>? _memoCatalog;
+
+  @override
+  void wantCommands() {
+    if (_isSub || _disposed || _catalogLoading) return;
+    final at = _catalogAt;
+    if (at != null && DateTime.now().difference(at) < _catalogMaxAge) return;
+    _catalogLoading = true;
+    unawaited(_loadCatalog());
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final found = await SlashCatalog(machine.files).load(agent: agent, cwd: cwd);
+      if (_disposed) return;
+      _catalog = found;
+      _catalogAt = DateTime.now();
+      _commandsMemo = null;
+      // The palette's list is not part of what _refresh compares.
+      _changed();
+    } finally {
+      _catalogLoading = false;
+    }
+  }
+
+  /// The catalog, then every command the log taught that the catalog does not
+  /// have (Claude's plugin and bundled skills: `skill_listing`). Catalog entries
+  /// win: they carry the project or user tag and the file's description. The
+  /// same list instance until the catalog or the log's commands change.
+  @override
+  List<SlashCommand> get slashCommands {
+    final log = _log.commands;
+    final memo = _commandsMemo;
+    if (memo != null && identical(log, _memoLog) && identical(_catalog, _memoCatalog)) return memo;
+    final known = {for (final c in _catalog) c.usageKey};
+    final merged = [
+      ..._catalog,
+      for (final c in log)
+        if (!known.contains(c.name)) SlashCommand(c.name, c.description, SlashSource.builtIn, hint: c.inputHint),
+    ];
+    _memoLog = log;
+    _memoCatalog = _catalog;
+    return _commandsMemo = merged;
+  }
+
   // -- what the person does -----------------------------------------------------------
 
   @override
@@ -1392,21 +1458,32 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
       return failure == null;
     }
     final before = _userMessages();
-    final failure = await _sendPrompt(trimmed);
+    return _afterSend(before, await _sendPrompt(trimmed));
+  }
+
+  /// Text and file paths are one line; a picture's path is pasted first
+  /// ([terminalPrompt]). What cannot be typed (a picture's bytes, embedded
+  /// text) is refused, and so is anything but text for a subagent.
+  @override
+  Future<bool> sendBlocks(List<ContentBlock> blocks, {bool queue = false}) async {
+    final prompt = terminalPrompt(blocks);
+    if (prompt == null || (_isSub && blocks.any((b) => b is! TextBlock))) {
+      _setProblem('This agent runs in a terminal; this kind of attachment cannot be sent to it. The message was not sent.');
+      return false;
+    }
+    if (prompt.pastes.isEmpty) return send(prompt.line);
+    final before = _userMessages();
+    return _afterSend(before, await _sendTerminal(prompt));
+  }
+
+  /// What every send ends with: the problem (or none), the session seen, and
+  /// the log checked for the message.
+  bool _afterSend(int before, String? failure) {
     _setProblem(failure);
     if (failure != null) return false;
     markSeen();
     unawaited(_confirmSent(before));
     return true;
-  }
-
-  @override
-  Future<bool> sendBlocks(List<ContentBlock> blocks, {bool queue = false}) async {
-    if (blocks.any((b) => b is! TextBlock)) {
-      _setProblem('This agent runs in a terminal; attachments cannot be sent to it. The message was not sent.');
-      return false;
-    }
-    return send([for (final b in blocks) (b as TextBlock).text].join('\n'));
   }
 
   int _userMessages() => _log.items.where((i) => i is TranscriptMessage && i.role == MessageRole.user).length;
@@ -1423,7 +1500,19 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
 
   /// Types [text] into the pane as the composer of the terminal screen does;
   /// null when it went, else why not.
-  Future<String?> _sendPrompt(String text) async {
+  Future<String?> _sendPrompt(String text) => _deliver(() => machine.api.sendLine(paneId, text));
+
+  /// Types a message with pictures into the pane: their paths pasted, then the
+  /// line ([sendTerminalPrompt]).
+  Future<String?> _sendTerminal(TerminalPrompt p) => _deliver(
+    () => sendTerminalPrompt(machine.api, paneId, p),
+    // A failure after the paste leaves the picture in the agent's input.
+    failure: p.pastes.isEmpty ? null : terminalPromptFailure,
+  );
+
+  /// Runs [go] when the pane can take input now; null when it went, else why
+  /// not ([failure] in place of the error's own words).
+  Future<String?> _deliver(Future<void> Function() go, {String? failure}) async {
     if (_disposed) return 'This session is closed.';
     if (!machine.isLive || _pane == null) return 'Not connected. The message was not sent.';
     if (_blocked || _pending != null) {
@@ -1432,12 +1521,12 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView {
           : 'The agent is waiting for you in the terminal. The message was not sent.';
     }
     try {
-      await machine.api.sendLine(paneId, text);
+      await go();
       return null;
     } on HerdrApiException catch (e) {
-      return e.toString();
+      return failure ?? e.toString();
     } on HerdrTransportException catch (e) {
-      return e.message;
+      return failure ?? e.message;
     }
   }
 

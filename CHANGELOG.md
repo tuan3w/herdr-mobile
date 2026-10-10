@@ -4,6 +4,21 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+### Pictures, files and commands for terminal agents
+
+- A Claude Code or Codex agent in a herdr pane takes pictures and files from
+  the phone, in the chat and in the terminal view: the paperclip, the chips and
+  Send work as they do for an ACP agent. A picture is shrunk, stripped of its
+  location, uploaded to the machine and reaches the agent as an image; a file
+  inside the project is mentioned as `@path`.
+- The terminal view's composer looks like the chat's (same field, buttons and
+  corner). A shell's line keeps the terminal font and has no paperclip.
+- One command palette for both views: `/commands` with their hints, and Codex's
+  `$skills`. A Claude Code chat lists the plugin and bundled skills the agent
+  announces. Pins and recents are shared between the two views.
+
 ## [0.1.9] - 2026-10-10
 
 ### Claude Code and Codex as chats

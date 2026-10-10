@@ -31,24 +31,64 @@ class SlashCatalog {
   /// Names the user or project define replace a built-in of the same name.
   Future<List<SlashCommand>> load({required String agent, String? cwd}) async {
     final key = agent.toLowerCase();
-    final found = <SlashCommand>[
-      ...await _project(key, cwd),
-      ...await _user(key),
+    final home = await _home();
+    var found = <SlashCommand>[
+      ...await _project(key, cwd, home),
+      ...await _user(key, home),
     ];
-    final taken = {for (final c in found) c.name};
+    // Codex looks in several folders: the first of a name is the one it uses.
+    if (key == 'codex') {
+      final seen = <String>{};
+      found = [
+        for (final c in found)
+          if (seen.add(c.usageKey)) c,
+      ];
+    }
+    final taken = {for (final c in found) c.usageKey};
     return [
       ...found,
       for (final c in builtInSlashCommands[key] ?? const <SlashCommand>[])
-        if (!taken.contains(c.name)) c,
+        if (!taken.contains(c.usageKey)) c,
     ];
   }
 
-  Future<List<SlashCommand>> _project(String agent, String? cwd) async {
+  Future<String?> _home() async {
+    try {
+      return await _files.home();
+    } on RemoteFileException {
+      return null;
+    }
+  }
+
+  /// Codex reads `.agents/skills` in the folder it runs in and in each folder
+  /// above it up to the repository root; how far that is is not known here, so
+  /// this goes up [codexLevels] folders (never `/`, and never [home], which
+  /// is the user's own).
+  static const codexLevels = 6;
+
+  static List<String> _folders(String cwd, String? home) {
+    final out = <String>[];
+    var dir = cwd;
+    while (dir.length > 1 && dir.endsWith('/')) {
+      dir = dir.substring(0, dir.length - 1);
+    }
+    for (var i = 0; i < codexLevels && dir.length > 1; i++) {
+      if (dir != home) out.add(dir);
+      final cut = dir.lastIndexOf('/');
+      dir = cut <= 0 ? '/' : dir.substring(0, cut);
+    }
+    return out;
+  }
+
+  Future<List<SlashCommand>> _project(String agent, String? cwd, String? home) async {
     if (cwd == null || cwd.isEmpty) return const [];
     return switch (agent) {
       'claude' => [
           ...await _commandFiles('$cwd/.claude/commands', SlashSource.project, nested: true),
           ...await _skills('$cwd/.claude/skills', SlashSource.project),
+        ],
+      'codex' => [
+          for (final dir in _folders(cwd, home)) ...await _skills('$dir/.agents/skills', SlashSource.project, trigger: r'$'),
         ],
       'opencode' => [
           ...await _commandFiles('$cwd/.opencode/command', SlashSource.project),
@@ -58,17 +98,16 @@ class SlashCatalog {
     };
   }
 
-  Future<List<SlashCommand>> _user(String agent) async {
-    final String home;
-    try {
-      home = await _files.home();
-    } on RemoteFileException {
-      return const [];
-    }
+  Future<List<SlashCommand>> _user(String agent, String? home) async {
+    if (home == null) return const [];
     return switch (agent) {
       'claude' => [
           ...await _commandFiles('$home/.claude/commands', SlashSource.user, nested: true),
           ...await _skills('$home/.claude/skills', SlashSource.user),
+        ],
+      'codex' => [
+          ...await _skills('$home/.agents/skills', SlashSource.user, trigger: r'$'),
+          ...await _skills('$home/.codex/skills', SlashSource.user, trigger: r'$'),
         ],
       'opencode' => [
           ...await _commandFiles('$home/.config/opencode/command', SlashSource.user),
@@ -117,7 +156,7 @@ class SlashCatalog {
   }
 
   /// Skills: one folder each, with a `SKILL.md` inside, named after the folder.
-  Future<List<SlashCommand>> _skills(String dir, SlashSource source) async {
+  Future<List<SlashCommand>> _skills(String dir, SlashSource source, {String trigger = '/'}) async {
     final folders = [
       for (final e in await _list(dir))
         if (e.isDirectory && !e.isHidden) e,
@@ -127,6 +166,7 @@ class SlashCatalog {
       (e) => e.name,
       (e) => '${e.path}/SKILL.md',
       source,
+      trigger: trigger,
     );
   }
 
@@ -134,8 +174,9 @@ class SlashCatalog {
     List<RemoteEntry> entries,
     String Function(RemoteEntry) name,
     String Function(RemoteEntry) file,
-    SlashSource source,
-  ) async {
+    SlashSource source, {
+    String trigger = '/',
+  }) async {
     final out = <SlashCommand>[];
     for (var i = 0; i < entries.length; i += _parallel) {
       final batch = entries.skip(i).take(_parallel).toList();
@@ -146,7 +187,7 @@ class SlashCatalog {
         final text = described[j];
         // A skill folder without a SKILL.md is not a skill.
         if (text == null) continue;
-        out.add(SlashCommand(name(batch[j]), describe(text), source));
+        out.add(SlashCommand(name(batch[j]), describe(text), source, trigger: trigger));
       }
     }
     return out;

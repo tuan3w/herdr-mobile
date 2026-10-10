@@ -34,7 +34,7 @@ Future<(Attachment, int)> _attach(_Source source, {required bool images}) async 
   final session = FakeAgentSession()..imagesAccepted = images;
   final fake = FakeKit();
   final model = ComposerAttachments(
-    session: session,
+    target: session,
     picker: _Picker(),
     prepare: (b) async => PreparedImage(bytes: b, width: 96, height: 96),
     readFile: (_) async => _jpeg,

@@ -1,0 +1,6 @@
+question:
+  Do you want to proceed?
+replies:
+  1. Yes | keys: 1 enter | confirm: no
+  2. Yes, allow reading from… | keys: 2 enter | confirm: standing permission
+  3. No | keys: 3 enter | confirm: no

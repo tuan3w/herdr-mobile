@@ -7,7 +7,7 @@ import '../../../data/repositories/recent_phone_files.dart';
 import '../../../data/services/phone_files.dart';
 import '../../../data/services/phone_gallery.dart';
 import '../../../data/services/thumb_cache.dart';
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import 'gallery_model.dart';
 import 'gallery_thumb.dart' show galleryThumbProvider;
 
@@ -46,8 +46,8 @@ class AttachKit {
   final ThumbCache thumbs;
   late final GalleryModel galleryModel;
 
-  /// How a file of the phone reaches [session]'s host.
-  final AttachUploader Function(AgentSessionView session) uploaderFor;
+  /// How a file of the phone reaches [target]'s host.
+  final AttachUploader Function(AttachTarget target) uploaderFor;
 
   /// The tab shown first the next time: the last one used in this app run.
   AttachTab tab = AttachTab.gallery;
@@ -63,7 +63,7 @@ class AttachKit {
       gallery: gallery,
       files: const DevicePhoneFilePicker(),
       recents: RecentPhoneFiles(PrefsRecentPhoneFilesStore()),
-      uploaderFor: (s) => HostUploader(machine: s.machine, sessionKey: s.key),
+      uploaderFor: (t) => HostUploader(machine: t.machine, sessionKey: t.key),
       foreground: () {
         final state = WidgetsBinding.instance.lifecycleState;
         return state == null || state == AppLifecycleState.resumed;

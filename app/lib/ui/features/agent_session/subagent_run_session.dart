@@ -8,6 +8,7 @@ import '../../../data/acp/background/background_work.dart';
 import '../../../data/acp/session_state.dart';
 import '../../../data/acp/subagents/subagent_run.dart';
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart' show AttachMode;
 import '../../../data/repositories/machine_connection.dart';
 
 /// One subagent's transcript as a read-only [AgentSessionView], so the
@@ -111,6 +112,8 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   bool get acceptsImages => false;
   @override
   bool get acceptsEmbeddedContext => false;
+  @override
+  AttachMode get attachMode => AttachMode.none;
   @override
   List<QueuedMessage> get queued => const [];
   @override

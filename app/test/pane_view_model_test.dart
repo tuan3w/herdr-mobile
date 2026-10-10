@@ -82,6 +82,12 @@ class _Fake {
         paneId: _pane,
         read: read,
         sendLine: _send,
+        sendPrompt: (p) async {
+          for (final path in p.pastes) {
+            await _send(path);
+          }
+          await _send(p.line);
+        },
         sendKeys: (keys) => _send(keys.join('+')),
         minReadInterval: minReadInterval,
         deepReadInterval: deepReadInterval,

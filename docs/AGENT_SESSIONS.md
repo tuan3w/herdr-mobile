@@ -1478,8 +1478,9 @@ path. Data side only; the attach sheet is another piece (`docs/DESIGN.md`).
 
 - **Slash commands.** `available_commands_update` replaces the whole list; omp
   sends 98 including `skill:<name>` and an input `hint`. The palette
-  (`SlashViewModel`) takes `AgentSessionState.commands` for agent sessions and
-  keeps the built-in tables for terminal sessions only. The agent decides what a
+  (`CommandPaletteModel`) takes `AgentSessionState.commands` for ACP sessions;
+  an observed session adds the machine's catalog and what its log listed. The
+  agent decides what a
   typed `/name` means; the client sends it as prompt text.
 - **Questions.** `elicitation/create` in form mode is the question tool of all
   three agents (omp, Claude AskUserQuestion, Codex request_user_input). The UI

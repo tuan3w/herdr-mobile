@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../../data/services/phone_gallery.dart';
 import '../../../data/services/thumb_cache.dart';
 import '../../core/chrome.dart';
@@ -58,7 +58,7 @@ class GalleryTab extends StatefulWidget {
   const GalleryTab({
     super.key,
     required this.kit,
-    required this.session,
+    required this.target,
     required this.tray,
     required this.onCamera,
     required this.onSystemPicker,
@@ -66,7 +66,7 @@ class GalleryTab extends StatefulWidget {
   });
 
   final AttachKit kit;
-  final AgentSessionView session;
+  final AttachTarget target;
   final AttachTray tray;
 
   /// The Camera tile was tapped (the sheet closes and the camera opens).
@@ -153,7 +153,7 @@ class _GalleryTabState extends State<GalleryTab> with WidgetsBindingObserver {
         children: [
           if (model.access.canRead) _Header(model: model),
           // Said, not hidden: the photos still go, as files.
-          if (!widget.session.acceptsImages && model.access.canRead) const _NoImagesNote(),
+          if (!widget.target.preparesPictures && model.access.canRead) const _NoImagesNote(),
           Expanded(child: body),
         ],
       );

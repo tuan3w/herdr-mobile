@@ -518,4 +518,91 @@ void main() {
       expect(m.openToolCalls, isEmpty);
     });
   });
+
+  group('a message with a picture', () {
+    test('the captured paste shows once, with the agent\'s own placeholder, and not the companion line naming the file', () {
+      final (s, _) = _run('image-paste');
+      final texts = _texts(s, MessageRole.user);
+      expect(texts.first, '[Image #1] what colour is this picture?');
+      expect(texts.where((t) => t.startsWith('[Image #1]')), hasLength(1));
+      expect(texts.where((t) => t.contains('[Image: source:')), isEmpty, reason: 'the isMeta companion is housekeeping');
+      expect(texts.where((t) => t.contains('[image]')), isEmpty, reason: 'the placeholder already marks the picture');
+    });
+
+    test('a picture the text does not mark gets an [image] line; a picture alone is not an empty message', () {
+      String user(String id, List<Object> content) => jsonEncode({
+        'type': 'user',
+        'uuid': id,
+        'message': {'role': 'user', 'content': content},
+      });
+      const image = {
+        'type': 'image',
+        'source': {'type': 'base64', 'media_type': 'image/png', 'data': '<trimmed>'},
+      };
+      final s = _feed(ClaudeLogMapper(), [
+        user('a', [
+          {'type': 'text', 'text': 'what is this?'},
+          image,
+          image,
+        ]),
+        user('b', [image]),
+      ]);
+      expect(_texts(s, MessageRole.user), ['what is this?\n[image]\n[image]', '[image]']);
+    });
+  });
+
+  group('the skills Claude lists', () {
+    String listing({List<String>? names, String? content, bool? isInitial}) => jsonEncode({
+      'type': 'attachment',
+      'attachment': {
+        'type': 'skill_listing',
+        'names': ?names,
+        'content': ?content,
+        'isInitial': ?isInitial,
+      },
+    });
+
+    test('the captured listing becomes the session\'s commands, with their descriptions', () {
+      final (s, _) = _run('image-paste');
+      expect(s.commands, hasLength(70));
+      final first = s.commands.first;
+      expect(first.name, 'ai-browser-profile');
+      expect(first.description, startsWith('Query the user\'s browser-extracted profile'));
+      expect(s.commands.every((c) => c.description.length <= 140), isTrue);
+    });
+
+    test('a namespaced skill keeps its whole name and its description', () {
+      final s = _feed(ClaudeLogMapper(), [
+        listing(
+          names: ['superpowers:brainstorming', 'review'],
+          content: '- superpowers:brainstorming: Explore ideas: before building\n- review: Review a pull request',
+        ),
+      ]);
+      expect([for (final c in s.commands) (c.name, c.description)], [
+        ('superpowers:brainstorming', 'Explore ideas: before building'),
+        ('review', 'Review a pull request'),
+      ]);
+    });
+
+    test('a later listing adds to the set, a new first one replaces it, and a reset forgets it', () {
+      final m = ClaudeLogMapper();
+      var s = _feed(m, [listing(names: ['a', 'b'], isInitial: true)]);
+      s = _feed(m, [listing(names: ['c'], isInitial: false)], s);
+      expect([for (final c in s.commands) c.name], ['a', 'b', 'c']);
+      s = _feed(m, [listing(names: ['d'], isInitial: true)], s);
+      expect([for (final c in s.commands) c.name], ['d']);
+
+      m.reset();
+      s = _feed(m, [listing(names: ['e'], isInitial: false)]);
+      expect([for (final c in s.commands) c.name], ['e'], reason: 'nothing of before the reset is merged');
+    });
+
+    test('names that are not names, and a listing with nothing in it, say nothing', () {
+      final s = _feed(ClaudeLogMapper(), [
+        listing(names: ['ok', 'has space', 'x' * 70, '']),
+        listing(content: '<trimmed>'),
+      ]);
+      expect([for (final c in s.commands) c.name], ['ok']);
+    });
+  });
 }

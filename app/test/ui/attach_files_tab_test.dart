@@ -73,7 +73,7 @@ class _Rig {
   var full = 0;
 
   Widget get tab => _Host(
-    child: FilesTab(kit: kit.kit, session: session, tray: tray, onProblem: problems.add),
+    child: FilesTab(kit: kit.kit, target: session, tray: tray, onProblem: problems.add),
   );
 
   FakePhoneFilePicker get picker => kit.picker;

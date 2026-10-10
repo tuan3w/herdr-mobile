@@ -11,6 +11,7 @@ import 'package:herdr_mobile/data/acp/subagents/subagent_overlay.dart';
 import 'package:herdr_mobile/data/acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
+import 'package:herdr_mobile/data/repositories/attach_target.dart' show AttachMode;
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 
@@ -258,6 +259,9 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   /// fails in [error] when not, like the real session.
   bool imagesAccepted = true;
   bool embeddedAccepted = false;
+
+  /// How attachments go ([attachMode]); `paths` makes the fake a terminal agent.
+  AttachMode mode = AttachMode.blocks;
   AuthNeeded? auth;
   final _queue = PromptQueue();
 
@@ -281,6 +285,9 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   bool get acceptsEmbeddedContext => embeddedAccepted;
+
+  @override
+  AttachMode get attachMode => mode;
 
   @override
   List<QueuedMessage> get queued => _queue.entries;

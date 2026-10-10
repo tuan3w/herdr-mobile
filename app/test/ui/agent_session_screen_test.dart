@@ -8,12 +8,15 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
+import 'package:herdr_mobile/data/repositories/command_source.dart';
+import 'package:herdr_mobile/data/repositories/slash_usage.dart';
+import 'package:herdr_mobile/data/models/slash_command.dart';
 import 'package:herdr_mobile/ui/core/tap_guard.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/agents/agent_navigation.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:herdr_mobile/ui/core/status_panel.dart';
-import 'package:herdr_mobile/ui/features/agent_session/command_palette.dart';
+import 'package:herdr_mobile/ui/features/composer/command_model.dart';
 import 'package:herdr_mobile/ui/features/agent_session/diff_lines.dart';
 import 'package:herdr_mobile/ui/features/agent_session/plan_header.dart';
 import 'package:herdr_mobile/ui/features/agent_session/session_select.dart';
@@ -30,10 +33,12 @@ Future<void> pumpScreen(
   FakeAgentSession session, {
   Size size = const Size(412, 892),
   double textScale = 1,
+  SlashUsage? usage,
 }) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
+  final screen = AgentSessionScreen(key: ObjectKey(session), session: session);
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light(),
@@ -41,10 +46,38 @@ Future<void> pumpScreen(
         data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
         child: child!,
       ),
-      home: AgentSessionScreen(key: ObjectKey(session), session: session),
+      home: usage == null ? screen : ChangeNotifierProvider.value(value: usage, child: screen),
     ),
   );
   await tester.pump(const Duration(milliseconds: 100));
+}
+
+/// A chat session of an agent in a terminal: it knows commands and skills
+/// beyond what the agent advertised, and is asked for them.
+class _CatalogSession extends FakeAgentSession implements SessionCommands {
+  var wanted = 0;
+  var _commands = const <SlashCommand>[];
+
+  @override
+  List<SlashCommand> get slashCommands => _commands;
+
+  @override
+  void wantCommands() => wanted++;
+
+  void learn(List<SlashCommand> commands) {
+    _commands = commands;
+    notifyListeners();
+  }
+}
+
+class _MemoryUsageStore implements SlashUsageStore {
+  SlashUsageMemory memory = const SlashUsageMemory();
+
+  @override
+  Future<SlashUsageMemory> read() async => memory;
+
+  @override
+  Future<void> write(SlashUsageMemory value) async => memory = value;
 }
 
 ScrollPosition transcriptPosition(WidgetTester tester) => tester
@@ -563,13 +596,66 @@ void main() {
     });
 
     test('matching: starts, then contains, then description; a full word alone shows nothing', () {
-      expect([for (final c in matchCommands(commands, '/')) c.name], ['compact', 'review', 'skill:deploy']);
-      expect([for (final c in matchCommands(commands, '/e')) c.name], ['review', 'skill:deploy', 'compact']);
-      expect([for (final c in matchCommands(commands, '/prod')) c.name], ['skill:deploy']);
-      expect(matchCommands(commands, '/review'), isEmpty);
-      expect(matchCommands(commands, '/review now'), isEmpty);
-      expect(matchCommands(commands, 'review'), isEmpty);
-      expect(matchCommands(const [], '/'), isEmpty);
+      List<String> names(List<AcpCommand> list, String input) {
+        final source = SessionCommandSource(FakeAgentSession(state: stateWith(commands: list)));
+        final model = CommandPaletteModel(source: source);
+        addTearDown(() {
+          model.dispose();
+          source.dispose();
+        });
+        return [for (final c in model.match(input)) c.name];
+      }
+
+      expect(names(commands, '/'), ['compact', 'review', 'skill:deploy']);
+      expect(names(commands, '/e'), ['review', 'skill:deploy', 'compact']);
+      expect(names(commands, '/prod'), ['skill:deploy']);
+      expect(names(commands, '/review'), isEmpty);
+      expect(names(commands, '/review now'), isEmpty);
+      expect(names(commands, 'review'), isEmpty);
+      expect(names(const [], '/'), isEmpty);
+    });
+
+    testWidgets('a session that knows more is asked on the first slash, and what it learns shows with its tag', (tester) async {
+      final session = _CatalogSession();
+      await pumpScreen(tester, session);
+      expect(session.wanted, 0, reason: 'nothing is loaded for a chat that never starts a command');
+
+      await tester.enterText(find.byType(TextField), 'hello');
+      await tester.pump();
+      expect(session.wanted, 0);
+
+      await tester.enterText(find.byType(TextField), '/');
+      await tester.pump();
+      expect(session.wanted, 1);
+      expect(find.textContaining('/ship', findRichText: true), findsNothing);
+
+      session.learn(const [
+        SlashCommand('ship', 'Ship it', SlashSource.project),
+        SlashCommand('compact', 'Summarise', SlashSource.builtIn, hint: 'what to keep'),
+      ]);
+      await tester.pump();
+      expect(find.textContaining('/ship', findRichText: true), findsOneWidget);
+      expect(find.text('project'), findsOneWidget);
+      expect(find.textContaining('what to keep', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('a long press pins in the chat, and a sent command is remembered under the agent', (tester) async {
+      final usage = SlashUsage(_MemoryUsageStore());
+      final session = FakeAgentSession(state: stateWith(commands: commands));
+      await pumpScreen(tester, session, usage: usage);
+
+      await tester.enterText(find.byType(TextField), '/');
+      await tester.pump();
+      await tester.longPress(find.textContaining('/review', findRichText: true));
+      await tester.pump();
+      expect(usage.isPinned('claude', 'review'), isTrue);
+      expect(find.byIcon(LucideIcons.pin), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '/compact now');
+      await tester.pump();
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await tester.pump();
+      expect(usage.count('claude', 'compact'), 1);
     });
   });
 

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/remote_file.dart';
-import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attach_target.dart';
 import '../../../data/repositories/recent_phone_files.dart';
 import '../../../data/services/attach_limits.dart';
 import '../../../data/services/phone_files.dart';
@@ -34,13 +34,13 @@ class FilesTab extends StatefulWidget {
   const FilesTab({
     super.key,
     required this.kit,
-    required this.session,
+    required this.target,
     required this.tray,
     required this.onProblem,
   });
 
   final AttachKit kit;
-  final AgentSessionView session;
+  final AttachTarget target;
   final AttachTray tray;
 
   /// Says something went wrong (the composer shows it as a toast).
@@ -126,7 +126,7 @@ class _FilesTabState extends State<FilesTab> {
   }
 
   bool _onHost(RecentPhoneFile r) {
-    final machine = widget.session.machine;
+    final machine = widget.target.machine;
     return r.hostPath != null && r.machineId == machine.profile.id && machine.files.supported;
   }
 
@@ -140,7 +140,7 @@ class _FilesTabState extends State<FilesTab> {
     }
     if (!_checking.add(r)) return;
     try {
-      final stat = await widget.session.machine.files.stat(pick.path);
+      final stat = await widget.target.machine.files.stat(pick.path);
       if (!mounted) return;
       if (stat.kind != RemoteEntryKind.file) return _gone(r);
       tray.add(pick);
@@ -168,7 +168,7 @@ class _FilesTabState extends State<FilesTab> {
       for (final item in tray.items)
         if (item is PhonePick || (item is HostPick && item.fromPhone)) item,
     ];
-    final imagesAsFiles = !widget.session.acceptsImages;
+    final imagesAsFiles = !widget.target.preparesPictures;
     final clearance = SheetScope.of(context).bottomClearance;
 
     return ColoredBox(

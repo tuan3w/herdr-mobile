@@ -852,7 +852,11 @@ offline and `Showing the newest N` are states, not toasts. Every string passes
 **Composer ends.** The field is a stadium at its smallest height and its corner
 is concentric with the round buttons (36 dp discs 6 dp inside the edge, so the
 radius is 18 + 6 = 24); the paperclip is the same soft disc as Send, so both ends
-weigh the same (the glyph is lifted 1 dp: the clip's ink sits low).
+weigh the same (the glyph is lifted 1 dp: the clip's ink sits low). The pane's
+composer and the chat's are one frame (`composer_frame.dart`: `ComposerFrame`,
+`ComposerField`, `ComposerRoundButton`, `ComposerAttachButton`), so the same
+agent looks the same in both views; only a shell's line stays in the mono font
+and has no paperclip.
 
 ### Selection mode (batch actions)
 
