@@ -14,6 +14,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
+import 'package:herdr_mobile/ui/core/chrome.dart';
 import 'package:herdr_mobile/ui/core/motion.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/settings/quick_phrases_editor.dart';
@@ -62,9 +63,11 @@ Future<void> _pump(
   NotificationChoice notifications = const NotificationChoice(),
   List<String>? phrases = const ['continue', 'run the tests'],
   ValueNotifier<bool>? showing,
+  Size size = const Size(360, 740),
+  double textScale = 1,
 }) async {
   tester.view
-    ..physicalSize = const Size(360, 740) * 2
+    ..physicalSize = size * 2
     ..devicePixelRatio = 2;
   addTearDown(tester.view.reset);
   final notificationSettings = NotificationSettings(MemoryNotificationStore(notifications));
@@ -87,6 +90,10 @@ Future<void> _pump(
       ],
       child: MaterialApp(
         theme: AppTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: ValueListenableBuilder<bool>(
           valueListenable: front,
           builder: (context, on, _) => TickerMode(enabled: on, child: SettingsScreen(update: update)),
@@ -287,6 +294,59 @@ void main() {
       await openSettingsGroup(tester, 'About');
       expect(find.text('Version $appVersion'), findsOneWidget, reason: 'only About\'s own row');
       expect(find.textContaining('99.0.0 is available'), findsOneWidget);
+    });
+  });
+
+  group('an opened group is brought into view', () {
+    ScrollPosition position(WidgetTester tester) =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+    testWidgets('a tall one at 320 dp and 2x text: its first row is above the tab bar, its row under the title bar',
+        (tester) async {
+      await _pump(tester, size: const Size(320, 640), textScale: 2);
+      // Tapped where it is, not scrolled to first: that is the person's tap.
+      await tester.tap(find.text('About'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      final bar = SliverLargeTitle.collapsedExtent(tester.element(find.byType(SettingsScreen)));
+      expect(position(tester).pixels, greaterThan(0), reason: 'it had to move');
+      expect(tester.getRect(find.text('About')).top, greaterThanOrEqualTo(bar), reason: 'not under the title bar');
+      final first = tester.getRect(find.text('Connection'));
+      expect(first.bottom, lessThanOrEqualTo(640 - 72), reason: 'not under the tab bar (56 + 16 dp)');
+    });
+
+    testWidgets('one that already fits does not move the page', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.text('Agents'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('Open agents as'), findsOneWidget);
+      expect(position(tester).pixels, 0);
+    });
+
+    testWidgets('closing it, or opening it while another is open, leaves no timer behind', (tester) async {
+      await _pump(tester, size: const Size(320, 640), textScale: 2);
+      await tester.tap(find.text('About'));
+      await tester.pump();
+      await tester.tap(find.text('About'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('Licenses'), findsNothing);
+    });
+
+    testWidgets('reduced motion: it jumps there', (tester) async {
+      await _pump(tester, size: const Size(320, 640), textScale: 2);
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await tester.pump();
+      await tester.tap(find.text('About'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(position(tester).pixels, greaterThan(0), reason: 'at once, no animation to wait for');
+      expect(tester.hasRunningAnimations, isFalse);
     });
   });
 

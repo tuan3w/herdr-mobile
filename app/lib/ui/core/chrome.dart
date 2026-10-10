@@ -61,6 +61,10 @@ class SliverLargeTitle extends StatelessWidget {
     double bottomHeight = 0,
   }) => MediaQuery.paddingOf(context).top + _barHeight + _large(hasSubtitle, bottomHeight);
 
+  /// The pinned bar's height once the large title has scrolled away: the part
+  /// of the screen's top that content scrolled under is hidden by.
+  static double collapsedExtent(BuildContext context) => MediaQuery.paddingOf(context).top + _barHeight;
+
   @override
   Widget build(BuildContext context) => SliverPersistentHeader(
     pinned: true,
