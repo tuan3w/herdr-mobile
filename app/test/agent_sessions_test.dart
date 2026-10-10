@@ -1337,141 +1337,65 @@ void main() {
     });
   });
 
-  group('omp names the session', () {
-    // omp's ACP mode never titles a session; `/rename` with no argument makes
-    // it generate one and announce it (`session_info_update`).
-    const listsRename = {
-      'sessionUpdate': 'available_commands_update',
-      'availableCommands': [
-        {
-          'name': 'rename',
-          'description': 'Rename the current session (omit title to generate)',
-          'input': {'hint': '[title]'},
-        },
-      ],
-    };
-
-    /// An agent that names the session when asked, and answers the rest.
-    void answersRename(_Rig r, {String title = 'Payments refactor'}) {
+  group('a chat the agent never titled', () {
+    // Zed names such a chat after the first line of the first message and lets
+    // the agent's own title replace it. omp's ACP mode never sends one.
+    void answers(_Rig r) {
       r.keeper.onPrompt = (text) {
-        if (text == '/rename') {
-          r.keeper.update({'sessionUpdate': 'session_info_update', 'title': title});
-        } else {
-          r.keeper.say('ok: $text', messageId: 'r$text');
-        }
+        r.keeper.say('ok: $text', messageId: 'r$text');
         return {'stopReason': 'end_turn'};
       };
     }
 
-    /// The first answer has come, [listed] says what the agent can do.
-    void exchange(_Rig r, {bool listed = true}) {
+    _rigTest('is named after the first line of the first message, and asks the agent for nothing', (r) {
+      answers(r);
       r.connect();
       r.pump(1100);
-      if (listed) r.keeper.update(listsRename);
+      expect(r.session.title, 'proj', reason: 'the folder, until there is a message');
+
+      unawaited(r.session.send('  refactor the payments client\nand keep the tests green'));
       r.pump();
-      unawaited(r.session.send('refactor the payments client'));
+      expect(r.session.title, 'refactor the payments client');
+
+      unawaited(r.session.send('and the docs'));
       r.pump();
-    }
+      expect(r.session.title, 'refactor the payments client', reason: 'the first message, not the latest');
+      expect(r.keeper.prompts, ['  refactor the payments client\nand keep the tests green', 'and the docs']);
+    });
 
-    List<String> asked(_Rig r) => [for (final p in r.keeper.prompts) if (p == '/rename') p];
+    _rigTest('a long first line is cut to fit a row', (r) {
+      answers(r);
+      r.connect();
+      r.pump(1100);
+      unawaited(r.session.send('word ' * 100));
+      r.pump();
 
-    _rigTest('after the first answer an untitled session asks omp for a title, and shows it', (r) {
-      answersRename(r);
-      exchange(r);
+      expect(r.session.title.length, lessThanOrEqualTo(120));
+      expect(r.session.title, startsWith('word word'));
+    });
 
-      expect(asked(r), ['/rename']);
+    _rigTest("the agent's own title replaces it", (r) {
+      answers(r);
+      r.connect();
+      r.pump(1100);
+      unawaited(r.session.send('hi'));
+      r.pump();
+      expect(r.session.title, 'hi');
+
+      r.keeper.update({'sessionUpdate': 'session_info_update', 'title': 'Payments refactor'});
+      r.pump();
       expect(r.session.title, 'Payments refactor');
     });
 
-    _rigTest('it asks once: a later turn does not ask again', (r) {
-      r.keeper.onPrompt = (text) {
-        r.keeper.say('ok: $text', messageId: 'r$text');
-        return {'stopReason': 'end_turn'};
-      };
-      exchange(r); // omp declined: no title came
-      expect(asked(r), ['/rename']);
-
-      unawaited(r.session.send('and the tests'));
-      r.pump();
-      expect(asked(r), ['/rename'], reason: 'a model call per answer would be a cost nobody asked for');
-    });
-
-    _rigTest('it is not a result to review, and not a failure', (r) {
-      answersRename(r);
-      exchange(r);
-      r.session.markSeen();
-      r.pump();
-      expect(asked(r), ['/rename']);
-
-      expect(r.session.unseenDone, isFalse, reason: 'the person has seen the answer; naming it is not news');
-      expect(r.session.error, isNull);
-      expect(r.session.queued, isEmpty);
-    });
-
-    _rigTest('omp that cannot name (no model) shows no error and holds nothing', (r) {
-      r.keeper.onPrompt = (text) {
-        if (text == '/rename') throw const JsonRpcException(-32603, 'no model available');
-        r.keeper.say('ok: $text', messageId: 'r$text');
-        return {'stopReason': 'end_turn'};
-      };
-      exchange(r);
-      r.session.markSeen();
-      r.pump();
-
-      expect(asked(r), ['/rename']);
-      expect(r.session.error, isNull);
-      expect(r.session.queued, isEmpty, reason: 'the errand is not kept to retry');
-      expect(r.session.unseenDone, isFalse);
-      expect(r.session.title, 'proj', reason: 'the folder, as before');
-    });
-
-    _rigTest('a session that has a title is left alone', (r) {
-      answersRename(r);
-      exchange(r);
-
-      expect(asked(r), isEmpty);
-      expect(r.session.title, 'Mine');
-    }, seed: (h) => h.add(title: 'Mine'));
-
-    _rigTest('an omp that does not list rename is left alone', (r) {
-      answersRename(r);
-      exchange(r, listed: false);
-
-      expect(asked(r), isEmpty);
-    });
-
-    _rigTest('nothing is asked before the agent has answered', (r) {
-      answersRename(r);
+    _rigTest('a session that has a title keeps it', (r) {
+      answers(r);
       r.connect();
       r.pump(1100);
-      r.keeper.update(listsRename);
-      r.pump(1100);
-
-      expect(asked(r), isEmpty);
-    });
-
-    _rigTest('another agent is not asked: claude titles its own', (r) {
-      final claude = r.host.add(agent: 'claude');
-      final session = AcpAgentSession(
-        machine: r.machine,
-        host: r.host,
-        info: claude.info,
-        reviewed: r.reviewed,
-        clock: () => r.now,
-      );
-      claude.onPrompt = (text) {
-        claude.say('ok', messageId: 'c1');
-        return {'stopReason': 'end_turn'};
-      };
-      unawaited(session.connect());
-      r.pump(1100);
-      claude.update(listsRename);
-      unawaited(session.send('hello'));
+      unawaited(r.session.send('hi'));
       r.pump();
 
-      expect(claude.prompts, ['hello']);
-      session.dispose();
-    });
+      expect(r.session.title, 'Mine');
+    }, seed: (h) => h.add(title: 'Mine'));
   });
 
   group('review', () {

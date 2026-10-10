@@ -12,8 +12,10 @@ import '../acp/json_rpc.dart';
 import '../acp/past_session.dart';
 import '../acp/prompt_queue.dart';
 import '../acp/replay_since.dart';
+import '../decision/plain_text.dart' show plainLine;
 import '../acp/background/background_work.dart';
 import '../acp/session_state.dart';
+import '../acp/turns/plain_text.dart' show clip, firstLine;
 import '../acp/transcript_log.dart';
 import '../services/transcript_cache.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
@@ -270,16 +272,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// next one starts.
   bool _stopSendsQueue = false;
 
-  /// The prompt that runs now is the app's own errand, not the person's (the
-  /// `/rename` of [_maybeNameIt]): its end is no result to review, and its
-  /// silence is no failure.
-  bool _housekeeping = false;
-
-  /// This session has been asked to name itself, so one that cannot be named
-  /// (omp skips a first message like "hi") costs one model call for as long as
-  /// this object lives (the app run), not one per attach.
-  bool _nameAsked = false;
-
   /// Learned from the agent's `initialize` answer at the last attach.
   bool _canSteer = false;
   bool _acceptsImages = false;
@@ -309,7 +301,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       final trimmed = t?.trim();
       if (trimmed != null && trimmed.isNotEmpty) return trimmed;
     }
-    return _folderName(_info.cwd, fallback: agentLabel);
+    return _firstMessageTitle(_state.items) ?? _folderName(_info.cwd, fallback: agentLabel);
   }
 
   @override
@@ -1416,7 +1408,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     String sid,
     List<ContentBlock> blocks, {
     String? fromQueue,
-    bool errand = false,
   }) {
     final before = client.state(sid);
     var started = false;
@@ -1427,7 +1418,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         final result = await client.prompt(sid, blocks);
         kept = true;
         if (_disposed || !identical(client, _client)) return null;
-        if (result.stopReason == StopReason.endTurn && !_housekeeping && !_answered(before, client.state(sid))) {
+        if (result.stopReason == StopReason.endTurn && !_answered(before, client.state(sid))) {
           _setProblem(_silentTurn);
         }
         return null;
@@ -1435,17 +1426,12 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         if (_disposed || !identical(client, _client)) return null;
         // Nothing was taken and nothing shows (the client took the row back):
         // the message waits, held.
-        if (!_housekeeping) {
-          _queue.add(blocks, at: _clock(), state: QueuedState.held, heldReason: _busyReason, first: true);
-        }
+        _queue.add(blocks, at: _clock(), state: QueuedState.held, heldReason: _busyReason, first: true);
         kept = true;
         _setState(client.state(sid));
         _changed();
         return null;
       } on Object catch (e) {
-        // The app's own errand failing (omp has no model to name with, say) is
-        // not the person's to deal with: not held, not an error.
-        if (_housekeeping) return null;
         if (!started && !_disposed && identical(client, _client)) {
           // It never started (the agent takes no pictures, say): the text is
           // not lost, it waits held for the person to edit or drop.
@@ -1461,9 +1447,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         rethrow;
       }
     });
-    // The prompt call returns when the turn *starts*; the errand lasts until
-    // the turn is over, whatever ended it (an answer, a failure, a dropped link).
-    if (errand) unawaited(turn.whenComplete(() => _housekeeping = false));
     // The client's `prompt` has run up to its first await: the local row and
     // the running turn are in its state already. Take them now, so the next
     // flush (the next frame) shows the row and `working`, instead of waiting
@@ -1549,40 +1532,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _sessionId != null &&
       !_state.disconnected &&
       _state.phase == AgentPhase.idle;
-
-  /// Names a session whose agent never does. omp's ACP mode starts no title of
-  /// its own (its terminal UI and command line do: `maybeStartTitleGeneration`
-  /// in `main.ts` and the input controller, not in the ACP prompt path), it
-  /// sends a title only after `/rename`, and ACP has no request to set or
-  /// generate one (the schema's methods end at `session/set_model`; Zed has
-  /// none either, and shows what the agent sends). So a conversation that has
-  /// had an answer and still has no title asks omp for its own: `/rename`
-  /// without an argument makes omp generate one and announce it in a
-  /// `session_info_update`. Once per session per app run, because omp declines
-  /// a first message like "hi" and would be asked again at every attach; only
-  /// when the agent lists `rename` (an older omp is left alone) and nothing of
-  /// the person's runs or waits. It is a prompt of the app's own: no review,
-  /// no failure shown, never held in the queue ([_housekeeping]).
-  void _maybeNameIt() {
-    if (_info.agent != 'omp' || _housekeeping || !_canDispatch || _queue.hasWaiting) return;
-    if (_state.title?.trim().isNotEmpty == true || _info.title?.trim().isNotEmpty == true) return;
-    if (!_state.commands.any((c) => c.name == 'rename')) return;
-    var asked = false;
-    var answered = false;
-    for (final item in _state.items) {
-      if (item is TranscriptMessage) {
-        if (item.role == MessageRole.user) {
-          asked = true;
-        } else {
-          answered = true;
-        }
-      }
-    }
-    if (!asked || !answered || _nameAsked) return;
-    _nameAsked = true;
-    _housekeeping = true;
-    unawaited(_promptNow(_client!, _sessionId!, const [TextBlock('/rename')], errand: true));
-  }
 
   static const _silentTurn = 'The agent ended the turn without an answer. '
       'If this keeps happening, its login on the host may have expired.';
@@ -1784,10 +1733,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       if (!prev.turnActive) _stopSendsQueue = false; // a new turn: an old Stop is history
     }
     final finished = prev.turnActive && !next.turnActive || prev.lastStopReason == null && next.lastStopReason != null;
-    if (finished && !next.turnActive && !next.disconnected && !_replaying && _housekeeping) {
-      // Nothing to review and nothing queued behind it (it only starts when
-      // the queue is empty): the person's own turns are not touched.
-    } else if (finished && !next.turnActive && !next.disconnected && !_replaying) {
+    if (finished && !next.turnActive && !next.disconnected && !_replaying) {
       _turnEnded(next.lastStopReason);
       final stoppedByMe = _stopSendsQueue;
       _stopSendsQueue = false;
@@ -1810,7 +1756,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         (next.pending.isNotEmpty && prev.pending.first.id != next.pending.first.id);
     _changed(urgent: _shownPhase != before || requests || finished || prev.disconnected != next.disconnected);
     _pump();
-    _maybeNameIt();
   }
 
   /// [phaseSince] follows the phase that is shown, whatever it comes from (by
@@ -1832,7 +1777,6 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       _syncPhase();
       _changed();
       _pump();
-      _maybeNameIt();
     });
   }
 
@@ -1937,6 +1881,21 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     if (v == '/') return '/';
     return v.substring(v.lastIndexOf('/') + 1);
   }
+
+  /// What names a chat the agent never titled: the first line of the person's
+  /// first message, as Zed does for the same agents. Shown at once, replaced by
+  /// any title the agent sends, and cut so a long first line still fits the
+  /// board's two-line row. Null for no message yet or one without words.
+  static String? _firstMessageTitle(List<TranscriptItem> items) {
+    for (final item in items) {
+      if (item is! TranscriptMessage || item.role != MessageRole.user) continue;
+      final line = firstLine(item.text);
+      return line == null ? null : clip(plainLine(line), _titleLimit);
+    }
+    return null;
+  }
+
+  static const _titleLimit = 120;
 
   @override
   void dispose() {
