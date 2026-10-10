@@ -36,6 +36,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Native code compressed in the APK. AGP's default stores .so files raw
+    // (Android maps them straight from the APK), which suits a store that
+    // compresses the download itself. This app is downloaded whole from a
+    // GitHub release, on the radio, at every update: raw libraries were 45 of
+    // its 49 MiB, and deflate takes them to about 20 (measured on 0.1.11:
+    // libapp.so 11.9 -> 4.8 MiB, libflutter.so 11.2 -> 5.2 MiB for arm64).
+    // The cost is on the phone: Android extracts the libraries at install,
+    // so the space used after install stays about the same.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     defaultConfig {
         // `--android-project-arg=appIdSuffix=.kbbench` installs a benchmark build
         // beside the real app (own data, own icon) instead of over it.
@@ -74,6 +88,16 @@ android {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
         }
+    }
+}
+
+// Phones only: a plugin (jni) ships x86 libraries that the ARM-only release
+// would otherwise carry for no device. Excluded per release variant, because
+// the Flutter plugin replaces a build type's `ndk.abiFilters`, and an x86
+// emulator's debug build still needs them.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(listOf("lib/x86/**", "lib/x86_64/**"))
     }
 }
 

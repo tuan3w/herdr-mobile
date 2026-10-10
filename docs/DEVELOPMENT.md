@@ -172,8 +172,24 @@ In `.omp/hooks/`:
 ```bash
 export ANDROID_HOME=/path/to/android-sdk   # platforms;android-36, build-tools;36.0.0
 cd app
-flutter build apk --release --target-platform android-arm,android-arm64
+flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols
 ```
+
+What keeps the APK small (0.1.11 was 51.5 MB; the same code built this way is
+23.3 MB):
+
+- **Native code is compressed** (`useLegacyPackaging` in
+  `android/app/build.gradle.kts`). AGP stores `.so` files raw by default, which
+  suits a store that compresses the download itself; this app is downloaded
+  whole from GitHub at every update. Android extracts the libraries at
+  install, so the space used on the phone stays about the same.
+- **Dart symbols are split off** (`--split-debug-info`). The release attaches
+  them as `herdr-mobile-X.Y.Z-symbols.zip`; to read a crash's stack trace,
+  unzip it and run `flutter symbolize -i trace.txt -d app.android-arm64.symbols`
+  (or `-arm` for a 32-bit phone). A build made without the flag still runs;
+  it is only larger.
+- **No x86 libraries in a release**: a plugin ships them, the release variant
+  excludes them (an x86 emulator's debug build keeps them).
 
 Release signing reads `app/android/key.properties` (git-ignored):
 
