@@ -4,7 +4,7 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.10] - 2026-10-10
 
 ### Pictures, files and commands for terminal agents
 
