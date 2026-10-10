@@ -183,7 +183,7 @@ class _Header extends StatelessWidget {
     final ds = context.ds;
     final parent = RemotePath.parent(path);
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
+      maxScaleFactor: kBarTextScale,
       child: Container(
         color: ds.bg,
         padding: EdgeInsets.fromLTRB(Gap.gutter - 6, MediaQuery.paddingOf(context).top, Gap.gutter - 6, 0),
@@ -616,14 +616,8 @@ class _ChangedPill extends StatelessWidget {
               color: pressed ? ds.fillPressed : ds.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: ds.border, width: 1),
-              // Floats over the text: a soft shadow lifts it off the lines.
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: ds.isDark ? 0.4 : 0.10),
-                  blurRadius: 12,
-                  offset: const Offset(0, 3),
-                ),
-              ],
+              // Floats over the text: the one float shadow lifts it off the lines.
+              boxShadow: ds.floatShadow,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

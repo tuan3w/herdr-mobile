@@ -301,7 +301,7 @@ class _Chrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bars = MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
+      maxScaleFactor: kBarTextScale,
       child: ListenableBuilder(
         listenable: model,
         builder: (context, _) => Stack(

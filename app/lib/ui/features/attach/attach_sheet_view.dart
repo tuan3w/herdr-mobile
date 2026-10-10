@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../data/repositories/attach_target.dart';
+import '../../core/chrome.dart' show FloatingBar;
 import '../../core/motion.dart';
 import 'attach_bars.dart';
 import 'attach_kit.dart';
@@ -87,10 +88,10 @@ class AttachSheetController {
           AttachActionBar(tray: tray, onAttach: () => finish(AttachOutcome.attached)),
           // The keyboard has the room while a field is being typed in.
           if (keyboard)
-            const SizedBox(height: AttachTabBar.margin)
+            const SizedBox(height: FloatingBar.margin)
           else
             Padding(
-              padding: EdgeInsets.only(bottom: bottom + AttachTabBar.margin),
+              padding: EdgeInsets.only(bottom: bottom + FloatingBar.margin),
               child: ValueListenableBuilder<AttachTab>(
                 valueListenable: tab,
                 builder: (context, t, _) => AttachTabBar(selected: t, onChanged: select),

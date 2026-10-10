@@ -9,6 +9,10 @@ import 'theme.dart';
 /// this still hit-test at least this big.
 const kMinTap = 44.0;
 
+/// Where chrome bars stop growing with the system text size: their blocks
+/// are fixed height, and three tab cells hold "Machines" at 320 dp at this.
+const kBarTextScale = 1.15;
+
 /// Press handling shared by every control: feedback on pointer-down (after the
 /// scroll-intent delay, so scrolling a list never flashes rows), commit on up,
 /// cancel by dragging away. No ripple. Optional press scale.
@@ -332,6 +336,11 @@ class AppChip extends StatelessWidget {
 
   /// Layout height including the touch padding above and below the pill.
   static const height = kMinTap;
+
+  /// The widest a chip grows in a row of chips above a composer (settings,
+  /// quick phrases); a longer label ends in an ellipsis. Grows with the text,
+  /// so a larger size cuts no more words.
+  static double maxRowWidth(BuildContext context) => 240 * MediaQuery.textScalerOf(context).scale(14) / 14;
 
   static const _pill = 32.0;
 

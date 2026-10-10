@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+const _floatLight = [BoxShadow(color: Color(0x14000000), blurRadius: 20, offset: Offset(0, 4))];
+const _floatDark = [BoxShadow(color: Color(0x73000000), blurRadius: 20, offset: Offset(0, 4))];
+
 /// Design tokens.
 ///
 /// The look is deliberately not Material: flat rows instead of cards, one
@@ -89,6 +92,10 @@ class Ds extends ThemeExtension<Ds> {
   /// The faint orange wash behind a blocked agent's question (the one place a
   /// blocked card, dock or sheet is tinted).
   Color get blockedWash => blocked.withValues(alpha: isDark ? 0.12 : 0.09);
+
+  /// The one shadow: a surface floating over content (the bottom bars, the
+  /// pills over them, toasts). Soft and wide, never a band.
+  List<BoxShadow> get floatShadow => isDark ? _floatDark : _floatLight;
 
   bool get isDark => brightness == Brightness.dark;
 

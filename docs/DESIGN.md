@@ -16,9 +16,12 @@ hairlines, status as shape, one accent used sparingly).
 4. **Status is a shape first**, colour second (`StatusGlyph`): needs you =
    filled with a bar, working = half full, done = check, idle = empty ring,
    unknown = dashed ring. Readable without colour.
-5. **Hairlines, not elevation.** One physical pixel. The only shadows are the
-   floating tab bar and the triage pill that rides above it. No backdrop blur
-   (a full-screen blur pass per frame is too expensive on mid-range GPUs).
+5. **Hairlines, not elevation.** One physical pixel. The one shadow is
+   `Ds.floatShadow`, for a surface that floats over content: the bottom bars
+   (`FloatingBarPill`, the attach sheet's bars), the triage pill, toasts and the
+   file viewer's `Changed on disk` pill. No backdrop blur (a full-screen blur
+   pass per frame is too expensive on mid-range GPUs). Chrome bars clamp text
+   at `kBarTextScale` (1.15).
 6. **Press, don't ripple.** Feedback starts on pointer-down (after the scroll
    intent delay) and is a soft tint or a 0.92–0.98 scale. No ink splashes.
 7. **Motion is quiet.** Under 300 ms (press 100 in / 180 out, state 200,
@@ -861,8 +864,10 @@ and has no paperclip.
 ### Selection mode (batch actions)
 
 A long press on a card or row selects it; taps toggle; the header reads `N
-selected` with All and Cancel; the tab bar and the triage pill step aside and a
-bottom action bar offers Interrupt, Message and Close. Every action goes
+selected` with All and Cancel; the tab bar and the triage pill step aside and
+Interrupt, Message and Close take the tab bar's slot in the same pill
+(`FloatingBarSlot` + `FloatingBarPill`, cells shaped like tab cells), so the
+bottom keeps its shape and the actions are where the tabs were. Every action goes
 through a confirm sheet built from live data: targets, skipped ones with the
 reason, and a count in the button (`Interrupt 3 agents`). A blocked terminal
 agent is listed under `Waiting for an answer (skipped)` and is typed into only
@@ -960,7 +965,7 @@ messenger used to be captured).
   session screens (measured; those ride on the keyboard).
   A shelf counts only while its route is the one showing, so a pushed screen
   gets the bottom inset instead.
-- **Look and motion.** `ds.surface` card with a border and the tab bar's shadow
+- **Look and motion.** `ds.surface` card with a border and `Ds.floatShadow`
   (not the Material inverse snack bar), a 44 dp text button in `accentText`, two
   lines of text at most, max 480 dp wide. Slide 16 dp + fade in `sheetIn`
   (250 ms), out `sheetOut` (190 ms), `Motion.easeOut`; reduced motion fades only.
@@ -1585,18 +1590,19 @@ the first dark frame.
 `FloatingTabBar` is a slim floating pill (56 dp tall, 12 dp side margins, 8 dp
 below, at most 312 dp wide and centred) in equal cells: a 22 dp icon over the
 tab's name (`Type.label`), the selected one on a `ds.fillPressed` capsule with
-`ds.text`. A hairline and no shadow, no blur. Every tab is named and every cell
+`ds.text`. A hairline and `Ds.floatShadow`, no blur. Every tab is named and every cell
 is the same width, so nothing moves when a tab is chosen, and the count badge
 (18 dp, on the icon's corner) never meets a label. Why: the bar used to show
 only the selected tab's label, which grew and slid the other two icons on every
 tap, left two of three tabs as unlabelled icons, and put a `99+` badge on top of
 the word "Agents"; owner's call: floating, but equal cells. Why slim: at 64 dp
 and edge to edge it read as big (owner), and with its margins and scrim it
-reserved about 140 dp of a 892 dp board for two rarely used tabs. Why no
-shadow: it rendered as a hard grey band under the pill, and the app is flat
-(hairlines). Why `fillPressed`: `ds.fill` on the pill's surface was about 1.1:1
+reserved about 140 dp of a 892 dp board for two rarely used tabs. The shadow:
+a hard grey band was once reported under the pill; `flutter test` renders draw
+a `BoxShadow` without its blur (a crisp offset band), so judge it on a phone,
+never from a render. Why `fillPressed`: `ds.fill` on the pill's surface was about 1.1:1
 and vanished in dark. Three cells fit 320 dp (text is clamped at 1.15x,
-`settings_test.dart`). `clearance` is 56 + 16 + the bottom inset. Selection is
+`settings_test.dart`). `FloatingBar.clearance` is 56 + 16 + the bottom inset. Selection is
 one capsule under the cells that slides to the chosen one (`Motion.standard`,
 `Motion.easeOut`; it jumps under reduced motion and a second tap retargets it
 from where it is). One number, the capsule's place in tab units, drives both

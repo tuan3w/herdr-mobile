@@ -124,8 +124,9 @@ class FormPanel extends StatelessWidget {
 /// keyboard (the Scaffold body shrinks), and the form scrolls independently, so
 /// a focused field is never covered by it.
 ///
-/// Buttons are chrome: like the tab bar they stop growing at 1.3x so labels
-/// stay whole; the form above scales freely.
+/// Buttons are chrome but full width: they stop growing at 1.3x, later than
+/// the floating bars ([kBarTextScale]), because they have the room; the form
+/// above scales freely.
 class FormActionBar extends StatelessWidget {
   const FormActionBar({super.key, required this.child});
 

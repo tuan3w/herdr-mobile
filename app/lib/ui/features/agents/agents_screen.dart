@@ -189,7 +189,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     required bool cards,
   }) {
     final ds = context.ds;
-    final clearance = FloatingTabBar.clearance(context);
+    final clearance = FloatingBar.clearance(context);
 
     if (overview.machineCount == 0) {
       return CustomScrollView(

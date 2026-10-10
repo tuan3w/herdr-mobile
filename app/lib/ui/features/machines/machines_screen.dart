@@ -61,7 +61,7 @@ class MachinesScreen extends StatelessWidget {
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: Padding(
-                      padding: EdgeInsets.only(bottom: FloatingTabBar.clearance(context)),
+                      padding: EdgeInsets.only(bottom: FloatingBar.clearance(context)),
                       child: EmptyState(
                         icon: LucideIcons.server,
                         title: 'No machines yet',
@@ -83,7 +83,7 @@ class MachinesScreen extends StatelessWidget {
                       machine: connections[i],
                     ),
                   ),
-                  SliverToBoxAdapter(child: SizedBox(height: FloatingTabBar.clearance(context))),
+                  SliverToBoxAdapter(child: SizedBox(height: FloatingBar.clearance(context))),
                 ],
               ],
             ),

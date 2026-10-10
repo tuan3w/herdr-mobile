@@ -33,7 +33,7 @@ class TriagePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
+      maxScaleFactor: kBarTextScale,
       child: PressBuilder(
         onTap: onTap,
         haptic: true,
@@ -47,13 +47,7 @@ class TriagePill extends StatelessWidget {
             color: pressed ? ds.fill : ds.surface,
             borderRadius: BorderRadius.circular(height / 2),
             border: Border.all(color: ds.hairline),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: ds.isDark ? 0.45 : 0.08),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: ds.floatShadow,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

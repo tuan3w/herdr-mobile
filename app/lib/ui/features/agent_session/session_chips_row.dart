@@ -12,9 +12,6 @@ import '../../core/theme.dart';
 import 'session_bar.dart' show showSessionOptions;
 import 'session_select.dart';
 
-/// The widest a chip grows; a longer label ends in an ellipsis.
-const _maxChipWidth = 220.0;
-
 /// Mode, model, effort and the switches of the session as one quiet row above
 /// the composer: up to [maxSessionChips] chips
 /// and `+N` for the rest. A tap on a setting opens the options sheet on that
@@ -50,7 +47,7 @@ class SessionChipsRow extends StatelessWidget {
               semanticLabel: '$overflow more ${overflow == 1 ? 'setting' : 'settings'}',
               onTap: live ? () => unawaited(showSessionOptions(context, session)) : null,
             );
-      final maxWidth = _maxChipWidth * MediaQuery.textScalerOf(context).scale(14) / 14;
+      final maxWidth = AppChip.maxRowWidth(context);
       return SizedBox(
         height: AppChip.height,
         // A few chips, all built (a screen reader meets every one): a Row in a

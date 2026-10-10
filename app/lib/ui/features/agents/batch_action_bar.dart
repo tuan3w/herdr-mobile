@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/batch_actions.dart';
 import '../../../data/repositories/fleet_repository.dart';
+import '../../core/chrome.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/rows.dart';
@@ -33,7 +34,7 @@ class SelectionHeader extends StatelessWidget {
     final ds = context.ds;
     final selection = context.read<BoardSelection>();
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
+      maxScaleFactor: kBarTextScale,
       child: Container(
         color: ds.bg,
         padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
@@ -81,27 +82,47 @@ class SelectionHeader extends StatelessWidget {
   }
 }
 
-/// The three actions on the picked agents, docked above the system inset
-/// while the board is picking. An action is enabled when it would touch at
-/// least one of them (a message also when the only candidates are agents
-/// waiting for an answer, which the confirm sheet offers to type into on the
-/// person's say so). While a batch runs the bar says so with a spinner.
+/// The three actions on the picked agents, in the tab bar's slot and the same
+/// pill while the board is picking, so the bottom keeps its shape and the
+/// thumb finds the actions where the tabs were. An action is enabled when it
+/// would touch at least one of them (a message also when the only candidates
+/// are agents waiting for an answer, which the confirm sheet offers to type
+/// into on the person's say so). While a batch runs the bar says so with a
+/// spinner.
 class BatchActionBar extends StatelessWidget {
   const BatchActionBar({super.key, required this.onAction});
 
   final ValueChanged<BatchAction> onAction;
 
-  static const _height = 56.0;
-
   @override
   Widget build(BuildContext context) {
     final selection = context.watch<BoardSelection?>();
     if (selection == null || !selection.active) return const SizedBox.shrink();
-    // Toasts stand above it, as above the tab bar it replaces.
-    return ToastShelf(child: _bar(context, selection));
+    final clearance = FloatingBar.clearance(context);
+    // Toasts stand above it, as above the tab bar it replaces. The shell hides
+    // its scrim with the tab bar, and the board sits under the shell's
+    // overlays, so the bar brings its own.
+    return ToastShelf(
+      lift: clearance,
+      child: SizedBox(
+        height: clearance,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const FloatingBarScrim(),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: FloatingBarSlot(child: FloatingBarPill(child: _content(context, selection))),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _bar(BuildContext context, BoardSelection selection) {
+  Widget _content(BuildContext context, BoardSelection selection) {
     // Rebuilds with the fleet and the sessions, so the enablement follows the
     // statuses of what is picked.
     context.select<FleetRepository, AgentsOverview>(AgentsOverview.of);
@@ -119,58 +140,49 @@ class BatchActionBar extends StatelessWidget {
 
     final ds = context.ds;
     final busy = selection.busy;
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.15,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.md, Gap.sm + MediaQuery.paddingOf(context).bottom),
-        decoration: BoxDecoration(
-          color: ds.surface,
-          border: Border(top: BorderSide(color: ds.hairline)),
+    if (busy != null) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const BusySpinner(),
+          const SizedBox(width: Gap.md),
+          Flexible(
+            child: Text(
+              '$busy…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.label.copyWith(color: ds.textSecondary),
+            ),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        _BarAction(
+          label: 'Interrupt',
+          icon: LucideIcons.circleStop,
+          onTap: can(BatchAction.interrupt) ? () => onAction(BatchAction.interrupt) : null,
         ),
-        child: SizedBox(
-          height: _height,
-          child: busy != null
-              ? Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const BusySpinner(),
-                    const SizedBox(width: Gap.md),
-                    Flexible(
-                      child: Text(
-                        '$busy…',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Type.label.copyWith(color: ds.textSecondary, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    _BarAction(
-                      label: 'Interrupt',
-                      icon: LucideIcons.circleStop,
-                      onTap: can(BatchAction.interrupt) ? () => onAction(BatchAction.interrupt) : null,
-                    ),
-                    _BarAction(
-                      label: 'Message',
-                      icon: LucideIcons.messageSquare,
-                      onTap: can(BatchAction.message) ? () => onAction(BatchAction.message) : null,
-                    ),
-                    _BarAction(
-                      label: 'Close',
-                      icon: LucideIcons.x,
-                      danger: true,
-                      onTap: can(BatchAction.close) ? () => onAction(BatchAction.close) : null,
-                    ),
-                  ],
-                ),
+        _BarAction(
+          label: 'Message',
+          icon: LucideIcons.messageSquare,
+          onTap: can(BatchAction.message) ? () => onAction(BatchAction.message) : null,
         ),
-      ),
+        _BarAction(
+          label: 'Close',
+          icon: LucideIcons.x,
+          danger: true,
+          onTap: can(BatchAction.close) ? () => onAction(BatchAction.close) : null,
+        ),
+      ],
     );
   }
 }
 
+/// One action as a tab cell: the tab bar's icon over a name, its height and
+/// its capsule for the press (`fillPressed`: `fill` on the pill's surface is
+/// about 1.1:1 and vanishes in dark).
 class _BarAction extends StatelessWidget {
   const _BarAction({required this.label, required this.icon, required this.onTap, this.danger = false});
 
@@ -193,21 +205,21 @@ class _BarAction extends StatelessWidget {
         builder: (context, pressed) => AnimatedContainer(
           duration: Motion.pressing(pressed),
           curve: Motion.easeOut,
-          height: 56,
+          height: FloatingBar.cell,
           decoration: BoxDecoration(
-            color: pressed ? ds.fill : Colors.transparent,
-            borderRadius: BorderRadius.circular(Radii.row),
+            color: pressed ? ds.fillPressed : Colors.transparent,
+            borderRadius: BorderRadius.circular(FloatingBar.cell / 2),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 20, color: enabled ? fg : ds.textTertiary),
-              const SizedBox(height: 4),
+              Icon(icon, size: 22, color: enabled ? fg : ds.textTertiary),
+              const SizedBox(height: 2),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Type.caption.copyWith(color: fg),
+                style: Type.label.copyWith(color: fg, fontWeight: FontWeight.w500),
               ),
             ],
           ),

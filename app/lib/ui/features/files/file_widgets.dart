@@ -337,7 +337,7 @@ class FileResolvingPage extends StatelessWidget {
       body: Column(
         children: [
           MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.15,
+            maxScaleFactor: kBarTextScale,
             child: Padding(
               padding: EdgeInsets.fromLTRB(Gap.gutter - 6, MediaQuery.paddingOf(context).top, Gap.gutter - 6, 0),
               child: SizedBox(
