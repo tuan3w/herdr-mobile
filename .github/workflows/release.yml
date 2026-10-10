@@ -81,10 +81,14 @@ jobs:
             echo "keyAlias=$KEY_ALIAS"
           } > app/android/key.properties
 
+      # --split-debug-info keeps the Dart symbol tables out of libapp.so
+      # (11.9 -> 10.1 MiB per ARM flavour, measured on 0.1.11); they are
+      # attached to the release as herdr-mobile-X.Y.Z-symbols.zip, which
+      # `flutter symbolize` needs to read a crash stack trace from that build.
       - name: Build APKs
         if: steps.sign.outputs.enabled == 'true'
         working-directory: app
-        run: flutter build apk --release --target-platform android-arm,android-arm64
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols
 
       - name: Verify signature is not the debug key
         if: steps.sign.outputs.enabled == 'true'
@@ -101,6 +105,7 @@ jobs:
           mkdir dist
           cp app/build/app/outputs/flutter-apk/app-release.apk "dist/herdr-mobile-$v.apk"
           (cd dist && sha256sum *.apk > SHA256SUMS)
+          (cd app/build/symbols && zip -q -r "$GITHUB_WORKSPACE/dist/herdr-mobile-$v-symbols.zip" .)
 
       - name: Publish release
         if: steps.sign.outputs.enabled == 'true'
