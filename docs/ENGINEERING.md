@@ -372,19 +372,24 @@ lands (no timed tweens, no `InteractiveViewer`); the arithmetic lives in
 `photo_math.dart` with pure tests. Decode to ~1.5x the screen first and sharpen
 on zoom; hold only the open photo and its neighbours.
 
-### One picture store
+### One disk cache
 
-`data/services/picture_store.dart`, `PictureStore.shared`: the only picture
-cache on disk, shared by the photo viewer (whole files up to 12 MB), both
+`data/services/disk_cache.dart`, `DiskCache.shared`: the only cache of fetched
+bytes on disk (named for bytes, not pictures: a file viewer can use it later,
+see below), shared by the photo viewer (whole files up to 12 MB), both
 folder thumbnail loaders (one 240 px thumbnail per file, JPEG q80 or PNG when
 the source may be see-through, under the same `t:` key) and the chat pictures
 of terminal-log sessions (`l:` keeper, `o:` omp). Hard cap 192 MB, trimmed to
 160 MB, least recently used first (recency is the file's modified time, so a
-restart keeps the order); Settings > Storage shows the size and clears it.
+restart keeps the order); Settings > Storage shows the size (`Cache · 38 MB`)
+and clears it (`Clear cache`; its subtitle says what is in it, so it stays true
+when a new kind is added, and the label does not claim files before there are
+any). A new kind of entry adds a key prefix and a key helper on `DiskCache` and
+shares the one cap; `maxEntryBytes` (12 MB) is the one limit to revisit.
 Rules: a key holds what identifies the bytes (machine id, path, size, mtime, or
 a content hash), so a changed file is a miss and never served stale; an
-empty `RemoteFiles.machineId` means no store; a store failure is silent and
-the app goes to the network; **nothing is ever fetched on the store's behalf**,
+empty `RemoteFiles.machineId` means no cache; a cache failure is silent and
+the app goes to the network; **nothing is ever fetched on the cache's behalf**,
 it keeps only what the person already asked to see. The listing's mtime has
 one-second resolution: a file rewritten within the same second to the same size
 is served from the store until it changes again (accepted: the listing is the

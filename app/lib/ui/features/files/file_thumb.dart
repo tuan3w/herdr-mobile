@@ -8,7 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/services/image_decode.dart';
 import '../../../data/services/image_sniff.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../../../data/services/remote_files.dart';
 import '../../core/glyphs.dart';
 import '../../core/motion.dart';
@@ -31,7 +31,7 @@ const thumbParallel = 3;
 ///
 /// What it hands out is a small thumbnail (about 15-60 KB), not the file: the
 /// first time the file is read and shrunk, the thumbnail is kept in the
-/// [PictureStore] under the key the folder grid ([PhotoThumbs]) uses too, so
+/// [DiskCache] under the key the folder grid ([PhotoThumbs]) uses too, so
 /// a row seen again (after a restart too) costs no read, and the memory budget
 /// holds many more rows. A file the engine cannot shrink is handed out as it
 /// is.
@@ -39,9 +39,9 @@ class ThumbLoader {
   ThumbLoader({
     this.parallel = thumbParallel,
     this.budgetBytes = 6 * 1024 * 1024,
-    PictureStore? store,
+    DiskCache? store,
     Thumbnailer? thumbnailer,
-  }) : _store = store ?? PictureStore.shared,
+  }) : _store = store ?? DiskCache.shared,
        _thumbnailer = thumbnailer ?? makeThumbnail;
 
   /// The one used by the browser.
@@ -49,7 +49,7 @@ class ThumbLoader {
 
   final int parallel;
   final int budgetBytes;
-  final PictureStore _store;
+  final DiskCache _store;
   final Thumbnailer _thumbnailer;
 
   final _queue = Queue<_Job>();
@@ -115,7 +115,7 @@ class ThumbLoader {
       final modified = entry.modified;
       final key = modified == null || job.files.machineId.isEmpty
           ? null
-          : PictureStore.thumbKey(job.files.machineId, entry.path, size, modified.millisecondsSinceEpoch);
+          : DiskCache.thumbKey(job.files.machineId, entry.path, size, modified.millisecondsSinceEpoch);
       bytes = key == null ? null : await _store.get(key);
       if (bytes == null) {
         final read = await job.files.read(entry.path, length: size);

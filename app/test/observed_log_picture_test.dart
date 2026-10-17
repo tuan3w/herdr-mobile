@@ -9,7 +9,7 @@ import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 
 import 'support/fake_fs.dart';
 import 'support/fake_log_source.dart';
@@ -24,16 +24,16 @@ final _sha = 'cd' * 32;
 
 void main() {
   late Directory dir;
-  late PictureStore store;
-  late PictureStore savedStore;
+  late DiskCache store;
+  late DiskCache savedStore;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('observed_picture_');
-    savedStore = PictureStore.shared;
-    store = PictureStore.shared = PictureStore(() async => dir);
+    savedStore = DiskCache.shared;
+    store = DiskCache.shared = DiskCache(() async => dir);
   });
   tearDown(() {
-    PictureStore.shared = savedStore;
+    DiskCache.shared = savedStore;
     dir.deleteSync(recursive: true);
   });
 

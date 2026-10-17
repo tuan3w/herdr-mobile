@@ -346,7 +346,7 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   void watchSubagentLog(String runId, bool on);
 
   /// The bytes of a picture of a terminal-log chat ([LogImageBlock]): from the
-  /// picture store when it is there, else fetched from the machine (the keeper
+  /// disk cache when it is there, else fetched from the machine (the keeper
   /// re-reads the log line, or SFTP reads omp's blob file) and kept for next
   /// time. Called only for a person's tap: nothing prefetches. A request for a
   /// picture already on its way joins it. Throws `LogPictureException` with

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../../../data/models/remote_file.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../../../data/services/remote_files.dart';
 import '../files/file_format.dart';
 
@@ -54,7 +54,7 @@ abstract interface class RangedPhotoSource implements PhotoSource {
 /// A picture in a file on the machine, read over SFTP in [photoReadChunk]
 /// pieces. Over [photoReadCap] it is refused before a byte is read.
 ///
-/// A file up to the store's entry limit is read through the [PictureStore]:
+/// A file up to the store's entry limit is read through the [DiskCache]:
 /// opening it again, or swiping back to it, costs a local read instead of the
 /// radio. The key holds the size and the modified time, so a changed file is
 /// read again; without a modified time (or a machine id) nothing is stored.
@@ -65,13 +65,13 @@ class RemotePhotoSource implements RangedPhotoSource {
     required this.size,
     this.modified,
     this.cap = photoReadCap,
-    PictureStore? store,
-  }) : _store = store ?? PictureStore.shared;
+    DiskCache? store,
+  }) : _store = store ?? DiskCache.shared;
 
   final RemoteFiles _files;
   final String path;
   final int cap;
-  final PictureStore _store;
+  final DiskCache _store;
 
   /// The modified time the listing gave, which tells the store a file changed.
   final DateTime? modified;
@@ -102,7 +102,7 @@ class RemotePhotoSource implements RangedPhotoSource {
     }
     final key = stamp == null || _files.machineId.isEmpty
         ? null
-        : PictureStore.fileKey(_files.machineId, path, known, stamp.millisecondsSinceEpoch);
+        : DiskCache.fileKey(_files.machineId, path, known, stamp.millisecondsSinceEpoch);
     if (key != null) {
       final hit = await _store.get(key);
       // A copy of another length is not this file (a store cannot tell).

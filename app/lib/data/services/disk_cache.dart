@@ -6,47 +6,52 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// The one small on-disk picture cache: the photo viewer, both folder
-/// thumbnail loaders and the terminal-log chat share it, so a picture the
-/// person already looked at is not downloaded again.
+/// The one small on-disk cache of what the app fetched from a machine and the
+/// person looked at: the photo viewer, both folder thumbnail loaders and the
+/// terminal-log chat's pictures share it, so nothing is downloaded twice.
+/// Today it holds pictures and thumbnails; it is bytes under a namespaced key
+/// on purpose, so a file viewer can use it later: a new kind adds a key prefix
+/// and a key helper below, and lives under the same cap, the oldest used going
+/// first whatever it is. [maxEntryBytes] is the one thing a new kind may need
+/// to revisit (it is 12 MB, the most a picture is worth keeping).
 ///
 /// It only keeps what the person asked to see; nothing prefetches into it.
 /// One file per key, named by the SHA-1 of the key, in one flat private
-/// directory (a picture may be private: the app's own cache directory, never
+/// directory (a copy may be private: the app's own cache directory, never
 /// shared storage). A write goes to a temp file that is renamed over the
-/// file, so a reader sees the old picture or the new one. The directory is
+/// file, so a reader sees the old copy or the new one. The directory is
 /// bounded by [maxBytes]: past it the least recently used files go until
 /// [lowWater] is left (the gap keeps it from trimming on every put). Recency
 /// on disk is the file's modified time, so an app restart keeps the order.
 ///
-/// A store failure is never the caller's problem: [get] answers null and
+/// A cache failure is never the caller's problem: [get] answers null and
 /// [put] does nothing, and the caller goes to the network. A corrupt or short
 /// file cannot be told apart here; callers check what they know (a length, or
 /// the codec).
-class PictureStore {
-  PictureStore(
+class DiskCache {
+  DiskCache(
     this._directory, {
     this.maxBytes = 192 << 20,
     this.lowWater = 160 << 20,
     this.maxEntryBytes = 12 << 20,
   });
 
-  /// The store in the app's private cache directory (`pictures/` under it; the
+  /// The store in the app's private cache directory (`fetched/` under it; the
   /// OS may clear it when space is short, which a cache survives). The
   /// directory is looked up when first needed.
-  factory PictureStore.inAppStorage() =>
-      PictureStore(() async => Directory('${(await getApplicationCacheDirectory()).path}/pictures'));
+  factory DiskCache.inAppStorage() =>
+      DiskCache(() async => Directory('${(await getApplicationCacheDirectory()).path}/fetched'));
 
   /// The store the app uses. Not final: tests replace it, like
   /// `ImagePreviewCache.shared`.
-  static PictureStore shared = PictureStore.inAppStorage();
+  static DiskCache shared = DiskCache.inAppStorage();
 
   /// Everything kept stays under this; going past it trims to [lowWater].
   final int maxBytes;
   final int lowWater;
 
-  /// A picture larger than this is not kept (the same bound as the decode
-  /// limit and the viewer's preload limit).
+  /// An entry larger than this is not kept (the same bound as the picture
+  /// decode limit and the viewer's preload limit).
   final int maxEntryBytes;
 
   final Future<Directory> Function() _directory;

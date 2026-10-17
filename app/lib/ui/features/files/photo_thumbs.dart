@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/services/image_decode.dart';
 import '../../../data/services/image_sniff.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../../../data/services/remote_files.dart';
 
 /// Where one thumbnail is.
@@ -105,8 +105,8 @@ class PhotoThumbs {
     this.side = 240,
     this._decoder = decodeImageFit,
     this._encoder = encodeThumbnail,
-    PictureStore? store,
-  }) : _store = store ?? PictureStore.shared;
+    DiskCache? store,
+  }) : _store = store ?? DiskCache.shared;
 
   /// The cache the folder grid and the photo viewer's placeholders share.
   static final PhotoThumbs shared = PhotoThumbs();
@@ -132,7 +132,7 @@ class PhotoThumbs {
   /// (the same key): a folder opened again, after a restart too, draws its
   /// tiles without a read. A file is in it only when the listing gave a size
   /// and a modified time and the machine has an id.
-  final PictureStore _store;
+  final DiskCache _store;
 
   /// By path, least recently used first.
   final _entries = <String, ThumbEntry>{};
@@ -337,7 +337,7 @@ class PhotoThumbs {
   String? _thumbKey(ThumbEntry e) {
     final size = e.size, modified = e.modified;
     if (size == null || modified == null || e._files.machineId.isEmpty) return null;
-    return PictureStore.thumbKey(e._files.machineId, e.path, size, modified.millisecondsSinceEpoch);
+    return DiskCache.thumbKey(e._files.machineId, e.path, size, modified.millisecondsSinceEpoch);
   }
 
   /// The thumbnail kept on disk, decoded; null on a miss or when the stored

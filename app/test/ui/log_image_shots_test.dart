@@ -22,7 +22,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/ui/core/markdown/markdown.dart';
 import 'package:herdr_mobile/ui/features/agent_session/content_image.dart';
 import 'package:herdr_mobile/ui/features/agent_session/content_image_cache.dart';
@@ -87,10 +87,10 @@ void main() {
 
       testWidgets('states in a thread $tag', (tester) async {
         final dir = Directory.systemTemp.createTempSync('log_image_shots_');
-        final saved = PictureStore.shared;
-        final store = PictureStore.shared = PictureStore(() async => dir);
+        final saved = DiskCache.shared;
+        final store = DiskCache.shared = DiskCache(() async => dir);
         addTearDown(() {
-          PictureStore.shared = saved;
+          DiskCache.shared = saved;
           dir.deleteSync(recursive: true);
         });
         await tester.runAsync(() => store.ready);
@@ -154,10 +154,10 @@ void main() {
 
       testWidgets('failed and too large $tag', (tester) async {
         final dir = Directory.systemTemp.createTempSync('log_image_shots_');
-        final saved = PictureStore.shared;
-        final store = PictureStore.shared = PictureStore(() async => dir);
+        final saved = DiskCache.shared;
+        final store = DiskCache.shared = DiskCache(() async => dir);
         addTearDown(() {
-          PictureStore.shared = saved;
+          DiskCache.shared = saved;
           dir.deleteSync(recursive: true);
         });
         await tester.runAsync(() => store.ready);
@@ -211,10 +211,10 @@ void main() {
 
       testWidgets('not available here $tag', (tester) async {
         final dir = Directory.systemTemp.createTempSync('log_image_shots_');
-        final saved = PictureStore.shared;
-        final store = PictureStore.shared = PictureStore(() async => dir);
+        final saved = DiskCache.shared;
+        final store = DiskCache.shared = DiskCache(() async => dir);
         addTearDown(() {
-          PictureStore.shared = saved;
+          DiskCache.shared = saved;
           dir.deleteSync(recursive: true);
         });
         await tester.runAsync(() => store.ready);
@@ -237,10 +237,10 @@ void main() {
   for (final brightness in Brightness.values) {
     testWidgets('settings storage ${brightness.name}', (tester) async {
       final dir = Directory.systemTemp.createTempSync('log_image_shots_');
-      final saved = PictureStore.shared;
-      final store = PictureStore.shared = PictureStore(() async => dir);
+      final saved = DiskCache.shared;
+      final store = DiskCache.shared = DiskCache(() async => dir);
       addTearDown(() {
-        PictureStore.shared = saved;
+        DiskCache.shared = saved;
         dir.deleteSync(recursive: true);
       });
       await tester.runAsync(() async {
@@ -273,7 +273,7 @@ void main() {
             await tester.pump();
           }
           await openSettingsGroup(tester, 'Storage');
-          await tester.tap(find.text('Clear saved pictures'));
+          await tester.tap(find.text('Clear cache'));
           for (var i = 0; i < 40; i++) {
             await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
             await tester.pump(const Duration(milliseconds: 16));

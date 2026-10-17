@@ -41,7 +41,7 @@ class HerdrApi {
   final HerdrTransport _transport;
 
   /// The machine this API talks to, for keys that must not collide across
-  /// machines (the picture store). Empty when it is not a saved machine.
+  /// machines (the disk cache). Empty when it is not a saved machine.
   final String machineId;
 
   /// The transport itself, for what is not a herdr request: the exec channels

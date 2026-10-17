@@ -2,17 +2,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 
 Uint8List _bytes(int n, [int fill = 1]) => Uint8List(n)..fillRange(0, n, fill);
 
 void main() {
   late Directory dir;
 
-  PictureStore open({int maxBytes = 1000, int lowWater = 600, int maxEntryBytes = 400}) =>
-      PictureStore(() async => dir, maxBytes: maxBytes, lowWater: lowWater, maxEntryBytes: maxEntryBytes);
+  DiskCache open({int maxBytes = 1000, int lowWater = 600, int maxEntryBytes = 400}) =>
+      DiskCache(() async => dir, maxBytes: maxBytes, lowWater: lowWater, maxEntryBytes: maxEntryBytes);
 
-  setUp(() => dir = Directory.systemTemp.createTempSync('picture_store_'));
+  setUp(() => dir = Directory.systemTemp.createTempSync('disk_cache_'));
   tearDown(() => dir.deleteSync(recursive: true));
 
   test('keeps what it is given and says so', () async {
@@ -65,7 +65,7 @@ void main() {
 
   test('a directory that cannot be used never throws', () async {
     final file = File('${dir.path}/blocker')..writeAsStringSync('x');
-    final store = PictureStore(() async => Directory('${file.path}/under'));
+    final store = DiskCache(() async => Directory('${file.path}/under'));
     await store.put('a', _bytes(10));
     expect(await store.get('a'), isNull);
     expect(await store.totalBytes(), 0);
@@ -103,7 +103,7 @@ void main() {
   });
 
   test('defaults: 300 MB of 10 MB pictures end under 192 MB with the newest kept', () async {
-    final store = PictureStore(() async => dir);
+    final store = DiskCache(() async => dir);
     final ten = _bytes(10 << 20);
     for (var i = 0; i < 30; i++) {
       await store.put('k$i', ten);
@@ -114,8 +114,8 @@ void main() {
   });
 
   test('keys carry what identifies the bytes', () {
-    expect(PictureStore.fileKey('m', '/p', 1, 2), isNot(PictureStore.fileKey('m', '/p', 1, 3)));
-    expect(PictureStore.fileKey('m', '/p', 1, 2), isNot(PictureStore.fileKey('n', '/p', 1, 2)));
-    expect(PictureStore.fileKey('m', '/p', 1, 2), isNot(PictureStore.thumbKey('m', '/p', 1, 2)));
+    expect(DiskCache.fileKey('m', '/p', 1, 2), isNot(DiskCache.fileKey('m', '/p', 1, 3)));
+    expect(DiskCache.fileKey('m', '/p', 1, 2), isNot(DiskCache.fileKey('n', '/p', 1, 2)));
+    expect(DiskCache.fileKey('m', '/p', 1, 2), isNot(DiskCache.thumbKey('m', '/p', 1, 2)));
   });
 }

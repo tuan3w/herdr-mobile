@@ -31,7 +31,7 @@ class RemoteFiles {
   /// the order they were asked for. Uploads share the machine's one SFTP
   /// channel with browsing, so two is the most that leaves it responsive.
   ///
-  /// [machineId] names the machine in the keys of the picture store, which
+  /// [machineId] names the machine in the keys of the disk cache, which
   /// must not mix two machines' files; empty means "do not use the store".
   RemoteFiles(this._transport, {this.maxUploads = 2, this.machineId = ''});
 

@@ -15,7 +15,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/ui/core/chrome.dart';
 import 'package:herdr_mobile/ui/core/motion.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
@@ -173,16 +173,16 @@ void main() {
 
   group('Storage', () {
     late Directory dir;
-    late PictureStore saved;
-    late PictureStore store;
+    late DiskCache saved;
+    late DiskCache store;
 
     setUp(() {
       dir = Directory.systemTemp.createTempSync('settings_storage_');
-      saved = PictureStore.shared;
-      store = PictureStore.shared = PictureStore(() async => dir);
+      saved = DiskCache.shared;
+      store = DiskCache.shared = DiskCache(() async => dir);
     });
     tearDown(() {
-      PictureStore.shared = saved;
+      DiskCache.shared = saved;
       dir.deleteSync(recursive: true);
     });
 
@@ -201,15 +201,15 @@ void main() {
         await store.put('b', Uint8List(1024 * 1024));
       });
       await _pump(tester);
-      await until(tester, () => find.text('Pictures \u00b7 4 MB').evaluate().isNotEmpty);
+      await until(tester, () => find.text('Cache \u00b7 4 MB').evaluate().isNotEmpty);
 
       await openSettingsGroup(tester, 'Storage');
-      expect(find.text('Clear saved pictures'), findsOneWidget);
-      expect(find.textContaining('At most 192 MB'), findsOneWidget);
-      await tester.tap(find.text('Clear saved pictures'));
+      expect(find.text('Clear cache'), findsOneWidget);
+      expect(find.textContaining('what you looked at'), findsOneWidget);
+      await tester.tap(find.text('Clear cache'));
       await tester.pump();
       await until(tester, () => find.text('Cleared 4 MB').evaluate().isNotEmpty);
-      await until(tester, () => find.text('Pictures \u00b7 none').evaluate().isNotEmpty);
+      await until(tester, () => find.text('Cache \u00b7 empty').evaluate().isNotEmpty);
       expect(dir.listSync(), isEmpty);
       await tester.pump(const Duration(seconds: 6));
     });
@@ -217,9 +217,9 @@ void main() {
     testWidgets('with nothing kept it says so, and a tap says there was nothing', (tester) async {
       await tester.runAsync(() => store.ready);
       await _pump(tester);
-      await until(tester, () => find.text('Pictures \u00b7 none').evaluate().isNotEmpty);
+      await until(tester, () => find.text('Cache \u00b7 empty').evaluate().isNotEmpty);
       await openSettingsGroup(tester, 'Storage');
-      await tester.tap(find.text('Clear saved pictures'));
+      await tester.tap(find.text('Clear cache'));
       await until(tester, () => find.text('Nothing to clear').evaluate().isNotEmpty);
       await tester.pump(const Duration(seconds: 6));
     });

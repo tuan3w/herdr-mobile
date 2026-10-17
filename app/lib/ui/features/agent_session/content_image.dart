@@ -7,7 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/acp/acp_models.dart';
 import '../../../data/observed/log_picture.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/theme.dart';
@@ -57,7 +57,7 @@ class ImageBlockView extends StatelessWidget {
 /// A picture of a terminal-log chat (Claude Code, Codex, omp), which the host
 /// does not send with the log: a quiet line with its type and size, and
 /// `Tap to load`. Nothing is downloaded until the person taps, except that a
-/// picture the phone already holds (the [PictureStore]) simply shows. A failed
+/// picture the phone already holds (the [DiskCache]) simply shows. A failed
 /// fetch says why and offers `Tap to retry.`.
 ///
 /// The bytes come through the session of the conversation ([ThreadPhotos]);
@@ -79,7 +79,7 @@ class _LogImageViewState extends State<LogImageView> {
   @override
   void initState() {
     super.initState();
-    final store = PictureStore.shared;
+    final store = DiskCache.shared;
     // Held already: it shows, no tap, no radio.
     unawaited(store.ready.then((_) {
       if (mounted && !_requested && store.knows(widget.block.key)) setState(() => _requested = true);

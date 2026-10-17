@@ -10,7 +10,7 @@ import '../../../data/repositories/app_update.dart';
 import '../../../data/repositories/notification_settings.dart';
 import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/terminal_settings.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../../../data/services/notifier.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
@@ -440,14 +440,14 @@ class _StorageGroup extends StatefulWidget {
 }
 
 class _StorageGroupState extends State<_StorageGroup> {
-  late Future<int> _size = PictureStore.shared.totalBytes();
+  late Future<int> _size = DiskCache.shared.totalBytes();
 
   Future<void> _clear() async {
     final toaster = Toaster.of(context);
-    final freed = await PictureStore.shared.clear();
+    final freed = await DiskCache.shared.clear();
     toaster.show(freed == 0 ? 'Nothing to clear' : 'Cleared ${formatBytes(freed)}');
     if (!mounted) return;
-    final size = PictureStore.shared.totalBytes();
+    final size = DiskCache.shared.totalBytes();
     setState(() {
       _size = size;
     });
@@ -462,17 +462,17 @@ class _StorageGroupState extends State<_StorageGroup> {
             icon: LucideIcons.hardDrive,
             title: 'Storage',
             summary: bytes == null
-                ? 'Pictures'
+                ? 'Cache'
                 : bytes == 0
-                    ? 'Pictures \u00b7 none'
-                    : 'Pictures \u00b7 ${formatBytes(bytes)}',
+                    ? 'Cache \u00b7 empty'
+                    : 'Cache \u00b7 ${formatBytes(bytes)}',
             open: widget.open,
             onToggle: widget.onToggle,
             children: [
               ListRow(
-                title: 'Clear saved pictures',
+                title: 'Clear cache',
                 titleMaxLines: 1,
-                subtitle: 'Kept so a picture is not downloaded twice. At most 192 MB, the oldest go first.',
+                subtitle: 'Copies of what you looked at on your machines, kept so it is not downloaded twice. At most 192 MB, the oldest go first.',
                 subtitleMaxLines: 4,
                 trailing: Icon(LucideIcons.trash2, size: 16, color: context.ds.textTertiary),
                 // A plain tap is the right guard: all of it can be downloaded again.

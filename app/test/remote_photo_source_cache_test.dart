@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/data/services/remote_files.dart';
 import 'package:herdr_mobile/ui/features/photos/photo_item.dart';
 
@@ -11,14 +11,14 @@ import 'support/fake_transport.dart';
 
 void main() {
   late Directory dir;
-  late PictureStore store;
+  late DiskCache store;
   late FakeFs fs;
   final modified = DateTime.utc(2026, 5, 20, 9, 30);
   final bytes = Uint8List.fromList(List.generate(3000, (i) => i % 251));
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('photo_source_');
-    store = PictureStore(() async => dir);
+    store = DiskCache(() async => dir);
     fs = FakeFs()..addFile('/p/a.jpg', bytes, modified: modified);
   });
   tearDown(() => dir.deleteSync(recursive: true));
@@ -77,7 +77,7 @@ void main() {
   });
 
   test('a stored copy of another length is read again', () async {
-    final key = PictureStore.fileKey('m1', '/p/a.jpg', bytes.length, modified.millisecondsSinceEpoch);
+    final key = DiskCache.fileKey('m1', '/p/a.jpg', bytes.length, modified.millisecondsSinceEpoch);
     await store.put(key, Uint8List(10));
     expect(await open(source()), bytes);
     expect(reads(), greaterThan(0));
@@ -98,7 +98,7 @@ void main() {
   });
 
   test('a file larger than the store keeps is read every time', () async {
-    final small = PictureStore(() async => dir, maxEntryBytes: 1000);
+    final small = DiskCache(() async => dir, maxEntryBytes: 1000);
     final s = RemotePhotoSource(
       RemoteFiles(FakeTransport()..fs = fs, machineId: 'm1'),
       '/p/a.jpg',

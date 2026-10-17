@@ -23,7 +23,7 @@ import '../observed/observed_kind.dart';
 import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
 import '../observed/session_log_locator.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
-import '../services/picture_store.dart';
+import '../services/disk_cache.dart';
 import '../services/remote_files.dart' show ReadCancel;
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
@@ -596,7 +596,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// than [logPictureLimit]; a picture whose size is known to be over it is
   /// refused before a byte is transferred.
   Future<Uint8List> _fetchPicture(LogPictureRef ref, ReadCancel? cancel) async {
-    final store = PictureStore.shared;
+    final store = DiskCache.shared;
     final hit = await store.get(ref.key);
     if (hit != null) return hit;
     final known = ref.bytes;

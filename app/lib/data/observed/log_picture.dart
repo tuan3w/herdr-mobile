@@ -1,16 +1,16 @@
 import '../acp/acp_models.dart';
-import '../services/picture_store.dart';
+import '../services/disk_cache.dart';
 
 /// A picture of a terminal-log chat (Claude Code, Codex, omp), as far as the
 /// phone knows where its bytes are. The host strips them from the log it sends
 /// (a picture is 100 KB to several MB of base64), so a chat from a log shows
 /// the picture only when the person asks for it: [LogImageBlock] carries the
 /// reference and the screen fetches the bytes on a tap, or finds them in the
-/// [PictureStore] when it already has.
+/// [DiskCache] when it already has.
 sealed class LogPictureRef {
   const LogPictureRef();
 
-  /// What the [PictureStore] keeps the picture under: the content (a hash),
+  /// What the [DiskCache] keeps the picture under: the content (a hash),
   /// never where it was seen, so the same picture is stored once.
   String get key;
 
@@ -33,7 +33,7 @@ final class KeeperPictureRef extends LogPictureRef {
   final int? bytes;
 
   @override
-  String get key => PictureStore.logKey(hash);
+  String get key => DiskCache.logKey(hash);
 }
 
 /// An omp picture: the log holds `blob:sha256:<hex>`, and the bytes are a plain
@@ -47,7 +47,7 @@ final class OmpPictureRef extends LogPictureRef {
   final int? bytes;
 
   @override
-  String get key => PictureStore.ompKey(sha256);
+  String get key => DiskCache.ompKey(sha256);
 }
 
 /// An [ImageBlock] with no data of its own: [ref] says where to get it. Being

@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/observed/log_picture.dart';
 import 'package:herdr_mobile/data/services/image_decode.dart' show DecodedImage;
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
 import 'package:herdr_mobile/ui/features/agent_session/content_image.dart';
 import 'package:herdr_mobile/ui/features/agent_session/content_image_cache.dart';
@@ -33,21 +33,21 @@ void main() {
   setUpAll(loadAppFonts);
 
   late Directory dir;
-  late PictureStore store;
-  late PictureStore savedStore;
+  late DiskCache store;
+  late DiskCache savedStore;
   late FakeAgentSession session;
   late ImagePreviewCache cache;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('log_image_');
-    savedStore = PictureStore.shared;
-    store = PictureStore.shared = PictureStore(() async => dir);
+    savedStore = DiskCache.shared;
+    store = DiskCache.shared = DiskCache(() async => dir);
     session = FakeAgentSession()..logPictures[_ref.key] = Uint8List.fromList([1, 2, 3]);
     cache = ImagePreviewCache(decoder: _fakeBitmap);
   });
   tearDown(() {
     cache.clear();
-    PictureStore.shared = savedStore;
+    DiskCache.shared = savedStore;
     dir.deleteSync(recursive: true);
   });
 

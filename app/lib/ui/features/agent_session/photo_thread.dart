@@ -6,7 +6,7 @@ import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
 import '../../../data/observed/log_picture.dart';
 import '../../../data/repositories/agent_session.dart';
-import '../../../data/services/picture_store.dart';
+import '../../../data/services/disk_cache.dart';
 import '../files/file_format.dart';
 import '../photos/photo_item.dart';
 import '../photos/photo_viewer.dart';
@@ -29,7 +29,7 @@ class ThreadPhoto {
 /// ones inside messages (yours and the agent's) and the ones tools returned.
 /// Only blocks that carry data are listed (a bare uri is a link, not a
 /// picture), and a picture of a terminal-log chat only once the phone holds it
-/// ([PictureStore.knows]): paging through the thread never downloads one. [agentLabel] names the sender of the agent's own.
+/// ([DiskCache.knows]): paging through the thread never downloads one. [agentLabel] names the sender of the agent's own.
 List<ThreadPhoto> threadPhotos(AgentSessionState state, {required String agentLabel}) {
   final out = <ThreadPhoto>[];
   for (final item in state.items) {
@@ -62,7 +62,7 @@ List<ThreadPhoto> threadPhotos(AgentSessionState state, {required String agentLa
 }
 
 bool _listable(ImageBlock block) =>
-    block is LogImageBlock ? PictureStore.shared.knows(block.key) : block.data.isNotEmpty;
+    block is LogImageBlock ? DiskCache.shared.knows(block.key) : block.data.isNotEmpty;
 
 /// What a tap on a picture in the transcript can page through: the session
 /// whose transcript it is. Read when the tap happens, never while the rows

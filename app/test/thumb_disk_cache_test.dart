@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
-import 'package:herdr_mobile/data/services/picture_store.dart';
+import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/data/services/remote_files.dart';
 import 'package:herdr_mobile/ui/features/files/file_thumb.dart';
 import 'package:herdr_mobile/ui/features/files/photo_thumbs.dart';
@@ -29,13 +29,13 @@ RemoteEntry _entry(Uint8List bytes, {DateTime? modified, String path = '/p/a.jpg
 
 void main() {
   late Directory dir;
-  late PictureStore store;
+  late DiskCache store;
   late FakeFs fs;
   late RemoteFiles files;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('thumb_disk_');
-    store = PictureStore(() async => dir);
+    store = DiskCache(() async => dir);
     fs = FakeFs()..addFile('/p/a.jpg', _original, modified: _modified);
     files = RemoteFiles(FakeTransport()..fs = fs, machineId: 'm1');
   });
@@ -75,7 +75,7 @@ void main() {
     final decoder = FakeDecoder();
     await decoder.prepare(tester, [(240, 180)]);
     final entry = _entry(_original);
-    final key = PictureStore.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
+    final key = DiskCache.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
 
     final first = grid(decoder);
     addTearDown(first.dispose);
@@ -98,7 +98,7 @@ void main() {
     final decoder = FakeDecoder();
     await decoder.prepare(tester, [(240, 180)]);
     final entry = _entry(_original);
-    final key = PictureStore.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
+    final key = DiskCache.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
 
     final first = grid(decoder);
     addTearDown(first.dispose);
@@ -117,7 +117,7 @@ void main() {
     final decoder = FakeDecoder();
     await decoder.prepare(tester, [(240, 180)]);
     final entry = _entry(_original);
-    final key = PictureStore.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
+    final key = DiskCache.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
     await tester.runAsync(() => store.put(key, Uint8List.fromList([1, 2, 3])));
 
     final thumbs = grid(decoder);
@@ -147,7 +147,7 @@ void main() {
 
     final row = await load(tester, loader, entry);
     expect(row, _thumb, reason: 'the row holds the 240 px thumbnail, not the file');
-    final key = PictureStore.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
+    final key = DiskCache.thumbKey('m1', entry.path, entry.size!, _modified.millisecondsSinceEpoch);
     await until(tester, () => store.knows(key));
 
     final thumbs = grid(decoder);

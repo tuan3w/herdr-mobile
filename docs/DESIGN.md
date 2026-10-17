@@ -1557,7 +1557,7 @@ with a sample line, wrap, Dark terminal, and Smooth text: streaming answers at
 an even pace, on by default, `AppSettings.smoothText`; the terminal ones edit
 the pane's `TerminalSettings`), Agents (how agents open, and Quick phrases, a
 row that opens its own page because the list grows), Notifications, Storage
-(what the picture store keeps, `PictureStore`, and Clear: a plain tap, because
+(what the disk cache keeps, `DiskCache`, as `Cache · 38 MB`, and `Clear cache`: a plain tap, because
 everything cleared can be downloaded again), and About (what it talks to, update
 checks, source link, licences). A newer version's row
 sits above them. Why five rows: the page was one long scroll of six sections
