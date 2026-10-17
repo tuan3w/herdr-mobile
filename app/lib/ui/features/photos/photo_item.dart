@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../../../data/models/remote_file.dart';
+import '../../../data/services/picture_store.dart';
 import '../../../data/services/remote_files.dart';
 import '../files/file_format.dart';
 
@@ -51,12 +53,28 @@ abstract interface class RangedPhotoSource implements PhotoSource {
 
 /// A picture in a file on the machine, read over SFTP in [photoReadChunk]
 /// pieces. Over [photoReadCap] it is refused before a byte is read.
+///
+/// A file up to the store's entry limit is read through the [PictureStore]:
+/// opening it again, or swiping back to it, costs a local read instead of the
+/// radio. The key holds the size and the modified time, so a changed file is
+/// read again; without a modified time (or a machine id) nothing is stored.
 class RemotePhotoSource implements RangedPhotoSource {
-  RemotePhotoSource(this._files, this.path, {required this.size, this.cap = photoReadCap});
+  RemotePhotoSource(
+    this._files,
+    this.path, {
+    required this.size,
+    this.modified,
+    this.cap = photoReadCap,
+    PictureStore? store,
+  }) : _store = store ?? PictureStore.shared;
 
   final RemoteFiles _files;
   final String path;
   final int cap;
+  final PictureStore _store;
+
+  /// The modified time the listing gave, which tells the store a file changed.
+  final DateTime? modified;
 
   @override
   final int? size;
@@ -64,7 +82,13 @@ class RemotePhotoSource implements RangedPhotoSource {
   @override
   Future<Uint8List> read({void Function(int received)? onProgress, ReadCancel? cancel}) async {
     // A listing or a link can leave the size unknown: ask once.
-    final known = size ?? (await _files.stat(path)).size;
+    var known = size;
+    var stamp = modified;
+    if (known == null) {
+      final stat = await _files.stat(path);
+      known = stat.size;
+      stamp ??= stat.modified;
+    }
     if (known == null || known <= 0) {
       throw RemoteFileException(RemoteFileErrorKind.failed, 'The file is empty.', path: path, fatal: true);
     }
@@ -76,7 +100,20 @@ class RemotePhotoSource implements RangedPhotoSource {
         fatal: true,
       );
     }
-    return _files.readAll(path, size: known, chunk: photoReadChunk, onProgress: onProgress, cancel: cancel);
+    final key = stamp == null || _files.machineId.isEmpty
+        ? null
+        : PictureStore.fileKey(_files.machineId, path, known, stamp.millisecondsSinceEpoch);
+    if (key != null) {
+      final hit = await _store.get(key);
+      // A copy of another length is not this file (a store cannot tell).
+      if (hit != null && hit.length == known) {
+        onProgress?.call(hit.length);
+        return hit;
+      }
+    }
+    final bytes = await _files.readAll(path, size: known, chunk: photoReadChunk, onProgress: onProgress, cancel: cancel);
+    if (key != null && known <= _store.maxEntryBytes) unawaited(_store.put(key, bytes));
+    return bytes;
   }
 
   @override

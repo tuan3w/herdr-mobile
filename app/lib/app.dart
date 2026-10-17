@@ -64,6 +64,7 @@ ConnectionFactory sshConnectionFactory({
           (fp) => machines.pinHostKey(profile.id, fp),
           (banner) => connection.onAuthNotice(banner),
         ),
+        machineId: profile.id,
       ),
     );
     inboxJanitor.watch(connection);

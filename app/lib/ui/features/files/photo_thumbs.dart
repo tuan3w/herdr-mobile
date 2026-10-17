@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../../data/models/remote_file.dart';
 import '../../../data/services/image_decode.dart';
+import '../../../data/services/image_sniff.dart';
+import '../../../data/services/picture_store.dart';
 import '../../../data/services/remote_files.dart';
 
 /// Where one thumbnail is.
@@ -102,7 +104,9 @@ class PhotoThumbs {
     this.capacity = 120,
     this.side = 240,
     this._decoder = decodeImageFit,
-  });
+    this._encoder = encodeThumbnail,
+    PictureStore? store,
+  }) : _store = store ?? PictureStore.shared;
 
   /// The cache the folder grid and the photo viewer's placeholders share.
   static final PhotoThumbs shared = PhotoThumbs();
@@ -120,6 +124,15 @@ class PhotoThumbs {
   final int side;
 
   final FitDecoder _decoder;
+
+  /// Makes the bytes that are kept on disk from a decoded thumbnail.
+  final Future<Uint8List?> Function(ui.Image image, {required bool png}) _encoder;
+
+  /// The thumbnails kept on disk, shared with the folder list's [ThumbLoader]
+  /// (the same key): a folder opened again, after a restart too, draws its
+  /// tiles without a read. A file is in it only when the listing gave a size
+  /// and a modified time and the machine has an id.
+  final PictureStore _store;
 
   /// By path, least recently used first.
   final _entries = <String, ThumbEntry>{};
@@ -277,21 +290,36 @@ class PhotoThumbs {
     ThumbPhase phase;
     ui.Image? image;
     try {
-      final bytes = await _fetch(e, load);
-      if (load.dead) return;
-      if (bytes == null) {
-        phase = ThumbPhase.tooBig;
-      } else if (bytes.isEmpty) {
-        phase = ThumbPhase.failed;
+      final key = _thumbKey(e);
+      final stored = key == null ? null : await _stored(key);
+      if (load.dead) {
+        stored?.image.dispose();
+        return;
+      }
+      Uint8List? original;
+      if (stored != null) {
+        image = stored.image;
+        phase = ThumbPhase.ready;
       } else {
-        final decoded = await _decoder(bytes, maxWidth: side, maxHeight: side);
-        image = decoded.image;
-        phase = image.width > 0 && image.height > 0 ? ThumbPhase.ready : ThumbPhase.failed;
-        if (phase == ThumbPhase.failed) {
-          image.dispose();
-          image = null;
+        final bytes = await _fetch(e, load);
+        if (load.dead) return;
+        if (bytes == null) {
+          phase = ThumbPhase.tooBig;
+        } else if (bytes.isEmpty) {
+          phase = ThumbPhase.failed;
+        } else {
+          final decoded = await _decoder(bytes, maxWidth: side, maxHeight: side);
+          image = decoded.image;
+          phase = image.width > 0 && image.height > 0 ? ThumbPhase.ready : ThumbPhase.failed;
+          if (phase == ThumbPhase.failed) {
+            image.dispose();
+            image = null;
+          } else {
+            original = bytes;
+          }
         }
       }
+      if (key != null && original != null && image != null) _keep(key, image, original);
     } on Object {
       phase = ThumbPhase.failed;
     }
@@ -303,6 +331,44 @@ class PhotoThumbs {
     e._load = null;
     _free(load);
     e._finish(phase, image);
+  }
+
+  /// The key of [e]'s thumbnail on disk, or null when it has none.
+  String? _thumbKey(ThumbEntry e) {
+    final size = e.size, modified = e.modified;
+    if (size == null || modified == null || e._files.machineId.isEmpty) return null;
+    return PictureStore.thumbKey(e._files.machineId, e.path, size, modified.millisecondsSinceEpoch);
+  }
+
+  /// The thumbnail kept on disk, decoded; null on a miss or when the stored
+  /// bytes do not decode (a miss: the file is read again and replaced).
+  Future<DecodedImage?> _stored(String key) async {
+    final bytes = await _store.get(key);
+    if (bytes == null) return null;
+    try {
+      final decoded = await _decoder(bytes, maxWidth: side, maxHeight: side);
+      if (decoded.image.width > 0 && decoded.image.height > 0) return decoded;
+      decoded.image.dispose();
+    } on Object {
+      // Damaged: treated as a miss.
+    }
+    return null;
+  }
+
+  /// Keeps the thumbnail on disk, after the tile has it: encoding and writing
+  /// never delay the picture.
+  void _keep(String key, ui.Image decoded, Uint8List original) {
+    final copy = decoded.clone();
+    unawaited(() async {
+      try {
+        final bytes = await _encoder(copy, png: mayHaveTransparency(original));
+        if (bytes != null) await _store.put(key, bytes);
+      } on Object {
+        // Not kept: the next visit reads the file.
+      } finally {
+        copy.dispose();
+      }
+    }());
   }
 
   /// The file's bytes, or null when it turned out to be over [autoLimit]

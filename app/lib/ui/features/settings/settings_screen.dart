@@ -10,6 +10,7 @@ import '../../../data/repositories/app_update.dart';
 import '../../../data/repositories/notification_settings.dart';
 import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/terminal_settings.dart';
+import '../../../data/services/picture_store.dart';
 import '../../../data/services/notifier.dart';
 import '../../core/chrome.dart';
 import '../../core/controls.dart';
@@ -17,6 +18,7 @@ import '../../core/open_link.dart';
 import '../../core/rows.dart';
 import '../../core/toast.dart';
 import '../../core/tokens.dart';
+import '../files/file_format.dart';
 import 'app_switch.dart';
 import 'font_size_control.dart';
 import 'quick_phrases_editor.dart';
@@ -24,16 +26,17 @@ import 'settings_group.dart';
 import 'update_group.dart';
 
 /// The groups of Settings, top to bottom. The page opens one at a time.
-enum _Open { update, look, agents, notifications, about }
+enum _Open { update, look, agents, notifications, storage, about }
 
-/// The third root tab: four groups (Look, Agents, Notifications, About), each
+/// The third root tab: five groups (Look, Agents, Notifications, Storage, About), each
 /// a row that says what it is set to and opens in place, one at a time, with
 /// a newer version's row above them. Everything here applies at once and is
 /// remembered.
 ///
 /// Why groups, not a long page: the page was about 1,800 dp, and every new
-/// setting made the next one harder to find. Four rows fit one screen at any
-/// text size; a group grows without lengthening the page.
+/// setting made the next one harder to find. Five rows fit one screen at normal
+/// text size (at 2x on 320 dp the last one scrolls); a group grows without
+/// lengthening the page.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.update});
 
@@ -108,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   open: _open == _Open.notifications,
                   onToggle: () => _toggle(_Open.notifications),
                 ),
+                _StorageGroup(open: _open == _Open.storage, onToggle: () => _toggle(_Open.storage)),
                 _AboutGroup(
                   update: update,
                   open: _open == _Open.about,
@@ -423,6 +427,62 @@ class _NotificationsGroupState extends State<_NotificationsGroup> {
       ],
     );
   }
+}
+
+class _StorageGroup extends StatefulWidget {
+  const _StorageGroup({required this.open, required this.onToggle});
+
+  final bool open;
+  final VoidCallback onToggle;
+
+  @override
+  State<_StorageGroup> createState() => _StorageGroupState();
+}
+
+class _StorageGroupState extends State<_StorageGroup> {
+  late Future<int> _size = PictureStore.shared.totalBytes();
+
+  Future<void> _clear() async {
+    final toaster = Toaster.of(context);
+    final freed = await PictureStore.shared.clear();
+    toaster.show(freed == 0 ? 'Nothing to clear' : 'Cleared ${formatBytes(freed)}');
+    if (!mounted) return;
+    final size = PictureStore.shared.totalBytes();
+    setState(() {
+      _size = size;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<int>(
+        future: _size,
+        builder: (context, snapshot) {
+          final bytes = snapshot.data;
+          return SettingsGroup(
+            icon: LucideIcons.hardDrive,
+            title: 'Storage',
+            summary: bytes == null
+                ? 'Pictures'
+                : bytes == 0
+                    ? 'Pictures \u00b7 none'
+                    : 'Pictures \u00b7 ${formatBytes(bytes)}',
+            open: widget.open,
+            onToggle: widget.onToggle,
+            children: [
+              ListRow(
+                title: 'Clear saved pictures',
+                titleMaxLines: 1,
+                subtitle: 'Kept so a picture is not downloaded twice. At most 192 MB, the oldest go first.',
+                subtitleMaxLines: 4,
+                trailing: Icon(LucideIcons.trash2, size: 16, color: context.ds.textTertiary),
+                // A plain tap is the right guard: all of it can be downloaded again.
+                onTap: () => unawaited(_clear()),
+                divider: false,
+              ),
+            ],
+          );
+        },
+      );
 }
 
 class _AboutGroup extends StatelessWidget {

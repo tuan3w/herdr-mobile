@@ -30,10 +30,14 @@ class RemoteFiles {
   /// [maxUploads] files go to the host at once; the rest wait their turn in
   /// the order they were asked for. Uploads share the machine's one SFTP
   /// channel with browsing, so two is the most that leaves it responsive.
-  RemoteFiles(this._transport, {this.maxUploads = 2});
+  ///
+  /// [machineId] names the machine in the keys of the picture store, which
+  /// must not mix two machines' files; empty means "do not use the store".
+  RemoteFiles(this._transport, {this.maxUploads = 2, this.machineId = ''});
 
   final HerdrTransport _transport;
   final int maxUploads;
+  final String machineId;
   Future<String>? _home;
   var _uploading = 0;
   final _waiting = Queue<_Upload>();

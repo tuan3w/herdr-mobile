@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/remote_file.dart';
+import '../../../data/services/image_decode.dart';
+import '../../../data/services/image_sniff.dart';
+import '../../../data/services/picture_store.dart';
 import '../../../data/services/remote_files.dart';
 import '../../core/glyphs.dart';
 import '../../core/motion.dart';
@@ -25,14 +28,29 @@ const thumbParallel = 3;
 ///
 /// Reads are SFTP through the transport isolate like every file read; this
 /// only decides how many and which.
+///
+/// What it hands out is a small thumbnail (about 15-60 KB), not the file: the
+/// first time the file is read and shrunk, the thumbnail is kept in the
+/// [PictureStore] under the key the folder grid ([PhotoThumbs]) uses too, so
+/// a row seen again (after a restart too) costs no read, and the memory budget
+/// holds many more rows. A file the engine cannot shrink is handed out as it
+/// is.
 class ThumbLoader {
-  ThumbLoader({this.parallel = thumbParallel, this.budgetBytes = 6 * 1024 * 1024});
+  ThumbLoader({
+    this.parallel = thumbParallel,
+    this.budgetBytes = 6 * 1024 * 1024,
+    PictureStore? store,
+    Thumbnailer? thumbnailer,
+  }) : _store = store ?? PictureStore.shared,
+       _thumbnailer = thumbnailer ?? makeThumbnail;
 
   /// The one used by the browser.
   static final shared = ThumbLoader();
 
   final int parallel;
   final int budgetBytes;
+  final PictureStore _store;
+  final Thumbnailer _thumbnailer;
 
   final _queue = Queue<_Job>();
   final _cache = <String, Uint8List>{}; // insertion order: oldest first
@@ -92,10 +110,31 @@ class ThumbLoader {
   Future<void> _run(_Job job) async {
     Uint8List? bytes;
     try {
-      final size = job.entry.size!;
-      final read = await job.files.read(job.entry.path, length: size);
-      // A file that grew past the limit since it was listed is not a thumb.
-      if (read.isNotEmpty && read.length <= thumbMaxBytes) bytes = read;
+      final entry = job.entry;
+      final size = entry.size!;
+      final modified = entry.modified;
+      final key = modified == null || job.files.machineId.isEmpty
+          ? null
+          : PictureStore.thumbKey(job.files.machineId, entry.path, size, modified.millisecondsSinceEpoch);
+      bytes = key == null ? null : await _store.get(key);
+      if (bytes == null) {
+        final read = await job.files.read(entry.path, length: size);
+        // A file that grew past the limit since it was listed is not a thumb.
+        if (read.isNotEmpty && read.length <= thumbMaxBytes) {
+          // A thumbnail is only made to be kept: without a key it would be
+          // work for nothing.
+          Uint8List? thumb;
+          if (key != null) {
+            try {
+              thumb = await _thumbnailer(read);
+            } on Object {
+              thumb = null;
+            }
+          }
+          bytes = thumb ?? read;
+          if (thumb != null && key != null) unawaited(_store.put(key, thumb));
+        }
+      }
     } on Object {
       bytes = null;
     }
@@ -114,6 +153,19 @@ class ThumbLoader {
       final oldest = _cache.keys.first;
       _cached -= _cache.remove(oldest)!.length;
     }
+  }
+}
+
+/// The thumbnail bytes of a small picture file, or null when it cannot be made.
+typedef Thumbnailer = Future<Uint8List?> Function(Uint8List original);
+
+/// Shrinks [original] to 240 px and encodes it (see [encodeThumbnail]).
+Future<Uint8List?> makeThumbnail(Uint8List original) async {
+  final decoded = await decodeImageFit(original, maxWidth: 240, maxHeight: 240);
+  try {
+    return await encodeThumbnail(decoded.image, png: mayHaveTransparency(original));
+  } finally {
+    decoded.dispose();
   }
 }
 

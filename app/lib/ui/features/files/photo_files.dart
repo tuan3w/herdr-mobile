@@ -38,7 +38,7 @@ PhotoItem remotePhotoItem(
   name: RemotePath.basename(path),
   path: path,
   modified: modified,
-  source: RemotePhotoSource(files, path, size: size),
+  source: RemotePhotoSource(files, path, size: size, modified: modified),
   placeholder: () => (thumbs ?? PhotoThumbs.shared).peek(path),
 );
 

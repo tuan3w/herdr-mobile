@@ -1,6 +1,9 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+
+import 'package:image/image.dart' as img;
 
 /// A decoded image plus what the file really contained.
 class DecodedImage {
@@ -66,4 +69,29 @@ Future<DecodedImage> decodeImageFit(Uint8List bytes, {required int maxWidth, req
 double fitScaleWithin(int width, int height, int maxWidth, int maxHeight) {
   if (width <= 0 || height <= 0) return 1;
   return math.min(1.0, math.min(maxWidth / width, maxHeight / height));
+}
+
+/// A thumbnail of [image] (already shrunk to its size) as encoded bytes, small
+/// enough to keep on disk: PNG when the source may be see-through, else JPEG
+/// at quality 80. Encoding runs in a worker isolate. Null on any error: a
+/// thumbnail that cannot be kept is just not kept.
+Future<Uint8List?> encodeThumbnail(ui.Image image, {required bool png}) async {
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+    if (data == null) return null;
+    final job = (
+      rgba: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      width: image.width,
+      height: image.height,
+      png: png,
+    );
+    return await Isolate.run(() => _encodeThumbnail(job));
+  } on Object {
+    return null;
+  }
+}
+
+Uint8List _encodeThumbnail(({Uint8List rgba, int width, int height, bool png}) job) {
+  final image = img.Image.fromBytes(width: job.width, height: job.height, bytes: job.rgba.buffer, bytesOffset: job.rgba.offsetInBytes, numChannels: 4);
+  return job.png ? img.encodePng(image, level: 6) : img.encodeJpg(image, quality: 80);
 }

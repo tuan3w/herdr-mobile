@@ -36,9 +36,13 @@ extension HerdrApiExceptionX on HerdrApiException {
 
 /// Typed herdr socket API over any [HerdrTransport].
 class HerdrApi {
-  HerdrApi(this._transport);
+  HerdrApi(this._transport, {this.machineId = ''});
 
   final HerdrTransport _transport;
+
+  /// The machine this API talks to, for keys that must not collide across
+  /// machines (the picture store). Empty when it is not a saved machine.
+  final String machineId;
 
   /// The transport itself, for what is not a herdr request: the exec channels
   /// of agent sessions (`SshAgentHost`). Repositories only; widgets never
@@ -46,7 +50,7 @@ class HerdrApi {
   HerdrTransport get transport => _transport;
 
   /// File access over the same connection (SFTP), for the file viewer.
-  late final RemoteFiles files = RemoteFiles(_transport);
+  late final RemoteFiles files = RemoteFiles(_transport, machineId: machineId);
 
   Future<String> ping() async =>
       (await _transport.request('ping'))['version'] as String? ?? '';

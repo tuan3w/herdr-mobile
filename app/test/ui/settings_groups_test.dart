@@ -1,7 +1,8 @@
-// Settings is four rows (Look, Agents, Notifications, About), each saying what
+// Settings is five rows (Look, Agents, Notifications, Storage, About), each saying what
 // it is set to and opening in place, one at a time, with a newer version's row
-// above them. These tests hold the rules that keep it four rows long.
+// above them. These tests hold the rules that keep it five rows long.
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
+import 'package:herdr_mobile/data/services/picture_store.dart';
 import 'package:herdr_mobile/ui/core/chrome.dart';
 import 'package:herdr_mobile/ui/core/motion.dart';
 import 'package:herdr_mobile/ui/core/theme.dart';
@@ -107,10 +109,10 @@ Future<void> _pump(
 void main() {
   setUpAll(loadAppFonts);
 
-  group('the four groups', () {
+  group('the five groups', () {
     testWidgets('start closed; nothing inside one is on the screen', (tester) async {
       await _pump(tester);
-      for (final title in ['Look', 'Agents', 'Notifications', 'About']) {
+      for (final title in ['Look', 'Agents', 'Notifications', 'Storage', 'About']) {
         expect(find.text(title), findsOneWidget, reason: title);
       }
       expect(find.text('Theme'), findsNothing);
@@ -166,6 +168,60 @@ void main() {
       await tester.pump();
       expect(find.text('Theme'), findsOneWidget);
       expect(tester.hasRunningAnimations, isFalse);
+    });
+  });
+
+  group('Storage', () {
+    late Directory dir;
+    late PictureStore saved;
+    late PictureStore store;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('settings_storage_');
+      saved = PictureStore.shared;
+      store = PictureStore.shared = PictureStore(() async => dir);
+    });
+    tearDown(() {
+      PictureStore.shared = saved;
+      dir.deleteSync(recursive: true);
+    });
+
+    /// Real IO runs in `runAsync`; what the screen schedules needs a pump.
+    Future<void> until(WidgetTester tester, bool Function() done) async {
+      for (var i = 0; i < 200 && !done(); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      expect(done(), isTrue, reason: 'timed out');
+    }
+
+    testWidgets('says how much is kept, and a tap clears it with a toast that says how much', (tester) async {
+      await tester.runAsync(() async {
+        await store.put('a', Uint8List(3 * 1024 * 1024));
+        await store.put('b', Uint8List(1024 * 1024));
+      });
+      await _pump(tester);
+      await until(tester, () => find.text('Pictures \u00b7 4 MB').evaluate().isNotEmpty);
+
+      await openSettingsGroup(tester, 'Storage');
+      expect(find.text('Clear saved pictures'), findsOneWidget);
+      expect(find.textContaining('At most 192 MB'), findsOneWidget);
+      await tester.tap(find.text('Clear saved pictures'));
+      await tester.pump();
+      await until(tester, () => find.text('Cleared 4 MB').evaluate().isNotEmpty);
+      await until(tester, () => find.text('Pictures \u00b7 none').evaluate().isNotEmpty);
+      expect(dir.listSync(), isEmpty);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('with nothing kept it says so, and a tap says there was nothing', (tester) async {
+      await tester.runAsync(() => store.ready);
+      await _pump(tester);
+      await until(tester, () => find.text('Pictures \u00b7 none').evaluate().isNotEmpty);
+      await openSettingsGroup(tester, 'Storage');
+      await tester.tap(find.text('Clear saved pictures'));
+      await until(tester, () => find.text('Nothing to clear').evaluate().isNotEmpty);
+      await tester.pump(const Duration(seconds: 6));
     });
   });
 

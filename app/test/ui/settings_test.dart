@@ -436,10 +436,13 @@ void main() {
           brightness: brightness,
         );
         expect(tester.takeException(), isNull);
-        // The four rows fit this screen at this size: nothing to scroll for.
-        for (final group in ['Look', 'Agents', 'Notifications', 'About']) {
+        // The first four rows fit this screen at this size; the fifth (About) is
+        // the one that scrolls into view at 2x text on 320 dp (it is below the
+        // fold by a row's height, and Storage is why).
+        for (final group in ['Look', 'Agents', 'Notifications', 'Storage']) {
           expect(tester.getRect(find.text(group)).bottom, lessThan(640), reason: group);
         }
+        expect(find.text('About'), findsOneWidget, reason: 'built, and reachable by scrolling');
 
         await openSettingsGroup(tester, 'Look');
         expect(tester.takeException(), isNull);
@@ -464,6 +467,9 @@ void main() {
         // The Agents group too: its segmented control and the longest summary
         // ("Opens as chat · 2 phrases") meet two lines at this size.
         await openSettingsGroup(tester, 'Agents');
+        // With five rows the open group has to scroll itself into view from
+        // further down, which takes longer than the fold.
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(tester.getSize(find.byType(Segmented<OpenAgentsAs>)).height, greaterThanOrEqualTo(44));
         for (final label in ['Chat', 'Terminal']) {
