@@ -6,13 +6,14 @@ import '../../core/motion.dart';
 import '../../core/theme.dart';
 
 /// What happens to the message in the field if it is sent now, said before it
-/// is sent: it waits for the turn to end (`omp`, `pi`, or anything already
-/// waiting) or it goes into the running turn (`Claude Code`, `Codex`). Nothing
-/// when it would go out at once.
+/// is sent: it waits for the turn to end (`pi`, or anything already waiting) or
+/// it goes into the running turn (an agent that takes input there: `Claude
+/// Code`, `Codex`, `omp` with steering), where a hold on Send sends it after
+/// the turn instead. Nothing when it would go out at once.
 String? deliveryHint(SendDelivery delivery) => switch (delivery) {
   SendDelivery.now => null,
   SendDelivery.queued => 'Will be queued until the turn ends',
-  SendDelivery.steered => 'Goes into the running turn',
+  SendDelivery.steered => 'Goes into the turn. Hold Send to send it after.',
 };
 
 /// One quiet line above the field with [deliveryHint]; takes no room when

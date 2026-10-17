@@ -425,10 +425,15 @@ view without moving it.
 **Typing while the agent works** (`queued_messages.dart`, `queued_hint.dart`,
 `composer.dart`). The composer stays open. Before anything is sent, one quiet
 line above the field says what will happen to the message
-(`AgentSessionView.delivery`): `Will be queued until the turn ends` (omp, pi,
-or anything already waits: the order is kept) or `Goes into the running turn`
-(Claude Code, Codex); nothing when it would go out at once, and nothing for an
-agent in a terminal. The send button never moves: it becomes Queue (a plain
+(`AgentSessionView.delivery`): `Will be queued until the turn ends` (pi, omp
+before it takes steering, or anything already waits: the order is kept) or
+`Goes into the turn. Hold Send to send it after.`
+(Claude Code, Codex, omp with steering); nothing when it would go out at once,
+and nothing for an agent in a terminal. The two intents of a mid-turn message
+are therefore a tap (now: into the turn) and a hold on Send (after: it waits on
+the phone, where it can be edited or taken back, like any queued message). The
+hold is only offered where a tap would steer; where a message waits anyway a
+hold is a tap. The send button never moves: it becomes Queue (a plain
 send for the steering agents) and Stop is its own round, neutral button to its
 left, drawn while a turn runs and deaf for `tapGuard` (450 ms) from the moment
 it appears, so the tap that started the turn, or the second tap of a double

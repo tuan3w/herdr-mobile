@@ -1,0 +1,411 @@
+diff --git a/packages/coding-agent/CHANGELOG.md b/packages/coding-agent/CHANGELOG.md
+index 6cb03ad09b..b9d2f19b03 100644
+--- a/packages/coding-agent/CHANGELOG.md
++++ b/packages/coding-agent/CHANGELOG.md
+@@ -2,6 +2,10 @@
+ 
+ ## [Unreleased]
+ 
++### Added
++
++- Added the ACP extension method `_session/steering`, advertised by `initialize` as `_meta.steering`, so a client can send a message into a turn that is already running: it is injected as a steer (the same queueing as typing while the agent works) instead of cancelling the turn the way a second `session/prompt` does. The agent answers `{ outcome: "injected" }`, or `{ outcome: "promptRequired" }` when nothing is running, in which case the client sends an ordinary `session/prompt`
++
+ ## [18.11.1] - 2026-10-15
+ 
+ ### Added
+diff --git a/packages/coding-agent/src/modes/acp/acp-agent.ts b/packages/coding-agent/src/modes/acp/acp-agent.ts
+index cbd5fd5aa3..94372ebd54 100644
+--- a/packages/coding-agent/src/modes/acp/acp-agent.ts
++++ b/packages/coding-agent/src/modes/acp/acp-agent.ts
+@@ -108,6 +108,12 @@ const THINKING_CONFIG_ID = "thinking";
+ const THINKING_OFF = "off";
+ const SESSION_PAGE_SIZE = 50;
+ const SPEECH_MODELS_LIST_METHOD = "speech.models.list";
++/**
++ * Ext method: inject a user message into a turn that is already running
++ * (`streamingBehavior: "steer"`) instead of cancelling it the way a second
++ * `session/prompt` does. Advertised through `initialize` `_meta.steering`.
++ */
++const SESSION_STEERING_METHOD = "_session/steering";
+ /**
+  * Delay between `session/new` (or `session/load` / `session/resume` /
+  * `unstable_session/fork`) returning and the agent firing the first
+@@ -658,6 +664,7 @@ export class AcpAgent implements Agent {
+ 				version: VERSION,
+ 			},
+ 			authMethods,
++			_meta: { steering: { supported: true, idleBehaviors: ["promptRequired"] } },
+ 			agentCapabilities: {
+ 				loadSession: true,
+ 				mcpCapabilities: {
+@@ -895,6 +902,45 @@ export class AcpAgent implements Agent {
+ 		});
+ 	}
+ 
++	/**
++	 * `_session/steering`: queue a user message into the turn that is running right now.
++	 *
++	 * Answers `injected` when the session is streaming (an ACP-owned turn or an autonomous
++	 * one) and the message was handed to `AgentSession.prompt(..., { streamingBehavior: "steer" })`,
++	 * exactly like the TUI's Enter-while-streaming. Answers `promptRequired` when nothing is
++	 * running (or the running turn is being cancelled): no turn is started here because the
++	 * client would not be told when it ends, so it must send an ordinary `session/prompt`.
++	 * Never touches `promptTurn`, the prompt queue, or cancel state.
++	 */
++	async #steerSession(params: { [key: string]: unknown }): Promise<{ outcome: "injected" | "promptRequired" }> {
++		if (typeof params.sessionId !== "string" || !Array.isArray(params.prompt)) {
++			throw RequestError.invalidParams(undefined, "sessionId (string) and prompt (array) are required");
++		}
++		const record = this.#getSessionRecord(params.sessionId);
++		this.#throwIfRecordClosed(record);
++		const converted = this.#convertPromptBlocks(params.prompt as PromptRequest["prompt"]);
++		if (converted.text.length === 0 && converted.images.length === 0) {
++			throw RequestError.invalidParams(undefined, "prompt has no text or image content");
++		}
++		const promptTurn = record.promptTurn;
++		// A turn that is being cancelled still reports `isStreaming` until abort() lands, and abort
++		// drops anything queued meanwhile; let the client send a real prompt, which queues behind it.
++		if (!record.session.isStreaming || promptTurn?.cancelRequested || promptTurn?.cleanup !== undefined) {
++			return { outcome: "promptRequired" };
++		}
++		try {
++			await record.session.prompt(converted.text, {
++				streamingBehavior: "steer",
++				images: converted.images.length > 0 ? converted.images : undefined,
++			});
++		} catch (error) {
++			throw error instanceof AgentBusyError
++				? RequestError.sessionBusy(error.message, { reason: "session_busy", hint: "steer|followUp|wait" })
++				: error;
++		}
++		return { outcome: "injected" };
++	}
++
+ 	async #queuePrompt(record: ManagedSessionRecord, run: () => Promise<PromptResponse>): Promise<PromptResponse> {
+ 		const nextQueue = Promise.withResolvers<void>();
+ 		const releaseQueue = nextQueue.resolve;
+@@ -1141,6 +1187,8 @@ export class AcpAgent implements Agent {
+ 		switch (method) {
+ 			case SPEECH_MODELS_LIST_METHOD:
+ 				return buildAcpSpeechModelsCatalog();
++			case SESSION_STEERING_METHOD:
++				return await this.#steerSession(params);
+ 			case "_omp/sessions/listAll": {
+ 				const limit = typeof params.limit === "number" ? Math.max(1, Math.min(5000, params.limit as number)) : 1000;
+ 				const sessions = await SessionManager.listAll();
+diff --git a/packages/coding-agent/test/acp-agent.test.ts b/packages/coding-agent/test/acp-agent.test.ts
+index f3173c4cf6..b4a723108a 100644
+--- a/packages/coding-agent/test/acp-agent.test.ts
++++ b/packages/coding-agent/test/acp-agent.test.ts
+@@ -2749,6 +2749,293 @@ describe("ACP agent", () => {
+ 		expect(requestError.data).toEqual({ reason: "session_busy", hint: "steer|followUp|wait" });
+ 	});
+ 
++	describe("_session/steering", () => {
++		type PromptOptions = {
++			streamingBehavior?: string;
++			images?: Array<{ type: string; data: string; mimeType: string }>;
++		};
++
++		/** Starts a turn that stays in flight until the returned `finish` runs. */
++		async function startRunningTurn(harness: Awaited<ReturnType<typeof createHarness>>, sessionId: string) {
++			const session = harness.findSession(sessionId)!;
++			const steered: Array<{ text: string; options: PromptOptions | undefined }> = [];
++			const blockers: Array<() => void> = [];
++			session.prompt = async (text: string, options?: PromptOptions): Promise<boolean> => {
++				if (options?.streamingBehavior === "steer") {
++					steered.push({ text, options });
++					return true;
++				}
++				session.promptCalls.push(text);
++				session.isStreaming = true;
++				const { promise, resolve } = Promise.withResolvers<void>();
++				blockers.push(resolve);
++				await promise;
++				const assistantMessage = makeAssistantMessage("pong");
++				session.sessionManager.appendMessage(assistantMessage);
++				for (const listener of session.listeners()) {
++					listener({ type: "agent_end", messages: [assistantMessage] } as AgentSessionEvent);
++				}
++				session.isStreaming = false;
++				return true;
++			};
++			const abort = spyOn(session, "abort");
++			const turn = harness.agent.prompt({
++				sessionId,
++				messageId: "00000000-0000-4000-8000-0000000000a1",
++				prompt: [{ type: "text", text: "long running" }],
++			} as PromptRequest);
++			await Bun.sleep(0);
++			expect(session.promptCalls).toEqual(["long running"]);
++			return {
++				session,
++				steered,
++				abort,
++				turn,
++				finish: () => {
++					for (const resolve of blockers) resolve();
++				},
++			};
++		}
++
++		it("advertises steering support in initialize _meta", async () => {
++			const harness = await createHarness();
++			const response = await harness.agent.initialize({ protocolVersion: 1 } as Parameters<
++				AcpAgent["initialize"]
++			>[0]);
++			expect(response._meta).toEqual({ steering: { supported: true, idleBehaviors: ["promptRequired"] } });
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("steers a running prompt turn without cancelling it and answers injected", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const running = await startRunningTurn(harness, created.sessionId);
++
++			const result = await harness.agent.extMethod("_session/steering", {
++				sessionId: created.sessionId,
++				prompt: [
++					{ type: "text", text: "also check the tests" },
++					{ type: "text", text: "and lint" },
++				],
++				_meta: { steering: { idleBehavior: "promptRequired" } },
++			});
++
++			expect(result).toEqual({ outcome: "injected" });
++			expect(running.steered).toEqual([
++				{
++					text: "also check the tests\n\nand lint",
++					options: { streamingBehavior: "steer", images: undefined },
++				},
++			]);
++			// session/prompt was not involved and the turn was not cancelled.
++			expect(running.session.promptCalls).toEqual(["long running"]);
++			expect(running.abort).not.toHaveBeenCalled();
++			const settledEarly = await Promise.race([running.turn.then(() => true), Bun.sleep(0).then(() => false)]);
++			expect(settledEarly).toBe(false);
++
++			running.finish();
++			expect((await running.turn).stopReason).toBe("end_turn");
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("passes images through to the steered message", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const running = await startRunningTurn(harness, created.sessionId);
++
++			const result = await harness.agent.extMethod("_session/steering", {
++				sessionId: created.sessionId,
++				prompt: [
++					{ type: "text", text: "look at this" },
++					{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
++				],
++			});
++
++			expect(result).toEqual({ outcome: "injected" });
++			expect(running.steered).toEqual([
++				{
++					text: "look at this",
++					options: {
++						streamingBehavior: "steer",
++						images: [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }],
++					},
++				},
++			]);
++
++			running.finish();
++			await running.turn;
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("accepts an image-only steer", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const running = await startRunningTurn(harness, created.sessionId);
++
++			const result = await harness.agent.extMethod("_session/steering", {
++				sessionId: created.sessionId,
++				prompt: [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }],
++			});
++
++			expect(result).toEqual({ outcome: "injected" });
++			expect(running.steered).toHaveLength(1);
++			expect(running.steered[0]?.text).toBe("");
++
++			running.finish();
++			await running.turn;
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("steers an autonomous turn that has no owning prompt turn", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const session = harness.findSession(created.sessionId)!;
++			const calls: Array<{ text: string; options: unknown }> = [];
++			session.isStreaming = true;
++			session.prompt = async (text: string, options?: unknown): Promise<boolean> => {
++				calls.push({ text, options });
++				return true;
++			};
++
++			const result = await harness.agent.extMethod("_session/steering", {
++				sessionId: created.sessionId,
++				prompt: [{ type: "text", text: "during background turn" }],
++			});
++
++			expect(result).toEqual({ outcome: "injected" });
++			expect(calls).toEqual([
++				{ text: "during background turn", options: { streamingBehavior: "steer", images: undefined } },
++			]);
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("answers promptRequired and queues nothing when no turn is running", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const session = harness.findSession(created.sessionId)!;
++			const prompt = spyOn(session, "prompt");
++
++			for (const meta of [undefined, { steering: { idleBehavior: "promptRequired" } }]) {
++				const result = await harness.agent.extMethod("_session/steering", {
++					sessionId: created.sessionId,
++					prompt: [{ type: "text", text: "nothing is running" }],
++					...(meta ? { _meta: meta } : {}),
++				});
++				expect(result).toEqual({ outcome: "promptRequired" });
++			}
++
++			expect(prompt).not.toHaveBeenCalled();
++			expect(session.promptCalls).toEqual([]);
++			expect(session.isStreaming).toBe(false);
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("answers promptRequired while a cancelled turn is still cleaning up", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const running = await startRunningTurn(harness, created.sessionId);
++			const abortStarted = Promise.withResolvers<void>();
++			const releaseAbort = Promise.withResolvers<void>();
++			running.session.abort = async () => {
++				abortStarted.resolve();
++				await releaseAbort.promise;
++				running.session.isStreaming = false;
++			};
++
++			const cancel = harness.agent.cancel({ sessionId: created.sessionId });
++			await abortStarted.promise;
++			expect(running.session.isStreaming).toBe(true);
++
++			const result = await harness.agent.extMethod("_session/steering", {
++				sessionId: created.sessionId,
++				prompt: [{ type: "text", text: "too late" }],
++			});
++			expect(result).toEqual({ outcome: "promptRequired" });
++			expect(running.steered).toEqual([]);
++
++			releaseAbort.resolve();
++			await cancel;
++			running.finish();
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("rejects an empty steer with invalid params and queues nothing", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const running = await startRunningTurn(harness, created.sessionId);
++
++			for (const prompt of [[], [{ type: "text", text: "" }], [{ type: "text", text: "  \n " }]]) {
++				const error = await harness.agent
++					.extMethod("_session/steering", { sessionId: created.sessionId, prompt })
++					.catch((reason: unknown) => reason);
++				expect(error).toBeInstanceOf(RequestError);
++				expect((error as RequestError).code).toBe(-32602);
++			}
++			const malformed = await harness.agent
++				.extMethod("_session/steering", { sessionId: created.sessionId, prompt: "not an array" })
++				.catch((reason: unknown) => reason);
++			expect(malformed).toBeInstanceOf(RequestError);
++			expect((malformed as RequestError).code).toBe(-32602);
++			expect(running.steered).toEqual([]);
++
++			running.finish();
++			await running.turn;
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("errors for an unknown or closed session like the other session methods", async () => {
++			const harness = await createHarness();
++			await expect(
++				harness.agent.extMethod("_session/steering", {
++					sessionId: "missing-session",
++					prompt: [{ type: "text", text: "hi" }],
++				}),
++			).rejects.toThrow("Unsupported ACP session: missing-session");
++
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			await harness.agent.closeSession({ sessionId: created.sessionId });
++			await expect(
++				harness.agent.extMethod("_session/steering", {
++					sessionId: created.sessionId,
++					prompt: [{ type: "text", text: "hi" }],
++				}),
++			).rejects.toThrow("Unsupported ACP session");
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++
++		it("surfaces an agent-busy rejection from the steer as a typed session_busy error", async () => {
++			const harness = await createHarness();
++			const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
++			const session = harness.findSession(created.sessionId)!;
++			session.isStreaming = true;
++			session.prompt = async (): Promise<boolean> => {
++				throw new AgentBusyError();
++			};
++
++			const error = await harness.agent
++				.extMethod("_session/steering", {
++					sessionId: created.sessionId,
++					prompt: [{ type: "text", text: "busy" }],
++				})
++				.catch((reason: unknown) => reason);
++
++			expect(error).toBeInstanceOf(RequestError);
++			expect((error as RequestError).code).toBe(-32003);
++			expect((error as RequestError).data).toEqual({ reason: "session_busy", hint: "steer|followUp|wait" });
++			harness.abortController.abort();
++			await Bun.sleep(0);
++		});
++	});
++
+ 	it("keeps closeSession gated while cancel cleanup is pending", async () => {
+ 		const harness = await createHarness();
+ 		const created = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
+diff --git a/packages/coding-agent/test/acp-initialize-conformance.test.ts b/packages/coding-agent/test/acp-initialize-conformance.test.ts
+index dc0cebcf2e..9b97875890 100644
+--- a/packages/coding-agent/test/acp-initialize-conformance.test.ts
++++ b/packages/coding-agent/test/acp-initialize-conformance.test.ts
+@@ -239,6 +239,13 @@ describe("ACP initialize conformance", () => {
+ 		expect(response.agentInfo!.version).toBe(pkg.version);
+ 	});
+ 
++	it("advertises the _session/steering ext method in _meta.steering", async () => {
++		const agent = await createAgent();
++		const response = await agent.initialize(buildInitializeRequest());
++		expectAcpStructure(arkInitializeResponse, response);
++		expect(response._meta).toEqual({ steering: { supported: true, idleBehaviors: ["promptRequired"] } });
++	});
++
+ 	it("preserves the agentCapabilities contract clients depend on", async () => {
+ 		const agent = await createAgent();
+ 		const response = await agent.initialize(buildInitializeRequest());

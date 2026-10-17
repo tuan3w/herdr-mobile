@@ -113,6 +113,20 @@ Json ompInitialize() => {
   },
 };
 
+/// `omp acp` from the version that takes `_session/steering` (the change in
+/// `docs/omp-acp-steering.patch`; shape from that patch's tests, UNVERIFIED
+/// against a released omp): top-level `_meta.steering` with the idle behaviour
+/// it understands, nothing of Claude's.
+Json ompSteeringInitialize() => {
+  ...ompInitialize(),
+  '_meta': {
+    'steering': {
+      'supported': true,
+      'idleBehaviors': ['promptRequired'],
+    },
+  },
+};
+
 /// `claude-agent-acp`'s `initialize` result, as the adapter builds it
 /// (`acp-agent.ts:2660-2727`; shape read from source and its snapshots,
 /// UNVERIFIED against a live process): top-level `_meta.steering`, and

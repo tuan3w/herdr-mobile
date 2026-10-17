@@ -1271,7 +1271,29 @@ against a live Codex, Claude Code or pi, only against scripted agents: UNVERIFIE
   while the steer was in flight; what happens to a `session/prompt` sent while
   such a turn still streams is UNVERIFIED (the adapter waits for earlier
   prompts to drain, `:1869`).
-- **omp**: no steering method (`_omp/*` extensions only). A `session/prompt`
+- **omp, from the version that has `_session/steering`** (the change in
+  `docs/omp-acp-steering.patch`, not yet in a release: until it is, the next
+  bullet is what runs). omp always had steering of its own (Enter while it
+  streams steers, Ctrl+Q or Ctrl+Enter is a follow-up, RPC `steer` / `follow_up`
+  / `remove_queued_message`, a visible and editable queue), but its ACP adapter
+  did not expose it. The patch adds the method with the contract Claude Code
+  and Codex speak: `initialize._meta.steering = {supported: true,
+  idleBehaviors: ["promptRequired"]}`, params `{sessionId, prompt, _meta?}`,
+  answers `injected`, or `promptRequired` with nothing done when no turn runs
+  (it never starts a detached turn). The app sends `idleBehavior` to an agent
+  that lists it in `idleBehaviors` (Claude Code predates the list and is known
+  by `_meta.claudeCode`; Codex gets no option). omp injects a steer after the
+  current tool batch: tools already running finish, a call not yet started may
+  be skipped ("Skipped due to queued user message...", the model re-issues it),
+  and a `wait` is interrupted. A steer that arrives while a permission or a
+  question waits is queued by omp (those tools are not interruptible) and
+  injected only after the person answered: the app says nothing special, the
+  answer is `injected` at once. The patch is against omp v18.11.1 (`git apply`
+  in a checkout of that tag); verified with fakes in omp's own tests and, on
+  the wire, with a real `omp --mode acp` process (`initialize`, an idle steer,
+  an empty and an unknown one), NOT with a model turn. The log marks the message `steering: true`;
+  `omp_log_mapper.dart` ignores the flag (it is an ordinary user message).
+- **omp without it**: no steering method (`_omp/*` extensions only). A `session/prompt`
   while the app's own turn runs **cancels that turn** ("Implicitly cancel the
   running turn so the new prompt can queue behind the abort cleanup",
   `modes/acp/acp-agent.ts:803-824`), and while a turn of the agent's own runs

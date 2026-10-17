@@ -187,20 +187,41 @@ void main() {
       expect(find.textContaining('queued until'), findsNothing, reason: 'a resting composer says nothing');
       await focusField(tester);
       expect(find.text('Will be queued until the turn ends'), findsOneWidget);
-      expect(find.text('Goes into the running turn'), findsNothing);
+      expect(find.textContaining('Goes into the turn'), findsNothing);
     });
 
     testWidgets('an agent that steers says so; a queue that waits makes it a queue again', (tester) async {
       final session = working()..steerable = true;
       await pump(tester, session);
       await focusField(tester);
-      expect(find.text('Goes into the running turn'), findsOneWidget);
+      expect(find.textContaining('Goes into the turn'), findsOneWidget);
 
       // Something already waits: the order is kept, so the next one waits too.
       await session.sendBlocks([const TextBlock('later')], queue: true);
       await settle(tester);
       expect(find.text('Will be queued until the turn ends'), findsOneWidget);
-      expect(find.text('Goes into the running turn'), findsNothing);
+      expect(find.textContaining('Goes into the turn'), findsNothing);
+    });
+
+    testWidgets('on an agent that steers, Send puts the message into the turn and a hold on Send sends it after the turn', (tester) async {
+      final session = working()..steerable = true;
+      await pump(tester, session);
+      final send = find.byKey(const ValueKey('send'));
+
+      await tester.enterText(field, 'use the other table');
+      await tester.pump();
+      await tester.tap(send);
+      await settle(tester);
+      expect(session.steeredBlocks, hasLength(1), reason: 'a tap steers');
+      expect(session.queued, isEmpty);
+
+      await tester.enterText(field, 'then update the docs');
+      await tester.pump();
+      await tester.longPress(send);
+      await settle(tester);
+      expect(session.steeredBlocks, hasLength(1), reason: 'a hold does not steer');
+      expect([for (final q in session.queued) q.text], ['then update the docs'], reason: 'it waits on the phone, where it can be edited');
+      expect(tester.widget<TextField>(field).controller!.text, isEmpty);
     });
 
     testWidgets('nothing is said when the message would go out at once, or the agent is in a terminal', (tester) async {

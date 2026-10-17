@@ -22,6 +22,14 @@ release.
 - A chat keeps its decoded pictures when it reconnects, instead of decoding
   every visible one again.
 
+### Steer now, or send it after
+
+- While an agent that takes input into its running turn works (Claude Code and
+  Codex, and omp once it ships the change in `docs/omp-acp-steering.patch`), a
+  tap on Send puts your message into the turn, as before, and a hold on Send
+  sends it after the turn instead: it waits on the phone, where you can edit it
+  or take it back. The line above the field says so.
+
 ## [0.1.14] - 2026-10-10
 
 ### A typo'd command is caught, and a picked command says what it takes

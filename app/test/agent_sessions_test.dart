@@ -27,7 +27,7 @@ import 'package:herdr_mobile/data/repositories/reviewed_state.dart';
 import 'package:herdr_mobile/data/services/aligned_ticker.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 
-import 'acp/support/fake_agent.dart' show claudeInitialize, codexInitialize, ompInitialize;
+import 'acp/support/fake_agent.dart' show claudeInitialize, codexInitialize, ompInitialize, ompSteeringInitialize;
 import 'support/fake_agent_host.dart';
 import 'support/fake_fs.dart';
 import 'support/fake_network.dart';
@@ -1789,6 +1789,25 @@ void main() {
       expect(rows, contains('use the other table'), reason: 'the person sees what they said');
       expect(r.session.phase, AgentPhase.working);
       expect(r.session.error, isNull);
+    });
+
+    _rigTest('omp with steering: a message goes into the turn, asking for promptRequired when no turn runs; the old omp still queues', (r) {
+      r.keeper.initialize = ompSteeringInitialize;
+      r.connect();
+      expect(r.session.canSteer, isTrue);
+      working(r);
+      expect(r.session.delivery, SendDelivery.steered);
+
+      unawaited(r.session.send('use the other table'));
+      r.pump();
+
+      expect(r.keeper.prompts, ['first'], reason: 'a prompt during a turn would cancel it in omp: never sent');
+      expect(r.keeper.steers, hasLength(1));
+      expect(r.keeper.steers.single['_meta'], {
+        'steering': {'idleBehavior': 'promptRequired'},
+      }, reason: 'omp says it understands it: a steer after the turn ended must not start a turn nobody would see end');
+      expect(r.session.queued, isEmpty);
+      expect([for (final m in r.session.state.items.whereType<TranscriptMessage>()) m.text], contains('use the other table'));
     });
 
     _rigTest('a steering route queues on request: "when you are done, also..."', (r) {

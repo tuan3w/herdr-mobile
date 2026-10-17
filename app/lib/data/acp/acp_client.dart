@@ -210,8 +210,8 @@ class AcpClient {
   AcpInitializeResult? get agent => _agent;
 
   /// The agent accepts `_session/steering`: a message into the turn that
-  /// runs. Advertised in `initialize._meta.steering.supported` (Claude Code
-  /// and Codex; omp and pi do not have it).
+  /// runs. Advertised in `initialize._meta.steering.supported` (Claude Code,
+  /// Codex, and omp from the version that has it; pi does not).
   bool get canSteer {
     final meta = _agent?.raw['_meta'];
     final steering = meta is Map ? meta['steering'] : null;
@@ -462,11 +462,19 @@ class AcpClient {
     return outcome;
   }
 
-  /// Claude Code (it marks its capabilities with `_meta.claudeCode`) is the
-  /// agent that understands `idleBehavior: promptRequired`.
+  /// The agent understands `idleBehavior: promptRequired` (answer
+  /// `promptRequired` and do nothing when no turn runs any more, instead of
+  /// starting a turn this client would never be told the end of). Said by the
+  /// agent in `initialize._meta.steering.idleBehaviors` (omp); Claude Code
+  /// predates that list and is known by its `_meta.claudeCode`. Codex has
+  /// neither and is not sent the option.
   bool get _steersWithFallback {
     final meta = _agent?.capabilities.raw['_meta'];
-    return meta is Map && meta['claudeCode'] is Map;
+    if (meta is Map && meta['claudeCode'] is Map) return true;
+    final top = _agent?.raw['_meta'];
+    final steering = top is Map ? top['steering'] : null;
+    final behaviors = steering is Map ? steering['idleBehaviors'] : null;
+    return behaviors is List && behaviors.contains('promptRequired');
   }
 
   /// Stops the background task [asyncTaskId] (`_session/async_task/stop`,

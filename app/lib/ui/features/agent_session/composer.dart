@@ -62,6 +62,7 @@ class Composer extends StatelessWidget {
     required this.focusNode,
     required this.attachments,
     required this.onSubmit,
+    this.onSubmitAfter,
     this.onStop,
     this.dictation,
     this.commands,
@@ -80,6 +81,12 @@ class Composer extends StatelessWidget {
 
   /// Send the draft (the keyboard's send key and the button).
   final VoidCallback onSubmit;
+
+  /// Send the draft AFTER the turn instead of into it: a hold on Send, offered
+  /// while the agent takes input into the running turn (the default there is
+  /// to steer; "when you are done, also..." is the other intent). Null: no
+  /// such choice (the message waits anyway, or goes at once).
+  final VoidCallback? onSubmitAfter;
 
   /// The person tapped Stop (called before the session is told to cancel).
   final VoidCallback? onStop;
@@ -184,6 +191,7 @@ class Composer extends StatelessWidget {
                       iconSize: 18,
                       ready: typing && hasContent && attachments.canSend,
                       onPressed: onSubmit,
+                      onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
                     ),
               ],
             );

@@ -171,6 +171,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       focusNode: _focus,
       attachments: _attachments,
       onSubmit: _submit,
+      onSubmitAfter: () => _submit(after: true),
       onStop: _stopTapped,
       commands: _commands,
     ),
@@ -440,7 +441,11 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   /// haptic follows the outcome, as in the pane: `sent` when the session took
   /// the message, `failed` when it did not, and then the text and attachments
   /// come back, so a failed send loses nothing.
-  void _submit() {
+  ///
+  /// [after]: for an agent that would steer, send it after the turn instead
+  /// (the hold on Send): it waits on the phone, where it can be edited or taken
+  /// back, and goes out as a prompt when the turn has ended.
+  void _submit({bool after = false}) {
     final session = widget.session;
     if (session.link != AgentLink.live || session.sendBlocked != null) return;
     // An agent in a terminal says `working` while it waits on a job; that
@@ -472,7 +477,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     }
     _input.clear();
     unawaited(
-      _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens),
+      _send(session, text, chips, composePrompt(text, _attachments.take()), context.read<SentPhrases?>(), toaster, screens, after: after),
     );
   }
 
@@ -518,9 +523,10 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     List<ContentBlock> blocks,
     SentPhrases? learned,
     Toaster? toaster,
-    AgentScreens? screens,
-  ) async {
-    final sent = await session.sendBlocks(blocks);
+    AgentScreens? screens, {
+    bool after = false,
+  }) async {
+    final sent = await session.sendBlocks(blocks, queue: after);
     if (sent) {
       Haptics.sent();
       _commands.recordSent(text);

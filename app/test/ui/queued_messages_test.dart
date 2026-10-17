@@ -231,7 +231,7 @@ void main() {
     await pump(tester, session);
     await tester.tap(field);
     await settle(tester);
-    expect(find.text('Goes into the running turn'), findsOneWidget);
+    expect(find.textContaining('Goes into the turn'), findsOneWidget);
     expect(find.text('Will be queued until the turn ends'), findsNothing);
 
     await tester.enterText(field, 'use the staging db');
