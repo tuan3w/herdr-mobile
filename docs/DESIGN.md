@@ -1550,18 +1550,20 @@ would lerp `ThemeData` per frame and rebuild every mounted screen, including
 the hidden Agents board. The system bars follow the resolved brightness, so
 `system` follows the phone.
 
-Settings is the third tab (`features/settings/`): four rows, each saying what
+Settings is the third tab (`features/settings/`): five rows, each saying what
 it is set to and opening in place (`SettingsGroup`, on `Collapse`), one at a
 time. Look (theme, agent list density, the terminal font size stepper 8 to 22
 with a sample line, wrap, Dark terminal, and Smooth text: streaming answers at
 an even pace, on by default, `AppSettings.smoothText`; the terminal ones edit
 the pane's `TerminalSettings`), Agents (how agents open, and Quick phrases, a
-row that opens its own page because the list grows), Notifications, and About
-(what it talks to, update checks, source link, licences). A newer version's row
-sits above them. Why four rows: the page was one long scroll of six sections
-(about 1,800 dp) and each new setting made the next harder to find; four rows
-fit a screen at 320 dp and 2x text, and a group grows without lengthening the
-page. A row shows values, not setting names ("Light · Auto · 11.5 pt",
+row that opens its own page because the list grows), Notifications, Storage
+(what the picture store keeps, `PictureStore`, and Clear: a plain tap, because
+everything cleared can be downloaded again), and About (what it talks to, update
+checks, source link, licences). A newer version's row
+sits above them. Why five rows: the page was one long scroll of six sections
+(about 1,800 dp) and each new setting made the next harder to find; five rows
+fit a screen at normal text size (at 320 dp and 2x text the last one scrolls),
+and a group grows without lengthening the page. A row shows values, not setting names ("Light · Auto · 11.5 pt",
 "Blocked by Android"), and a closed group is not built. Two tiles are tinted,
 and only two: notifications Android blocks (orange, the colour that means
 "needs you") and a newer version (the accent, a suggestion). The groups start

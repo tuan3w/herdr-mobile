@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../acp/acp_models.dart' show SessionUpdate;
 import '../acp/background/background_work.dart' show BackgroundTask;
 
@@ -47,6 +49,13 @@ abstract interface class SessionLogSource {
   /// the follower). The stream ends when the channel does; it errors with a
   /// retryable `HerdrTransportException` when the link drops.
   Stream<LogBatch> follow(String path, {int? from, int? tailBytes});
+
+  /// The bytes of a picture the follower left out of the line that begins at
+  /// byte [start] of [path] (its note said `ref=<start>.<hash>`): the host
+  /// reads the line again and sends the payload that hashes to [hash]. Throws
+  /// an `AgentHostException` with a sentence for the person when the log is not
+  /// what it was or the link fails.
+  Future<Uint8List> blob(String path, {required int start, required String hash});
 }
 
 /// One option of a question the agent asked.

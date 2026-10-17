@@ -33,6 +33,21 @@ void main() {
       expect(agentRoutes.map((a) => a.id), containsAll(routes));
     });
 
+    test('the blob command rejects what cannot reach a remote shell safely, and quotes a path as one word', () {
+      const hash = '0123456789abcdef';
+      for (final bad in ['', 'a\nb.jsonl', 'a\rb.jsonl', 'a\u0000b.jsonl', 'a\u007fb.jsonl', 'x' * 5000]) {
+        expect(() => keeperBlobCommand(bad, start: 0, hash: hash), throwsArgumentError, reason: bad.length > 50 ? 'long' : bad);
+      }
+      expect(() => keeperBlobCommand('/a.jsonl', start: -1, hash: hash), throwsArgumentError);
+      for (final bad in ['', '0123456789abcde', '0123456789abcdef0', '0123456789ABCDEF', '0123456789abcdeg', '0123456789abcde;', r'$(touch x)abcdefg']) {
+        expect(() => keeperBlobCommand('/a.jsonl', start: 0, hash: bad), throwsArgumentError, reason: bad);
+      }
+      // The command travels as base64 of a small script; its last line is the exec.
+      final command = keeperBlobCommand("/home/u/it's \$(x).jsonl", start: 42, hash: hash);
+      final script = utf8.decode(base64.decode(RegExp(r'echo (\S+) \|').firstMatch(command)![1]!));
+      expect(script.trimRight().split('\n').last, endsWith(r"""'blob' '/home/u/it'\''s $(x).jsonl' '42' '0123456789abcdef'"""));
+    });
+
     test('every command but install is short', () {
       final commands = [
         keeperProbeCommand(),
@@ -46,7 +61,9 @@ void main() {
       }
       expect(keeperInstallCommand().length, lessThan(2048)); // Dropbear refuses an exec over 9000 bytes
       final payload = keeperInstallPayload();
-      expect(payload.length, inInclusiveRange(10000, 60000));
+      // It travels on stdin, so there is no hard limit; this only catches a script that
+      // doubled by accident (it was 58 KB before `blob`).
+      expect(payload.length, inInclusiveRange(10000, 80000));
       expect(payload.trimRight().split('\n').every((l) => l.length <= 76), isTrue);
       expect(payload.endsWith('\n'), isTrue);
     });

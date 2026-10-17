@@ -84,6 +84,22 @@ void main() {
       expect(r.partial, isTrue);
     });
 
+    test('a line left out for its size is a gap; lines that fell off the front are not', () {
+      final r = TranscriptRecorder(maxLineChars: 100, maxLines: 2);
+      r.add('a');
+      r.add('b');
+      r.add('c');
+      expect(r.lines, ['b', 'c']);
+      expect(r.partial, isTrue);
+      expect(r.gap, isFalse, reason: 'what follows is still in order');
+      r.add('x' * 101);
+      expect(r.gap, isTrue);
+      r.reset();
+      expect(r.gap, isFalse);
+      r.prepend(['old', 'y' * 101]);
+      expect(r.gap, isTrue, reason: 'an older line was left out too');
+    });
+
     test('a log within the caps is not partial; a new attach starts over', () {
       final r = TranscriptRecorder()
         ..add('a')
@@ -214,10 +230,20 @@ void main() {
       offload: offload,
     );
 
-    TranscriptSnapshot snapshot(List<String> lines, {String sid = 's1', bool partial = false, Object? setup}) =>
-        TranscriptSnapshot(sessionId: sid, asOf: DateTime.utc(2026, 3, 1, 14, 2), lines: lines, partial: partial, setup: setup);
+    TranscriptSnapshot snapshot(List<String> lines, {String sid = 's1', bool partial = false, bool gap = false, Object? setup}) =>
+        TranscriptSnapshot(sessionId: sid, asOf: DateTime.utc(2026, 3, 1, 14, 2), lines: lines, partial: partial, gap: gap, setup: setup);
 
     List<String> names() => [for (final f in dir.listSync()) f.uri.pathSegments.last]..sort();
+
+    test('a gap is saved and read back', () async {
+      final c = cache();
+      c.save('m1/k1', snapshot(_conversation(2), gap: true), now: true);
+      await c.flush();
+      expect((await c.read('m1/k1'))!.gap, isTrue);
+      c.save('m1/k1', snapshot(_conversation(2)), now: true);
+      await c.flush();
+      expect((await c.read('m1/k1'))!.gap, isFalse);
+    });
 
     test('what is saved is read back: the lines decoded, the setup, the time, partial', () async {
       final c = cache();
@@ -259,14 +285,15 @@ void main() {
       }
 
       String header(Map<String, Object?> over, {int lines = 2}) =>
-          jsonEncode({'v': 1, 'key': 'm1/k1', 'sid': 's1', 'asOf': 1, 'partial': false, 'lines': lines, ...over});
+          jsonEncode({'v': FileTranscriptCache.version, 'key': 'm1/k1', 'sid': 's1', 'asOf': 1, 'partial': false, 'lines': lines, ...over});
 
       test('garbage', () => expectIgnored('garbage', 'not a transcript\n'));
       test('empty', () => expectIgnored('empty', ''));
       test('an older or newer version', () async {
         final lines = _conversation(1);
         await expectIgnored('v0', '${header({'v': 0})}\n${lines.join('\n')}\n');
-        await expectIgnored('v2', '${header({'v': 2})}\n${lines.join('\n')}\n');
+        await expectIgnored('v1', '${header({'v': 1})}\n${lines.join('\n')}\n');
+        await expectIgnored('v3', '${header({'v': FileTranscriptCache.version + 1})}\n${lines.join('\n')}\n');
       });
       test('a file for another key', () async {
         await expectIgnored('key', '${header({'key': 'm9/k9'})}\n${_conversation(1).join('\n')}\n');

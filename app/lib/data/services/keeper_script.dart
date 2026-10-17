@@ -4,7 +4,8 @@
 /// as `~/.herdr-mobile/keeper-<version>.py`.
 ///
 /// Subcommands: `probe`, `list`, `start --agent ID --cwd DIR`, `attach ID`,
-/// `kill ID`, `view ID`, `follow PATH [--from N]`, `history AGENT [CWD]`. It
+/// `kill ID`, `view ID`, `follow PATH [--from N]`, `blob PATH START HASH`,
+/// `history AGENT [CWD]`. It
 /// is plain python: `python3 keeper-<version>.py list`. `view` runs only on
 /// the host, in the herdr pane a keeper opens for its session.
 library;
@@ -16,12 +17,13 @@ const keeperPython = r'''
 """herdr-keeper: owns one ACP agent process so it outlives the phone's SSH link.
 
 Subcommands: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID
-| view ID | follow PATH [--from N] | history AGENT [CWD].
+| view ID | follow PATH [--from N] | blob PATH START HASH | history AGENT [CWD].
 Single file, python 3.6+, standard library only. Design: docs/AGENT_SESSIONS.md.
 """
 import base64
 import collections
 import errno
+import hashlib
 import json
 import os
 import re
@@ -158,6 +160,10 @@ FOLLOW_BACKOFF = ((60, 1.0), (600, 2.0))
 FOLLOW_BINARY_TYPES = ("image", "base64", "audio", "input_audio", "input_image", "binary")
 FOLLOW_BINARY_KEYS = ("data", "base64", "bytes", "b64_json", "blob")
 FOLLOW_B64 = re.compile(r"^[A-Za-z0-9+/=_-]+$")
+# `blob`: the longest log line it reads, and how much of a picture goes in one record.
+BLOB_MAX_LINE = 24 * 1024 * 1024
+BLOB_CHUNK = 48 * 1024
+BLOB_READ = 1024 * 1024
 
 
 def now_ms():
@@ -3808,32 +3814,68 @@ def cut_str(s):
     return "%s... [%d bytes cut]" % (head, len(b) - len(head.encode("utf-8")))
 
 
-def scrub(v):
+def binary_payload(binary, k, x):
+    """The part of string [x] (the value of key [k]) that scrub drops, or None.
+    [binary]: the object that holds it is typed as a binary one."""
+    n = len(x)
+    if (binary and n > 256) or (k in FOLLOW_BINARY_KEYS and n > 1024 and FOLLOW_B64.match(x[:256])):
+        return x
+    if n > 256 and x.startswith("data:") and "," in x[:128]:
+        return x[x.index(",") + 1:]
+    return None
+
+
+def payload_hash(p):
+    return hashlib.sha1(p.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
+def scrub(v, start=None):
     """[v] with every long string cut and every binary payload dropped; the
-    structure stays, so the result is JSON of the same shape."""
+    structure stays, so the result is JSON of the same shape. With [start], the
+    byte offset of the log line [v] came from, a dropped payload says where it
+    can be fetched again (`ref=<start>.<hash of the payload>`, see `blob`)."""
     if isinstance(v, str):
         return cut_str(v)
     if isinstance(v, list):
-        return [scrub(x) for x in v]
+        return [scrub(x, start) for x in v]
     if not isinstance(v, dict):
         return v
     binary = v.get("type") in FOLLOW_BINARY_TYPES
     out = {}
     for k, x in v.items():
         if isinstance(x, str):
-            n = len(x)
-            if (binary and n > 256) or (
-                k in FOLLOW_BINARY_KEYS and n > 1024 and FOLLOW_B64.match(x[:256])
-            ):
-                x = "[%d bytes of data not sent]" % n
-            elif n > 256 and x.startswith("data:") and "," in x[:128]:
-                x = x[: x.index(",") + 1] + "[%d bytes of data not sent]" % n
-            else:
+            p = binary_payload(binary, k, x)
+            if p is None:
                 x = cut_str(x)
+            else:
+                n = len(x)
+                if start is None:
+                    note = "[%d bytes of data not sent]" % n
+                else:
+                    note = "[%d bytes of data not sent; ref=%d.%s]" % (n, start, payload_hash(p))
+                x = x[: n - len(p)] + note
         else:
-            x = scrub(x)
+            x = scrub(x, start)
         out[cut_str(k)] = x
     return out
+
+
+def blob_payloads(v):
+    """The payloads scrub drops from [v], in the order it meets them."""
+    if isinstance(v, list):
+        for x in v:
+            for p in blob_payloads(x):
+                yield p
+    elif isinstance(v, dict):
+        binary = v.get("type") in FOLLOW_BINARY_TYPES
+        for k, x in v.items():
+            if isinstance(x, str):
+                p = binary_payload(binary, k, x)
+                if p is not None:
+                    yield p
+            else:
+                for p in blob_payloads(x):
+                    yield p
 
 
 # What omp writes into an assistant message for itself, which `OmpLogMapper`
@@ -3871,17 +3913,18 @@ def slim(o):
     return o
 
 
-def follow_record(raw):
+def follow_record(raw, start=None):
     """One log line (bytes) as the compact UTF-8 JSON the phone gets, or None
     for a blank line or a line the phone has no use for (see slim). Whatever is
-    not JSON becomes {"raw": first 2 KB}."""
+    not JSON becomes {"raw": first 2 KB}. [start] is the line's offset in the
+    file (see scrub)."""
     if not raw.strip():
         return None
     try:
         obj = slim(json.loads(raw.decode("utf-8")))
         if obj is None:
             return None
-        out = json.dumps(scrub(obj), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        out = json.dumps(scrub(obj, start), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     except (ValueError, RecursionError):
         out = json.dumps(
             {"raw": raw[:FOLLOW_RAW].decode("utf-8", "replace")},
@@ -4011,7 +4054,7 @@ class Follower(object):
                 if self.over:
                     rec = json.dumps({"raw": "[line of %d bytes not sent]" % self.total}).encode("ascii")
                 else:
-                    rec = follow_record(bytes(self.buf))
+                    rec = follow_record(bytes(self.buf), self.pos - self.total - 1)
                 if rec is not None:
                     self.out.append(b"%d\t%s\n" % (self.pos, rec))
             self.restart_line()
@@ -4098,11 +4141,72 @@ def cmd_follow(path, frm, poll=FOLLOW_POLL, idle_exit=0, tail=FOLLOW_TAIL, zippe
         sys.exit(EX_FAILED)
 
 
+def cmd_blob(path, start, h):
+    """Prints the binary payload `follow` dropped from the log line that begins
+    at byte [start] of [path] and whose hash is [h] (the `ref=<start>.<hash>`
+    of its note): `B\t<piece of the payload>` records, then `D\t<length>`.
+    Exits 66 when the log is not what it was (the line is not at [start], has no
+    such payload) or the payload is not text a picture can be made of."""
+    real = follow_target(path)
+    gone = "That picture is not in the log any more."
+    try:
+        fd = os.open(real, os.O_RDONLY)
+    except OSError as e:
+        fail(EX_GONE, "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
+    try:
+        if start > 0 and os.pread(fd, 1, start - 1) != b"\n":
+            fail(EX_GONE, "The log changed since that picture was listed.")
+        data = b""
+        at = start
+        end = -1
+        while end < 0 and len(data) <= BLOB_MAX_LINE:
+            piece = os.pread(fd, BLOB_READ, at)
+            if not piece:
+                break
+            i = piece.find(b"\n")
+            if i >= 0:
+                data += piece[:i]
+                end = len(data)
+            else:
+                data += piece
+                at += len(piece)
+    except OSError as e:
+        fail(EX_GONE, "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
+    finally:
+        os.close(fd)
+    if end < 0 or end > BLOB_MAX_LINE:
+        fail(EX_GONE, gone)
+    try:
+        obj = json.loads(data.decode("utf-8"))
+    except (ValueError, RecursionError):
+        fail(EX_GONE, gone)
+    for p in blob_payloads(obj):
+        if payload_hash(p) != h:
+            continue
+        if p.startswith("data:") and "," in p[:128]:
+            # A whole data URI (its field was typed binary): the picture is what follows the comma.
+            p = p[p.index(",") + 1:]
+        try:
+            # Whitespace is not part of base64: a payload with line breaks must
+            # not break the one-record-per-line protocol.
+            raw = "".join(p.split()).encode("ascii")
+        except UnicodeEncodeError:
+            fail(EX_GONE, "That is not a picture.")
+        try:
+            for i in range(0, len(raw), BLOB_CHUNK):
+                put(b"B\t" + raw[i:i + BLOB_CHUNK] + b"\n")
+            put(b"D\t%d\n" % len(raw))
+        except Gone:
+            pass
+        return
+    fail(EX_GONE, gone)
+
+
 def main(argv):
     if not argv:
-        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | view ID | follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | history AGENT [CWD]")
+        fail(EX_USAGE, "usage: probe | list | start --agent ID --cwd DIR | attach ID [--z] | kill ID | view ID | follow PATH [--z] [--from N] [--poll-ms N] [--idle-exit S] [--tail-bytes N] | blob PATH START HASH | history AGENT [CWD]")
     cmd, rest = argv[0], argv[1:]
-    if cmd != "follow":
+    if cmd not in ("follow", "blob"):
         load_daemon_modules()
     try:
         if cmd == "probe":
@@ -4138,6 +4242,8 @@ def main(argv):
             poll = max(20, min(opts.get("--poll-ms", int(FOLLOW_POLL * 1000)), 60000)) / 1000.0
             tail = max(FOLLOW_TAIL_MIN, min(opts.get("--tail-bytes", FOLLOW_TAIL), FOLLOW_TAIL_MAX))
             cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail, zipped)
+        elif cmd == "blob" and len(rest) == 3 and rest[1].isdigit() and len(rest[2]) == 16 and all(c in "0123456789abcdef" for c in rest[2]):
+            cmd_blob(rest[0], int(rest[1]), rest[2])
         elif cmd == "attach" and len(rest) in (1, 2) and (len(rest) == 1 or rest[1] == "--z"):
             cmd_attach(rest[0], len(rest) == 2)
         elif cmd == "kill" and len(rest) == 1:

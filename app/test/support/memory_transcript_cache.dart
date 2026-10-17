@@ -33,6 +33,7 @@ class MemoryTranscriptCache implements TranscriptCache {
       asOf: snapshot.asOf,
       setup: snapshot.setup,
       partial: snapshot.partial,
+      gap: snapshot.gap,
       updates: [
         for (final line in snapshot.lines) ((jsonDecode(line) as Map)['params'] as Map).cast<Object?, Object?>(),
       ],

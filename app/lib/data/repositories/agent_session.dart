@@ -7,7 +7,9 @@ import '../acp/background/background_work.dart';
 import '../acp/prompt_queue.dart';
 import '../acp/session_state.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
+import '../observed/log_picture.dart' show LogPictureRef;
 import '../observed/observed_contracts.dart' show SubagentInfo;
+import '../services/remote_files.dart' show ReadCancel;
 import 'attach_target.dart';
 import 'machine_connection.dart';
 
@@ -342,6 +344,15 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   /// a watcher nothing is read and no timer runs. One call per screen; a
   /// no-op for every other session and run.
   void watchSubagentLog(String runId, bool on);
+
+  /// The bytes of a picture of a terminal-log chat ([LogImageBlock]): from the
+  /// picture store when it is there, else fetched from the machine (the keeper
+  /// re-reads the log line, or SFTP reads omp's blob file) and kept for next
+  /// time. Called only for a person's tap: nothing prefetches. A request for a
+  /// picture already on its way joins it. Throws `LogPictureException` with
+  /// words for the person (too large, no longer on the machine, the link).
+  /// A session that is not made from a log has no such picture and throws.
+  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel});
 
   /// How reading the log of [runId] stands, for the drill-in.
   SubagentLogStatus subagentLogStatus(String runId);

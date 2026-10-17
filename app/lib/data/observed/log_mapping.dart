@@ -15,6 +15,15 @@ const _cutMark = '\n... [cut]';
 MessageUpsert messageUpsert(MessageRole role, String id, String text) =>
     MessageUpsert(role, id, hasContent: true, content: [TextBlock(capText(text))]);
 
+/// A whole message of [blocks] (text blocks are capped like any text); a
+/// message with a picture keeps its [LogImageBlock]s next to the words.
+MessageUpsert messageUpsertBlocks(MessageRole role, String id, List<ContentBlock> blocks) => MessageUpsert(
+  role,
+  id,
+  hasContent: true,
+  content: [for (final b in blocks) b is TextBlock ? TextBlock(capText(b.text)) : b],
+);
+
 /// A tool call that ended without a result because the turn was interrupted.
 SessionUpdate cancelledPatch(String id) =>
     ToolCallPatchUpdate(ToolCallPatch(id, {'toolCallId': id, 'status': 'cancelled'}));

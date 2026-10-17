@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/observed/log_picture.dart';
 import 'package:herdr_mobile/data/acp/background/background_work.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/codex_log_mapper.dart';
@@ -424,6 +425,41 @@ void main() {
       ]);
       final texts = [for (final m in s.items.whereType<TranscriptMessage>()) if (m.role == MessageRole.user) m.text];
       expect(texts, ['what is this?\n[image]', '[image]']);
+    });
+
+    test('an image part whose URL is the host\'s note with a reference is a block; a local_image path stays a line', () {
+      String item(String id, List<Object> content) => jsonEncode({
+        'type': 'event_msg',
+        'payload': {
+          'type': 'item_completed',
+          'item': {'type': 'UserMessage', 'id': id, 'content': content},
+        },
+      });
+      final s = _feed(CodexLogMapper(), [
+        item('a', [
+          {'type': 'text', 'text': 'look'},
+          {'type': 'image', 'image_url': 'data:image/png;base64,[40000 bytes of data not sent; ref=512.0123456789abcdef]'},
+        ]),
+        item('b', [
+          {'type': 'image', 'image_url': '[40 bytes of data not sent; ref=9.fedcba9876543210]'},
+        ]),
+        item('c', [
+          {'type': 'local_image', 'path': '/h/x.jpg'},
+        ]),
+      ]);
+      final users = [for (final m in s.items.whereType<TranscriptMessage>()) if (m.role == MessageRole.user) m];
+      final a = users[0].blocks.whereType<LogImageBlock>().single;
+      expect(a.mimeType, 'image/png');
+      expect((a.ref as KeeperPictureRef).start, 512);
+      expect(users[0].text, 'look');
+      expect(users[1].blocks.single, isA<LogImageBlock>(), reason: 'a picture alone is not an empty message');
+      expect((users[1].blocks.single as LogImageBlock).mimeType, '');
+      expect(users[2].text, '[image]');
+    });
+
+    test('the captured paste lists only a local_image path: the picture stays an [image] line', () {
+      final (s, _) = _run('image-paste');
+      expect(s.items.whereType<TranscriptMessage>().expand((m) => m.blocks).whereType<LogImageBlock>(), isEmpty);
     });
   });
 }

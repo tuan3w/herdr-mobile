@@ -15,13 +15,16 @@ import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun,
 import '../models/herdr_models.dart';
 import '../models/pane_preview.dart';
 import '../models/slash_command.dart';
-import '../models/remote_file.dart' show RemoteFileException;
+import '../models/remote_file.dart' show RemoteFileErrorKind, RemoteFileException;
 import '../observed/background_view.dart';
+import '../observed/log_picture.dart';
 import '../observed/observed_contracts.dart';
 import '../observed/observed_kind.dart';
 import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
 import '../observed/session_log_locator.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
+import '../services/picture_store.dart';
+import '../services/remote_files.dart' show ReadCancel;
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
 import 'attach_target.dart' show AttachMode;
@@ -568,6 +571,72 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
 
   @override
   void watchSubagentLog(String runId, bool on) {}
+
+  // Pictures on their way, by store key: a second request for one joins it, so
+  // a double tap never downloads twice.
+  final _pictureLoads = <String, Future<Uint8List>>{};
+
+  @override
+  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) {
+    final key = ref.key;
+    final running = _pictureLoads[key];
+    if (running != null) return running;
+    final load = _fetchPicture(ref, cancel);
+    _pictureLoads[key] = load;
+    // Whoever asked gets the answer or the failure; this only forgets the load.
+    unawaited(load.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+      // A block body: `remove` returns the failed load itself, and a callback
+      // that returns a future makes `whenComplete` wait for it and fail with it.
+      _pictureLoads.remove(key);
+    }));
+    return load;
+  }
+
+  /// A picture from the store, else from the machine, then kept. Never more
+  /// than [logPictureLimit]; a picture whose size is known to be over it is
+  /// refused before a byte is transferred.
+  Future<Uint8List> _fetchPicture(LogPictureRef ref, ReadCancel? cancel) async {
+    final store = PictureStore.shared;
+    final hit = await store.get(ref.key);
+    if (hit != null) return hit;
+    final known = ref.bytes;
+    if (known != null && known > logPictureLimit) throw LogPictureTooLarge(known);
+    final path = _followedPath;
+    if (path == null) throw logPictureGone;
+    final Uint8List bytes;
+    try {
+      bytes = switch (ref) {
+        KeeperPictureRef(:final start, :final hash) => await _source.blob(path, start: start, hash: hash),
+        OmpPictureRef(:final sha256) => await _readOmpBlob(path, sha256, cancel),
+      };
+    } on AgentHostException catch (e) {
+      throw LogPictureException(e.message);
+    } on HerdrTransportException catch (e) {
+      throw LogPictureException(e.message);
+    }
+    if (bytes.length > logPictureLimit) throw LogPictureTooLarge(bytes.length);
+    unawaited(store.put(ref.key, bytes));
+    return bytes;
+  }
+
+  /// omp keeps a picture as a plain file, `<agent dir>/blobs/<sha256>`, next to
+  /// its `sessions/` folder: read over SFTP, no keeper involved. No file, or a
+  /// log that is not under a `sessions/` folder, is a picture that is gone.
+  Future<Uint8List> _readOmpBlob(String logPath, String sha256, ReadCancel? cancel) async {
+    final at = logPath.lastIndexOf('/sessions/');
+    if (at < 0) throw logPictureGone;
+    final file = '${logPath.substring(0, at)}/blobs/$sha256';
+    final files = machine.api.files;
+    try {
+      final size = (await files.stat(file)).size;
+      if (size == null || size <= 0) throw logPictureGone;
+      if (size > logPictureLimit) throw LogPictureTooLarge(size);
+      return await files.readAll(file, size: size, chunk: 2 * 1024 * 1024, cancel: cancel);
+    } on RemoteFileException catch (e) {
+      if (e.kind == RemoteFileErrorKind.notFound) throw logPictureGone;
+      throw LogPictureException(e.message);
+    }
+  }
 
   @override
   SubagentLogStatus subagentLogStatus(String runId) => SubagentLogStatus.idle;

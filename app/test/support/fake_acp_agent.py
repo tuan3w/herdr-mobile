@@ -406,6 +406,12 @@ def prompt(msg):
         chunk(sid, "tail", "mtail")
     elif text.startswith("quiet:"):
         time.sleep(float(text[6:]))
+    elif text.startswith("picture:"):
+        # picture:<chars>: the agent shows a picture of that many base64 characters.
+        n = int(text[8:])
+        update(sid, {"sessionUpdate": "agent_message_chunk", "messageId": "pic-1",
+                     "content": {"type": "image", "mimeType": "image/png", "data": ("QUJD" * (n // 4 + 1))[:n]}})
+        chunk(sid, "that was the picture", "after-pic")
     elif text.startswith("reply:"):
         replies += 1
         chunk(sid, "re: " + text[6:], "reply-%d" % replies)

@@ -786,6 +786,135 @@ void main() {
     });
   });
 
+  group('blob', skip: hasPython ? false : 'python3 is not installed', () {
+    final bytes = List.generate(150000, (i) => (i * 7) % 251);
+    final b64 = base64.encode(bytes);
+
+    /// The records of `follow` for [lines] as (start offset, ref) pairs of every
+    /// dropped payload, found in the notes.
+    Future<List<({int start, String hash})>> refs(File f, List<String> lines) async {
+      _write(f, lines);
+      final run = await host.follow(f.path, from: 0);
+      final got = await run.take(lines.length);
+      await run.stop();
+      return [
+        for (final r in got)
+          for (final m in RegExp(r'ref=(\d+)\.([0-9a-f]{16})').allMatches(r.body))
+            (start: int.parse(m[1]!), hash: m[2]!),
+      ];
+    }
+
+    Future<List<int>> fetched(String path, int start, String hash) async {
+      final r = await host.runToEnd(keeperBlobCommand(path, start: start, hash: hash));
+      expect(r.code, 0, reason: r.err);
+      final records = const LineSplitter().convert(r.out);
+      expect(records.last, startsWith('D\t'));
+      final text = [for (final l in records.where((l) => l.startsWith('B\t'))) l.substring(2)].join();
+      expect(int.parse(records.last.substring(2)), text.length);
+      expect(records.where((l) => l.startsWith('B\t')).every((l) => l.length <= 2 + 48 * 1024), isTrue);
+      return base64.decode(text);
+    }
+
+    test('the bytes of a Claude picture, an omp-style one and a data URI come back whole, whatever lines come before', () async {
+      final f = File(host.path());
+      final lines = [
+        _json(1, pad: 'héllo 日本語 ' * 30),
+        jsonEncode({
+          'type': 'user',
+          'message': {
+            'content': [
+              {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': b64}},
+              {'type': 'text', 'text': 'look'},
+            ],
+          },
+        }),
+        jsonEncode({'message': {'content': [{'type': 'image', 'mimeType': 'image/jpeg', 'data': b64}]}}),
+        jsonEncode({'type': 'image', 'image_url': 'data:image/png;base64,$b64'}),
+        jsonEncode({'details': {'blob': 'data:image/png;base64,$b64'}}),
+      ];
+      final found = await refs(f, lines);
+      expect(found, hasLength(4));
+      final offsets = _write(f, lines);
+      expect([for (final r in found) r.start], [offsets[0], offsets[1], offsets[2], offsets[3]]);
+      for (final r in found) {
+        expect(await fetched(f.path, r.start, r.hash), bytes);
+      }
+    });
+
+    test('two pictures in one line are told apart by their hash', () async {
+      final f = File(host.path());
+      final other = base64.encode(List.generate(2000, (i) => (i * 3) % 251));
+      final found = await refs(f, [
+        jsonEncode({'content': [{'type': 'image', 'data': b64}, {'type': 'image', 'data': other}]}),
+      ]);
+      expect(found, hasLength(2));
+      expect(await fetched(f.path, found[0].start, found[0].hash), bytes);
+      expect(await fetched(f.path, found[1].start, found[1].hash), base64.decode(other));
+    });
+
+    test('a payload with line breaks does not break the records', () async {
+      final f = File(host.path());
+      final wrapped = [for (var i = 0; i < b64.length; i += 76) b64.substring(i, i + 76 > b64.length ? b64.length : i + 76)].join('\n');
+      final found = await refs(f, [jsonEncode({'type': 'image', 'data': wrapped})]);
+      expect(await fetched(f.path, found.single.start, found.single.hash), bytes);
+    });
+
+    Future<void> gone(String path, int start, String hash, {String? why}) async {
+      final r = await host.runToEnd(keeperBlobCommand(path, start: start, hash: hash));
+      expect(r.code, 66, reason: r.err);
+      expect(r.out, isEmpty);
+      expect(r.err, startsWith('herdr-mobile: '));
+      if (why != null) expect(r.err, contains(why));
+    }
+
+    test('a wrong hash, a start that is not a line start and a start past the end are gone', () async {
+      final f = File(host.path());
+      final found = await refs(f, [_json(1), jsonEncode({'type': 'image', 'data': b64})]);
+      final ref = found.single;
+      await gone(f.path, ref.start, '0123456789abcdef', why: 'not in the log');
+      await gone(f.path, ref.start + 3, ref.hash, why: 'changed');
+      await gone(f.path, ref.start - 1, ref.hash, why: 'changed');
+      await gone(f.path, f.lengthSync() + 100, ref.hash, why: 'changed');
+      await gone(f.path, f.lengthSync(), ref.hash, why: 'not in the log');
+    });
+
+    test('a log that was rewritten under the ref, and a line that is not JSON, are gone', () async {
+      final f = File(host.path());
+      final ref = (await refs(f, [jsonEncode({'type': 'image', 'data': b64})])).single;
+      f.writeAsStringSync('not json at all\n');
+      await gone(f.path, ref.start, ref.hash, why: 'not in the log');
+      f.writeAsStringSync('${_json(1)}\n${jsonEncode({'type': 'image', 'data': b64.substring(0, 5000)})}\n');
+      await gone(f.path, ref.start, ref.hash, why: 'not in the log');
+    });
+
+    test('a missing file, a path outside the home folder and a path that is not a log are refused', () async {
+      final far = File('${outside.path}/far.jsonl')..writeAsStringSync('{}\n');
+      await gone('${host.home.path}/nope.jsonl', 0, '0123456789abcdef', why: 'cannot read');
+      await gone(far.path, 0, '0123456789abcdef', why: 'home folder');
+      await gone('/etc/passwd', 0, '0123456789abcdef', why: '.jsonl');
+      await gone('relative.jsonl', 0, '0123456789abcdef', why: 'absolute');
+    });
+
+    test('a payload that is not text a picture can be made of is refused', () async {
+      final f = File(host.path());
+      final odd = 'é' * 400;
+      final ref = (await refs(f, [jsonEncode({'type': 'image', 'data': odd})])).single;
+      await gone(f.path, ref.start, ref.hash, why: 'not a picture');
+    });
+
+    test('a path with quotes, spaces, \$() and backticks is passed as one word, never run', () async {
+      final marker = '${host.home.path}/blob_pwned';
+      final dir = Directory('${host.home.path}/it\'s a "dir" \$(touch blob_pwned) `touch blob_pwned`; x')..createSync();
+      final f = File('${dir.path}/we ird\\ \$HOME.jsonl');
+      final found = await refs(f, [jsonEncode({'type': 'image', 'data': b64})]);
+      expect(await fetched(f.path, found.single.start, found.single.hash), bytes);
+      for (final evil in ["x'; touch $marker; '.jsonl", '\$(touch $marker).jsonl', '`touch $marker`.jsonl']) {
+        await gone('${host.home.path}/$evil', 0, '0123456789abcdef');
+      }
+      expect(File(marker).existsSync(), isFalse);
+    });
+  });
+
   group('follow cuts heavy fields on the host', skip: hasPython ? false : 'python3 is not installed', () {
     Future<List<_Rec>> follow(List<String> lines) async {
       final f = File(host.path());
@@ -847,9 +976,9 @@ void main() {
       expect(got.body.length, lessThan(5 * 16384));
     });
 
-    test('an image keeps its metadata and loses the payload', () async {
+    test('an image keeps its metadata and loses the payload, and says where to fetch it', () async {
       final b64 = base64.encode(List.generate(300000, (i) => i % 251));
-      final got = await follow([
+      final lines = [
         jsonEncode({
           'message': {
             'content': [
@@ -860,20 +989,43 @@ void main() {
           },
         }),
         jsonEncode({'details': {'blob': 'data:image/png;base64,$b64'}, 'data': b64}),
-      ]);
+      ];
+      final got = await follow(lines);
       final content = (((got[0].json['message']! as Map)['content']!) as List).cast<Map>();
       expect(content[0]['type'], 'image');
       expect(content[0]['mimeType'], 'image/png');
       expect(content[0]['width'], 640);
-      expect(content[0]['data'], '[${b64.length} bytes of data not sent]');
+      expect(content[0]['data'], matches(RegExp('^\\[${b64.length} bytes of data not sent; ref=0\\.[0-9a-f]{16}\\]\$')));
       expect((content[1]['source'] as Map)['media_type'], 'image/jpeg');
-      expect((content[1]['source'] as Map)['data'], '[${b64.length} bytes of data not sent]');
+      expect((content[1]['source'] as Map)['data'], matches(RegExp('^\\[${b64.length} bytes of data not sent; ref=0\\.[0-9a-f]{16}\\]\$')));
       expect(content[2]['text'], 'see');
-      expect(got[0].body.length, lessThan(600));
+      expect(got[0].body.length, lessThan(700));
       final second = got[1].json;
-      expect(second['data'], '[${b64.length} bytes of data not sent]');
-      expect(((second['details']! as Map)['blob']! as String),
-          'data:image/png;base64,[${'data:image/png;base64,'.length + b64.length} bytes of data not sent]');
+      final secondStart = got[0].offset;
+      expect(second['data'], matches(RegExp('^\\[${b64.length} bytes of data not sent; ref=$secondStart\\.[0-9a-f]{16}\\]\$')));
+      expect(
+        ((second['details']! as Map)['blob']! as String),
+        matches(
+          RegExp(
+            '^data:image/png;base64,\\[${'data:image/png;base64,'.length + b64.length} bytes of data not sent; ref=$secondStart\\.[0-9a-f]{16}\\]\$',
+          ),
+        ),
+      );
+    });
+
+    test('a picture\'s ref points at its line: the first record of a tail read starts where the tail does', () async {
+      final f = File(host.path());
+      final b64 = base64.encode(List.generate(5000, (i) => i % 251));
+      final lines = [
+        for (var i = 0; i < 6; i++) i == 4 ? jsonEncode({'type': 'image', 'data': b64}) : _json(i, pad: 'x' * 200),
+      ];
+      final offsets = _write(f, lines);
+      // A tail that starts inside line 2: the follower skips the rest of it.
+      final run = await host.follow(f.path, tailBytes: offsets.last - offsets[1] + 20);
+      final got = await run.firstRead();
+      final image = got.firstWhere((r) => r.json['type'] == 'image');
+      expect(image.json['data'], contains('ref=${offsets[3]}.'));
+      await run.stop();
     });
 
     test('a small data field and ordinary text named data are left alone', () async {

@@ -841,6 +841,7 @@ TranscriptSnapshot snapshotWith(TranscriptSnapshot s, {String? sessionId}) => Tr
   lines: s.lines,
   setup: s.setup,
   partial: s.partial,
+  gap: s.gap,
 );
 
 class _Fleet {

@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/acp/acp_models.dart';
+import '../../../data/observed/log_picture.dart';
+import '../../../data/services/picture_store.dart';
 import '../../core/controls.dart';
 import '../../core/motion.dart';
 import '../../core/theme.dart';
 import '../../../data/services/image_decode.dart' show DecodedImage;
+import '../files/file_format.dart';
 import 'content_chip.dart';
 import 'content_image_cache.dart';
 import 'photo_thread.dart';
@@ -43,8 +47,72 @@ class ImageBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final b = block;
+    if (b is LogImageBlock) return LogImageView(block: b, cache: cache);
     if (block.data.isNotEmpty) return _InlineImage(block: block, cache: cache ?? ImagePreviewCache.shared);
     return ImageReferenceLine(block: block);
+  }
+}
+
+/// A picture of a terminal-log chat (Claude Code, Codex, omp), which the host
+/// does not send with the log: a quiet line with its type and size, and
+/// `Tap to load`. Nothing is downloaded until the person taps, except that a
+/// picture the phone already holds (the [PictureStore]) simply shows. A failed
+/// fetch says why and offers `Tap to retry.`.
+///
+/// The bytes come through the session of the conversation ([ThreadPhotos]);
+/// without one (a subagent's view) the line says `Not available here` and does
+/// nothing.
+class LogImageView extends StatefulWidget {
+  const LogImageView({super.key, required this.block, this.cache});
+
+  final LogImageBlock block;
+  final ImagePreviewCache? cache;
+
+  @override
+  State<LogImageView> createState() => _LogImageViewState();
+}
+
+class _LogImageViewState extends State<LogImageView> {
+  var _requested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final store = PictureStore.shared;
+    // Held already: it shows, no tap, no radio.
+    unawaited(store.ready.then((_) {
+      if (mounted && !_requested && store.knows(widget.block.key)) setState(() => _requested = true);
+    }));
+  }
+
+  void _load() {
+    Haptics.tick();
+    setState(() => _requested = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final block = widget.block;
+    final scope = ThreadPhotos.maybeOf(context);
+    if (_requested && scope != null) {
+      return _InlineImage(
+        block: block,
+        cache: widget.cache ?? ImagePreviewCache.shared,
+        fetch: () => scope.session.loadLogPicture(block.ref),
+      );
+    }
+    final size = block.ref.bytes;
+    return ContentChip(
+      icon: LucideIcons.image,
+      title: 'Image',
+      // The size first: at a large text size the type may wrap or be cut, and the
+      // size is what tells the person whether a tap is worth it.
+      detail: [if (size != null) formatBytes(size), if (block.mimeType.isNotEmpty) block.mimeType].join(' · '),
+      note: scope == null ? 'Not available here' : 'Tap to load',
+      muted: scope == null,
+      onTap: scope == null ? null : _load,
+    );
   }
 }
 
@@ -83,10 +151,13 @@ class ImageReferenceLine extends StatelessWidget {
 }
 
 class _InlineImage extends StatefulWidget {
-  const _InlineImage({required this.block, required this.cache});
+  const _InlineImage({required this.block, required this.cache, this.fetch});
 
   final ImageBlock block;
   final ImagePreviewCache cache;
+
+  /// Brings the bytes of a [LogImageBlock] (see [ImagePreviewCache.acquire]).
+  final Future<Uint8List> Function()? fetch;
 
   @override
   State<_InlineImage> createState() => _InlineImageState();
@@ -102,7 +173,7 @@ class _InlineImageState extends State<_InlineImage> {
   }
 
   void _hold() {
-    _entry = widget.cache.acquire(widget.block)..addListener(_changed);
+    _entry = widget.cache.acquire(widget.block, fetch: widget.fetch)..addListener(_changed);
   }
 
   void _letGo() {
@@ -117,7 +188,7 @@ class _InlineImageState extends State<_InlineImage> {
   @override
   void didUpdateWidget(_InlineImage old) {
     super.didUpdateWidget(old);
-    if (!identical(old.block, widget.block) || old.cache != widget.cache) {
+    if (ImagePreviewCache.keyOf(old.block) != ImagePreviewCache.keyOf(widget.block) || old.cache != widget.cache) {
       // The cache of the old widget lets its entry go.
       _entry.removeListener(_changed);
       old.cache.release(_entry);
@@ -134,7 +205,25 @@ class _InlineImageState extends State<_InlineImage> {
   @override
   Widget build(BuildContext context) {
     final problem = _entry.problem;
-    if (problem != null) return ImageReferenceLine(block: widget.block, problem: problem);
+    final logPicture = widget.block is LogImageBlock;
+    if (problem != null) {
+      if (!logPicture) return ImageReferenceLine(block: widget.block, problem: problem);
+      // A fetch that failed can be tried again; a picture over the limit cannot.
+      final retryable = !_entry.tooLarge;
+      return ContentChip(
+        icon: LucideIcons.image,
+        title: 'Image',
+        detail: widget.block.mimeType,
+        note: retryable ? '$problem Tap to retry.' : problem,
+        muted: !retryable,
+        onTap: retryable
+            ? () {
+                Haptics.tick();
+                widget.cache.retry(_entry);
+              }
+            : null,
+      );
+    }
     final image = _entry.image;
     final ds = context.ds;
     final name = ImageBlockView.nameOf(widget.block);
@@ -146,7 +235,12 @@ class _InlineImageState extends State<_InlineImage> {
           height: 96,
           child: ColoredBox(
             color: ds.fill,
-            child: Center(child: Icon(LucideIcons.image, size: 20, color: ds.textTertiary)),
+            // A fetch the person started is a wait they can see: the one spinner.
+            child: Center(
+              child: logPicture
+                  ? const BusySpinner(size: 20)
+                  : Icon(LucideIcons.image, size: 20, color: ds.textTertiary),
+            ),
           ),
         ),
       );

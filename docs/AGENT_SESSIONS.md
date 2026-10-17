@@ -680,7 +680,11 @@ neither changes the protocol.
   `user_message_chunk` the keeper's own log has, since the keeper never echoes
   them back). The window is capped by count (4000), characters (1 MiB) and per
   line (128 KiB: a longer line is left out, never cut, and the copy is marked
-  `partial`). A new attach starts it over, because the keeper sends the whole
+  `partial`, and `gap`: a line missing from the middle). A copy with a `gap` is
+  no prefix of the keeper's log, so a re-attach never asks for the newest turns
+  only (`replaySinceOf`): the held transcript would lose what that line held (an
+  agent's picture over 128 KiB did). Lines that merely fell off the front are
+  `partial` but no gap. A new attach starts it over, because the keeper sends the whole
   log again. It is written when a turn ends (debounced, 3 s, the first ask
   starts the wait so a stream cannot push it off), at once when the last screen
   lets go and when the app goes to the background, never per chunk, and only
@@ -689,7 +693,7 @@ neither changes the protocol.
   since a transcript may hold secrets; never preferences), written to
   `<file>.tmp` and renamed, in a worker isolate (`Isolate.run`; a job is a
   top-level function and plain data). The file is versioned (a JSON header with
-  the version, the key, the session id, the time, `partial`, the line count and
+  the version (2: `gap` was added), the key, the session id, the time, `partial`, `gap`, the line count and
   the setup, then the lines verbatim); a file that is damaged, cut short, of
   another version or key, or larger than the cap is deleted and ignored. Each
   file is capped at 1 MiB (oldest lines first) and the directory at 5 MiB (the

@@ -143,7 +143,7 @@ ${_needPython}exec python3 -c ${_shQuote(_installer)} ${keeperScriptVersion(scri
 ''');
 
 /// What to write to the stdin of [keeperInstallCommand] before closing it: the
-/// deflated script as base64 in lines of 76 characters (~22 KB).
+/// deflated script as base64 in lines of 76 characters (~60 KB).
 String keeperInstallPayload({String? script}) {
   final b64 = base64.encode(ZLibCodec(level: 9).encode(utf8.encode(script ?? keeperScript())));
   final lines = [for (var i = 0; i < b64.length; i += 76) b64.substring(i, math.min(i + 76, b64.length))];
@@ -232,7 +232,9 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 ///
 ///   `<endOffset>\t<json>`  a log line, re-serialised compactly, with every
 ///                          string cut to 16 KB (`... [N bytes cut]`) and
-///                          binary payloads dropped; a line that is not JSON
+///                          binary payloads dropped, each with a note that
+///                          says where to fetch it (`ref=`, see
+///                          [keeperBlobCommand]); a line that is not JSON
 ///                          is `{"raw":"<first 2 KB>"}`, one over 4 MB a stub;
 ///                          an omp message is left without what only omp
 ///                          reads (token accounting, the provider's envelope,
@@ -281,6 +283,28 @@ String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, 
     if (idleExit != null) ...['--idle-exit', '$idleExit'],
     if (tailBytes != null) ...['--tail-bytes', '$tailBytes'],
   ]);
+}
+
+/// The binary payload `follow` dropped from one log line. `follow` says where
+/// to find it in the note that replaces it
+/// (`[N bytes of data not sent; ref=<start>.<hash>]`): [start] is the byte
+/// offset where the line begins in [path], [hash] the 16 lowercase hex digits
+/// of the payload. Stdout is `B\t<piece of base64 text>` records and then
+/// `D\t<total length>`; exit 66 with a sentence on stderr when the log is not
+/// what it was (the line is not at [start], holds no such payload, the file is
+/// gone, [path] is not a log under the home folder) or the payload is not
+/// base64 text.
+///
+/// Throws [ArgumentError] for a [path] that is empty, too long or holds a
+/// control character, a negative [start] and a [hash] that is not 16 lowercase
+/// hex digits: these reach a remote shell.
+String keeperBlobCommand(String path, {required int start, required String hash}) {
+  if (path.isEmpty || path.length > _maxCwd || path.runes.any((c) => c < 0x20 || c == 0x7f)) {
+    throw ArgumentError.value(path, 'path', 'invalid path');
+  }
+  if (start < 0) throw ArgumentError.value(start, 'start', 'invalid offset');
+  if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(hash)) throw ArgumentError.value(hash, 'hash', 'invalid hash');
+  return _command(['blob', path, '$start', hash]);
 }
 
 /// stdout: `{"ok":true}`. Sends the agent's process group SIGTERM, SIGKILL

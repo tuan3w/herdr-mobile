@@ -42,6 +42,7 @@
 // asserts on: a phone is slower, and what it costs there is unverified).
 // Compare changes with them; never quote them for a phone.
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -205,6 +206,10 @@ class _Timed implements SessionLogSource {
   double? firstBatchAt;
   var batches = 0;
   var follows = 0;
+
+  @override
+  Future<Uint8List> blob(String path, {required int start, required String hash}) =>
+      _inner.blob(path, start: start, hash: hash);
 
   @override
   Stream<LogBatch> follow(String path, {int? from, int? tailBytes}) {

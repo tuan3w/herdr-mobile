@@ -17,6 +17,8 @@ import '../acp/background/background_work.dart';
 import '../acp/session_state.dart';
 import '../acp/turns/plain_text.dart' show clip, firstLine;
 import '../acp/transcript_log.dart';
+import '../observed/log_picture.dart' show LogPictureRef;
+import '../services/remote_files.dart' show ReadCancel;
 import '../services/transcript_cache.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../streaming/flush_scheduler.dart';
@@ -481,6 +483,12 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     reachable: () => machine.isLive && _backgroundedAt == null,
   );
 
+  /// An ACP session sends its pictures inline (base64 in the replay): it never
+  /// makes a [LogImageBlock], so nothing asks.
+  @override
+  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) =>
+      Future.error(StateError('no log pictures in this session'));
+
   @override
   void watchSubagentLog(String runId, bool on) {
     if (_disposed) return;
@@ -799,6 +807,11 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
           ? const <String>[]
           : (_carriedLines ??
               (_recorder.isEmpty ? (_cachedCopy == null ? const <String>[] : cachedLines(_cachedCopy!)) : _recorder.lines));
+      // A held copy with a line missing from the middle (a picture too large to
+      // keep) is no prefix of the keeper's log: a replay cut from it would lose
+      // what that line held, so such a copy is replayed in full.
+      final heldGap = held != null &&
+          (_carriedLines != null ? false : (_recorder.isEmpty ? (_cachedCopy?.gap ?? false) : _recorder.gap));
       // The keeper sends the whole log again: what is kept for the cache
       // starts over with it.
       _recorder.reset();
@@ -807,7 +820,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       // A copy that ends in turns the keeper stamped needs only the keeper's
       // newest turns again, not its whole log; a past session is reopened
       // from what the agent keeps, and starts over.
-      final since = held == null || _reopening ? null : replaySinceOf(heldLines);
+      final since = held == null || _reopening || heldGap ? null : replaySinceOf(heldLines);
       // `initialize` and the request that opens the session go out together:
       // the keeper answers the first from its cache and takes the second in
       // order, so the open waits for one round trip, not two (on a 300 ms link
@@ -1251,6 +1264,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         lines: _recorder.lines,
         setup: _recorder.setup,
         partial: _recorder.partial,
+        gap: _recorder.gap,
       ),
       now: now,
     );

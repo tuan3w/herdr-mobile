@@ -127,6 +127,7 @@ class FileTranscriptCache implements TranscriptCache {
             updates: result.updates,
             setup: result.setup,
             partial: result.partial,
+            gap: result.gap,
           );
         } on Object {
           return null;
@@ -158,6 +159,7 @@ class FileTranscriptCache implements TranscriptCache {
       lines: snapshot.lines,
       setup: snapshot.setup,
       partial: snapshot.partial,
+      gap: snapshot.gap,
       maxSessionBytes: maxSessionBytes,
       maxTotalBytes: maxTotalBytes,
     );
@@ -223,7 +225,7 @@ class FileTranscriptCache implements TranscriptCache {
   }
 
   static const _suffix = '.tr';
-  static const _version = 1;
+  static const _version = 2;
 
   static String _safe(String s) => s.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
 
@@ -252,6 +254,7 @@ class TranscriptWriteJob {
     required this.lines,
     required this.setup,
     required this.partial,
+    required this.gap,
     required this.maxSessionBytes,
     required this.maxTotalBytes,
   });
@@ -263,19 +266,21 @@ class TranscriptWriteJob {
   final List<String> lines;
   final Object? setup;
   final bool partial;
+  final bool gap;
   final int maxSessionBytes;
   final int maxTotalBytes;
 }
 
 /// What a file held (times as milliseconds: plain data for an isolate).
 class TranscriptFileRead {
-  const TranscriptFileRead(this.sessionId, this.asOfMs, this.updates, this.setup, this.partial);
+  const TranscriptFileRead(this.sessionId, this.asOfMs, this.updates, this.setup, this.partial, this.gap);
 
   final String sessionId;
   final int asOfMs;
   final List<Map<Object?, Object?>> updates;
   final Object? setup;
   final bool partial;
+  final bool gap;
 }
 
 const _newline = 10;
@@ -313,6 +318,7 @@ void writeTranscriptFile(({String dir, TranscriptWriteJob job}) args) {
       'sid': job.sessionId,
       'asOf': job.asOfMs,
       'partial': partial,
+      'gap': job.gap,
       'lines': chunks.length,
       if (setupText != null) 'setup': job.setup,
     }),
@@ -438,7 +444,7 @@ TranscriptFileRead? readTranscriptFile(({String path, String key, int maxBytes})
     } on Object {
       // Recency is best effort.
     }
-    return TranscriptFileRead(sid, asOf, updates, header['setup'], header['partial'] == true);
+    return TranscriptFileRead(sid, asOf, updates, header['setup'], header['partial'] == true, header['gap'] == true);
   } on Object {
     deleteTranscriptFiles(path);
     return null;

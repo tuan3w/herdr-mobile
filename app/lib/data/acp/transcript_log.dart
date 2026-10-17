@@ -18,6 +18,7 @@ class TranscriptSnapshot {
     required this.lines,
     this.setup,
     this.partial = false,
+    this.gap = false,
   });
 
   final String sessionId;
@@ -33,6 +34,11 @@ class TranscriptSnapshot {
 
   /// Lines were left out (older ones past the caps, or one too large to keep).
   final bool partial;
+
+  /// A line is missing from the middle (one too large to keep): the lines are
+  /// not a prefix of the keeper's log, so a replay cannot be asked for from a
+  /// cut of them ([replaySinceOf]) without losing what the line held.
+  final bool gap;
 }
 
 /// What the transcript cache reads back: the same lines, decoded off the UI
@@ -44,6 +50,7 @@ class CachedTranscript {
     required this.updates,
     this.setup,
     this.partial = false,
+    this.gap = false,
   });
 
   final String sessionId;
@@ -51,6 +58,7 @@ class CachedTranscript {
   final List<Map<Object?, Object?>> updates;
   final Object? setup;
   final bool partial;
+  final bool gap;
 }
 
 /// The state a cached transcript shows before the keeper has answered: the
@@ -136,6 +144,7 @@ class TranscriptRecorder {
   final _lines = ListQueue<String>();
   var _chars = 0;
   var _partial = false;
+  var _gap = false;
 
   /// The lines of the last message [addLocalUser] wrote, for [takeBackLocalUser].
   var _localLines = <String>[];
@@ -148,6 +157,11 @@ class TranscriptRecorder {
   int revision = 0;
 
   bool get partial => _partial;
+
+  /// A line was left out for its size, so the lines are not a cut of the
+  /// keeper's log that a replay can continue from. (Lines that fell off the
+  /// front are [partial] but no gap: what follows them is still in order.)
+  bool get gap => _gap;
   int get length => _lines.length;
   bool get isEmpty => _lines.isEmpty;
 
@@ -159,6 +173,7 @@ class TranscriptRecorder {
     _lines.clear();
     _chars = 0;
     _partial = false;
+    _gap = false;
     _localLines = [];
     setup = null;
     revision++;
@@ -174,7 +189,10 @@ class TranscriptRecorder {
       for (final line in older)
         if (line.length <= maxLineChars) line,
     ];
-    if (keep.length != older.length) _partial = true;
+    if (keep.length != older.length) {
+      _partial = true;
+      _gap = true;
+    }
     final mine = _lines.toList();
     _lines
       ..clear()
@@ -196,6 +214,7 @@ class TranscriptRecorder {
     revision++;
     if (line.length > maxLineChars) {
       _partial = true;
+      _gap = true;
       return false;
     }
     _lines.add(line);

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/observed/log_picture.dart';
 import 'package:herdr_mobile/data/acp/background/background_work.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
@@ -512,8 +513,11 @@ void main() {
       expect(_texts(s, MessageRole.user), [
         'A plain string user message',
         '/skill:tdd the parser',
-        'Look at this screenshot\n[image: image/png]',
+        'Look at this screenshot',
       ]);
+      final shot = _messages(s, MessageRole.user).last.blocks.whereType<LogImageBlock>().single;
+      expect(shot.mimeType, 'image/png');
+      expect((shot.ref as OmpPictureRef).sha256, '0' * 64);
       expect(_texts(s, MessageRole.agent), ['Visible answer'], reason: 'blank and redacted thinking are dropped');
       expect(_messages(s, MessageRole.thought), isEmpty);
       expect(s.title, 'Odd entries session');
@@ -585,6 +589,43 @@ void main() {
       expect(_feed(OmpLogMapper(), const []).items, isEmpty);
       final s = _feed(OmpLogMapper(), [_user('only', 'hi')]);
       expect(_texts(s, MessageRole.user), ['hi']);
+    });
+  });
+
+  group('pictures in a message', () {
+    String user(String id, List<Object> content) => jsonEncode({
+      'type': 'message',
+      'id': id,
+      'timestamp': '2026-10-04T13:00:09.000Z',
+      'message': {'role': 'user', 'content': content, 'attribution': 'user'},
+    });
+    final sha = 'ab' * 32;
+
+    test('an image whose data is a blob reference is a block; any other keeps the [image: type] line', () {
+      final s = _feed(OmpLogMapper(), [
+        user('e1', [
+          {'type': 'text', 'text': 'see'},
+          {'type': 'image', 'data': 'blob:sha256:$sha', 'mimeType': 'image/webp'},
+          {'type': 'image', 'data': 'blob:sha256:ff', 'mimeType': 'image/png'},
+        ]),
+      ]);
+      final m = _messages(s, MessageRole.user).single;
+      final pictures = m.blocks.whereType<LogImageBlock>().toList();
+      expect(pictures, hasLength(1));
+      expect(pictures.single.mimeType, 'image/webp');
+      expect((pictures.single.ref as OmpPictureRef).sha256, sha);
+      expect(pictures.single.key, 'o:$sha');
+      expect(m.text, 'see\n[image: image/png]', reason: 'what cannot be fetched stays a line');
+    });
+
+    test('a picture alone is a message, and mapping it twice does not double it', () {
+      final line = user('e2', [
+        {'type': 'image', 'data': 'blob:sha256:$sha', 'mimeType': 'image/png'},
+      ]);
+      final once = _feed(OmpLogMapper(), [line]);
+      expect(_messages(once, MessageRole.user).single.blocks.single, isA<LogImageBlock>());
+      final twice = _feed(OmpLogMapper(), [line], once);
+      expect(_messages(twice, MessageRole.user), hasLength(1));
     });
   });
 

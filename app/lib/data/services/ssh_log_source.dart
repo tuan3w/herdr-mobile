@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import '../acp/agent_host.dart' show AgentHostException;
 import '../observed/observed_contracts.dart';
@@ -31,6 +32,19 @@ class SshLogSource implements SessionLogSource {
   @override
   Stream<LogBatch> follow(String path, {int? from, int? tailBytes}) =>
       _Follow(_host, path, from, tailBytes).stream;
+
+  /// The payload the follower dropped from the line at [start] (see
+  /// [keeperBlobCommand]); the host reads the line again.
+  @override
+  Future<Uint8List> blob(String path, {required int start, required String hash}) async {
+    final String command;
+    try {
+      command = keeperBlobCommand(path, start: start, hash: hash);
+    } on ArgumentError {
+      throw const AgentHostException('That session log has a name the app cannot use.', fatal: true);
+    }
+    return await _host.blob(command);
+  }
 }
 
 class _Follow {

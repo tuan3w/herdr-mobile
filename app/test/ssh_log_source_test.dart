@@ -52,6 +52,60 @@ void main() {
     source = SshLogSource(SshAgentHost(transport, attachCheck: const Duration(milliseconds: 50)));
   });
 
+  group('blob', () {
+    const hash = '0123456789abcdef';
+    final bytes = List<int>.generate(100000, (i) => i % 251);
+    final text = base64.encode(bytes);
+
+    List<String> records({int? length, int pieceSize = 60000}) => [
+      for (var i = 0; i < text.length; i += pieceSize) 'B\t${text.substring(i, i + pieceSize > text.length ? text.length : i + pieceSize)}',
+      'D\t${length ?? text.length}',
+    ];
+
+    test('runs the blob command for the path, offset and hash, and decodes what comes back', () async {
+      transport.onExec = (command) async => FakeExecChannel.run(stdout: records());
+      expect(await source.blob(_path, start: 4096, hash: hash), bytes);
+      expect(transport.execCommands, [keeperBlobCommand(_path, start: 4096, hash: hash)]);
+    });
+
+    test('a reply whose length is not the one it announced is incomplete, never a damaged picture', () async {
+      transport.onExec = (command) async => FakeExecChannel.run(stdout: records(length: text.length + 4));
+      await expectLater(
+        source.blob(_path, start: 0, hash: hash),
+        throwsA(isA<AgentHostException>().having((e) => e.message, 'message', 'The picture came back incomplete.')),
+      );
+      transport.onExec = (command) async => FakeExecChannel.run(stdout: records().sublist(0, 1));
+      await expectLater(source.blob(_path, start: 0, hash: hash), throwsA(isA<AgentHostException>()));
+    });
+
+    test('the host\'s sentence reaches the person without its prefix, and a vanished log is final', () async {
+      transport.onExec = (command) async =>
+          FakeExecChannel.run(code: 66, stderr: 'herdr-mobile: That picture is not in the log any more.');
+      await expectLater(
+        source.blob(_path, start: 0, hash: hash),
+        throwsA(
+          isA<AgentHostException>()
+              .having((e) => e.message, 'message', 'That picture is not in the log any more.')
+              .having((e) => e.fatal, 'fatal', isTrue),
+        ),
+      );
+    });
+
+    test('a dropped connection is a plain failure to try again', () async {
+      transport.onExec = (command) async => FakeExecChannel.run(code: null);
+      await expectLater(
+        source.blob(_path, start: 0, hash: hash),
+        throwsA(isA<AgentHostException>().having((e) => e.fatal, 'fatal', isFalse)),
+      );
+    });
+
+    test('a path the app cannot put in a command, or a bad hash, never reaches the machine', () async {
+      await expectLater(source.blob('a\nb.jsonl', start: 0, hash: hash), throwsA(isA<AgentHostException>()));
+      await expectLater(source.blob(_path, start: 0, hash: 'nope'), throwsA(isA<AgentHostException>()));
+      expect(transport.execCommands, isEmpty);
+    });
+  });
+
   group('records', () {
     test('opens the follow command for the path, and for the offset when resuming', () async {
       transport.onExec = (command) async => FakeExecChannel();

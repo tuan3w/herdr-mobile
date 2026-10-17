@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/observed/observed_contracts.dart';
@@ -64,6 +65,31 @@ class FakeLogSource implements SessionLogSource {
       });
     }
     return c.stream;
+  }
+
+  /// What each `blob` was asked, oldest first.
+  final blobCalls = <({String path, int start, String hash})>[];
+
+  /// The pictures this host can send, by `<start>.<hash>`.
+  final blobs = <String, Uint8List>{};
+
+  /// Holds every `blob` until it completes (a slow link).
+  Completer<void>? blobGate;
+
+  /// Fails the next `blob` with this.
+  Object? blobError;
+
+  @override
+  Future<Uint8List> blob(String path, {required int start, required String hash}) async {
+    blobCalls.add((path: path, start: start, hash: hash));
+    final gate = blobGate;
+    if (gate != null) await gate.future;
+    final error = blobError;
+    if (error != null) {
+      blobError = null;
+      throw error;
+    }
+    return blobs['$start.$hash'] ?? (throw StateError('no picture $start.$hash scripted'));
   }
 
   StreamController<LogBatch> get last => streams.last;

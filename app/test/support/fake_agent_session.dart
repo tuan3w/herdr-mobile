@@ -10,6 +10,8 @@ import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/acp/subagents/subagent_overlay.dart';
 import 'package:herdr_mobile/data/acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/observed/log_picture.dart' show LogPictureRef;
+import 'package:herdr_mobile/data/services/remote_files.dart' show ReadCancel;
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/attach_target.dart' show AttachMode;
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
@@ -339,6 +341,31 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
 
   @override
   void watchSubagentLog(String runId, bool on) => logWatches.add((runId, on));
+
+  /// The log pictures this session can send, by [LogPictureRef.key].
+  final logPictures = <String, Uint8List>{};
+
+  /// Every [loadLogPicture] call, in order.
+  final logPictureCalls = <String>[];
+
+  /// While set, [loadLogPicture] waits for it (a slow link).
+  Completer<void>? logPictureGate;
+
+  /// Fails the next [loadLogPicture] with this.
+  Object? logPictureError;
+
+  @override
+  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) async {
+    logPictureCalls.add(ref.key);
+    final gate = logPictureGate;
+    if (gate != null) await gate.future;
+    final error = logPictureError;
+    if (error != null) {
+      logPictureError = null;
+      throw error;
+    }
+    return logPictures[ref.key] ?? (throw StateError('no picture ${ref.key} scripted'));
+  }
 
   @override
   SubagentLogStatus subagentLogStatus(String runId) => logStatuses[runId] ?? SubagentLogStatus.idle;

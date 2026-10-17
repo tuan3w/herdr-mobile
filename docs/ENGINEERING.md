@@ -372,6 +372,25 @@ lands (no timed tweens, no `InteractiveViewer`); the arithmetic lives in
 `photo_math.dart` with pure tests. Decode to ~1.5x the screen first and sharpen
 on zoom; hold only the open photo and its neighbours.
 
+### One picture store
+
+`data/services/picture_store.dart`, `PictureStore.shared`: the only picture
+cache on disk, shared by the photo viewer (whole files up to 12 MB), both
+folder thumbnail loaders (one 240 px thumbnail per file, JPEG q80 or PNG when
+the source may be see-through, under the same `t:` key) and the chat pictures
+of terminal-log sessions (`l:` keeper, `o:` omp). Hard cap 192 MB, trimmed to
+160 MB, least recently used first (recency is the file's modified time, so a
+restart keeps the order); Settings > Storage shows the size and clears it.
+Rules: a key holds what identifies the bytes (machine id, path, size, mtime, or
+a content hash), so a changed file is a miss and never served stale; an
+empty `RemoteFiles.machineId` means no store; a store failure is silent and
+the app goes to the network; **nothing is ever fetched on the store's behalf**,
+it keeps only what the person already asked to see. The listing's mtime has
+one-second resolution: a file rewritten within the same second to the same size
+is served from the store until it changes again (accepted: the listing is the
+only free revalidation). Not measured on a phone: disk latency, and jank while
+a thumbnail is encoded in the isolate.
+
 ### One attach sheet
 
 `ui/features/attach/`, `docs/DESIGN.md` "Attach sheet".
@@ -627,6 +646,19 @@ when it was installed reports nothing until it is restarted or resumed).
   UUIDv7 whose first 48 bits are that moment in UTC: look in the day before,
   of and after. The file is made at the first prompt. herdr's hook reports the
   thread id only. With no report nothing links a pane to a thread.
+
+**Pictures.** The host cuts every binary payload out of the log it sends and
+leaves `[N bytes of data not sent; ref=<start>.<hash>]` (`start` is the byte
+offset of the log line, `hash` the first 16 hex of the SHA-1 of the payload).
+`keeper.py blob PATH START HASH` re-reads that one line and prints the payload
+as `B` records and a closing `D<length>` (exit 66 when the log moved on). The
+mappers turn a note with a `ref` into a `LogImageBlock` (Claude user messages;
+Codex only when an `image` part of the `UserMessage` carries one: the captured
+`UserMessage` lists a `local_image` path only, so Codex pictures stay an
+`[image]` line); omp's `blob:sha256:<hex>` image is a plain file at
+`<agentDir>/blobs/<hex>`, read over SFTP. A picture of a tool result stays
+text. The chat shows `Tap to load` and fetches only on the tap (a picture the
+store holds shows by itself).
 
 **What the logs hold, and what they do not.**
 

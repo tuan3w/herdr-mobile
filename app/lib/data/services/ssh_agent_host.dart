@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import '../acp/agent_host.dart';
 import '../acp/json_rpc.dart' show AcpTransport;
@@ -120,6 +122,47 @@ class SshAgentHost implements AgentHost {
     final answer = _json<Map<Object?, Object?>>(out, 'the past sessions');
     return PastSessions.fromJson(Map<String, Object?>.from(answer));
   }
+
+  /// Longest wait for [blob]: a picture of up to 12 MB (16 MB of text) over a
+  /// slow link, with the connection allowed to be slow rather than dead.
+  static const blobTimeout = Duration(seconds: 90);
+
+  /// Runs a [keeperBlobCommand]: the picture's base64 text arrives as `B`
+  /// records and a closing `D<length>`; what comes back is its bytes. A reply
+  /// whose length does not match was cut short (the link dropped mid-way).
+  Future<Uint8List> blob(String command) async {
+    final _Output out;
+    try {
+      out = await _withInstall(() => _run(command, blobTimeout, 'read the picture'));
+    } on AgentHostException catch (e) {
+      // The keeper's sentence is for the person; its prefix is not.
+      const prefix = 'herdr-mobile: ';
+      if (e.message.startsWith(prefix)) throw AgentHostException(e.message.substring(prefix.length), fatal: e.fatal);
+      rethrow;
+    }
+    final text = StringBuffer();
+    int? total;
+    for (final line in out.lines) {
+      if (line.startsWith('B\t')) {
+        text.write(line.substring(2));
+      } else if (line.startsWith('D\t')) {
+        total = int.tryParse(line.substring(2));
+      }
+    }
+    final joined = text.toString();
+    if (total == null || total != joined.length || joined.isEmpty) {
+      throw const AgentHostException('The picture came back incomplete.');
+    }
+    try {
+      return joined.length > _blobIsolateFromChars ? await _decodeOffThread(joined) : base64.decode(joined);
+    } on FormatException {
+      throw const AgentHostException('That is not a picture.', fatal: true);
+    }
+  }
+
+  // Base64 text longer than this is decoded off the UI isolate (the same
+  // threshold as the preview cache's).
+  static const _blobIsolateFromChars = 64 * 1024;
 
   @override
   Future<void> kill(String keeperId) async {
@@ -323,6 +366,11 @@ class SshAgentHost implements AgentHost {
     throw _unexpected(out, what);
   }
 }
+
+/// Decodes base64 in another isolate. Top level on purpose: a closure made in a
+/// method would drag the host (and its transport) into the message, which an
+/// isolate cannot be sent.
+Future<Uint8List> _decodeOffThread(String text) => Isolate.run(() => base64.decode(text));
 
 /// The last part of [text], which is where an error message is.
 String _excerpt(String text, [int max = 400]) {

@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
 import '../../../data/acp/acp_models.dart';
+import '../../../data/observed/log_picture.dart';
 import '../../../data/services/image_decode.dart';
 import '../files/file_format.dart';
 import '../photos/photo_item.dart' show PhotoSourceException;
@@ -85,13 +85,16 @@ Future<Uint8List> decodeImageDataFor(ImageBlock block) async {
 }
 
 /// Decodes [block] into a bitmap whose longest side is at most [maxDimension].
-/// Throws [ImageProblem] with the reason when it cannot.
+/// Throws [ImageProblem] with the reason when it cannot. [fetch] brings the
+/// bytes of a picture that has no data of its own ([LogImageBlock]); without
+/// it the bytes are [block]'s base64 data.
 Future<DecodedImage> decodeImageBlock(
   ImageBlock block, {
   int maxDimension = imagePreviewDimension,
   ImageDecoder decoder = decodeImageBytes,
+  Future<Uint8List> Function()? fetch,
 }) async {
-  final bytes = await decodeImageData(block.data);
+  final bytes = fetch != null ? await fetch() : await decodeImageData(block.data);
   final DecodedImage image;
   try {
     image = await decoder(bytes, maxDimension: maxDimension);
@@ -112,11 +115,15 @@ Future<DecodedImage> decodeImageBlock(
 /// [ImagePreviewCache.release]); the bitmap is disposed when the cache lets go
 /// of the entry, never while something draws it.
 class ImageEntry extends ChangeNotifier {
-  ImageEntry._(this.block);
+  ImageEntry._(this.block, this._fetch);
 
   final ImageBlock block;
+
+  /// Brings the bytes of a [LogImageBlock] (a network wait the person started).
+  final Future<Uint8List> Function()? _fetch;
   DecodedImage? _image;
   String? _problem;
+  var _tooLarge = false;
   var _refs = 0;
   var _gone = false;
 
@@ -126,15 +133,25 @@ class ImageEntry extends ChangeNotifier {
   /// Why there is no bitmap, once it is known.
   String? get problem => _problem;
 
+  /// The picture is over the limit: trying again cannot help.
+  bool get tooLarge => _tooLarge;
+
   bool get loading => _image == null && _problem == null;
 
-  void _finish(DecodedImage? image, String? problem) {
+  void _finish(DecodedImage? image, String? problem, {bool tooLarge = false}) {
     if (_gone) {
       image?.dispose();
       return;
     }
     _image = image;
     _problem = problem;
+    _tooLarge = tooLarge;
+    notifyListeners();
+  }
+
+  void _restart() {
+    _problem = null;
+    _tooLarge = false;
     notifyListeners();
   }
 
@@ -146,7 +163,11 @@ class ImageEntry extends ChangeNotifier {
   }
 }
 
-/// Decoded previews by block identity, least recently used first out.
+/// Decoded previews by what the picture is ([keyOf]: its data), least recently
+/// used first out. A re-attach, a replay from the keeper and a cold open each
+/// build new [ImageBlock]s with equal data; keying by content keeps the
+/// preview that is already decoded instead of decoding every visible picture
+/// again. Two equal pictures in one transcript share one entry.
 ///
 /// A transcript of 200 images builds a few rows at a time, and each row holds
 /// its entry only while it is built; an entry nobody holds is kept (so scrolling
@@ -161,7 +182,7 @@ class ImagePreviewCache {
 
   final int capacity;
   final ImageDecoder _decoder;
-  final _entries = LinkedHashMap<ImageBlock, ImageEntry>.identity();
+  final _entries = <String, ImageEntry>{};
 
   /// Entries kept, loading and failed ones included.
   int get length => _entries.length;
@@ -169,15 +190,24 @@ class ImagePreviewCache {
   /// Entries that hold a bitmap right now.
   int get bitmaps => _entries.values.where((e) => e.image != null).length;
 
+  /// What identifies the picture of [block] in the cache. Dart caches a
+  /// string's hash, so a lookup costs one pass over the text at most.
+  ///
+  /// A [LogImageBlock] has no data: its key is the store key of its picture
+  /// (it holds a `:`, which base64 never does, so the two cannot collide).
+  static String keyOf(ImageBlock block) => block is LogImageBlock ? block.key : block.data;
+
   /// The entry of [block] (decoding starts at the first call), most recently
-  /// used. Pair with [release].
-  ImageEntry acquire(ImageBlock block) {
-    var entry = _entries.remove(block);
+  /// used. Pair with [release]. [fetch] brings the bytes of a [LogImageBlock],
+  /// which the cache cannot reach by itself (it knows no session).
+  ImageEntry acquire(ImageBlock block, {Future<Uint8List> Function()? fetch}) {
+    final key = keyOf(block);
+    var entry = _entries.remove(key);
     if (entry == null) {
-      entry = ImageEntry._(block);
+      entry = ImageEntry._(block, fetch);
       unawaited(_load(entry));
     }
-    _entries[block] = entry;
+    _entries[key] = entry;
     entry._refs++;
     _trim();
     return entry;
@@ -186,19 +216,32 @@ class ImagePreviewCache {
   /// A copy of the preview of [block] (the caller disposes it) when one is
   /// decoded, else null: what the full-screen viewer shows while the picture
   /// loads. Does not start a decode and does not keep anything alive.
-  ui.Image? cloneOf(ImageBlock block) => _entries[block]?._image?.image.clone();
+  ui.Image? cloneOf(ImageBlock block) => _entries[keyOf(block)]?._image?.image.clone();
 
   void release(ImageEntry entry) {
     entry._refs--;
     _trim();
   }
 
+  /// Tries [entry] again after a failure (a fetch that did not go through):
+  /// it shows as loading until the new attempt ends.
+  void retry(ImageEntry entry) {
+    if (entry._gone || entry.problem == null || entry.tooLarge) return;
+    entry._restart();
+    unawaited(_load(entry));
+  }
+
   Future<void> _load(ImageEntry entry) async {
     try {
-      final image = await decodeImageBlock(entry.block, decoder: _decoder);
+      if (entry.block is LogImageBlock && entry._fetch == null) throw const ImageProblem('Not available here');
+      final image = await decodeImageBlock(entry.block, decoder: _decoder, fetch: entry._fetch);
       entry._finish(image, null);
     } on ImageProblem catch (e) {
-      entry._finish(null, e.note);
+      entry._finish(null, e.note, tooLarge: e.tooLarge);
+    } on LogPictureTooLarge catch (e) {
+      entry._finish(null, 'Too large to show here (${formatBytes(e.bytes)}).', tooLarge: true);
+    } on LogPictureException catch (e) {
+      entry._finish(null, e.message);
     } on Object {
       entry._finish(null, 'The picture could not be shown.');
     }
@@ -206,11 +249,11 @@ class ImagePreviewCache {
 
   void _trim() {
     if (_entries.length <= capacity) return;
-    for (final block in _entries.keys.toList()) {
+    for (final key in _entries.keys.toList()) {
       if (_entries.length <= capacity) break;
-      final entry = _entries[block]!;
+      final entry = _entries[key]!;
       if (entry._refs > 0) continue;
-      _entries.remove(block);
+      _entries.remove(key);
       entry._drop();
     }
   }

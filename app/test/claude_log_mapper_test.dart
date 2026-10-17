@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/observed/log_picture.dart';
 import 'package:herdr_mobile/data/acp/background/background_work.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/claude_log_mapper.dart';
@@ -548,6 +549,64 @@ void main() {
         user('b', [image]),
       ]);
       expect(_texts(s, MessageRole.user), ['what is this?\n[image]\n[image]', '[image]']);
+    });
+  });
+
+  group('a picture the host can send again', () {
+    String user(String id, List<Object> content) => jsonEncode({
+      'type': 'user',
+      'uuid': id,
+      'message': {'role': 'user', 'content': content},
+    });
+    Map<String, Object> image(String data, [String mime = 'image/png']) => {
+      'type': 'image',
+      'source': {'type': 'base64', 'media_type': mime, 'data': data},
+    };
+
+    test('a note with a reference becomes a block with its type and size, next to the words', () {
+      final s = _feed(ClaudeLogMapper(), [
+        user('a', [
+          {'type': 'text', 'text': 'what is this?'},
+          image('[107536 bytes of data not sent; ref=4096.0123456789abcdef]', 'image/jpeg'),
+        ]),
+      ]);
+      final m = s.items.whereType<TranscriptMessage>().single;
+      expect(m.role, MessageRole.user);
+      expect(m.blocks, hasLength(2));
+      expect((m.blocks.first as TextBlock).text, 'what is this?');
+      final picture = m.blocks.last as LogImageBlock;
+      expect(picture.mimeType, 'image/jpeg');
+      expect(picture.data, isEmpty);
+      final ref = picture.ref as KeeperPictureRef;
+      expect((ref.start, ref.hash, ref.bytes), (4096, '0123456789abcdef', 80652));
+      expect(m.text, 'what is this?', reason: 'no [image] line for a picture that is a block');
+    });
+
+    test('a picture alone is a message of its own, not an empty one', () {
+      final s = _feed(ClaudeLogMapper(), [user('b', [image('[40 bytes of data not sent; ref=0.0123456789abcdef]')])]);
+      final m = s.items.whereType<TranscriptMessage>().single;
+      expect(m.blocks.single, isA<LogImageBlock>());
+    });
+
+    test('a note an older host wrote, with no reference, keeps the [image] line; the two kinds mix', () {
+      final s = _feed(ClaudeLogMapper(), [
+        user('c', [
+          {'type': 'text', 'text': 'two'},
+          image('[40 bytes of data not sent]'),
+          image('[40 bytes of data not sent; ref=7.0123456789abcdef]'),
+        ]),
+      ]);
+      final m = s.items.whereType<TranscriptMessage>().single;
+      expect(m.blocks.whereType<LogImageBlock>(), hasLength(1));
+      expect(m.text, 'two\n[image]');
+    });
+
+    test('the same line mapped twice replaces the message, never doubles the picture', () {
+      final line = user('d', [image('[40 bytes of data not sent; ref=7.0123456789abcdef]')]);
+      final mapper = ClaudeLogMapper();
+      final once = _feed(mapper, [line]);
+      final twice = _feed(ClaudeLogMapper(), [line, line], once);
+      expect(twice.items.whereType<TranscriptMessage>().expand((m) => m.blocks).whereType<LogImageBlock>(), hasLength(1));
     });
   });
 

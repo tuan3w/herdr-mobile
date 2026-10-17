@@ -14,6 +14,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
+import 'package:herdr_mobile/data/acp/acp_models.dart' show ImageBlock;
 import 'package:herdr_mobile/data/acp/json_rpc.dart' show AcpTransport;
 import 'package:herdr_mobile/data/acp/acp_client.dart' show foldLines;
 import 'package:herdr_mobile/data/acp/past_session.dart';
@@ -279,4 +280,35 @@ void main() {
     },
     env: {'HERDR_KEEPER_LOG_SOFT_BYTES': '150000', 'HERDR_KEEPER_FULL_TURNS': '1'},
   );
+
+  bootTest('a picture too large for the saved copy is still there after a re-attach that asks for less', () async {
+    // 200 K characters of base64: over the recorder's line limit (128 K), so the
+    // saved copy leaves the line out; the keeper's log keeps it. What the agent
+    // showed must not vanish when a re-attach asks for the newest turns only.
+    int pictures(AcpAgentSession s) => [
+      for (final m in s.state.items.whereType<TranscriptMessage>())
+        for (final b in m.blocks)
+          if (b is ImageBlock) b,
+    ].length;
+
+    final (sender, _) = await opened(withCache: cache);
+    await say(sender, 'picture:200000');
+    await say(sender, 'reply:and after it');
+    expect(pictures(sender), 1);
+    sender.release();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    sender.dispose();
+
+    // A whole replay stamps the turns; its copy is what a later open cuts.
+    final (whole, _) = await opened(withCache: cache);
+    expect(pictures(whole), 1, reason: 'the keeper has the picture');
+    whole.release();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    whole.dispose();
+    expect(replaySinceOf(cache.stored.values.single.lines), isNotNull);
+
+    final (again, _) = await opened(withCache: cache);
+    expect(pictures(again), 1, reason: 'a re-attach never loses a picture');
+    expect(_shape(again.state), _shape(whole.state));
+  });
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../acp/acp_models.dart';
 import '../acp/background/background_work.dart';
 import 'log_mapping.dart';
+import 'log_picture.dart';
 import 'observed_contracts.dart';
 
 /// Maps the lines of a Claude Code session log
@@ -326,13 +327,16 @@ class ClaudeLogMapper implements SessionLogMapper {
       _turnEnded = false;
       return out;
     }
-    final text = withImageMarkers(_textOf(content), _imagesOf(content));
+    // A picture whose note says where to fetch it is a block of the message,
+    // shown on a tap; any other keeps the `[image]` line.
+    final pictures = _pictures(content);
+    final text = withImageMarkers(_textOf(content), _imagesOf(content) - pictures.length);
     final head = text.trimLeft();
     if (head.startsWith('<task-notification>')) return _taskNotification(head, parseStamp(e), wakes: true);
     if (e['isMeta'] == true || e['isCompactSummary'] == true) return const [];
     final origin = e['origin'];
     if (origin is Map && origin['kind'] != null && origin['kind'] != 'human') return const [];
-    if (head.isEmpty ||
+    if ((head.isEmpty && pictures.isEmpty) ||
         head.startsWith('<local-command-caveat>') ||
         head.startsWith('<system-reminder>') ||
         head.startsWith('<user-prompt-submit-hook>')) {
@@ -395,7 +399,31 @@ class ClaudeLogMapper implements SessionLogMapper {
     }
     _turnEnded = false;
     _lastTyped = text.trim();
-    return [..._userClears(), messageUpsert(MessageRole.user, _messageKey(key, text), text)];
+    final id = _messageKey(key, text);
+    return [
+      ..._userClears(),
+      pictures.isEmpty
+          ? messageUpsert(MessageRole.user, id, text)
+          : messageUpsertBlocks(MessageRole.user, id, [if (text.isNotEmpty) TextBlock(text), ...pictures]),
+    ];
+  }
+
+  /// The pictures of a content list that can be fetched later: an `image` block
+  /// whose `source.data` is the keeper's note with a reference.
+  static List<LogImageBlock> _pictures(Object? content) {
+    if (content is! List) return const [];
+    final out = <LogImageBlock>[];
+    for (final b in content) {
+      if (b is! Map || b['type'] != 'image') continue;
+      final source = b['source'];
+      if (source is! Map) continue;
+      final data = source['data'];
+      final ref = data is String ? parseKeeperMarker(data) : null;
+      if (ref == null) continue;
+      final mime = source['media_type'];
+      out.add(LogImageBlock(mimeType: mime is String ? mime : '', ref: ref));
+    }
+    return out;
   }
 
   static String? _between(String s, String tag) {

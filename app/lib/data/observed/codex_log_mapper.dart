@@ -4,6 +4,7 @@ import '../acp/acp_models.dart';
 import '../acp/background/background_work.dart';
 import 'agent_coverage.dart';
 import 'log_mapping.dart';
+import 'log_picture.dart';
 import 'observed_contracts.dart';
 
 /// Maps the lines of a Codex session log
@@ -187,7 +188,16 @@ class CodexLogMapper implements SessionLogMapper {
     final id = item['id'] is String && (item['id'] as String).isNotEmpty ? item['id'] as String : key;
     switch (item['type']) {
       case 'UserMessage':
-        return _userMessage(withImageMarkers(_textParts(item['content'], 'text'), _imagesOf(item['content'])), id);
+        // A picture whose note says where to fetch it becomes a block, shown on a
+        // tap. The UserMessage item usually lists a `local_image` path only (the
+        // bytes are in the sibling `response_item`, which is not read for
+        // messages): that stays the `[image]` line.
+        final pictures = _pictures(item['content']);
+        return _userMessage(
+          withImageMarkers(_textParts(item['content'], 'text'), _imagesOf(item['content']) - pictures.length),
+          id,
+          pictures: pictures,
+        );
       case 'AgentMessage':
         final text = _textParts(item['content'], 'Text');
         if (text.isEmpty) return _questions(item['questions'], id);
@@ -239,11 +249,17 @@ class CodexLogMapper implements SessionLogMapper {
     }
   }
 
-  List<SessionUpdate> _userMessage(Object? text, String id) {
-    if (text is! String || text.trim().isEmpty || text.trimLeft().startsWith('<turn_aborted>')) return const [];
+  List<SessionUpdate> _userMessage(Object? text, String id, {List<LogImageBlock> pictures = const []}) {
+    if (text is! String || (text.trim().isEmpty && pictures.isEmpty) || text.trimLeft().startsWith('<turn_aborted>')) {
+      return const [];
+    }
     _turnEnded = false;
-    final out = <SessionUpdate>[messageUpsert(MessageRole.user, id, text)];
-    if (!_titled) {
+    final out = <SessionUpdate>[
+      pictures.isEmpty
+          ? messageUpsert(MessageRole.user, id, text)
+          : messageUpsertBlocks(MessageRole.user, id, [if (text.isNotEmpty) TextBlock(text), ...pictures]),
+    ];
+    if (!_titled && text.trim().isNotEmpty) {
       _titled = true;
       out.add(SessionInfoUpdate(hasTitle: true, title: cutText(firstLine(text.trim()), 80), hasUpdatedAt: false));
     }
@@ -263,6 +279,22 @@ class CodexLogMapper implements SessionLogMapper {
         if (q is Map && (q['question'] ?? q['title']) is String) (q['question'] ?? q['title']) as String,
     ];
     return titles.isEmpty ? const [] : [messageUpsert(MessageRole.agent, id, 'Asked: ${titles.join('; ')}')];
+  }
+
+  /// The `image` parts whose URL is the keeper's note with a reference
+  /// (`local_image` parts have a path on the host, no bytes).
+  static List<LogImageBlock> _pictures(Object? content) {
+    if (content is! List) return const [];
+    final out = <LogImageBlock>[];
+    for (final p in content) {
+      if (p is! Map || p['type'] != 'image') continue;
+      final url = p['image_url'];
+      final ref = url is String ? parseKeeperMarker(url) : null;
+      if (ref == null) continue;
+      final mime = RegExp(r'^data:([^;,]+)').firstMatch(url as String)?.group(1);
+      out.add(LogImageBlock(mimeType: mime ?? '', ref: ref));
+    }
+    return out;
   }
 
   /// How many pictures a content list carries (`image` by URL, `local_image` by path).

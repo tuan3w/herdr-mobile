@@ -9,7 +9,9 @@ import '../../../data/acp/session_state.dart';
 import '../../../data/acp/subagents/subagent_run.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/attach_target.dart' show AttachMode;
+import '../../../data/observed/log_picture.dart' show LogPictureRef;
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/services/remote_files.dart' show ReadCancel;
 
 /// One subagent's transcript as a read-only [AgentSessionView], so the
 /// transcript widgets that draw a session draw it without being forked.
@@ -177,6 +179,8 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   List<SubagentRun> subagentsOfToolCall(String toolCallId) => parent.subagentsOfToolCall(toolCallId);
   @override
   void watchSubagentLog(String runId, bool on) => parent.watchSubagentLog(runId, on);
+  @override
+  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) => parent.loadLogPicture(ref, cancel: cancel);
   @override
   SubagentLogStatus subagentLogStatus(String runId) => parent.subagentLogStatus(runId);
   @override

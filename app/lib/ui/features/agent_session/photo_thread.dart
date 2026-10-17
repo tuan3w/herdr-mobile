@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/widgets.dart';
 
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
+import '../../../data/observed/log_picture.dart';
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/services/picture_store.dart';
 import '../files/file_format.dart';
 import '../photos/photo_item.dart';
 import '../photos/photo_viewer.dart';
@@ -24,7 +28,8 @@ class ThreadPhoto {
 /// The pictures of [state], in the order the conversation shows them: the
 /// ones inside messages (yours and the agent's) and the ones tools returned.
 /// Only blocks that carry data are listed (a bare uri is a link, not a
-/// picture). [agentLabel] names the sender of the agent's own.
+/// picture), and a picture of a terminal-log chat only once the phone holds it
+/// ([PictureStore.knows]): paging through the thread never downloads one. [agentLabel] names the sender of the agent's own.
 List<ThreadPhoto> threadPhotos(AgentSessionState state, {required String agentLabel}) {
   final out = <ThreadPhoto>[];
   for (final item in state.items) {
@@ -37,7 +42,7 @@ List<ThreadPhoto> threadPhotos(AgentSessionState state, {required String agentLa
           MessageRole.thought => '${visibleText(agentLabel)} thinking$when',
         };
         for (final block in blocks) {
-          if (block is ImageBlock && block.data.isNotEmpty) out.add(ThreadPhoto(block: block, origin: from));
+          if (block is ImageBlock && _listable(block)) out.add(ThreadPhoto(block: block, origin: from));
         }
       case TranscriptTool(:final call):
         final title = visibleText(call.title.isNotEmpty ? call.title : (call.name ?? 'tool'));
@@ -55,6 +60,9 @@ List<ThreadPhoto> threadPhotos(AgentSessionState state, {required String agentLa
   }
   return out;
 }
+
+bool _listable(ImageBlock block) =>
+    block is LogImageBlock ? PictureStore.shared.knows(block.key) : block.data.isNotEmpty;
 
 /// What a tap on a picture in the transcript can page through: the session
 /// whose transcript it is. Read when the tap happens, never while the rows
@@ -82,8 +90,9 @@ String imageExtension(String mime) => switch (mime.toLowerCase().split(';').firs
 
 /// The viewer's item for a picture of the conversation: [number] is its
 /// 1-based place among the thread's pictures, for a name when the agent gave
-/// none.
-PhotoItem chatPhotoItem(ThreadPhoto photo, int number, {ImagePreviewCache? cache}) {
+/// none. A picture of a terminal-log chat is read through [session] (a store
+/// hit when it is listed).
+PhotoItem chatPhotoItem(ThreadPhoto photo, int number, {ImagePreviewCache? cache, AgentSessionView? session}) {
   final block = photo.block;
   final uri = block.uri?.trim() ?? '';
   final given = uri.isEmpty ? '' : visibleText(contentBaseName(uri));
@@ -93,12 +102,27 @@ PhotoItem chatPhotoItem(ThreadPhoto photo, int number, {ImagePreviewCache? cache
     name: given.isNotEmpty ? given : 'image-$number.${imageExtension(block.mimeType)}',
     mime: block.mimeType.isEmpty ? null : block.mimeType,
     origin: photo.origin,
-    source: MemoryPhotoSource(
-      () => decodeImageDataFor(block),
-      size: base64DecodedLength(block.data),
-    ),
+    source: block is LogImageBlock
+        ? MemoryPhotoSource(() => _logPicture(session, block), size: block.ref.bytes)
+        : MemoryPhotoSource(
+            () => decodeImageDataFor(block),
+            size: base64DecodedLength(block.data),
+          ),
     placeholder: () => previews.cloneOf(block),
   );
+}
+
+/// The bytes of a log picture for the viewer; a picture that cannot be had says
+/// why as a [PhotoSourceException].
+Future<Uint8List> _logPicture(AgentSessionView? session, LogImageBlock block) async {
+  if (session == null) throw const PhotoSourceException('Not available here');
+  try {
+    return await session.loadLogPicture(block.ref);
+  } on LogPictureTooLarge catch (e) {
+    throw PhotoSourceException('Too large to show here (${formatBytes(e.bytes)}).', tooLarge: true);
+  } on LogPictureException catch (e) {
+    throw PhotoSourceException(e.message);
+  }
 }
 
 /// Opens [block] in the viewer, among the other pictures of the conversation
@@ -121,7 +145,7 @@ Future<void> showContentImage(BuildContext context, ImageBlock block, {String? o
   }
   return openPhotoViewer(
     context,
-    items: [for (final (i, p) in photos.indexed) chatPhotoItem(p, i + 1)],
+    items: [for (final (i, p) in photos.indexed) chatPhotoItem(p, i + 1, session: scope?.session)],
     initialIndex: at,
   );
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../acp/acp_models.dart';
 import '../acp/background/background_work.dart';
 import 'log_mapping.dart';
+import 'log_picture.dart';
 import 'observed_contracts.dart';
 
 /// Maps the lines of an `omp` session log (`~/.omp/agent/sessions/.../*.jsonl`)
@@ -186,6 +187,7 @@ class OmpLogMapper implements SessionLogMapper {
     // Only what the person started shows; reminders, nudges and notices the
     // agent injected are for the model.
     if (e['attribution'] != 'user' || e['display'] != true) return const [];
+    final pictures = _pictures(e['content']);
     var text = _userText(e['content']);
     final details = e['details'];
     if (e['customType'] == 'skill-prompt' && details is Map<String, dynamic>) {
@@ -195,11 +197,11 @@ class OmpLogMapper implements SessionLogMapper {
         text = '/skill:$name${args is String && args.trim().isNotEmpty ? ' ${args.trim()}' : ''}';
       }
     }
-    if (text.trim().isEmpty) return const [];
+    if (text.trim().isEmpty && pictures.isEmpty) return const [];
     final key = _firstTime(e, line);
     if (key == null) return const [];
     _turnEnded = false;
-    return [..._userClears(), messageUpsert(MessageRole.user, key, text)];
+    return [..._userClears(), _userMessage(key, text, pictures)];
   }
 
   List<SessionUpdate> _custom(Json e, String line) {
@@ -225,12 +227,13 @@ class OmpLogMapper implements SessionLogMapper {
   List<SessionUpdate> _message(Json e, Json m, String line) {
     switch (m['role']) {
       case 'user':
+        final pictures = _pictures(m['content']);
         final text = _userText(m['content']);
-        if (text.trim().isEmpty) return const [];
+        if (text.trim().isEmpty && pictures.isEmpty) return const [];
         final key = _firstTime(e, line);
         if (key == null) return const [];
         _turnEnded = false;
-        return [..._userClears(), messageUpsert(MessageRole.user, key, text)];
+        return [..._userClears(), _userMessage(key, text, pictures)];
       case 'assistant':
         final key = _firstTime(e, line);
         if (key == null) return const [];
@@ -309,9 +312,31 @@ class OmpLogMapper implements SessionLogMapper {
   }
 
 
+  /// The pictures of a user message that can be fetched later: an `image` block
+  /// whose `data` is `blob:sha256:<hex>`, a file in the agent's `blobs/` folder.
+  static List<LogImageBlock> _pictures(Object? content) {
+    if (content is! List) return const [];
+    final out = <LogImageBlock>[];
+    for (final b in content) {
+      if (b is! Map<String, dynamic> || b['type'] != 'image') continue;
+      final data = b['data'];
+      final ref = data is String ? parseOmpBlob(data) : null;
+      if (ref == null) continue;
+      final mime = b['mimeType'];
+      out.add(LogImageBlock(mimeType: mime is String ? mime : '', ref: ref));
+    }
+    return out;
+  }
+
+  /// The whole message of the person: its words, and its [pictures] as blocks
+  /// when there are any.
+  static SessionUpdate _userMessage(String key, String text, List<LogImageBlock> pictures) => pictures.isEmpty
+      ? messageUpsert(MessageRole.user, key, text)
+      : messageUpsertBlocks(MessageRole.user, key, [if (text.isNotEmpty) TextBlock(text), ...pictures]);
+
   /// What the person typed: a string, or the text blocks joined, with a
-  /// placeholder line per image (the log holds a blob reference, not the
-  /// picture).
+  /// placeholder line per image that is not a fetchable picture (the log holds
+  /// a blob reference, not the picture).
   static String _userText(Object? content) {
     if (content is String) return content;
     if (content is! List) return '';
@@ -323,6 +348,8 @@ class OmpLogMapper implements SessionLogMapper {
           final t = b['text'];
           if (t is String && t.isNotEmpty) parts.add(t);
         case 'image':
+          final data = b['data'];
+          if (data is String && parseOmpBlob(data) != null) break;
           parts.add(_imageNote(b));
       }
     }

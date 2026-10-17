@@ -102,6 +102,9 @@ class _NoHttp extends HttpOverrides {
 late ui.Image _base;
 
 /// A 4 x 4 bitmap of its own each time (a clone of [_base], so each can be disposed).
+/// Distinct valid base64 for picture [i]: the cache keys by content.
+String _distinct(int i) => base64Encode([i, 1, 2]);
+
 Future<DecodedImage> _fakeBitmap(Uint8List bytes, {required int maxDimension}) async =>
     DecodedImage(image: _base.clone(), width: 4, height: 4, downscaled: false);
 
@@ -248,7 +251,7 @@ void main() {
       addTearDown(_base.dispose);
       final cache = ImagePreviewCache(decoder: _fakeBitmap);
       ImagePreviewCache.shared = cache;
-      final blocks = [for (var i = 0; i < 200; i++) ImageBlock(data: 'AAAA', mimeType: 'image/png', uri: 'file:///p/$i.png')];
+      final blocks = [for (var i = 0; i < 200; i++) ImageBlock(data: _distinct(i), mimeType: 'image/png', uri: 'file:///p/$i.png')];
       await tester.pumpWidget(
         host(ListView.builder(itemCount: blocks.length, itemBuilder: (_, i) => ImageBlockView(block: blocks[i]))),
       );
@@ -275,7 +278,7 @@ void main() {
       _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
       addTearDown(_base.dispose);
       final cache = ImagePreviewCache(capacity: 3, decoder: _fakeBitmap);
-      final blocks = [for (var i = 0; i < 6; i++) ImageBlock(data: 'AAAA', mimeType: 'image/png', uri: 'file:///$i')];
+      final blocks = [for (var i = 0; i < 6; i++) ImageBlock(data: _distinct(i), mimeType: 'image/png', uri: 'file:///$i')];
       final images = <ui.Image>[];
       final held = cache.acquire(blocks[0]);
       for (var i = 1; i < 6; i++) {
@@ -294,10 +297,38 @@ void main() {
       cache.release(held);
       expect(cache.length, 3, reason: 'within the capacity nothing is dropped');
       expect(held.image, isNotNull);
-      final next = cache.acquire(ImageBlock(data: 'AAAA', mimeType: 'image/png', uri: 'file:///next'));
+      final next = cache.acquire(ImageBlock(data: _distinct(99), mimeType: 'image/png', uri: 'file:///next'));
       expect(held.image, isNull, reason: 'a fourth entry pushes the oldest out');
       expect(cache.length, 3);
       cache.release(next);
+      cache.clear();
+    });
+
+    testWidgets('equal pictures in new blocks (a re-attach) share one entry and decode once', (tester) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      var decodes = 0;
+      final cache = ImagePreviewCache(
+        decoder: (bytes, {required maxDimension}) {
+          decodes++;
+          return _fakeBitmap(bytes, maxDimension: maxDimension);
+        },
+      );
+      final before = ImageBlock(data: _distinct(7), mimeType: 'image/png');
+      final after = ImageBlock(data: String.fromCharCodes(_distinct(7).codeUnits), mimeType: 'image/png');
+      expect(identical(before, after), isFalse);
+      expect(identical(before.data, after.data), isFalse);
+
+      final first = cache.acquire(before);
+      await tester.pump();
+      cache.release(first);
+      final second = cache.acquire(after);
+      expect(identical(first, second), isTrue);
+      expect(second.image, isNotNull, reason: 'painted at once, not decoded again');
+      expect(decodes, 1);
+      expect(cache.length, 1);
+      expect(cache.cloneOf(after), isNotNull);
+      cache.release(second);
       cache.clear();
     });
 

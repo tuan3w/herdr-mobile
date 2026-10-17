@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+### Pictures are downloaded once
+
+- A picture you looked at is kept on the phone (at most 192 MB, the oldest go
+  first), so opening a photo again, going back to one in the viewer, or
+  returning to a folder no longer downloads it again. Folder thumbnails are
+  kept as small copies too.
+- Settings has a Storage row that says how much is kept and clears it.
+- Chats of agents running in a terminal (Claude Code, omp) now show your
+  pictures as a quiet line with the type and size. Tap it to load the picture;
+  a failure says why and offers a retry. Pictures you have loaded stay.
+- A picture an agent sent that is larger than about 100 KB no longer vanishes
+  when a chat reconnects.
+- A chat keeps its decoded pictures when it reconnects, instead of decoding
+  every visible one again.
+
 ## [0.1.14] - 2026-10-10
 
 ### A typo'd command is caught, and a picked command says what it takes
