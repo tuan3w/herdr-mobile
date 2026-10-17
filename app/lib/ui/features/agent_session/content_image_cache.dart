@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../data/acp/acp_models.dart';
 import '../../../data/observed/log_picture.dart';
+import '../../../data/services/disk_cache.dart' show diskCacheEntryLimit;
 import '../../../data/services/image_decode.dart';
 import '../files/file_format.dart';
 import '../photos/photo_item.dart' show PhotoSourceException;
@@ -13,7 +14,7 @@ import '../photos/photo_item.dart' show PhotoSourceException;
 /// Picture bytes larger than this (after base64) are not decoded: a plain note
 /// says so instead. The preview is shrunk while it is decoded, but the bytes
 /// and the codec's work still cost memory and time.
-const imageDecodeLimit = 12 * 1024 * 1024;
+const imageDecodeLimit = diskCacheEntryLimit;
 
 /// Longest side of an inline preview's bitmap, in pixels: sharp at the widest
 /// inline size on a phone, a few MB at most. The viewer decodes its own, larger
@@ -120,10 +121,11 @@ class ImageEntry extends ChangeNotifier {
   final ImageBlock block;
 
   /// Brings the bytes of a [LogImageBlock] (a network wait the person started).
-  final Future<Uint8List> Function()? _fetch;
+  /// The newest holder's: a session that came and went must not be asked again.
+  Future<Uint8List> Function()? _fetch;
   DecodedImage? _image;
   String? _problem;
-  var _tooLarge = false;
+  var _retryable = true;
   var _refs = 0;
   var _gone = false;
 
@@ -133,25 +135,26 @@ class ImageEntry extends ChangeNotifier {
   /// Why there is no bitmap, once it is known.
   String? get problem => _problem;
 
-  /// The picture is over the limit: trying again cannot help.
-  bool get tooLarge => _tooLarge;
+  /// Whether asking again can help: false for a picture over the limit, one the
+  /// host says is gone for good, or a conversation that cannot fetch it.
+  bool get retryable => _retryable;
 
   bool get loading => _image == null && _problem == null;
 
-  void _finish(DecodedImage? image, String? problem, {bool tooLarge = false}) {
+  void _finish(DecodedImage? image, String? problem, {bool retryable = true}) {
     if (_gone) {
       image?.dispose();
       return;
     }
     _image = image;
     _problem = problem;
-    _tooLarge = tooLarge;
+    _retryable = retryable;
     notifyListeners();
   }
 
   void _restart() {
     _problem = null;
-    _tooLarge = false;
+    _retryable = true;
     notifyListeners();
   }
 
@@ -193,7 +196,7 @@ class ImagePreviewCache {
   /// What identifies the picture of [block] in the cache. Dart caches a
   /// string's hash, so a lookup costs one pass over the text at most.
   ///
-  /// A [LogImageBlock] has no data: its key is the store key of its picture
+  /// A [LogImageBlock] has no data: its key is the cache key of its picture
   /// (it holds a `:`, which base64 never does, so the two cannot collide).
   static String keyOf(ImageBlock block) => block is LogImageBlock ? block.key : block.data;
 
@@ -205,6 +208,12 @@ class ImagePreviewCache {
     var entry = _entries.remove(key);
     if (entry == null) {
       entry = ImageEntry._(block, fetch);
+      unawaited(_load(entry));
+    } else if (entry._refs == 0 && entry.problem != null && entry.retryable && fetch != null) {
+      // A failure nobody was looking at is not the answer to a new ask (a tap
+      // after scrolling back, a link that came back): try again.
+      entry._fetch = fetch;
+      entry._restart();
       unawaited(_load(entry));
     }
     _entries[key] = entry;
@@ -226,7 +235,7 @@ class ImagePreviewCache {
   /// Tries [entry] again after a failure (a fetch that did not go through):
   /// it shows as loading until the new attempt ends.
   void retry(ImageEntry entry) {
-    if (entry._gone || entry.problem == null || entry.tooLarge) return;
+    if (entry._gone || entry.problem == null || !entry.retryable) return;
     entry._restart();
     unawaited(_load(entry));
   }
@@ -237,11 +246,11 @@ class ImagePreviewCache {
       final image = await decodeImageBlock(entry.block, decoder: _decoder, fetch: entry._fetch);
       entry._finish(image, null);
     } on ImageProblem catch (e) {
-      entry._finish(null, e.note, tooLarge: e.tooLarge);
+      entry._finish(null, e.note, retryable: !e.tooLarge);
     } on LogPictureTooLarge catch (e) {
-      entry._finish(null, 'Too large to show here (${formatBytes(e.bytes)}).', tooLarge: true);
+      entry._finish(null, 'Too large to show here (${formatBytes(e.bytes)}).', retryable: false);
     } on LogPictureException catch (e) {
-      entry._finish(null, e.message);
+      entry._finish(null, e.message, retryable: e.retryable);
     } on Object {
       entry._finish(null, 'The picture could not be shown.');
     }

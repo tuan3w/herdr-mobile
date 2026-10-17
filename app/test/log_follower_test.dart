@@ -889,10 +889,50 @@ void main() {
 
     test('a missing file, a path outside the home folder and a path that is not a log are refused', () async {
       final far = File('${outside.path}/far.jsonl')..writeAsStringSync('{}\n');
-      await gone('${host.home.path}/nope.jsonl', 0, '0123456789abcdef', why: 'cannot read');
-      await gone(far.path, 0, '0123456789abcdef', why: 'home folder');
-      await gone('/etc/passwd', 0, '0123456789abcdef', why: '.jsonl');
-      await gone('relative.jsonl', 0, '0123456789abcdef', why: 'absolute');
+      for (final path in ['${host.home.path}/nope.jsonl', far.path, '/etc/passwd', 'relative.jsonl']) {
+        await gone(path, 0, '0123456789abcdef', why: 'not in the log');
+      }
+    });
+
+    test('what the person reads for a log that is gone has no host path in it', () async {
+      final f = File(host.path());
+      final ref = (await refs(f, [jsonEncode({'type': 'image', 'data': b64})])).single;
+      f.deleteSync();
+      final r = await host.runToEnd(keeperBlobCommand(f.path, start: ref.start, hash: ref.hash));
+      expect(r.code, 66);
+      expect(r.err, isNot(contains(host.home.path)));
+    });
+
+    test('a number that only looks like one is a usage error, not a crash', () async {
+      final script = '${host.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py';
+      final r = await host.runToEnd("python3 '$script' blob '/x.jsonl' '\u00b2' 0123456789abcdef");
+      expect(r.code, 64);
+      expect(r.err, isNot(contains('Traceback')));
+    });
+
+    test('a picture in a line longer than follow sends has no ref at all, so none is fetched', () async {
+      final f = File(host.path());
+      final huge = base64.encode(List.filled(5 * 1024 * 1024, 7));
+      _write(f, [jsonEncode({'type': 'image', 'data': huge}), _json(2)]);
+      final run = await host.follow(f.path, from: 0);
+      final got = await run.take(2);
+      await run.stop();
+      expect(got.first.body, isNot(contains('ref=')));
+      expect(got.first.json['raw'], contains('not sent'));
+    });
+
+    test('a data URI keeps its type in the note, in a typed part and in a plain field', () async {
+      final f = File(host.path());
+      final found = await refs(f, [
+        jsonEncode({'type': 'image', 'image_url': 'data:image/png;base64,$b64'}),
+        jsonEncode({'details': {'blob': 'data:image/jpeg;base64,$b64'}}),
+      ]);
+      expect(found, hasLength(2));
+      final run = await host.follow(f.path, from: 0);
+      final got = await run.take(2);
+      await run.stop();
+      expect(got[0].body, contains('data:image/png;base64,[${'data:image/png;base64,'.length + b64.length} bytes of data not sent; ref='));
+      expect(got[1].body, contains('data:image/jpeg;base64,['));
     });
 
     test('a payload that is not text a picture can be made of is refused', () async {

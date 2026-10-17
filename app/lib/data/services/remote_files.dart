@@ -32,7 +32,7 @@ class RemoteFiles {
   /// channel with browsing, so two is the most that leaves it responsive.
   ///
   /// [machineId] names the machine in the keys of the disk cache, which
-  /// must not mix two machines' files; empty means "do not use the store".
+  /// must not mix two machines' files; empty means "do not use the cache".
   RemoteFiles(this._transport, {this.maxUploads = 2, this.machineId = ''});
 
   final HerdrTransport _transport;

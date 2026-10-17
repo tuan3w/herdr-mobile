@@ -241,6 +241,12 @@ class FileTranscriptCache implements TranscriptCache {
 
   /// The header's version field.
   static int get version => _version;
+
+  /// The oldest version still read. Version 1 had no `gap` field: such a copy
+  /// may well have one (that is the bug version 2 exists for), so it is read as
+  /// a copy WITH a gap: it shows, and it is never cut at a turn stamp. Deleting
+  /// it instead would lose an ended session's only copy on the phone.
+  static const oldestReadable = 1;
 }
 
 // -- the work that runs in the worker isolate ----------------------------------
@@ -423,7 +429,12 @@ TranscriptFileRead? readTranscriptFile(({String path, String key, int maxBytes})
     if (!text.endsWith('\n')) throw const FormatException('truncated');
     final rows = text.substring(0, text.length - 1).split('\n');
     final header = jsonDecode(rows.first);
-    if (header is! Map || header['v'] != FileTranscriptCache.version || header['key'] != key) {
+    final v = header is Map ? header['v'] : null;
+    if (header is! Map ||
+        v is! int ||
+        v < FileTranscriptCache.oldestReadable ||
+        v > FileTranscriptCache.version ||
+        header['key'] != key) {
       throw const FormatException('not ours');
     }
     final sid = header['sid'];
@@ -444,7 +455,7 @@ TranscriptFileRead? readTranscriptFile(({String path, String key, int maxBytes})
     } on Object {
       // Recency is best effort.
     }
-    return TranscriptFileRead(sid, asOf, updates, header['setup'], header['partial'] == true, header['gap'] == true);
+    return TranscriptFileRead(sid, asOf, updates, header['setup'], header['partial'] == true, v == 1 || header['gap'] == true);
   } on Object {
     deleteTranscriptFiles(path);
     return null;

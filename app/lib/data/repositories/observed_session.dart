@@ -24,7 +24,6 @@ import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
 import '../observed/session_log_locator.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
 import '../services/disk_cache.dart';
-import '../services/remote_files.dart' show ReadCancel;
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
 import 'attach_target.dart' show AttachMode;
@@ -572,16 +571,16 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   @override
   void watchSubagentLog(String runId, bool on) {}
 
-  // Pictures on their way, by store key: a second request for one joins it, so
+  // Pictures on their way, by cache key: a second request for one joins it, so
   // a double tap never downloads twice.
   final _pictureLoads = <String, Future<Uint8List>>{};
 
   @override
-  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) {
+  Future<Uint8List> loadLogPicture(LogPictureRef ref) {
     final key = ref.key;
     final running = _pictureLoads[key];
     if (running != null) return running;
-    final load = _fetchPicture(ref, cancel);
+    final load = _fetchPicture(ref);
     _pictureLoads[key] = load;
     // Whoever asked gets the answer or the failure; this only forgets the load.
     unawaited(load.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
@@ -592,10 +591,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     return load;
   }
 
-  /// A picture from the store, else from the machine, then kept. Never more
+  /// A picture from the cache, else from the machine, then kept. Never more
   /// than [logPictureLimit]; a picture whose size is known to be over it is
   /// refused before a byte is transferred.
-  Future<Uint8List> _fetchPicture(LogPictureRef ref, ReadCancel? cancel) async {
+  Future<Uint8List> _fetchPicture(LogPictureRef ref) async {
     final store = DiskCache.shared;
     final hit = await store.get(ref.key);
     if (hit != null) return hit;
@@ -607,12 +606,13 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     try {
       bytes = switch (ref) {
         KeeperPictureRef(:final start, :final hash) => await _source.blob(path, start: start, hash: hash),
-        OmpPictureRef(:final sha256) => await _readOmpBlob(path, sha256, cancel),
+        OmpPictureRef(:final sha256) => await _readOmpBlob(path, sha256),
       };
     } on AgentHostException catch (e) {
-      throw LogPictureException(e.message);
+      // `fatal`: the log is not what it was; asking again cannot change that.
+      throw LogPictureException(e.message, retryable: !e.fatal);
     } on HerdrTransportException catch (e) {
-      throw LogPictureException(e.message);
+      throw LogPictureException(e.message, retryable: !e.fatal);
     }
     if (bytes.length > logPictureLimit) throw LogPictureTooLarge(bytes.length);
     unawaited(store.put(ref.key, bytes));
@@ -622,7 +622,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// omp keeps a picture as a plain file, `<agent dir>/blobs/<sha256>`, next to
   /// its `sessions/` folder: read over SFTP, no keeper involved. No file, or a
   /// log that is not under a `sessions/` folder, is a picture that is gone.
-  Future<Uint8List> _readOmpBlob(String logPath, String sha256, ReadCancel? cancel) async {
+  Future<Uint8List> _readOmpBlob(String logPath, String sha256) async {
     final at = logPath.lastIndexOf('/sessions/');
     if (at < 0) throw logPictureGone;
     final file = '${logPath.substring(0, at)}/blobs/$sha256';
@@ -631,10 +631,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       final size = (await files.stat(file)).size;
       if (size == null || size <= 0) throw logPictureGone;
       if (size > logPictureLimit) throw LogPictureTooLarge(size);
-      return await files.readAll(file, size: size, chunk: 2 * 1024 * 1024, cancel: cancel);
+      final bytes = await files.readAll(file, size: size, chunk: 2 * 1024 * 1024);
+      // A file that shrank under the read comes back short, and would be kept
+      // under its content name for good: whole, or not at all.
+      if (bytes.length != size) throw const LogPictureException('The picture did not come through whole.');
+      return bytes;
     } on RemoteFileException catch (e) {
       if (e.kind == RemoteFileErrorKind.notFound) throw logPictureGone;
-      throw LogPictureException(e.message);
+      throw LogPictureException(e.message, retryable: !e.fatal);
     }
   }
 

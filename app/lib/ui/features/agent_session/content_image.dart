@@ -74,21 +74,32 @@ class LogImageView extends StatefulWidget {
 }
 
 class _LogImageViewState extends State<LogImageView> {
-  var _requested = false;
+  // The picture is wanted: asked for by a tap, or already held on the phone.
+  late var _requested = DiskCache.shared.knows(widget.block.key);
+
+  // The person tapped: the wait that follows is theirs, and shows the spinner.
+  var _tapped = false;
 
   @override
   void initState() {
     super.initState();
+    // Known at once when the index is loaded (a held picture is then never a
+    // chip for a frame, and the row never changes height under the reader);
+    // otherwise as soon as it is: no tap, no radio.
     final store = DiskCache.shared;
-    // Held already: it shows, no tap, no radio.
-    unawaited(store.ready.then((_) {
-      if (mounted && !_requested && store.knows(widget.block.key)) setState(() => _requested = true);
-    }));
+    if (!_requested) {
+      unawaited(store.ready.then((_) {
+        if (mounted && !_requested && store.knows(widget.block.key)) setState(() => _requested = true);
+      }));
+    }
   }
 
   void _load() {
     Haptics.tick();
-    setState(() => _requested = true);
+    setState(() {
+      _requested = true;
+      _tapped = true;
+    });
   }
 
   @override
@@ -100,6 +111,7 @@ class _LogImageViewState extends State<LogImageView> {
         block: block,
         cache: widget.cache ?? ImagePreviewCache.shared,
         fetch: () => scope.session.loadLogPicture(block.ref),
+        waited: _tapped,
       );
     }
     final size = block.ref.bytes;
@@ -151,10 +163,14 @@ class ImageReferenceLine extends StatelessWidget {
 }
 
 class _InlineImage extends StatefulWidget {
-  const _InlineImage({required this.block, required this.cache, this.fetch});
+  const _InlineImage({required this.block, required this.cache, this.fetch, this.waited = false});
 
   final ImageBlock block;
   final ImagePreviewCache cache;
+
+  /// The person asked for this picture (a tap): the wait shows the spinner. A
+  /// held picture that simply appears has the quiet icon, like any preview.
+  final bool waited;
 
   /// Brings the bytes of a [LogImageBlock] (see [ImagePreviewCache.acquire]).
   final Future<Uint8List> Function()? fetch;
@@ -165,6 +181,9 @@ class _InlineImage extends StatefulWidget {
 
 class _InlineImageState extends State<_InlineImage> {
   late ImageEntry _entry;
+
+  // A retry is a tap too.
+  var _retried = false;
 
   @override
   void initState() {
@@ -208,8 +227,9 @@ class _InlineImageState extends State<_InlineImage> {
     final logPicture = widget.block is LogImageBlock;
     if (problem != null) {
       if (!logPicture) return ImageReferenceLine(block: widget.block, problem: problem);
-      // A fetch that failed can be tried again; a picture over the limit cannot.
-      final retryable = !_entry.tooLarge;
+      // A fetch that failed can be tried again; a picture over the limit, a log
+      // that is not what it was and a view that cannot fetch it cannot.
+      final retryable = _entry.retryable;
       return ContentChip(
         icon: LucideIcons.image,
         title: 'Image',
@@ -219,6 +239,7 @@ class _InlineImageState extends State<_InlineImage> {
         onTap: retryable
             ? () {
                 Haptics.tick();
+                _retried = true;
                 widget.cache.retry(_entry);
               }
             : null,
@@ -237,7 +258,7 @@ class _InlineImageState extends State<_InlineImage> {
             color: ds.fill,
             // A fetch the person started is a wait they can see: the one spinner.
             child: Center(
-              child: logPicture
+              child: logPicture && (widget.waited || _retried)
                   ? const BusySpinner(size: 20)
                   : Icon(LucideIcons.image, size: 20, color: ds.textTertiary),
             ),

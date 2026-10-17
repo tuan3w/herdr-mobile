@@ -35,7 +35,7 @@ import zlib
 
 
 def load_daemon_modules():
-    """Imports what every command but `follow` uses. `follow` (the chat of an
+    """Imports what every command but `follow` and `blob` uses. `follow` (the chat of an
     agent in a pane) is waited for on every open and uses none of them;
     `traceback` alone pulls in a dozen modules, about 30 ms of a start on the
     machine this was measured on (python 3.14, desktop)."""
@@ -160,8 +160,10 @@ FOLLOW_BACKOFF = ((60, 1.0), (600, 2.0))
 FOLLOW_BINARY_TYPES = ("image", "base64", "audio", "input_audio", "input_image", "binary")
 FOLLOW_BINARY_KEYS = ("data", "base64", "bytes", "b64_json", "blob")
 FOLLOW_B64 = re.compile(r"^[A-Za-z0-9+/=_-]+$")
-# `blob`: the longest log line it reads, and how much of a picture goes in one record.
-BLOB_MAX_LINE = 24 * 1024 * 1024
+# `blob`: how much of a picture goes in one record, and how much of the file it
+# reads at a time. It reads no line longer than `follow` sends (FOLLOW_LINE): a
+# longer one never gets a `ref`, so only pictures in lines up to 4 MiB (about
+# 3 MiB of picture) can be fetched again.
 BLOB_CHUNK = 48 * 1024
 BLOB_READ = 1024 * 1024
 
@@ -3818,10 +3820,12 @@ def binary_payload(binary, k, x):
     """The part of string [x] (the value of key [k]) that scrub drops, or None.
     [binary]: the object that holds it is typed as a binary one."""
     n = len(x)
-    if (binary and n > 256) or (k in FOLLOW_BINARY_KEYS and n > 1024 and FOLLOW_B64.match(x[:256])):
-        return x
+    # A data URI keeps its `data:<type>;base64,` in the note, whatever field or
+    # object it is in: the type is what the phone shows before the picture.
     if n > 256 and x.startswith("data:") and "," in x[:128]:
         return x[x.index(",") + 1:]
+    if (binary and n > 256) or (k in FOLLOW_BINARY_KEYS and n > 1024 and FOLLOW_B64.match(x[:256])):
+        return x
     return None
 
 
@@ -4100,21 +4104,23 @@ class Follower(object):
                 self.pump()
 
 
-def follow_target(path):
+def follow_target(path, sentence=None):
     """The real path of [path], which must be an absolute .jsonl file under
-    $HOME that this user can read; fails with exit 66 otherwise."""
+    $HOME that this user can read; fails with exit 66 otherwise, with [sentence]
+    when given (`blob` has one sentence for a log that is not there any more,
+    not a host path for the person to read)."""
     if not path or not os.path.isabs(path) or not path.endswith(".jsonl"):
-        fail(EX_GONE, "not an absolute path to a .jsonl file: " + trunc(path, 200))
+        fail(EX_GONE, sentence or "not an absolute path to a .jsonl file: " + trunc(path, 200))
     real = os.path.realpath(path)
     home = os.path.realpath(home_dir()).rstrip("/") + "/"
     if not real.startswith(home) or not real.endswith(".jsonl"):
-        fail(EX_GONE, "not a log file in your home folder: " + trunc(path, 200))
+        fail(EX_GONE, sentence or "not a log file in your home folder: " + trunc(path, 200))
     try:
         st = os.stat(real)
     except OSError as e:
-        fail(EX_GONE, "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
+        fail(EX_GONE, sentence or "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
     if not stat.S_ISREG(st.st_mode) or not os.access(real, os.R_OK):
-        fail(EX_GONE, "not a readable file: " + trunc(path, 200))
+        fail(EX_GONE, sentence or "not a readable file: " + trunc(path, 200))
     return real
 
 
@@ -4147,19 +4153,19 @@ def cmd_blob(path, start, h):
     of its note): `B\t<piece of the payload>` records, then `D\t<length>`.
     Exits 66 when the log is not what it was (the line is not at [start], has no
     such payload) or the payload is not text a picture can be made of."""
-    real = follow_target(path)
     gone = "That picture is not in the log any more."
+    real = follow_target(path, gone)
     try:
         fd = os.open(real, os.O_RDONLY)
-    except OSError as e:
-        fail(EX_GONE, "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
+    except OSError:
+        fail(EX_GONE, gone)
     try:
         if start > 0 and os.pread(fd, 1, start - 1) != b"\n":
             fail(EX_GONE, "The log changed since that picture was listed.")
         data = b""
         at = start
         end = -1
-        while end < 0 and len(data) <= BLOB_MAX_LINE:
+        while end < 0 and len(data) <= FOLLOW_LINE:
             piece = os.pread(fd, BLOB_READ, at)
             if not piece:
                 break
@@ -4170,11 +4176,11 @@ def cmd_blob(path, start, h):
             else:
                 data += piece
                 at += len(piece)
-    except OSError as e:
-        fail(EX_GONE, "cannot read %s: %s" % (trunc(path, 200), e.strerror or e))
+    except OSError:
+        fail(EX_GONE, gone)
     finally:
         os.close(fd)
-    if end < 0 or end > BLOB_MAX_LINE:
+    if end < 0 or end > FOLLOW_LINE:
         fail(EX_GONE, gone)
     try:
         obj = json.loads(data.decode("utf-8"))
@@ -4183,9 +4189,6 @@ def cmd_blob(path, start, h):
     for p in blob_payloads(obj):
         if payload_hash(p) != h:
             continue
-        if p.startswith("data:") and "," in p[:128]:
-            # A whole data URI (its field was typed binary): the picture is what follows the comma.
-            p = p[p.index(",") + 1:]
         try:
             # Whitespace is not part of base64: a payload with line breaks must
             # not break the one-record-per-line protocol.
@@ -4242,7 +4245,7 @@ def main(argv):
             poll = max(20, min(opts.get("--poll-ms", int(FOLLOW_POLL * 1000)), 60000)) / 1000.0
             tail = max(FOLLOW_TAIL_MIN, min(opts.get("--tail-bytes", FOLLOW_TAIL), FOLLOW_TAIL_MAX))
             cmd_follow(rest[0], opts.get("--from"), poll, opts.get("--idle-exit", 0), tail, zipped)
-        elif cmd == "blob" and len(rest) == 3 and rest[1].isdigit() and len(rest[2]) == 16 and all(c in "0123456789abcdef" for c in rest[2]):
+        elif cmd == "blob" and len(rest) == 3 and rest[1] and all(c in "0123456789" for c in rest[1]) and len(rest[2]) == 16 and all(c in "0123456789abcdef" for c in rest[2]):
             cmd_blob(rest[0], int(rest[1]), rest[2])
         elif cmd == "attach" and len(rest) in (1, 2) and (len(rest) == 1 or rest[1] == "--z"):
             cmd_attach(rest[0], len(rest) == 2)

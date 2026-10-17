@@ -14,10 +14,11 @@ release.
   kept as small copies too.
 - Settings has a Storage row that says how much is kept and clears it.
 - Chats of agents running in a terminal (Claude Code, omp) now show your
-  pictures as a quiet line with the type and size. Tap it to load the picture;
-  a failure says why and offers a retry. Pictures you have loaded stay.
-- A picture an agent sent that is larger than about 100 KB no longer vanishes
-  when a chat reconnects.
+  pictures as a quiet line with the size and type. Tap it to load the picture;
+  a failure says why and offers a retry. Pictures you have loaded stay. (A
+  picture larger than about 3 MB is not fetchable and stays a line of text.)
+- A picture in a chat larger than about 100 KB, yours or the agent's, no longer
+  vanishes when the chat reconnects.
 - A chat keeps its decoded pictures when it reconnects, instead of decoding
   every visible one again.
 

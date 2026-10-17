@@ -754,7 +754,8 @@ through `ContentBlockView`, in an agent message, in the person's own message
   `Radii.panel` with a hairline, and a tap (44 dp at least) opens the photo
   viewer (below) on that picture, among the thread's other pictures
   (`ThreadPhotos`, read at the tap; `photo_thread.dart`). While it
-  decodes a quiet 120 x 96 box with the picture icon stands in (no spinner).
+  decodes a quiet 120 x 96 box with the picture icon stands in (no spinner;
+  the one exception is below: a picture the person tapped to load).
   A screen reader reads `Image, image/png, chart.png` (the name is the last part
   of the uri, when there is one). Data that cannot be drawn degrades to a line
   with the reason in plain words: `The picture data is not valid base64.`, `The
@@ -764,13 +765,28 @@ through `ContentBlockView`, in an agent message, in the person's own message
 - **Memory.** Base64 longer than 64 KB is decoded in another isolate
   (`compute`); the bitmap is shrunk to 1024 px on its longest side while the
   codec decodes it, so the full bitmap never exists. Previews live in
-  `ImagePreviewCache` keyed by block identity: eight are kept once nothing
+  `ImagePreviewCache` keyed by what the picture IS (its data; a log picture's
+  cache key), so a re-attach, which builds new blocks with equal data, finds the
+  preview it already decoded: eight are kept once nothing
   draws them, the least recently used is disposed first, and one a row is
   drawing is never disposed. A 200-picture transcript builds the rows near the
   screen, so it holds those plus eight, not 200 (test: `content_blocks_test.dart`).
   The viewer decodes its own copy (2048 px, the file viewer's cap) and disposes
   it with the screen.
-- **Privacy: nothing is fetched.** A block with only a `uri` is a line, `Image ·
+- **Pictures of a terminal-log chat** (Claude Code, Codex, omp: the host does
+  not send picture bytes with the log; `LogImageView`). A quiet line, `Image ·
+  105 KB · image/png` (the size first: at 2x text the type may wrap or be cut,
+  and the size is what says whether a tap is worth it) with `Tap to load`. A tap
+  fetches once however often it is repeated, with the one spinner in the 120 x 96
+  frame (a wait the person started); a failure says why with `Tap to retry.`; a
+  picture over 12 MB, a log the host says is not what it was, and a view that
+  cannot fetch (`Not available here`, a subagent's transcript) have no retry. A
+  picture the phone already holds (`DiskCache`) simply shows: its first frame is
+  already the picture frame (no chip first, no spinner: nobody tapped), so a row
+  never changes height after it is first painted. A retry after the row was
+  scrolled away and back asks again; it does not show the old failure.
+- **Privacy: nothing is fetched on its own.** (Except the line above: a log
+  picture is fetched only on a tap, or read from the cache.) A block with only a `uri` is a line, `Image ·
   tracker.example.com` (host only; the query string is for the sheet), and never
   a download, whatever the scheme. A tap on an `http`/`https` one shows the whole
   address in the link sheet (`AgentMdScope`); a `file:` uri on this machine or an

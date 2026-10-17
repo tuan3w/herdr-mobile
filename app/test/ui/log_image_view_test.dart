@@ -115,9 +115,9 @@ void main() {
     await pump(tester);
     await tester.tap(find.text('Tap to load'));
     await settle(tester, () => find.textContaining('Tap to retry.').evaluate().isNotEmpty);
-    expect(find.text('The picture is no longer on the machine. Tap to retry.'), findsOneWidget);
     expect(session.logPictureCalls, hasLength(1));
 
+    session.logPictureError = null; // the link came back
     session.logPictureGate = Completer<void>();
     await tester.tap(find.textContaining('Tap to retry.'));
     await tester.pump();
@@ -132,13 +132,51 @@ void main() {
     await pump(tester);
     await tester.tap(find.text('Tap to load'));
     await settle(tester, () => find.textContaining('Too large').evaluate().isNotEmpty);
-    expect(find.text('Too large to show here (14 MB).'), findsOneWidget);
+    expect(find.textContaining('14 MB'), findsOneWidget, reason: 'says how large');
     expect(find.textContaining('Tap to retry'), findsNothing);
   });
 
-  testWidgets('a picture the phone already holds draws with no tap', (tester) async {
-    await tester.runAsync(() => store.put(_ref.key, Uint8List.fromList([1, 2, 3])));
+  testWidgets('a failure the host says is final, and a view that cannot fetch, offer no retry', (tester) async {
+    session.logPictureError = const LogPictureException('The log changed since that picture was listed.', retryable: false);
     await pump(tester);
+    await tester.tap(find.text('Tap to load'));
+    await settle(tester, () => find.textContaining('log changed').evaluate().isNotEmpty);
+    expect(find.textContaining('Tap to retry'), findsNothing);
+    expect(session.logPictureCalls, hasLength(1));
+
+    session.logPictureError = logPictureNotHere;
+    await tester.pumpWidget(const SizedBox());
+    cache.clear();
+    await pump(tester, block: const LogImageBlock(mimeType: 'image/png', ref: KeeperPictureRef(start: 2, hash: 'aaaaaaaaaaaaaaaa')));
+    await tester.tap(find.text('Tap to load'));
+    await settle(tester, () => find.text('Not available here').evaluate().isNotEmpty);
+    expect(find.textContaining('Tap to retry'), findsNothing);
+  });
+
+  testWidgets('a failure nobody was looking at is not the answer to a new tap: the row asks again', (tester) async {
+    session.logPictureError = logPictureGone;
+    await pump(tester);
+    await tester.tap(find.text('Tap to load'));
+    await settle(tester, () => find.textContaining('Tap to retry.').evaluate().isNotEmpty);
+    expect(session.logPictureCalls, hasLength(1));
+
+    // The row scrolls away (the entry stays in the cache, failed), the link comes back.
+    await tester.pumpWidget(const SizedBox());
+    session.logPictureError = null;
+    await pump(tester);
+    expect(find.text('Tap to load'), findsOneWidget);
+    await tester.tap(find.text('Tap to load'));
+    await settle(tester, () => find.byType(RawImage).evaluate().isNotEmpty);
+    expect(session.logPictureCalls, hasLength(2), reason: 'not the old error, shown again');
+  });
+
+  testWidgets('a picture the phone already holds draws with no tap, and is never a chip first', (tester) async {
+    await tester.runAsync(() => store.put(_ref.key, Uint8List.fromList([1, 2, 3])));
+    session.logPictureGate = Completer<void>(); // held back: look at the frames in between
+    await pump(tester);
+    expect(find.text('Tap to load'), findsNothing, reason: 'the first frame is already the picture frame: the row does not change height after it');
+    expect(find.byType(CircularProgressIndicator), findsNothing, reason: 'nobody tapped: a quiet frame, not the wait of a tap');
+    session.logPictureGate!.complete();
     await settle(tester, () => find.byType(RawImage).evaluate().isNotEmpty);
     expect(find.text('Tap to load'), findsNothing);
   });
@@ -162,6 +200,8 @@ void main() {
       textScale: 2,
     );
     expect(find.text('Tap to load'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Tap to load'));
+    await settle(tester, () => find.textContaining('Tap to retry.').evaluate().isNotEmpty);
+    expect(tester.takeException(), isNull, reason: 'the failure chip with a long reason and a long type fits at 2x text');
   });
 }

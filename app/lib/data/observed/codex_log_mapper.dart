@@ -255,9 +255,7 @@ class CodexLogMapper implements SessionLogMapper {
     }
     _turnEnded = false;
     final out = <SessionUpdate>[
-      pictures.isEmpty
-          ? messageUpsert(MessageRole.user, id, text)
-          : messageUpsertBlocks(MessageRole.user, id, [if (text.isNotEmpty) TextBlock(text), ...pictures]),
+      userMessageUpsert(id, text, pictures),
     ];
     if (!_titled && text.trim().isNotEmpty) {
       _titled = true;

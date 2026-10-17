@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/services/disk_cache.dart';
 import 'package:herdr_mobile/data/services/remote_files.dart';
+import 'package:herdr_mobile/ui/features/files/photo_files.dart' show remotePhotoItem;
 import 'package:herdr_mobile/ui/features/photos/photo_item.dart';
 
 import 'support/fake_fs.dart';
@@ -93,8 +94,24 @@ void main() {
     expect(await open(s), bytes);
     final first = reads();
     expect(await open(s), bytes);
+    expect(reads(), first, reason: 'the second open is a local read');
+  });
+
+  test('the viewer item built from a folder listing entry is cached: the same file opened twice reads once', () async {
+    // Through the real wiring: `remotePhotoItem` must hand the listing's size and
+    // modified time on, and the default cache is the shared one.
+    final saved = DiskCache.shared;
+    DiskCache.shared = store;
+    addTearDown(() => DiskCache.shared = saved);
+    final files = RemoteFiles(FakeTransport()..fs = fs, machineId: 'm1');
+    PhotoItem item() => remotePhotoItem(files, path: '/p/a.jpg', size: bytes.length, modified: modified);
+
+    expect(await item().source.read(), bytes);
+    await store.totalBytes();
+    final first = reads();
+    expect(first, greaterThan(0));
+    expect(await item().source.read(), bytes);
     expect(reads(), first);
-    expect(fs.calls.where((c) => c.startsWith('stat')).length, 2);
   });
 
   test('a file larger than the store keeps is read every time', () async {

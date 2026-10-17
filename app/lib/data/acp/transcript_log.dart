@@ -209,6 +209,15 @@ class TranscriptRecorder {
     _push(line);
   }
 
+  /// The lines held are known to lack part of what the transcript shows (items
+  /// kept from an earlier copy whose lines could not be kept with them): not a
+  /// prefix of the keeper's log, whatever the lines themselves say.
+  void markGap() {
+    _partial = true;
+    _gap = true;
+    revision++;
+  }
+
   /// Whether the line was kept.
   bool _push(String line) {
     revision++;

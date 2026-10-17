@@ -693,7 +693,7 @@ neither changes the protocol.
   since a transcript may hold secrets; never preferences), written to
   `<file>.tmp` and renamed, in a worker isolate (`Isolate.run`; a job is a
   top-level function and plain data). The file is versioned (a JSON header with
-  the version (2: `gap` was added), the key, the session id, the time, `partial`, `gap`, the line count and
+  the version (2: `gap` was added; a version-1 copy is still read, as a copy with a gap), the key, the session id, the time, `partial`, `gap`, the line count and
   the setup, then the lines verbatim); a file that is damaged, cut short, of
   another version or key, or larger than the cap is deleted and ignored. Each
   file is capped at 1 MiB (oldest lines first) and the directory at 5 MiB (the

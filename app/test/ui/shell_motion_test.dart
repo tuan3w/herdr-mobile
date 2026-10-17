@@ -209,7 +209,7 @@ void main() {
     // The Update row is the first thing on Settings, and the page keeps its
     // place between visits: a person who had scrolled down found no sign of it
     // above the screen but a dot on the tab. (Look is opened first: closed, the
-    // four rows fit the screen and there is nothing to scroll.)
+    // rows fit the screen at normal text and there is nothing to scroll.)
     testWidgets('Settings scrolls to the top too, with no tab change, no fade and no haptic', (tester) async {
       final h = await pump(tester);
       await tapTab(tester, 'Settings');

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart' show AgentHostException;
+import 'package:herdr_mobile/data/models/remote_file.dart' show RemoteStat;
 import 'package:herdr_mobile/data/observed/log_picture.dart';
 import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
@@ -114,11 +115,20 @@ void main() {
       expect(rig.source.blobCalls, isEmpty);
     });
 
-    test('a picture the store holds is served even though it would be over the limit now', () async {
+    test('a picture the cache holds is served before any size rule: what is kept may be shown', () async {
       final (rig, session) = await open();
-      await store.put(_keeper.key, Uint8List.fromList([4, 4]));
-      expect(await session.loadLogPicture(_keeper), [4, 4]);
+      const big = KeeperPictureRef(start: 1, hash: 'fedcba9876543210', bytes: 14 * 1024 * 1024);
+      await store.put(big.key, Uint8List.fromList([4, 4]));
+      expect(await session.loadLogPicture(big), [4, 4]);
       expect(rig.source.blobCalls, isEmpty);
+    });
+
+    test('a failure the host calls final is not offered again; a link failure is', () async {
+      final (rig, session) = await open();
+      rig.source.blobError = const AgentHostException('That picture is not in the log any more.', fatal: true);
+      await expectLater(session.loadLogPicture(_keeper), throwsA(isA<LogPictureException>().having((e) => e.retryable, 'retryable', isFalse)));
+      rig.source.blobError = const AgentHostException('The connection to the machine dropped.');
+      await expectLater(session.loadLogPicture(_keeper), throwsA(isA<LogPictureException>().having((e) => e.retryable, 'retryable', isTrue)));
     });
   });
 
@@ -142,7 +152,14 @@ void main() {
     test('a file that is not there is a picture that is gone', () async {
       final (_, session) = await open(fs: FakeFs());
       await expectLater(session.loadLogPicture(ref), throwsA(same(logPictureGone)));
-      expect(logPictureGone.message, 'The picture is no longer on the machine.');
+    });
+
+    test('a file that shrinks between the size and the read is not kept: whole, or not at all', () async {
+      final fs = _ShrinkingFs(keep: 3000)..addFile('/home/u/.omp/agent/blobs/$_sha', Uint8List(5000));
+      final (_, session) = await open(fs: fs);
+      await expectLater(session.loadLogPicture(ref), throwsA(isA<LogPictureException>()));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(store.knows(ref.key), isFalse, reason: 'a short copy under a content name would be served for good');
     });
 
     test('a file over 12 MB is refused before it is read', () async {
@@ -152,4 +169,19 @@ void main() {
       expect(fs.calls.where((c) => c.startsWith('read')), isEmpty);
     });
   });
+}
+
+/// A host whose file loses its tail right after its size was answered.
+class _ShrinkingFs extends FakeFs {
+  _ShrinkingFs({required this.keep});
+
+  final int keep;
+
+  @override
+  Future<RemoteStat> stat(String path) async {
+    final answer = await super.stat(path);
+    final node = nodes[path]!;
+    nodes[path] = FakeNode.file(Uint8List.sublistView(node.bytes, 0, keep), modified: node.modified, mode: node.mode);
+    return answer;
+  }
 }

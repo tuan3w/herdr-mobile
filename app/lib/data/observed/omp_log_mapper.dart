@@ -201,7 +201,7 @@ class OmpLogMapper implements SessionLogMapper {
     final key = _firstTime(e, line);
     if (key == null) return const [];
     _turnEnded = false;
-    return [..._userClears(), _userMessage(key, text, pictures)];
+    return [..._userClears(), userMessageUpsert(key, text, pictures)];
   }
 
   List<SessionUpdate> _custom(Json e, String line) {
@@ -233,7 +233,7 @@ class OmpLogMapper implements SessionLogMapper {
         final key = _firstTime(e, line);
         if (key == null) return const [];
         _turnEnded = false;
-        return [..._userClears(), _userMessage(key, text, pictures)];
+        return [..._userClears(), userMessageUpsert(key, text, pictures)];
       case 'assistant':
         final key = _firstTime(e, line);
         if (key == null) return const [];
@@ -327,12 +327,6 @@ class OmpLogMapper implements SessionLogMapper {
     }
     return out;
   }
-
-  /// The whole message of the person: its words, and its [pictures] as blocks
-  /// when there are any.
-  static SessionUpdate _userMessage(String key, String text, List<LogImageBlock> pictures) => pictures.isEmpty
-      ? messageUpsert(MessageRole.user, key, text)
-      : messageUpsertBlocks(MessageRole.user, key, [if (text.isNotEmpty) TextBlock(text), ...pictures]);
 
   /// What the person typed: a string, or the text blocks joined, with a
   /// placeholder line per image that is not a fetchable picture (the log holds

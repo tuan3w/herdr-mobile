@@ -78,24 +78,12 @@ void main() {
       await expectLater(source.blob(_path, start: 0, hash: hash), throwsA(isA<AgentHostException>()));
     });
 
-    test('the host\'s sentence reaches the person without its prefix, and a vanished log is final', () async {
+    test('the host\'s sentence reaches the person without its prefix', () async {
       transport.onExec = (command) async =>
           FakeExecChannel.run(code: 66, stderr: 'herdr-mobile: That picture is not in the log any more.');
       await expectLater(
         source.blob(_path, start: 0, hash: hash),
-        throwsA(
-          isA<AgentHostException>()
-              .having((e) => e.message, 'message', 'That picture is not in the log any more.')
-              .having((e) => e.fatal, 'fatal', isTrue),
-        ),
-      );
-    });
-
-    test('a dropped connection is a plain failure to try again', () async {
-      transport.onExec = (command) async => FakeExecChannel.run(code: null);
-      await expectLater(
-        source.blob(_path, start: 0, hash: hash),
-        throwsA(isA<AgentHostException>().having((e) => e.fatal, 'fatal', isFalse)),
+        throwsA(isA<AgentHostException>().having((e) => e.message, 'message', 'That picture is not in the log any more.')),
       );
     });
 

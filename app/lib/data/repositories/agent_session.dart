@@ -9,7 +9,6 @@ import '../acp/session_state.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../observed/log_picture.dart' show LogPictureRef;
 import '../observed/observed_contracts.dart' show SubagentInfo;
-import '../services/remote_files.dart' show ReadCancel;
 import 'attach_target.dart';
 import 'machine_connection.dart';
 
@@ -352,7 +351,7 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   /// picture already on its way joins it. Throws `LogPictureException` with
   /// words for the person (too large, no longer on the machine, the link).
   /// A session that is not made from a log has no such picture and throws.
-  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel});
+  Future<Uint8List> loadLogPicture(LogPictureRef ref);
 
   /// How reading the log of [runId] stands, for the drill-in.
   SubagentLogStatus subagentLogStatus(String runId);

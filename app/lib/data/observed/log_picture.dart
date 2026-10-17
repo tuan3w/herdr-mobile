@@ -85,15 +85,19 @@ OmpPictureRef? parseOmpBlob(String s) {
   return m == null ? null : OmpPictureRef(sha256: m[1]!);
 }
 
-/// The most of a log picture that is fetched and shown: the same bound as the
-/// store's per-picture limit, the preview decoder's and the viewer's preload.
-const logPictureLimit = 12 * 1024 * 1024;
+/// The most of a log picture that is fetched and shown: the cache's entry limit
+/// (see [diskCacheEntryLimit]), so what may be shown may also be kept.
+const logPictureLimit = diskCacheEntryLimit;
 
 /// A log picture that cannot be had, in words for the person.
 class LogPictureException implements Exception {
-  const LogPictureException(this.message);
+  const LogPictureException(this.message, {this.retryable = true});
 
   final String message;
+
+  /// Asking again can help (the link, a log that was busy). False for what no
+  /// second try changes: the screen then offers no `Tap to retry.`.
+  final bool retryable;
 
   @override
   String toString() => message;
@@ -102,10 +106,15 @@ class LogPictureException implements Exception {
 /// The picture is over [logPictureLimit]: refused before any transfer when the
 /// size is known up front.
 class LogPictureTooLarge extends LogPictureException {
-  const LogPictureTooLarge(this.bytes) : super('Too large to show here.');
+  const LogPictureTooLarge(this.bytes) : super('Too large to show here.', retryable: false);
 
   final int bytes;
 }
 
 /// The picture is not on the machine any more (the log or the file moved on).
 const logPictureGone = LogPictureException('The picture is no longer on the machine.');
+
+/// This conversation cannot fetch log pictures (a subagent's transcript over
+/// ACP shows the blocks of its own log, but its session reads no machine files
+/// for them).
+const logPictureNotHere = LogPictureException('Not available here', retryable: false);

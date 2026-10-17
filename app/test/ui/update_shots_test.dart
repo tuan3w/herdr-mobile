@@ -1,4 +1,4 @@
-// Renders Settings to PNGs for review: the four groups (closed, each open, the
+// Renders Settings to PNGs for review: the five groups (closed, each open, the
 // update row open, downloading behind another group, Android blocking
 // notifications), the update states and the tab bar mark. Light and dark, 412 dp
 // at text scale 1 and 1.6, and 320 dp at 2 for the groups. Off by default; it
@@ -159,7 +159,7 @@ void main() {
     }
   }
 
-  // Settings as the person meets it: the four groups, one open at a time, a
+  // Settings as the person meets it: the five groups, one open at a time, a
   // newer version's row on top and open. [taps] are what is tapped, in order,
   // before the capture.
   for (final dark in [false, true]) {

@@ -331,7 +331,8 @@ inbox and types its path, as a person would.
   agent).
 - The chat shows the sent picture from the agent's log: both agents write the
   placeholder into the user message; `withImageMarkers` adds `[image]` where
-  none is written, so a message with a picture is never empty.
+  none is written, so a message with a picture is never empty. (A Claude picture
+  with a fetchable ref is a block instead, see "Observed Claude Code and Codex".)
 
 ### Files are SFTP, never a shell
 
@@ -343,7 +344,7 @@ inbox and types its path, as a person would.
 - A host without the sftp subsystem is reported as `unsupported` after a short
   handshake timeout.
 - A remote path reaches a shell only as a validated, single-quoted word: the
-  keeper's working folder and follow-log path (`keeper_command.dart`), the
+  keeper's working folder and follow/blob log path (`keeper_command.dart`), the
   socket path (`bridge_command.dart`) and the sign-in terminal's `cd`
   (`session_launcher.dart`). Each is injection-tested.
 - File screens are pushed BEFORE the host is asked (never `await` SFTP ahead
@@ -385,14 +386,14 @@ restart keeps the order); Settings > Storage shows the size (`Cache · 38 MB`)
 and clears it (`Clear cache`; its subtitle says what is in it, so it stays true
 when a new kind is added, and the label does not claim files before there are
 any). A new kind of entry adds a key prefix and a key helper on `DiskCache` and
-shares the one cap; `maxEntryBytes` (12 MB) is the one limit to revisit.
+shares the one cap; `diskCacheEntryLimit` (12 MB, also the picture decode, viewer preload and log picture bound) is the one limit to revisit.
 Rules: a key holds what identifies the bytes (machine id, path, size, mtime, or
 a content hash), so a changed file is a miss and never served stale; an
 empty `RemoteFiles.machineId` means no cache; a cache failure is silent and
 the app goes to the network; **nothing is ever fetched on the cache's behalf**,
 it keeps only what the person already asked to see. The listing's mtime has
 one-second resolution: a file rewritten within the same second to the same size
-is served from the store until it changes again (accepted: the listing is the
+is served from the cache until it changes again (accepted: the listing is the
 only free revalidation). Not measured on a phone: disk latency, and jank while
 a thumbnail is encoded in the isolate.
 
@@ -663,7 +664,7 @@ Codex only when an `image` part of the `UserMessage` carries one: the captured
 `[image]` line); omp's `blob:sha256:<hex>` image is a plain file at
 `<agentDir>/blobs/<hex>`, read over SFTP. A picture of a tool result stays
 text. The chat shows `Tap to load` and fetches only on the tap (a picture the
-store holds shows by itself).
+cache holds shows by itself). Only a picture in a log line of up to 4 MiB (`FOLLOW_LINE`, about 3 MiB of picture) gets a ref; a bigger one stays `[line of N bytes not sent]`.
 
 **What the logs hold, and what they do not.**
 

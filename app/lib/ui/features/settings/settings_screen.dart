@@ -441,16 +441,51 @@ class _StorageGroup extends StatefulWidget {
 
 class _StorageGroupState extends State<_StorageGroup> {
   late Future<int> _size = DiskCache.shared.totalBytes();
+  Listenable? _tab;
+
+  /// The size is read again whenever the person can see it again: when the tab
+  /// comes back (the shell keeps this screen alive for the whole run, so the
+  /// first reading would otherwise stand for good) and when the group opens.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tab = TickerMode.getValuesNotifier(context);
+    if (identical(tab, _tab)) return;
+    _tab?.removeListener(_onTab);
+    _tab = tab..addListener(_onTab);
+  }
+
+  @override
+  void didUpdateWidget(_StorageGroup old) {
+    super.didUpdateWidget(old);
+    if (!old.open && widget.open) _refresh();
+  }
+
+  @override
+  void dispose() {
+    _tab?.removeListener(_onTab);
+    super.dispose();
+  }
+
+  void _onTab() {
+    // The tab's tickers switch while the shell builds: ask after it.
+    if (TickerMode.getValuesNotifier(context).value.enabled) scheduleMicrotask(_refresh);
+  }
+
+  void _refresh() {
+    final size = DiskCache.shared.totalBytes();
+    if (mounted) {
+      setState(() {
+        _size = size;
+      });
+    }
+  }
 
   Future<void> _clear() async {
     final toaster = Toaster.of(context);
     final freed = await DiskCache.shared.clear();
     toaster.show(freed == 0 ? 'Nothing to clear' : 'Cleared ${formatBytes(freed)}');
-    if (!mounted) return;
-    final size = DiskCache.shared.totalBytes();
-    setState(() {
-      _size = size;
-    });
+    _refresh();
   }
 
   @override

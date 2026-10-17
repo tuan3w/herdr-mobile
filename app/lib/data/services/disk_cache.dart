@@ -6,6 +6,13 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// The most one entry of the [DiskCache] holds, and the one bound every picture
+/// path shares: the preview decoder ([imageDecodeLimit]), the viewer's preload
+/// ([photoPreloadLimit]) and a log picture ([logPictureLimit]) are all this, so
+/// what may be shown may also be kept. A kind of entry that needs more raises
+/// it here, deliberately.
+const diskCacheEntryLimit = 12 * 1024 * 1024;
+
 /// The one small on-disk cache of what the app fetched from a machine and the
 /// person looked at: the photo viewer, both folder thumbnail loaders and the
 /// terminal-log chat's pictures share it, so nothing is downloaded twice.
@@ -13,7 +20,7 @@ import 'package:path_provider/path_provider.dart';
 /// on purpose, so a file viewer can use it later: a new kind adds a key prefix
 /// and a key helper below, and lives under the same cap, the oldest used going
 /// first whatever it is. [maxEntryBytes] is the one thing a new kind may need
-/// to revisit (it is 12 MB, the most a picture is worth keeping).
+/// to revisit ([diskCacheEntryLimit], 12 MB, the most a picture is worth keeping).
 ///
 /// It only keeps what the person asked to see; nothing prefetches into it.
 /// One file per key, named by the SHA-1 of the key, in one flat private
@@ -33,16 +40,16 @@ class DiskCache {
     this._directory, {
     this.maxBytes = 192 << 20,
     this.lowWater = 160 << 20,
-    this.maxEntryBytes = 12 << 20,
+    this.maxEntryBytes = diskCacheEntryLimit,
   });
 
-  /// The store in the app's private cache directory (`fetched/` under it; the
+  /// The cache in the app's private cache directory (`fetched/` under it; the
   /// OS may clear it when space is short, which a cache survives). The
   /// directory is looked up when first needed.
   factory DiskCache.inAppStorage() =>
       DiskCache(() async => Directory('${(await getApplicationCacheDirectory()).path}/fetched'));
 
-  /// The store the app uses. Not final: tests replace it, like
+  /// The cache the app uses. Not final: tests replace it, like
   /// `ImagePreviewCache.shared`.
   static DiskCache shared = DiskCache.inAppStorage();
 
@@ -95,7 +102,7 @@ class DiskCache {
   Future<T> _after<T>(Future<T> Function() op) {
     // The first operation starts at once, in the caller's zone: a chain that
     // begins with an already completed future would run it in the zone that
-    // made the store.
+    // made the cache.
     final previous = _chain;
     final result = previous == null ? Future<T>.sync(op) : previous.then((_) => op());
     _chain = result.then<void>((_) {}, onError: (Object _) {});
@@ -174,17 +181,11 @@ class DiskCache {
       final path = _path;
       if (path == null) return;
       final name = _name(key);
-      final temp = File('$path/$name.tmp$pid-${_tmpCounter++}');
-      try {
-        await temp.writeAsBytes(bytes, flush: true);
-        await temp.rename('$path/$name');
-      } on Object {
-        try {
-          await temp.delete();
-        } on Object {
-          // Nothing more to do.
-        }
-        return;
+      if (!await _write(path, name, bytes)) {
+        // The directory may have been removed under the running app (the
+        // system's Clear cache, or space freed by the OS): make it again, drop
+        // what the index believed was in it, and write once more.
+        if (!await _recreated(path) || !await _write(path, name, bytes)) return;
       }
       final old = _index[name];
       if (old != null) _total -= old.bytes;
@@ -192,6 +193,38 @@ class DiskCache {
       _total += bytes.length;
       if (_total > maxBytes) await _trim(path);
     });
+  }
+
+  /// Writes one file through a temp name and a rename; false on any failure.
+  Future<bool> _write(String path, String name, Uint8List bytes) async {
+    final temp = File('$path/$name.tmp$pid-${_tmpCounter++}');
+    try {
+      await temp.writeAsBytes(bytes, flush: true);
+      await temp.rename('$path/$name');
+      return true;
+    } on Object {
+      try {
+        await temp.delete();
+      } on Object {
+        // Nothing more to do.
+      }
+      return false;
+    }
+  }
+
+  /// When [path] is gone: makes it again and forgets every entry (those files
+  /// went with it). True when it had to. Never throws.
+  Future<bool> _recreated(String path) async {
+    try {
+      final dir = Directory(path);
+      if (await dir.exists()) return false;
+      _index.clear();
+      _total = 0;
+      await dir.create(recursive: true);
+      return true;
+    } on Object {
+      return false;
+    }
   }
 
   Future<void> _trim(String path) async {
@@ -213,7 +246,12 @@ class DiskCache {
   /// Bytes kept.
   Future<int> totalBytes() async {
     await ready;
-    return _after(() async => _total);
+    return _after(() async {
+      // The size must not outlive the files (see [_recreated]).
+      final path = _path;
+      if (path != null) await _recreated(path);
+      return _total;
+    });
   }
 
   /// Deletes every file; returns the bytes freed.
@@ -222,6 +260,7 @@ class DiskCache {
     return _after(() async {
       final path = _path;
       if (path == null) return 0;
+      await _recreated(path);
       var freed = 0;
       try {
         await for (final entity in Directory(path).list(followLinks: false)) {

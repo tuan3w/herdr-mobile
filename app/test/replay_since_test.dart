@@ -311,4 +311,41 @@ void main() {
     expect(pictures(again), 1, reason: 'a re-attach never loses a picture');
     expect(_shape(again.state), _shape(whole.state));
   });
+
+  bootTest(
+    'a picture the keeper has dropped, kept from the held transcript, survives re-attach after re-attach',
+    () async {
+      int pictures(AcpAgentSession s) => [
+        for (final m in s.state.items.whereType<TranscriptMessage>())
+          for (final b in m.blocks)
+            if (b is ImageBlock) b,
+      ].length;
+
+      Future<void> reattach(AcpAgentSession s) async {
+        s.background(since: DateTime(2000));
+        await _until(() => !s.attached, 'the session to let go');
+        s.foreground();
+        await _until(() => s.attached && !s.state.replaying, 'the session to attach again');
+      }
+
+      final (s, _) = await opened(withCache: cache);
+      await say(s, 'picture:200000'); // over the recorder's line limit: the saved lines lack it
+      for (var i = 0; i < 5; i++) {
+        await say(s, 'reply:r$i');
+      }
+      expect(pictures(s), 1);
+
+      // The keeper's log is small here: it has dropped the picture's turn. A
+      // re-attach is a full replay, and the picture stays from what is held.
+      await reattach(s);
+      expect(pictures(s), 1, reason: 'kept from the held transcript');
+      // The saved lines do not hold it, so the NEXT re-attach must not be cut at
+      // the last stamp either (it was: the picture vanished here).
+      await reattach(s);
+      expect(pictures(s), 1, reason: 'a second re-attach never loses it');
+      await reattach(s);
+      expect(pictures(s), 1);
+    },
+    env: {'HERDR_KEEPER_LOG_MESSAGES': '6', 'HERDR_KEEPER_FULL_TURNS': '1'},
+  );
 }

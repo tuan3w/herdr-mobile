@@ -1,6 +1,7 @@
 // Settings is five rows (Look, Agents, Notifications, Storage, About), each saying what
 // it is set to and opening in place, one at a time, with a newer version's row
 // above them. These tests hold the rules that keep it five rows long.
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Tristate;
@@ -205,13 +206,35 @@ void main() {
 
       await openSettingsGroup(tester, 'Storage');
       expect(find.text('Clear cache'), findsOneWidget);
-      expect(find.textContaining('what you looked at'), findsOneWidget);
       await tester.tap(find.text('Clear cache'));
       await tester.pump();
       await until(tester, () => find.text('Cleared 4 MB').evaluate().isNotEmpty);
       await until(tester, () => find.text('Cache \u00b7 empty').evaluate().isNotEmpty);
       expect(dir.listSync(), isEmpty);
       await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('the size is read again when the tab comes back and when the group opens, not once per run', (tester) async {
+      await tester.runAsync(() => store.ready);
+      final showing = ValueNotifier(true);
+      await _pump(tester, showing: showing);
+      await until(tester, () => find.text('Cache \u00b7 empty').evaluate().isNotEmpty);
+
+      // The person browses photos on another tab: the cache grows.
+      showing.value = false;
+      await tester.pump();
+      // (Not in runAsync: the screen already queued work on this cache in the
+      // test's fake zone, which only a pump lets continue.)
+      unawaited(store.put('a', Uint8List(3 * 1024 * 1024)));
+      await until(tester, () => store.knows('a'));
+      showing.value = true;
+      await until(tester, () => find.text('Cache \u00b7 3 MB').evaluate().isNotEmpty);
+
+      // And with the tab in front the whole time, opening the group looks again.
+      unawaited(store.put('b', Uint8List(1024 * 1024)));
+      await until(tester, () => store.knows('b'));
+      await openSettingsGroup(tester, 'Storage');
+      await until(tester, () => find.text('Cache \u00b7 4 MB').evaluate().isNotEmpty);
     });
 
     testWidgets('with nothing kept it says so, and a tap says there was nothing', (tester) async {

@@ -1,4 +1,5 @@
 import '../acp/acp_models.dart';
+import 'log_picture.dart' show LogImageBlock;
 
 /// Helpers every agent's log mapper shares: cutting text, the wire names of a
 /// tool kind, whole-message upserts. They are the same for every agent so a
@@ -23,6 +24,12 @@ MessageUpsert messageUpsertBlocks(MessageRole role, String id, List<ContentBlock
   hasContent: true,
   content: [for (final b in blocks) b is TextBlock ? TextBlock(capText(b.text)) : b],
 );
+
+/// A whole message of the person: [text] and, when there are any, [pictures] as
+/// blocks after it (a picture alone is a message of its own).
+MessageUpsert userMessageUpsert(String id, String text, List<LogImageBlock> pictures) => pictures.isEmpty
+    ? messageUpsert(MessageRole.user, id, text)
+    : messageUpsertBlocks(MessageRole.user, id, [if (text.isNotEmpty) TextBlock(text), ...pictures]);
 
 /// A tool call that ended without a result because the turn was interrupted.
 SessionUpdate cancelledPatch(String id) =>

@@ -402,9 +402,7 @@ class ClaudeLogMapper implements SessionLogMapper {
     final id = _messageKey(key, text);
     return [
       ..._userClears(),
-      pictures.isEmpty
-          ? messageUpsert(MessageRole.user, id, text)
-          : messageUpsertBlocks(MessageRole.user, id, [if (text.isNotEmpty) TextBlock(text), ...pictures]),
+      userMessageUpsert(id, text, pictures),
     ];
   }
 

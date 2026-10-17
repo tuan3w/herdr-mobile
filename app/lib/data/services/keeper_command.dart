@@ -18,8 +18,10 @@ import 'keeper_script.dart';
 //   65  the script of this app version is not installed on the host: run
 //       [keeperInstallCommand], then the command again
 //   66  start, history: the folder is not there. attach/kill: no such keeper.
-//       follow: the file is not an absolute `.jsonl` path under the home
-//       folder, or cannot be read; stderr says why
+//       follow, blob: the file is not an absolute `.jsonl` path under the home
+//       folder, or cannot be read; stderr says why. blob: also the log is
+//       not what it was (the line is not at that offset, holds no such
+//       payload) or the payload is not base64 text
 //   67  attach: the keeper's agent has exited; stderr says why
 //   69  start, history: the agent is not installed on the host
 //   70  start, history: the agent failed to start or to answer `initialize`
@@ -29,13 +31,17 @@ import 'keeper_script.dart';
 /// The ids the script generates (`[a-z0-9]`, six characters today).
 final _keeperId = RegExp(r'^[a-z0-9]{3,32}$');
 
-/// Longest folder path accepted: far above PATH_MAX, far below the command limit.
-const _maxCwd = 4096;
+/// Longest path accepted (a folder or a log file): far above PATH_MAX, far below
+/// the command limit.
+const _maxPath = 4096;
 
 String _shQuote(String v) => "'${v.replaceAll("'", r"'\''")}'";
 
-bool _validCwd(String cwd) =>
-    cwd.isNotEmpty && cwd.length <= _maxCwd && !cwd.runes.any((c) => c < 0x20 || c == 0x7f);
+/// Not empty, not absurdly long, no control character (a newline would end the
+/// word in the remote shell's eyes): what every path that reaches a command
+/// must be, before it is quoted.
+bool _validPath(String path) =>
+    path.isNotEmpty && path.length <= _maxPath && !path.runes.any((c) => c < 0x20 || c == 0x7f);
 
 /// The python source with the route table filled in, as it runs on the host.
 String keeperScript() => keeperPython.replaceFirst(
@@ -171,7 +177,7 @@ String keeperStartCommand({required String agent, required String cwd}) {
   if (agentRouteById(agent) == null) {
     throw ArgumentError.value(agent, 'agent', 'unknown agent');
   }
-  if (!_validCwd(cwd)) {
+  if (!_validPath(cwd)) {
     throw ArgumentError.value(cwd, 'cwd', 'invalid folder');
   }
   return _command(['start', '--agent', agent, '--cwd', cwd]);
@@ -193,7 +199,7 @@ String keeperHistoryCommand({required String agent, String? cwd}) {
   if (agentRouteById(agent) == null) {
     throw ArgumentError.value(agent, 'agent', 'unknown agent');
   }
-  if (cwd != null && !_validCwd(cwd)) {
+  if (cwd != null && !_validPath(cwd)) {
     throw ArgumentError.value(cwd, 'cwd', 'invalid folder');
   }
   return _command(['history', agent, ?cwd]);
@@ -267,7 +273,7 @@ String keeperAttachCommand(String keeperId, {bool zipped = false}) {
 /// control character, and for a negative [from] or [idleExit], a [pollMs] below
 /// 1 or a [tailBytes] below 1. [from] wins over [tailBytes].
 String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, int? tailBytes, bool zipped = false}) {
-  if (path.isEmpty || path.length > _maxCwd || path.runes.any((c) => c < 0x20 || c == 0x7f)) {
+  if (!_validPath(path)) {
     throw ArgumentError.value(path, 'path', 'invalid path');
   }
   if (from != null && from < 0) throw ArgumentError.value(from, 'from', 'invalid offset');
@@ -289,7 +295,8 @@ String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, 
 /// to find it in the note that replaces it
 /// (`[N bytes of data not sent; ref=<start>.<hash>]`): [start] is the byte
 /// offset where the line begins in [path], [hash] the 16 lowercase hex digits
-/// of the payload. Stdout is `B\t<piece of base64 text>` records and then
+/// of the payload (only a picture in a line up to 4 MiB, about 3 MiB of
+/// picture, is given one: `follow` sends no longer line). Stdout is `B\t<piece of base64 text>` records and then
 /// `D\t<total length>`; exit 66 with a sentence on stderr when the log is not
 /// what it was (the line is not at [start], holds no such payload, the file is
 /// gone, [path] is not a log under the home folder) or the payload is not
@@ -299,7 +306,7 @@ String keeperFollowCommand(String path, {int? from, int? pollMs, int? idleExit, 
 /// control character, a negative [start] and a [hash] that is not 16 lowercase
 /// hex digits: these reach a remote shell.
 String keeperBlobCommand(String path, {required int start, required String hash}) {
-  if (path.isEmpty || path.length > _maxCwd || path.runes.any((c) => c < 0x20 || c == 0x7f)) {
+  if (!_validPath(path)) {
     throw ArgumentError.value(path, 'path', 'invalid path');
   }
   if (start < 0) throw ArgumentError.value(start, 'start', 'invalid offset');

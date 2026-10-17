@@ -19,7 +19,7 @@ const photoReadChunk = 2 * 1024 * 1024;
 
 /// Pictures larger than this are not fetched ahead of the person arriving at
 /// them (the neighbours of the one on screen).
-const photoPreloadLimit = 12 * 1024 * 1024;
+const photoPreloadLimit = diskCacheEntryLimit;
 
 /// Where one picture's bytes come from.
 abstract interface class PhotoSource {
@@ -54,7 +54,7 @@ abstract interface class RangedPhotoSource implements PhotoSource {
 /// A picture in a file on the machine, read over SFTP in [photoReadChunk]
 /// pieces. Over [photoReadCap] it is refused before a byte is read.
 ///
-/// A file up to the store's entry limit is read through the [DiskCache]:
+/// A file up to the cache's entry limit is read through the [DiskCache]:
 /// opening it again, or swiping back to it, costs a local read instead of the
 /// radio. The key holds the size and the modified time, so a changed file is
 /// read again; without a modified time (or a machine id) nothing is stored.
@@ -73,7 +73,7 @@ class RemotePhotoSource implements RangedPhotoSource {
   final int cap;
   final DiskCache _store;
 
-  /// The modified time the listing gave, which tells the store a file changed.
+  /// The modified time the listing gave, which tells the cache a file changed.
   final DateTime? modified;
 
   @override
@@ -105,7 +105,7 @@ class RemotePhotoSource implements RangedPhotoSource {
         : DiskCache.fileKey(_files.machineId, path, known, stamp.millisecondsSinceEpoch);
     if (key != null) {
       final hit = await _store.get(key);
-      // A copy of another length is not this file (a store cannot tell).
+      // A copy of another length is not this file (a cache cannot tell).
       if (hit != null && hit.length == known) {
         onProgress?.call(hit.length);
         return hit;

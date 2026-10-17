@@ -17,8 +17,7 @@ import '../acp/background/background_work.dart';
 import '../acp/session_state.dart';
 import '../acp/turns/plain_text.dart' show clip, firstLine;
 import '../acp/transcript_log.dart';
-import '../observed/log_picture.dart' show LogPictureRef;
-import '../services/remote_files.dart' show ReadCancel;
+import '../observed/log_picture.dart' show LogPictureRef, logPictureNotHere;
 import '../services/transcript_cache.dart';
 import '../acp/subagents/subagent_run.dart' show SubagentLogStatus, SubagentRun, SubagentSummary;
 import '../streaming/flush_scheduler.dart';
@@ -483,11 +482,12 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     reachable: () => machine.isLive && _backgroundedAt == null,
   );
 
-  /// An ACP session sends its pictures inline (base64 in the replay): it never
-  /// makes a [LogImageBlock], so nothing asks.
+  /// An ACP session sends its pictures inline (base64 in the replay), so its own
+  /// transcript has no [LogImageBlock]. A subagent's transcript is read from its
+  /// log on the host and can have one (an omp subagent given a pasted picture):
+  /// that is not fetched here, and says so instead of offering a retry.
   @override
-  Future<Uint8List> loadLogPicture(LogPictureRef ref, {ReadCancel? cancel}) =>
-      Future.error(StateError('no log pictures in this session'));
+  Future<Uint8List> loadLogPicture(LogPictureRef ref) => Future.error(logPictureNotHere);
 
   @override
   void watchSubagentLog(String runId, bool on) {
@@ -869,7 +869,14 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         _doneKey = _listKey;
         _unseen = true;
       }
-      if (older > 0) _keepOlderLines(heldLines, loaded.sessionId, client.state(loaded.sessionId), older);
+      if (older > 0) {
+        final kept = _keepOlderLines(heldLines, loaded.sessionId, client.state(loaded.sessionId), older);
+        // Items shown from the held transcript whose lines the saved copy does
+        // not hold (the held copy had a gap, or its lines could not be matched
+        // to them) leave the copy no prefix of the keeper's log: the next
+        // re-attach must replay in full, or those items are lost.
+        if (heldGap || !kept) _recorder.markGap();
+      }
       _beginSettle();
       _setState(client.state(loaded.sessionId));
       _replaying = false;
@@ -1236,11 +1243,14 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// [older] items of [merged] came from the transcript shown before the
   /// replay (see `AgentSessionState.withHeld`): the lines that built them go in
   /// front of the recorder's, so the saved copy does not get shorter either. A
-  /// copy whose lines do not give those items is left as the replay wrote it.
-  void _keepOlderLines(List<String> heldLines, String sid, AgentSessionState merged, int older) {
+  /// copy whose lines do not give those items is left as the replay wrote it
+  /// (false: the caller marks it, see the call).
+  bool _keepOlderLines(List<String> heldLines, String sid, AgentSessionState merged, int older) {
     final offset = merged.items.isNotEmpty && merged.items.first.key == hostDroppedKey ? 1 : 0;
     final lines = linesBefore(heldLines, sid, merged.items.skip(offset).take(older).toList());
-    if (lines != null) _recorder.prepend(lines);
+    if (lines == null) return false;
+    _recorder.prepend(lines);
+    return true;
   }
 
   /// Asks the cache to keep what this attach has seen: when a turn ends (after

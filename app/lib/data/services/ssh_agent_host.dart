@@ -123,8 +123,9 @@ class SshAgentHost implements AgentHost {
     return PastSessions.fromJson(Map<String, Object?>.from(answer));
   }
 
-  /// Longest wait for [blob]: a picture of up to 12 MB (16 MB of text) over a
-  /// slow link, with the connection allowed to be slow rather than dead.
+  /// Longest wait for [blob]: a picture of up to about 3 MB (4 MB of text, the
+  /// most `follow` gives a reference to) over a slow link, with the connection
+  /// allowed to be slow rather than dead.
   static const blobTimeout = Duration(seconds: 90);
 
   /// Runs a [keeperBlobCommand]: the picture's base64 text arrives as `B`

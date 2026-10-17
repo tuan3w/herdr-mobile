@@ -405,6 +405,7 @@ board sections, the Machines tab and the notifier all read it.
 | Private keys, passphrases, passwords | `flutter_secure_storage` | `machine_repository.dart` `KeychainSecretStore` |
 | Last snapshot per machine, with status times (max 512 KB) | `shared_preferences`, `herdr.snapshot.v1.<id>` | `app/lib/data/services/snapshot_cache.dart` |
 | Last window of each agent session's transcript (1 MiB per session, 5 MiB total) | App cache directory, `transcripts/` | `transcript_cache.dart` |
+| Copies of what the person looked at on a machine: viewer files, folder thumbnails, terminal-log chat pictures (12 MB per entry, 192 MB total, least recently used out first; Settings > Storage clears it) | App cache directory, `fetched/` | `disk_cache.dart` |
 | Settings, slash-command usage, quick phrases, the agent screen in front | `shared_preferences` | `app/lib/data/repositories/*_settings.dart`, `slash_usage.dart`, `quick_phrases.dart`, `agent_screens.dart` |
 | Messages sent to an agent at least twice, for the learned chips (300 at most, on this phone only) | `shared_preferences`, `sentPhrases.v1` | `app/lib/data/repositories/sent_phrases.dart` |
 

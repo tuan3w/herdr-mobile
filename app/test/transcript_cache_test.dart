@@ -245,6 +245,17 @@ void main() {
       expect((await c.read('m1/k1'))!.gap, isFalse);
     });
 
+    test('a copy the previous app wrote (version 1, no gap field) is kept, and read as one with a gap', () async {
+      // An ended session's copy may be all the phone has of it: not deleted by an update.
+      final lines = _conversation(2);
+      final header = jsonEncode({'v': 1, 'key': 'm1/k1', 'sid': 's1', 'asOf': 1, 'partial': false, 'lines': lines.length});
+      File('${dir.path}/m1~k1.tr').writeAsStringSync('$header\n${lines.join('\n')}\n');
+      final got = (await cache().read('m1/k1'))!;
+      expect(got.updates, hasLength(4));
+      expect(got.gap, isTrue, reason: 'it may be missing a line left out for its size: never cut at a stamp');
+      expect(names(), ['m1~k1.tr'], reason: 'and still there');
+    });
+
     test('what is saved is read back: the lines decoded, the setup, the time, partial', () async {
       final c = cache();
       final lines = _conversation(3);
@@ -289,11 +300,11 @@ void main() {
 
       test('garbage', () => expectIgnored('garbage', 'not a transcript\n'));
       test('empty', () => expectIgnored('empty', ''));
-      test('an older or newer version', () async {
+      test('a version it never wrote, or one from the future', () async {
         final lines = _conversation(1);
         await expectIgnored('v0', '${header({'v': 0})}\n${lines.join('\n')}\n');
-        await expectIgnored('v1', '${header({'v': 1})}\n${lines.join('\n')}\n');
-        await expectIgnored('v3', '${header({'v': FileTranscriptCache.version + 1})}\n${lines.join('\n')}\n');
+        await expectIgnored('newer', '${header({'v': FileTranscriptCache.version + 1})}\n${lines.join('\n')}\n');
+        await expectIgnored('no version', '${header({'v': null})}\n${lines.join('\n')}\n');
       });
       test('a file for another key', () async {
         await expectIgnored('key', '${header({'key': 'm9/k9'})}\n${_conversation(1).join('\n')}\n');
