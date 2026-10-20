@@ -9,6 +9,7 @@ import 'package:herdr_mobile/data/models/web_bridge.dart';
 import 'package:herdr_mobile/data/services/web_bridge.dart';
 
 import 'support/fake_fs.dart';
+import 'support/fake_transport.dart' show eventually;
 import 'support/custom_tab.dart';
 import 'support/raw_http.dart';
 
@@ -417,9 +418,11 @@ void main() {
     });
 
     test('an idle listener stops, and the next open brings back the same port and token', () async {
-      final site = await _open(idle: const Duration(milliseconds: 150));
+      // The idle time only has to outlast the requests below (the timer starts at
+      // open, and a loaded runner is slow); the stop is awaited, not slept for.
+      final site = await _open(idle: const Duration(seconds: 1));
       final cookie = await site.signIn();
-      await Future<void>.delayed(const Duration(milliseconds: 450));
+      await eventually(() => site.host.livePorts.isEmpty, reason: 'the idle listener to stop');
       await expectLater(rawRequest(site.info.port, headers: {'Cookie': cookie}), throwsA(anything));
       final back = await site.host.open(const StaticSite(_root, machineName: 'build-box'));
       expect(back, site.info);
@@ -429,12 +432,21 @@ void main() {
     });
 
     test('a listener that comes back on another port starts over with a new token', () async {
-      final site = await _open(idle: const Duration(milliseconds: 150));
+      final site = await _open(idle: const Duration(seconds: 1)); // outlasts the requests below, see above
       final cookie = await site.signIn();
-      await Future<void>.delayed(const Duration(milliseconds: 450));
-      expect(site.host.livePorts, isEmpty);
+      await eventually(() => site.host.livePorts.isEmpty, reason: 'the idle listener to stop');
       // Something else takes the port while the listener sleeps.
-      final thief = await ServerSocket.bind(InternetAddress.loopbackIPv4, site.info.port);
+      // livePorts is empty when the host lets go; the socket itself is released a
+      // moment later, so take the port as soon as it is free.
+      ServerSocket? thief;
+      for (var i = 0; thief == null; i++) {
+        try {
+          thief = await ServerSocket.bind(InternetAddress.loopbackIPv4, site.info.port);
+        } on SocketException {
+          if (i >= 2000) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
       addTearDown(thief.close);
       final back = await site.host.open(const StaticSite(_root, machineName: 'build-box'));
       expect(back.port, isNot(site.info.port));
