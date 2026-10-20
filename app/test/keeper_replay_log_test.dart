@@ -1,4 +1,5 @@
 @TestOn('linux || mac-os')
+@Tags(['timing'])
 library;
 
 import 'dart:convert';

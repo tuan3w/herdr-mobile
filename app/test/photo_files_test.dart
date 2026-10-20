@@ -1,3 +1,6 @@
+@Tags(['timing'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';

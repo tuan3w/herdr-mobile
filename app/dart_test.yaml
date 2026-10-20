@@ -1,0 +1,7 @@
+tags:
+  # Tests whose result depends on real time (timers, sleeps, processes started
+  # and answered within a bound). They fail intermittently when the CPU is
+  # busy, so CI runs them apart from the rest (tool/check.sh, HERDR_TEST_ONLY=timing)
+  # on a runner with spare cores. Tag a file when it flakes under load and
+  # cannot be made independent of the clock.
+  timing:

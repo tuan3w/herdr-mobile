@@ -90,5 +90,33 @@ jobs:
 
       - name: Test
         env:
+          HERDR_TEST_ONLY: rest
           HERDR_TEST_SHARD: ${{ matrix.shard }}/4
+        run: tool/check.sh --tests
+
+  # The tests tagged `timing` (app/dart_test.yaml) assert on real time and
+  # failed intermittently when run beside the others on a busy CPU. Here they
+  # run alone at half the jobs: 276 tests, ~80 s on 4 pinned cores.
+  test-timing:
+    name: test (timing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Test
+        env:
+          HERDR_TEST_ONLY: timing
         run: tool/check.sh --tests

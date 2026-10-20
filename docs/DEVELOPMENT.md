@@ -41,7 +41,13 @@ their own job, `--quick`): 4 cores cannot take more than one job per core
 without timing tests failing, and a quarter of the suite takes ~91-101 s, ~25 s of it
 compile, on each runner against ~300 s whole (measured on 4 pinned cores, not on
 a hosted runner). A test must not depend on the tests before it in its file:
-a shard runs a different subset. A keeper test file stays under ~30 s so none of
+a shard runs a different subset. A test that asserts on real time (a timer
+raced against a bound, a process answering within N ms) and fails when the CPU
+is busy gets `@Tags(['timing'])` on its library (`app/dart_test.yaml`): CI runs
+those in their own job at half the jobs (`HERDR_TEST_ONLY=timing`), the shards
+run the rest (`rest`), and an unset `HERDR_TEST_ONLY` runs everything. Why: they
+failed intermittently beside the others on 4 cores; the tag is a quarantine,
+not a fix, so prefer polling or an injected clock when the test allows. A keeper test file stays under ~30 s so none of
 them ends the run waiting alone: split a file that grows past that.
 
 ## Code layout

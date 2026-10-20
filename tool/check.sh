@@ -5,6 +5,9 @@
 #   --tests  the tests only (CI runs the other half as its own job)
 # HERDR_TEST_SHARD=<i>/<n> runs shard i (0-based) of n of the tests; CI uses
 # it to spread them over runners.
+# HERDR_TEST_ONLY=timing | rest runs only the tests tagged `timing` (those that
+# depend on real time, see app/dart_test.yaml), at half the jobs so they have
+# CPU to spare, or everything else; unset runs all of them.
 set -euo pipefail
 
 # A flutter whose Dart fits app/pubspec.yaml (tool/flutter-bin.sh picks it;
@@ -42,11 +45,21 @@ if [ "${1:-}" != "--quick" ]; then
   trap 'mv -f "$config.orig" "$config"' EXIT
   sed -i "s#\"rootUri\": \"../\"#\"rootUri\": \"file://$PWD/\"#" "$config"
   jobs="${HERDR_TEST_JOBS:-$(nproc)}"
+  tags=()
+  case "${HERDR_TEST_ONLY:-}" in
+    timing)
+      tags=(--tags timing)
+      jobs="${HERDR_TEST_JOBS:-$(( $(nproc) / 2 > 0 ? $(nproc) / 2 : 1 ))}"
+      ;;
+    rest) tags=(--exclude-tags timing) ;;
+    "") ;;
+    *) echo "HERDR_TEST_ONLY must be timing or rest, not ${HERDR_TEST_ONLY}" >&2; exit 2 ;;
+  esac
   shard=()
   if [ -n "${HERDR_TEST_SHARD:-}" ]; then
     shard=(--shard-index "${HERDR_TEST_SHARD%/*}" --total-shards "${HERDR_TEST_SHARD#*/}")
   fi
   echo "==> flutter test"
-  flutter test --no-pub --experimental-faster-testing -j "$jobs" ${shard[@]+"${shard[@]}"}
+  flutter test --no-pub --experimental-faster-testing -j "$jobs" ${tags[@]+"${tags[@]}"} ${shard[@]+"${shard[@]}"}
 fi
 echo "OK"

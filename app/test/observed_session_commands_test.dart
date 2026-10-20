@@ -1,6 +1,9 @@
 // The commands and skills a chat of an agent in a terminal offers: what the
 // machine's files say, plus the skills the agent's own log listed (Claude's
 // plugin and bundled ones, which have no folder to find).
+@Tags(['timing'])
+library;
+
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

@@ -1,3 +1,6 @@
+@Tags(['timing'])
+library;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';

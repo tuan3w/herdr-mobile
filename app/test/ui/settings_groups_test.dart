@@ -2,6 +2,9 @@
 // it is set to and opening in place, one at a time, with a newer version's row
 // above them that opens the update sheet. These tests hold the rules that keep
 // it five rows long, and the update's path from notes to Install.
+@Tags(['timing'])
+library;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
