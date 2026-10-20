@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_made.dart' show MadeKind;
@@ -31,6 +32,7 @@ import '../support/fake_agent_session.dart';
 import '../support/fake_fs.dart';
 import '../support/fake_transport.dart';
 import '../support/fake_webview.dart';
+import '../support/shot.dart' show loadAppFonts;
 
 class _Launcher extends UrlLauncherPlatform {
   final opened = <String>[];
@@ -70,6 +72,11 @@ Future<void> tapChip(WidgetTester tester, String label) async {
 }
 
 void main() {
+  // The fonts are per engine, and files that load Inter change them for the
+  // files sharing the engine (--experimental-faster-testing): load them here
+  // so the layout below never depends on which file ran first.
+  setUpAll(loadAppFonts);
+
   late FakeTransport transport;
   late FakeFs fs;
   late _Launcher launcher;
@@ -315,7 +322,10 @@ void main() {
     final subagents = tester.getRect(find.text('1 of 2 running'));
     final web = tester.getRect(find.text('Made'));
     expect(web.right, lessThanOrEqualTo(320));
-    expect(subagents.width, greaterThan(100), reason: 'its words are whole');
+    // Whole words, not an ellipsis: never a pixel width, which depends on the
+    // fonts. Fonts are per engine, and files that load Inter change them for
+    // the files sharing the engine (--experimental-faster-testing).
+    expect(tester.renderObject<RenderParagraph>(find.text('1 of 2 running')).didExceedMaxLines, isFalse, reason: 'its words are whole');
     expect(find.text('1 of 2 running'), findsOneWidget);
     expect(web.top >= subagents.bottom - 1 || web.left >= subagents.right, isTrue, reason: 'beside it or under it, never over it');
   });
@@ -633,8 +643,13 @@ void main() {
 
     fs.fail = null;
     await tester.tap(find.text('here.png'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
-    await tester.pump(const Duration(milliseconds: 300));
+    // The fetch and the decode are real work off the test clock: wait for the
+    // picture, not for a fixed time (the first decode in a process is slow,
+    // and which test comes first depends on the shard).
+    for (var i = 0; i < 100 && find.byType(RawImage).evaluate().isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
     expect(find.byType(RawImage), findsOneWidget, reason: 'the tap asked the machine again');
     expect(find.byType(PhotoViewer), findsNothing, reason: 'and did not open anything yet');
   });

@@ -1,9 +1,30 @@
 name: CI
 
+# Markdown, store text and the agent skills cannot change a test result, so a
+# change that only touches them skips the run. Not docs/**: the tests read
+# docs/herdr-api.schema.json, and tool/ holds the design lint they import.
+# (If a branch rule requires the `check` job, a skipped run leaves it pending:
+# drop the filters then.)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'fastlane/**'
+      - 'LICENSE'
+      - '.agents/**'
+      - '.claude/**'
+      - '.pi/**'
+      - '.omp/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'fastlane/**'
+      - 'LICENSE'
+      - '.agents/**'
+      - '.claude/**'
+      - '.pi/**'
+      - '.omp/**'
 
 # It only reads the code: the token can do nothing else (CodeQL
 # actions/missing-workflow-permissions).
@@ -15,9 +36,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # analyze + design lint: seconds, so its own job and never queued behind tests.
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -27,5 +49,46 @@ jobs:
           flutter-version: 3.47.6
           cache: true
 
-      - name: Analyze and test
-        run: tool/check.sh
+      # Packages come from pub.dev on every run otherwise; the key is the
+      # lockfile, so a dependency change refreshes it.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Analyze and design lint
+        run: tool/check.sh --quick
+
+  # The tests are ~1,550 s of work that waits on processes and timers, and a
+  # runner has 4 cores: more jobs per runner made timing tests fail, so they
+  # are split over runners instead. Measured on 4 pinned cores: 308 s whole,
+  # ~91-101 s per quarter (kernel compile ~25 s each, then a quarter of the
+  # tests); thirds took ~118 s.
+  test:
+    name: test (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Test
+        env:
+          HERDR_TEST_SHARD: ${{ matrix.shard }}/4
+        run: tool/check.sh --tests
