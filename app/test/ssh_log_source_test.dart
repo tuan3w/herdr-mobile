@@ -203,7 +203,7 @@ void main() {
       await settle();
       final big = '{"t":"${'x' * (4 * 1024 * 1024)}"}';
       channel.emit('${big.length + 1}\t$big');
-      await settle();
+      await _until(() => run.lines.isNotEmpty, 'the 4 MB line'); // decoding it takes longer than a fixed settle on a busy machine
 
       expect(run.lines.single, big);
     });
@@ -497,7 +497,7 @@ void main() {
 
     File log(List<String> lines) => File('${home.path}/s.jsonl')..writeAsStringSync(lines.map((l) => '$l\n').join());
 
-    test('gives the tail, then new lines within a second, and resumes from an offset', () async {
+    test('gives the tail, then new lines, and resumes from an offset', () async {
       final f = log(['{"n":1}', '{"n":2}']);
       final run = _Run(local.follow(f.path));
       await _until(() => run.lines.length == 2, 'the tail');
@@ -506,7 +506,9 @@ void main() {
 
       final watch = Stopwatch()..start();
       f.writeAsStringSync('{"n":3}\n', mode: FileMode.append, flush: true);
-      await _until(() => run.lines.length == 3, 'the appended line', const Duration(seconds: 1));
+      // How soon a line arrives (the 0.25 s poll) is proven on a fake clock in
+      // log_follower_test; here only that it arrives, however slow the machine.
+      await _until(() => run.lines.length == 3, 'the appended line');
       expect(run.lines.last, '{"n":3}');
       // ignore: avoid_print
       print('append to batch through the real script: ${watch.elapsedMilliseconds} ms');
@@ -515,11 +517,12 @@ void main() {
       await run.sub.cancel();
 
       final resumed = _Run(local.follow(f.path, from: end));
-      await settle(600);
+      // The helper's first batch says the phone is up to date; waiting for it, not a time, keeps this off the clock.
+      await _until(() => resumed.batches.isNotEmpty, 'the up-to-date note');
       expect(resumed.lines, isEmpty, reason: 'nothing is replayed');
       expect(resumed.batches.single.endOffset, end, reason: 'the helper says the phone is up to date at once');
       f.writeAsStringSync('{"n":4}\n', mode: FileMode.append, flush: true);
-      await _until(() => resumed.lines.length == 1, 'the line after the offset', const Duration(seconds: 2));
+      await _until(() => resumed.lines.length == 1, 'the line after the offset');
       expect(resumed.lines, ['{"n":4}']);
       await resumed.sub.cancel();
     });
@@ -555,7 +558,7 @@ void main() {
       await _until(() => run.lines.length == 1, 'the tail');
       final pid = _ProcessChannel.last!.pid;
       await run.sub.cancel();
-      await _until(() => Process.runSync('kill', ['-0', '$pid']).exitCode != 0, 'the process to be gone', const Duration(seconds: 5));
+      await _until(() => Process.runSync('kill', ['-0', '$pid']).exitCode != 0, 'the process to be gone');
     });
   });
 }
@@ -568,7 +571,7 @@ final bool _hasPython = () {
   }
 }();
 
-Future<void> _until(bool Function() check, String what, [Duration timeout = const Duration(seconds: 10)]) async {
+Future<void> _until(bool Function() check, String what, [Duration timeout = const Duration(seconds: 20)]) async {
   final end = DateTime.now().add(timeout);
   while (!check()) {
     if (DateTime.now().isAfter(end)) fail('timed out waiting for $what');
