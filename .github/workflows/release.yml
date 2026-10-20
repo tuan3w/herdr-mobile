@@ -38,10 +38,10 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.sign.outputs.enabled == 'true'
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: steps.sign.outputs.enabled == 'true'
         with:
           distribution: temurin

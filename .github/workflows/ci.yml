@@ -38,24 +38,17 @@ concurrency:
 jobs:
   # analyze + design lint: seconds, so its own job and never queued behind tests.
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.47.6
+          # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
-
-      # Packages come from pub.dev on every run otherwise; the key is the
-      # lockfile, so a dependency change refreshes it.
-      - uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-
 
       - name: Analyze and design lint
         run: tool/check.sh --quick
@@ -67,26 +60,21 @@ jobs:
   # tests); thirds took ~118 s.
   test:
     name: test (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.47.6
+          # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-
 
       - name: Test
         env:
@@ -99,22 +87,17 @@ jobs:
   # run alone at half the jobs: 276 tests, ~80 s on 4 pinned cores.
   test-timing:
     name: test (timing)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.47.6
+          # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-
 
       - name: Test
         env:
