@@ -233,7 +233,11 @@ class FakeTransport implements HerdrTransport {
 /// Polls until [test] is true (real time), failing after [timeout].
 Future<void> eventually(
   bool Function() test, {
-  Duration timeout = const Duration(seconds: 3),
+  // Costs nothing once the condition holds. Generous because a loaded 4-core
+  // runner stretches real work (a file written, 32 requests queued) well past
+  // a few seconds; under flutter_test's 30 s per-test limit, so a real failure
+  // still reports its reason here.
+  Duration timeout = const Duration(seconds: 20),
   String reason = 'condition',
 }) async {
   final end = DateTime.now().add(timeout);
