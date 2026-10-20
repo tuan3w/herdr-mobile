@@ -246,7 +246,10 @@ void main() {
         block: 4096,
       );
       await files.upload(local('far.bin', 2 * 1024 * 1024, sparse: true).path, remote).done;
-      expect(server.maxOutstanding, 32);
+      // Not exactly the cap: how far the climb gets before the file ends depends
+      // on the real clock (28 of 32 on a loaded hosted runner). What the link
+      // earns is a window well past the near link's (<= 8), never past the cap.
+      expect(server.maxOutstanding, inInclusiveRange(16, 32));
     });
 
     test('progress is reported at most every 100 ms', () async {
