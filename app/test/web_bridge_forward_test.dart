@@ -180,6 +180,23 @@ String _head(int port, String cookie, {String path = '/x', Map<String, String> e
 /// What the machine receives of [head]: the listener's own cookie stays here.
 String _arrives(String head, String cookie) => head.replaceFirst('Cookie: $cookie\r\n', '');
 
+/// How long a listener may take to stop once idle: far above any idle time used here, so a busy machine only slows the tests down.
+const _idleStopBound = Duration(seconds: 20);
+
+/// Waits until nothing listens on [port]. A listener that has stopped may still
+/// take a connection for a moment (it is dropped at once, and re-arms nothing).
+Future<void> _expectRefused(int port) async {
+  for (var i = 0; i < 500; i++) {
+    try {
+      (await Socket.connect(InternetAddress.loopbackIPv4, port)).destroy();
+    } on SocketException {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail('port $port still accepts connections');
+}
+
 void main() {
   const spec = PortForward('localhost', 3000, machineName: 'build-box');
 
@@ -500,18 +517,20 @@ void main() {
       final echo = _Echo();
       await echo.start();
       final never = Completer<void>(); // a dial on a bad link: it takes its 15 s
-      final rig = _rig(targetPort: () => echo.port, idle: const Duration(milliseconds: 150), dialWait: never.future);
+      // Idle time only has to outlast the sign-in and the connect below; the stop is awaited by polling.
+      final rig = _rig(targetPort: () => echo.port, idle: const Duration(seconds: 1), dialWait: never.future);
       final info = await rig.host.open(PortForward('localhost', echo.port, machineName: 'm'));
       final cookie = await _signIn(info);
       final conn = await _Conn.open(info.port);
       conn.socket.add(latin1.encode(_head(info.port, cookie)));
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await eventually(() => rig.dials.length == 2, timeout: _idleStopBound, reason: 'the dial the browser asked for');
       expect(rig.dials, hasLength(2), reason: 'the probe, and the one the browser asked for');
       await conn.socket.close();
       conn.socket.destroy();
 
-      await Future<void>.delayed(const Duration(milliseconds: 700));
-      await expectLater(Socket.connect(InternetAddress.loopbackIPv4, info.port), throwsA(isA<SocketException>()));
+      // The machine is still being dialed, so only the browser's leaving can let the listener go.
+      await eventually(() => rig.host.livePorts.isEmpty, timeout: _idleStopBound, reason: 'the listener to stop idle');
+      await _expectRefused(info.port);
       never.complete();
     });
 
@@ -577,7 +596,8 @@ void main() {
     test('the token names the forward it opens, a static site is not one, and the listener goes with the last forward', () async {
       final echo = _Echo();
       await echo.start();
-      final rig = _rig(targetPort: () => echo.port, idle: const Duration(milliseconds: 400));
+      // Idle time only has to outlast the few requests below; the stops are awaited by polling.
+      final rig = _rig(targetPort: () => echo.port, idle: const Duration(seconds: 1));
       final site = await rig.host.open(const StaticSite('/site', machineName: 'm'));
       expect(site.entryPort, site.port, reason: 'a static site answers its own entry URL');
       final a = await rig.host.open(const PortForward('localhost', 4998, machineName: 'm'));
@@ -592,9 +612,8 @@ void main() {
       expect((await entry(site.token)).status, 403, reason: 'the static site opens at its own port');
       expect((await entry('0' * 32)).status, 403);
 
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      expect(rig.host.livePorts, isEmpty);
-      await expectLater(Socket.connect(InternetAddress.loopbackIPv4, a.entryPort), throwsA(isA<SocketException>()));
+      await eventually(() => rig.host.livePorts.isEmpty, timeout: _idleStopBound, reason: 'every listener to stop idle');
+      await _expectRefused(a.entryPort);
 
       final back = await rig.host.open(const PortForward('localhost', 4998, machineName: 'm'));
       expect((back.port, back.token), (a.port, a.token), reason: 'a tab left open still works');

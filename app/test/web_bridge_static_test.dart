@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -444,10 +445,31 @@ void main() {
     });
 
     test('a listener in use does not stop under a request in flight', () async {
-      final fs = FakeFs()..latency = const Duration(milliseconds: 400);
-      final site = await _open(fs: fs, idle: const Duration(milliseconds: 100));
-      final cookie = cookieFrom(await rawRequest(site.info.port, target: '/__herdr/open?t=${site.info.token}&to=%2F'));
-      final r = await rawRequest(site.info.port, target: '/index.html', headers: {'Cookie': cookie});
+      const idle = Duration(milliseconds: 400);
+      final reading = Completer<void>();
+      final release = Completer<void>();
+      final fs = FakeFs();
+      final site = await _open(
+        fs: fs,
+        idle: idle,
+        read: (path, offset, length) async {
+          if (path.endsWith('index.html')) {
+            if (!reading.isCompleted) reading.complete();
+            await release.future; // the machine answers when the test says, not after a delay
+          }
+          return fs.read(path, offset, length);
+        },
+      );
+      // The cookie is the token itself (what the entry URL sets): no round trip
+      // before the request, so nothing but the open can have armed the idle timer.
+      final cookie = 'herdr_${site.info.port}=${site.info.token}';
+      final asked = rawRequest(site.info.port, target: '/index.html', headers: {'Cookie': cookie});
+      await reading.future.timeout(const Duration(seconds: 10));
+      // Several idle times pass with the request in flight (a longer wait only makes the check stricter).
+      await Future<void>.delayed(idle * 3);
+      expect(site.host.livePorts, {site.info.port}, reason: 'the listener stopped under a request in flight');
+      release.complete();
+      final r = await asked;
       expect(r.status, 200);
       expect(utf8.decode(r.body), '<h1>home</h1>');
     });

@@ -177,7 +177,7 @@ print(json.dumps(out))
 
 /// Loads the keeper script as a module and drives `ReplayLog` directly.
 const logProbe = r'''
-import importlib.util, json, sys, time
+import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location("keeper", sys.argv[1])
 k = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(k)
@@ -199,6 +199,19 @@ def call(log, i, tool, waiting=lambda: set(), size=8000, status="completed"):
 
 def answer(log, i, waiting=lambda: set()):
     add(log, msg("agent_message_chunk", content={"type": "text", "text": "a%d" % i}, messageId="a%d" % i), waiting)
+
+# Python-level calls made by `fn`: what a step costs, the same on an idle and
+# on a busy machine (seconds are not).
+def counted(fn):
+    n = [0]
+    def prof(frame, event, arg):
+        n[0] += 1
+    sys.setprofile(prof)
+    try:
+        fn()
+    finally:
+        sys.setprofile(None)
+    return n[0]
 
 out = {}
 
@@ -271,14 +284,17 @@ out["fat"] = {
 # newest is whole, the replay is skeletons plus one turn, and the cursor to
 # the oldest untrimmed turn never goes back.
 log = k.ReplayLog(64 * 1024 * 1024, 100000, 3, 1536 * 1024)
-t0 = time.time()
-for i in range(600):
+def soft_turn(i):
     user(log, i)
     for j in range(28):
         call(log, i, "s%d-%d" % (i, j), size=5000)
     answer(log, i)
+for i in range(500):
+    soft_turn(i)
+# What the newest 100 turns cost per update, with 500 turns behind them.
+soft_calls = counted(lambda: [soft_turn(i) for i in range(500, 600)])
 out["soft"] = {
-    "seconds": time.time() - t0,
+    "callsPerUpdate": soft_calls / (100 * 58),
     "turns": len(log.turns),
     "dropped": log.dropped,
     "trimmed": log.trimmed,
@@ -288,12 +304,16 @@ out["soft"] = {
 
 # The hot path: 15000 turns through a log that holds 20000 entries.
 log = k.ReplayLog(16 * 1024 * 1024, 20000, 3, 1536 * 1024)
-t0 = time.time()
-for i in range(15000):
+def hot_turn(i):
     user(log, i)
     call(log, i, "h%d" % i, size=200)
     answer(log, i)
-out["seconds"] = time.time() - t0
+for i in range(12000):
+    hot_turn(i)
+# The log is full (20000 entries) and drops on every turn: what the last 3000
+# turns cost per update. A scan of the log per update would be 20000 calls.
+hot_calls = counted(lambda: [hot_turn(i) for i in range(12000, 15000)])
+out["callsPerUpdate"] = hot_calls / (3000 * 4)
 out["count"] = log.count
 out["listed"] = len(list(log.entries()))
 out["hotDropped"] = log.dropped
@@ -582,8 +602,8 @@ class KeeperAttach {
 
   Future<Json> newSession(KeeperHost h) => request('session/new', {'cwd': h.work, 'mcpServers': <Object?>[]});
 
-  Future<Json> load(KeeperHost h, [String sessionId = 'sess-1']) =>
-      request('session/load', {'sessionId': sessionId, 'cwd': h.work, 'mcpServers': <Object?>[]});
+  Future<Json> load(KeeperHost h, {String sessionId = 'sess-1', Duration timeout = const Duration(seconds: 30)}) =>
+      response(post('session/load', {'sessionId': sessionId, 'cwd': h.work, 'mcpServers': <Object?>[]}), timeout: timeout);
 
   int prompt(String text) => post('session/prompt', {
     'sessionId': 'sess-1',

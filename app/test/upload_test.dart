@@ -1,6 +1,3 @@
-@Tags(['timing'])
-library;
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -43,7 +40,13 @@ void main() {
     late SftpFiles files;
     var opens = 0;
 
-    SftpFiles make({FakeSftpServer? s, Duration stall = const Duration(seconds: 30), bool adaptive = false}) {
+    SftpFiles make({
+      FakeSftpServer? s,
+      Duration stall = const Duration(seconds: 30),
+      Duration progress = const Duration(milliseconds: 100),
+      bool adaptive = false,
+      int block = 32 * 1024,
+    }) {
       server = s ?? FakeSftpServer();
       server.dirs['/home/dev/inbox'] = 0x41C0;
       opens = 0;
@@ -53,6 +56,8 @@ void main() {
           return server;
         },
         stallTimeout: stall,
+        progressInterval: progress,
+        uploadBlock: block,
         uploadStartWindow: adaptive ? 8 : 32, // fixed by default: most tests count requests
       );
     }
@@ -147,9 +152,12 @@ void main() {
       final job = files.upload(local('f.bin', 100 * 1024).path, remote);
       job.cancel();
       await expectLater(job.done, throwsA(isA<UploadCancelled>()));
-      await eventually(() => slow.calls.any((c) => c.startsWith('remove')) || !slow.files.containsKey(remote));
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      expect(slow.files, isEmpty);
+      // The open is still in flight; when it lands the upload closes the new file
+      // and removes it. A `remove` is only asked after the open, so this is true
+      // only once the removal itself is done (not before the file ever appeared).
+      await eventually(() => slow.calls.any((c) => c.startsWith('remove')) && slow.files.isEmpty,
+          timeout: const Duration(seconds: 30), reason: 'the half-made file removed');
+      expect(slow.calls.first, startsWith('open'));
       expect(slow.writeCount, 0);
     });
 
@@ -170,14 +178,19 @@ void main() {
     test('a link that goes silent fails after the stall timeout', () async {
       make(stall: const Duration(milliseconds: 200));
       server.hangAfterWrites = 5;
+      final src = local('h.bin', 2 * 1024 * 1024);
       final sw = Stopwatch()..start();
-      final job = files.upload(local('h.bin', 2 * 1024 * 1024).path, remote);
+      final job = files.upload(src.path, remote);
       await expectLater(
         job.done,
         throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.network)),
       );
-      expect(sw.elapsedMilliseconds, lessThan(3000));
-      await eventually(() => !server.files.containsKey(remote), reason: 'partial removed');
+      // Only a lower bound: a timer never fires early, and an upper one would
+      // measure the machine's load (a link that never gave up ends in the
+      // runner's test timeout).
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(190), reason: 'it waited out the stall timeout');
+      await eventually(() => !server.files.containsKey(remote),
+          timeout: const Duration(seconds: 30), reason: 'partial removed');
     });
 
     test('an empty file is created and reported 0 of 0', () async {
@@ -209,20 +222,30 @@ void main() {
     });
 
     test('the window follows the link: short on a near link, growing to the cap on a long fat one', () async {
-      // ~2 requests fill this link; the window must not balloon to 32.
+      // The window is sized from answer times measured on the real clock, so a
+      // late timer inflates them. Both links are chosen so that tens of ms of
+      // lateness cannot move the size past what the test checks.
+      // Near: a block takes 125 ms on the wire (8 KB at 64 KB/s), so the link is
+      // full with ~1 request and lateness is small against that; 14 blocks are
+      // enough for a window that balloons from 8 to show.
       make(
-        s: FakeSftpServer(rtt: const Duration(milliseconds: 2), bytesPerSecond: 10 << 20, keepBytes: false),
+        s: FakeSftpServer(rtt: const Duration(milliseconds: 2), bytesPerSecond: 64 << 10, keepBytes: false),
         adaptive: true,
+        block: 8192,
       );
-      await files.upload(local('near.bin', 4 * 1024 * 1024, sparse: true).path, remote).done;
+      await files.upload(local('near.bin', 14 * 8192, sparse: true).path, remote).done;
       expect(server.maxOutstanding, lessThanOrEqualTo(8));
 
-      // ~75 requests would fill this one: the window climbs to the cap.
+      // Far: ~hundreds of 4 KB requests would fill it, so the window climbs to
+      // the cap. The long round trip keeps lateness small against it (the climb
+      // grows 1.5x a period only while answers take under 1.5x the shortest) and
+      // the file outlasts the climb (512 blocks).
       make(
-        s: FakeSftpServer(rtt: const Duration(milliseconds: 60), bytesPerSecond: 40 << 20, keepBytes: false),
+        s: FakeSftpServer(rtt: const Duration(milliseconds: 150), bytesPerSecond: 100 << 20, keepBytes: false),
         adaptive: true,
+        block: 4096,
       );
-      await files.upload(local('far.bin', 32 * 1024 * 1024, sparse: true).path, remote).done;
+      await files.upload(local('far.bin', 2 * 1024 * 1024, sparse: true).path, remote).done;
       expect(server.maxOutstanding, 32);
     });
 
@@ -234,8 +257,26 @@ void main() {
           .upload(local('j.bin', 24 * 1024 * 1024, sparse: true).path, remote,
               onProgress: (s, t) => stamps.add(sw.elapsedMilliseconds))
           .done;
+      // The throttle runs on the upload's own clock, which started after [sw]: a
+      // slow machine only widens the bound, it cannot break it.
       expect(stamps.length, lessThanOrEqualTo(sw.elapsedMilliseconds ~/ 100 + 3),
           reason: '${stamps.length} callbacks in ${sw.elapsedMilliseconds} ms');
+    });
+
+    test('progress follows the interval it is given: an hour apart leaves start, first answer and end', () async {
+      // Independent of speed: 768 answers come back, none of them an hour after the first.
+      make(
+        s: FakeSftpServer(bytesPerSecond: 400 << 20, keepBytes: false),
+        progress: const Duration(hours: 1),
+      );
+      final seen = <(int, int)>[];
+      await files
+          .upload(local('j2.bin', 24 * 1024 * 1024, sparse: true).path, remote,
+              onProgress: (s, t) => seen.add((s, t)))
+          .done;
+      expect(seen.length, lessThanOrEqualTo(3), reason: '$seen');
+      expect(seen.first, (0, 24 * 1024 * 1024));
+      expect(seen.last, (24 * 1024 * 1024, 24 * 1024 * 1024));
     });
   });
 

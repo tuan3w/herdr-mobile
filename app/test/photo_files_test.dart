@@ -24,6 +24,9 @@ RemoteEntry _file(String name, {RemoteEntryKind kind = RemoteEntryKind.file}) =>
 
 PhotoViewerViewModel _modelOf(WidgetTester tester) => tester.state<PhotoViewerState>(find.byType(PhotoViewer)).model;
 
+/// [pumpUntil] rounds (25 ms each, real time) after which a read that never lands is a failure: a minute, so a busy machine only slows the test down.
+const _patient = 2400;
+
 Future<void> _pumpHome(WidgetTester tester, Widget home) async {
   usePhoneSurface(tester);
   await tester.pumpWidget(MaterialApp(key: UniqueKey(), theme: AppTheme.light(), home: home));
@@ -139,12 +142,14 @@ void main() {
           stat: RemoteStat(path: '/p/screenshot', kind: RemoteEntryKind.file, size: fs.nodes['/p/screenshot']!.bytes.length),
         ),
       );
-      await pumpUntil(tester, () => find.byType(PhotoViewer).evaluate().isNotEmpty);
+      // The bytes are read and the picture decoded by the engine in real time; wait for the event, not a fixed 3 s.
+      await pumpUntil(tester, () => find.byType(PhotoViewer).evaluate().isNotEmpty, limit: _patient);
       await tester.pumpAndSettle();
       expect(find.byType(PhotoViewer), findsOneWidget);
       expect(find.byType(FileViewerScreen), findsNothing, reason: 'replaced, so Back does not land on a blank page');
       final model = _modelOf(tester);
-      await pumpUntil(tester, () => model.currentEntry.ready);
+      await pumpUntil(tester, () => model.currentEntry.ready, limit: _patient);
+      expect(model.currentEntry.ready, isTrue);
       expect(model.count, 1, reason: 'no siblings are listed for a name that is not a photo');
     });
 

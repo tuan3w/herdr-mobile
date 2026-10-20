@@ -1,5 +1,4 @@
 @TestOn('linux || mac-os')
-@Tags(['timing'])
 library;
 
 import 'dart:async';
@@ -25,6 +24,12 @@ const _tail = 192 * 1024;
 // is a number the (replaced) `wait` advances, so minutes of back-off take no
 // time. Modes: backoff (quiet 1100 waits, a line appended during wait 800),
 // idle (--idle-exit 300, quiet), idle-grow (the same, a line during wait 100).
+// The `cli` modes run the script's own `main` (`follow PATH` plus the flags, so
+// the flags are parsed for real) on the same clock: cli-default (no flags,
+// quiet, ends after 8 waits), cli-once (no flags, ends at the first wait),
+// cli-poll (`--poll-ms 2000`, ends after 3 waits), cli-idle (`--idle-exit 2`,
+// quiet) and cli-idle-grow (the same, a line appended during wait 6).
+// The summary also says how many bytes were read from the file.
 const _harness = r'''
 import json, os, sys
 script, log, mode = sys.argv[1:4]
@@ -35,12 +40,19 @@ now = [0.0]
 waits = []
 reads = []
 count = [0]
+read_bytes = [0]
 real_pread = os.pread
 def pread(*a):
     count[0] += 1
-    return real_pread(*a)
+    data = real_pread(*a)
+    read_bytes[0] += len(data)
+    return data
 os.pread = pread
-append_at = {"backoff": 800, "idle-grow": 100}.get(mode)
+append_at = {"backoff": 800, "idle-grow": 100, "cli-idle-grow": 6}.get(mode)
+cli = {"cli-default": [], "cli-once": [], "cli-poll": ["--poll-ms", "2000"], "cli-idle": ["--idle-exit", "2"], "cli-idle-grow": ["--idle-exit", "2"]}.get(mode)
+# A follower that never ends by itself stops here, like a closed stdin would,
+# so a broken one fails the test instead of spinning.
+max_waits = {"backoff": 1100, "cli-default": 8, "cli-once": 1, "cli-poll": 3}.get(mode, 5000)
 class F(g["Follower"]):
     def wait(self, seconds):
         waits.append(seconds)
@@ -51,9 +63,17 @@ class F(g["Follower"]):
         if n == append_at:
             with open(log, "ab") as f:
                 f.write(b'{"n":99}\n')
-        return mode != "backoff" or n < 1100
-F(log, None, 0.25, 300 if mode.startswith("idle") else 0, lambda: now[0]).run()
-print(json.dumps({"waits": waits, "reads": reads, "total": sum(waits)}))
+        return n < max_waits
+if cli is None:
+    F(log, None, 0.25, 300 if mode.startswith("idle") else 0, lambda: now[0]).run()
+else:
+    # `main` builds the Follower itself, with the real clock unless it is given this one.
+    class CF(F):
+        def __init__(self, path, frm, poll, idle_exit, tail=None, zipped=False):
+            F.__init__(self, path, frm, poll, idle_exit, lambda: now[0], tail, zipped)
+    g["Follower"] = CF
+    g["main"](["follow", log] + cli)
+print(json.dumps({"waits": waits, "reads": reads, "total": sum(waits), "bytes": read_bytes[0]}))
 ''';
 
 String? _pythonDir() {
@@ -158,16 +178,15 @@ class _Follow {
     return out;
   }
 
-  /// Every record until the output has been quiet for [quiet].
-  Future<List<_Rec>> settle({Duration quiet = const Duration(milliseconds: 400)}) async {
-    var seen = -1;
-    while (seen != _records.length) {
-      seen = _records.length;
-      await Future<void>.delayed(quiet);
+  /// Every record up to the one that ends at [offset], for a read that is not
+  /// the first (no `C` note says when it is over) and whose end the test knows.
+  Future<List<_Rec>> until(int offset) async {
+    final out = <_Rec>[];
+    while (true) {
+      final r = await next(timeout: const Duration(seconds: 30));
+      out.add(r);
+      if (!r.isReset && r.offset == offset) return out;
     }
-    final out = _records.sublist(_taken);
-    _taken = _records.length;
-    return out;
   }
 
   Future<void> expectQuiet([Duration d = const Duration(milliseconds: 500)]) async {
@@ -340,7 +359,7 @@ void main() {
       final f = File(host.path());
       _write(f, [for (var i = 0; i < 3; i++) _json(i)]);
       final run = await host.follow(f.path);
-      expect(await run.settle(), hasLength(3));
+      expect(await run.firstRead(), hasLength(3));
       expect([for (final h in run.heads) h.resetOffset], [0]);
       await run.stop();
     });
@@ -395,7 +414,7 @@ void main() {
 
       final stale = await host.follow(f.path, from: offsets.last + 5, tailBytes: 16384);
       expect((await stale.next()).isReset, isTrue);
-      expect(await stale.settle(), hasLength(256));
+      expect(await stale.firstRead(), hasLength(256));
       expect(stale.heads, hasLength(1), reason: 'the reset tail says where it starts too');
       await stale.stop();
     });
@@ -404,7 +423,7 @@ void main() {
       final f = File(host.path());
       f.writeAsStringSync('${'z' * (_tail + 100)}\n{"n":1}\n');
       final run = await host.follow(f.path);
-      final got = await run.settle();
+      final got = await run.firstRead();
       // The huge first line is not JSON and is not wholly inside the window.
       expect([for (final r in got) r.json['n']], [1]);
       await run.stop();
@@ -420,11 +439,15 @@ void main() {
         written += chunk.length;
       }
       sink.closeSync();
-      final watch = Stopwatch()..start();
+      // Starting fast is reading only the tail: the bytes the follower reads
+      // (counted in the harness) are the window plus the byte before it, not 30 MB.
+      final r = await host.runToEnd(host.harness(f.path, 'cli-once'));
+      expect(r.code, 0, reason: r.err);
+      expect((jsonDecode(r.out.trim().split('\n').last) as Map)['bytes'], lessThanOrEqualTo(_tail + 1));
+
       final run = await host.follow(f.path);
       final firstRecord = await run.next();
-      expect(watch.elapsedMilliseconds, lessThan(5000));
-      final rest = await run.settle();
+      final rest = await run.firstRead();
       final bytes = [firstRecord, ...rest].fold<int>(0, (n, r) => n + utf8.encode(r.body).length);
       expect(bytes, lessThanOrEqualTo(_tail));
       expect(rest.last.offset, f.lengthSync());
@@ -447,61 +470,65 @@ void main() {
     });
 
     test('at the default polling rate a new line arrives within 250 ms plus the work', () async {
+      // The poll rate is what the follower waits between two looks, read off
+      // its fake clock (no --poll-ms given): a bound on the latency of a real
+      // process would measure the machine's load, not the rate.
+      final log = File(host.path());
+      _write(log, [_json(1)]);
+      final r = await host.runToEnd(host.harness(log.path, 'cli-default'));
+      expect(r.code, 0, reason: r.err);
+      final waits = ((jsonDecode(r.out.trim().split('\n').last) as Map)['waits'] as List).cast<num>();
+      expect(waits, List.filled(8, 0.25));
+
+      // A real process started without the flag still delivers every append, in order.
       final f = File(host.path());
       _write(f, [_json(1)]);
       final run = await host.follow(f.path, pollMs: null);
       await run.next();
-      final latencies = <int>[];
-      for (var i = 0; i < 12; i++) {
-        await Future<void>.delayed(Duration(milliseconds: 37 * i % 200)); // different phases of the poll
-        final watch = Stopwatch()..start();
+      for (var i = 0; i < 4; i++) {
         _write(f, [_json(2 + i)], mode: FileMode.append);
-        expect((await run.next(timeout: const Duration(seconds: 3))).json['n'], 2 + i);
-        latencies.add(watch.elapsedMilliseconds);
+        expect((await run.next(timeout: const Duration(seconds: 30))).json['n'], 2 + i);
       }
-      // ignore: avoid_print
-      print('append-to-emit latency at 250 ms polling (ms): ${(latencies..sort())}');
-      // The median shows the poll rate; the slowest of 12 is scheduling noise
-      // when the whole suite runs at once (it failed there, never alone). A
-      // follower polling every second or slower would put the median past 500.
-      expect(latencies[latencies.length ~/ 2], lessThan(450));
-      expect(latencies.last, lessThan(2000), reason: 'no append waits for several polls');
       await run.stop();
     });
 
     test('a poll interval can be given', () async {
+      // What the follower waits between two looks, read off the harness clock
+      // (`--poll-ms 2000`, parsed by the real `main`): the gap between two lines
+      // of a real process is a measure of the machine's load as much as of the rate.
+      final log = File(host.path());
+      _write(log, [_json(1)]);
+      final r = await host.runToEnd(host.harness(log.path, 'cli-poll'));
+      expect(r.code, 0, reason: r.err);
+      final waits = ((jsonDecode(r.out.trim().split('\n').last) as Map)['waits'] as List).cast<num>();
+      expect(waits, List.filled(3, 2.0));
+
+      // A real process given it still delivers a line appended after its first read.
       final f = File(host.path());
       _write(f, [_json(1)]);
       final run = await host.follow(f.path, pollMs: 2000);
       await run.next();
-      // Timed from a line it has just picked up, so from a look: timed from the
-      // start, a slow runner can deliver the first line late, just before the
-      // next look, and the line after it comes at once.
       _write(f, [_json(2)], mode: FileMode.append);
-      final second = await run.next(timeout: const Duration(seconds: 5));
-      _write(f, [_json(3)], mode: FileMode.append);
-      final third = await run.next(timeout: const Duration(seconds: 5));
-      // From record to record as the test read them: a stall between reading
-      // line 2 and writing line 3 (a busy runner) shortens a gap timed from
-      // the write, and the line would look as if it came sooner than a poll.
-      expect(third.at.difference(second.at).inMilliseconds, greaterThan(1000), reason: 'it only looks every 2 s');
+      expect((await run.next(timeout: const Duration(seconds: 30))).json['n'], 2);
       await run.stop();
     });
 
     test('--idle-exit ends the follower by itself after that long without growth; growth postpones it', () async {
-      final f = File(host.path());
-      _write(f, [_json(1)]);
-      final run = await host.follow(f.path, idleExit: 2);
-      await run.next();
-      await Future<void>.delayed(const Duration(milliseconds: 1400));
-      _write(f, [_json(2)], mode: FileMode.append);
-      await run.next();
-      var exited = false;
-      unawaited(run.exitCode.then((_) => exited = true));
-      await Future<void>.delayed(const Duration(milliseconds: 1300)); // 2.7 s after the start, 1.3 s after growth
-      expect(exited, isFalse, reason: 'the growth restarted the 2 s');
-      expect(await run.exitCode.timeout(const Duration(seconds: 4)), 0);
-      expect(run.stderr, isEmpty);
+      // On the harness's fake clock (the real `main` parses `--idle-exit 2`), so
+      // the seconds are counted, not waited for: a busy machine cannot stretch them.
+      Future<Map> ran(String mode) async {
+        final f = File(host.path());
+        _write(f, [_json(1)]);
+        final r = await host.runToEnd(host.harness(f.path, mode));
+        expect(r.code, 0, reason: r.err);
+        expect(r.err, isEmpty);
+        return jsonDecode(r.out.trim().split('\n').last) as Map;
+      }
+
+      // Quiet: ends by itself, 2 s after the start (8 waits of 0.25 s).
+      expect((await ran('cli-idle'))['total'], 2.0);
+      // A line during the 6th wait (at 1.5 s) restarts the 2 s: it ends at 3.5 s.
+      expect((await ran('cli-idle-grow'))['total'], 3.5);
     });
 
     test('without --idle-exit a quiet file keeps it running', () async {
@@ -627,7 +654,8 @@ void main() {
       File('${f.path}.new').renameSync(f.path);
       final reset = await run.next();
       expect(reset.isReset, isTrue);
-      final got = await run.settle();
+      // The reset is not a first read (no `C` note again): up to the file's end.
+      final got = await run.until(offsets.last);
       final first = got.first.json['n']! as int;
       expect(reset.resetOffset, greaterThanOrEqualTo(offsets.last - _tail - 1));
       expect(got.last.offset, offsets.last);
@@ -662,7 +690,7 @@ void main() {
       final lines = [for (var i = 0; i < 8000; i++) _json(i, pad: 'k' * (86 - '$i'.length))];
       _write(f, lines);
       final run = await host.follow(f.path, from: 0);
-      final got = await run.settle();
+      final got = await run.firstRead();
       expect(got, hasLength(8000));
       expect(got.first.json['n'], 0);
       await run.stop();
@@ -1146,11 +1174,11 @@ void main() {
     test('quietly when stdin closes, even if the file never changes', () async {
       final f = File(host.path());
       _write(f, [_json(1)]);
-      final run = await host.follow(f.path);
+      // A poll of a minute: a follower that only noticed the closed stdin at its
+      // next look would not end within the 10 s `stop` allows.
+      final run = await host.follow(f.path, pollMs: 60000);
       await run.next();
-      final watch = Stopwatch()..start();
       expect(await run.stop(), 0);
-      expect(watch.elapsedMilliseconds, lessThan(3000));
       expect(run.stderr, isEmpty);
     });
 
@@ -1178,7 +1206,7 @@ void main() {
     test('once, with the offset it has reached: an empty file, a tail, and a resume at the end', () async {
       final empty = File(host.path())..writeAsStringSync('');
       final a = await host.follow(empty.path);
-      await a.settle();
+      await a.firstRead();
       expect([for (final c in a.caughtUp) c.text], ['C\t0']);
       await a.stop();
 
@@ -1186,7 +1214,7 @@ void main() {
       final offsets = _write(f, [_json(1), _json(2)]);
       final b = await host.follow(f.path);
       expect([for (final r in await b.take(2)) r.offset], offsets);
-      await b.settle();
+      await b.firstRead();
       expect([for (final c in b.caughtUp) c.text], ['C\t${offsets.last}']);
       _write(f, [_json(3)], mode: FileMode.append);
       expect((await b.next()).json['n'], 3);
@@ -1196,12 +1224,12 @@ void main() {
 
       final c = await host.follow(f.path, from: offsets.first);
       expect((await c.next()).json['n'], 2);
-      await c.settle();
+      await c.firstRead();
       expect(c.caughtUp.single.text, 'C\t${f.lengthSync()}', reason: 'the offset of the end it has sent up to');
       await c.stop();
 
       final d = await host.follow(f.path, from: f.lengthSync());
-      await d.settle();
+      await d.firstRead();
       expect(d.caughtUp.single.text, 'C\t${f.lengthSync()}', reason: 'a resume at the end has no record to say it by');
       await d.stop();
     });
@@ -1233,9 +1261,10 @@ void main() {
       String row(int i) => jsonEncode({'n': i, 'text': 'line $i with words that repeat ${i % 5}'});
       _write(f, [for (var i = 0; i < 300; i++) row(i)]);
       final run = await host.startCommand(keeperFollowCommand(f.path, pollMs: 40, zipped: true));
-      final first = await run.settle();
+      final first = await run.firstRead();
       _write(f, [for (var i = 300; i < 340; i++) row(i)], mode: FileMode.append);
-      final later = await run.settle();
+      // One write is one batch: one Z line (any row it left out fails the comparison below).
+      final later = [await run.next()];
 
       expect(first.single.text, startsWith('Z'));
       expect(later.single.text, startsWith('Z'), reason: 'its own line, not part of the first');

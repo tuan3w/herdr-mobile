@@ -39,7 +39,12 @@ Future<RawReply> rawRequest(
   ));
   final bytes = BytesBuilder(copy: false);
   final done = Completer<void>();
-  socket.listen(bytes.add, onDone: done.complete, onError: (Object _) => done.complete());
+  // An error (a reset after the answer) is followed by done: complete once.
+  void finish() {
+    if (!done.isCompleted) done.complete();
+  }
+
+  socket.listen(bytes.add, onDone: finish, onError: (Object _) => finish());
   var timedOut = false;
   await done.future.timeout(timeout, onTimeout: () {
     timedOut = true;

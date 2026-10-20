@@ -1,5 +1,4 @@
 @TestOn('linux || mac-os')
-@Tags(['timing'])
 library;
 
 import 'dart:async';
@@ -14,11 +13,17 @@ import 'package:herdr_mobile/data/services/mux_client.dart';
 
 /// Runs [command] the way an SSH server would (`sh -c`) with a controlled
 /// $HOME and a minimal PATH, so the host's real herdr cannot interfere.
+///
+/// With [untilAnswered] stdin stays open until the command has printed a whole
+/// line, the way the phone's channel does: `socat` stops 0.5 s after it sees
+/// stdin end (its default `-t`), so on a busy machine a slow server would be
+/// cut off and then write to a socket nobody reads (a broken pipe).
 Future<({String out, String err, int code})> _run(
   String command,
   Directory home, {
   String input = '',
   Map<String, String> env = const {},
+  bool untilAnswered = false,
 }) async {
   final p = await Process.start(
     '/bin/sh',
@@ -27,11 +32,18 @@ Future<({String out, String err, int code})> _run(
     includeParentEnvironment: false,
   );
   p.stdin.write(input);
-  await p.stdin.close();
-  final out = utf8.decodeStream(p.stdout);
+  final text = StringBuffer();
+  final answered = Completer<void>();
+  final out = utf8.decoder.bind(p.stdout).forEach((s) {
+    text.write(s);
+    if (s.contains('\n') && !answered.isCompleted) answered.complete();
+  });
   final err = utf8.decodeStream(p.stderr);
+  if (untilAnswered) await Future.any([answered.future, p.exitCode]);
+  await p.stdin.close();
   final code = await p.exitCode.timeout(const Duration(seconds: 10));
-  return (out: await out, err: await err, code: code);
+  await out;
+  return (out: text.toString(), err: await err, code: code);
 }
 
 bool _has(String bin) =>
@@ -71,6 +83,7 @@ void main() {
         buildBridgeCommand(session: 'default'),
         home,
         input: '{"id":"1","method":"ping","params":{}}\n',
+        untilAnswered: true,
       );
 
       expect(r.err, isEmpty);
@@ -83,6 +96,7 @@ void main() {
         buildBridgeCommand(session: 'work', socketPath: socketPath),
         home,
         input: '{"id":"1","method":"ping","params":{}}\n',
+        untilAnswered: true,
       );
 
       expect(r.out.trim(), contains('pong'));
@@ -649,6 +663,24 @@ esac
         return (r['read'] as Map)['text'] as String;
       }
 
+      /// A mux process and a client on it. [requestTimeout] is generous: how
+      /// long the script takes to answer on a busy machine is not what the tests
+      /// check (the one about timing out sets its own).
+      Future<void> connect(Duration requestTimeout) async {
+        final process = await Process.start(
+          '/bin/sh',
+          ['-c', buildMuxCommand(session: 'default')],
+          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': xdg},
+          includeParentEnvironment: false,
+        );
+        channel = _ProcessChannel(process);
+        client = await MuxClient.connect(
+          channel,
+          requestTimeout: requestTimeout,
+          heartbeatInterval: const Duration(hours: 1),
+        );
+      }
+
       setUp(() async {
         seen.clear();
         beforeAnswer = null;
@@ -670,18 +702,7 @@ esac
             },
           });
         });
-        final process = await Process.start(
-          '/bin/sh',
-          ['-c', buildMuxCommand(session: 'default')],
-          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': xdg},
-          includeParentEnvironment: false,
-        );
-        channel = _ProcessChannel(process);
-        client = await MuxClient.connect(
-          channel,
-          requestTimeout: const Duration(milliseconds: 700),
-          heartbeatInterval: const Duration(hours: 1),
-        );
+        await connect(const Duration(seconds: 30));
       });
 
       tearDown(() async {
@@ -740,6 +761,11 @@ esac
       });
 
       test('a read that timed out does not corrupt the next', () async {
+        // Timing out is the point here, and herdr holds the second read until
+        // released, so it always fires; the shorter timeout (a second mux) is
+        // still long enough for the first, whole read on a busy machine.
+        client.close();
+        await connect(const Duration(seconds: 3));
         await read();
         screen = window(3);
         // herdr holds the second read back until the test lets it go.

@@ -1,7 +1,6 @@
 // The commands and skills a chat of an agent in a terminal offers: what the
 // machine's files say, plus the skills the agent's own log listed (Claude's
 // plugin and bundled ones, which have no folder to find).
-@Tags(['timing'])
 library;
 
 import 'dart:convert';
@@ -18,7 +17,12 @@ import 'package:herdr_mobile/data/repositories/observed_session.dart';
 
 import 'support/fake_fs.dart';
 import 'support/fake_log_source.dart';
-import 'support/fake_transport.dart' show eventually;
+import 'support/fake_transport.dart' as transport show eventually;
+
+/// The shared poll with a wide budget: a loaded runner may take seconds to run
+/// what takes milliseconds, and polling costs nothing when the condition is quick.
+Future<void> eventually(bool Function() test, {String reason = 'condition'}) =>
+    transport.eventually(test, reason: reason, timeout: const Duration(seconds: 60));
 
 // The fake pane's folder, as `snapshotJson` makes it.
 const _cwd = '/work/w1';
@@ -52,6 +56,10 @@ Future<(ObservedRig, ObservedAgentSession)> _open({
     source: rig.source,
     mapper: claude ? ClaudeLogMapper.new : CodexLogMapper.new,
     previews: rig.previews,
+    // The fake log says nothing for an empty file (the real helper says "caught
+    // up"), so such a session goes live only by its quiet-channel timer: make
+    // that short instead of racing its default 2.5 s against the poll's budget.
+    readyAfter: Duration(milliseconds: lines.isEmpty ? 10 : 2500),
   );
   addTearDown(session.dispose);
   session.acquire();

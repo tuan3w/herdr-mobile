@@ -1,5 +1,6 @@
+// Every test starts real processes (a keeper, an agent, python): the default 30 s per test is what a busy machine runs out of, not a hang.
+@Timeout(Duration(minutes: 3))
 @TestOn('linux || mac-os')
-@Tags(['timing'])
 library;
 
 import 'dart:convert';
@@ -30,7 +31,7 @@ void main() {
       final a = await h.attach(info.id);
       await a.initialize();
       await a.newSession(h);
-      a.prompt('quiet:2');
+      a.prompt('quiet'); // the agent holds the turn open until cancelled: the replay cannot race the end of it
       await eventually(
         () => h.agentLog().any((m) => m['method'] == 'session/prompt'),
         what: 'the prompt to reach the agent',
@@ -41,9 +42,13 @@ void main() {
       await b.load(h);
       expect(
         updatesOf(b.seen).where((u) => u['sessionUpdate'] == 'user_message_chunk').map(updateText),
-        ['quiet:2'],
+        ['quiet'],
         reason: 'the agent has said nothing yet, the message is already part of the conversation',
       );
+      b.write({
+        'method': 'session/cancel',
+        'params': {'sessionId': 'sess-1'},
+      });
       await b.next((m) => m['method'] == 'session/update' && asJson(asJson(m['params'])['update'])['state'] == 'idle');
     });
 
@@ -221,6 +226,8 @@ void main() {
       final bye = await a.next(isMethod('_herdr/agent_exited'));
       expect(asJson(bye['params'])['exitCode'], 3);
       expect(await a.exit.timeout(const Duration(seconds: 30)), 0);
+      // The keeper tells its clients first and saves its record, drops its socket and exits after: wait for the process, not for a moment.
+      await eventually(() async => !await processAlive(info.pid!), what: 'the keeper to finish and exit');
 
       final gone = (await h.list()).single;
       expect(gone.state, KeeperState.exited);
@@ -275,7 +282,7 @@ void main() {
       final k = await h.run(keeperKillCommand(info.id));
       expect(k.code, 0, reason: k.err);
       expect(watch.elapsed, greaterThan(const Duration(seconds: 2))); // SIGTERM ignored, so it waits out the 3 s ladder
-      expect(watch.elapsed, lessThan(const Duration(seconds: 40)), reason: 'the kill command must still finish');
+      // That the kill command finishes at all is checked by `h.run` (it fails after 60 s); a busy machine only makes it slower, so no upper bound here.
       expect(await processAlive(agentPid), isFalse);
       expect(await h.list(), isEmpty);
     });

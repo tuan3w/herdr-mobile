@@ -1,8 +1,6 @@
-@Tags(['timing'])
-library;
-
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -248,18 +246,32 @@ void main() {
           reason: 'the keeper\'s stderr must arrive before the app gives up');
     });
 
-    test('start waits longer than the quick commands do', () async {
-      answer(() {
-        final channel = FakeExecChannel();
-        Timer(const Duration(milliseconds: 300), () {
-          channel.emit('{"id":"k1","agent":"omp","cwd":"/x","state":"running","started_at":1}');
-          channel.exit(0);
+    test('start waits longer than the quick commands do', () {
+      // On a fake clock: the command answers 300 ms after it opens, between the
+      // quick timeout (200 ms) and the start one (400 ms), so no real timer races
+      // another on a loaded machine.
+      fakeAsync((async) {
+        answer(() {
+          final channel = FakeExecChannel();
+          Timer(const Duration(milliseconds: 300), () {
+            channel.emit('{"id":"k1","agent":"omp","cwd":"/x","state":"running","started_at":1}');
+            channel.exit(0);
+          });
+          return channel;
         });
-        return channel;
-      });
 
-      expect((await host.start(agent: 'omp', cwd: '/x')).id, 'k1');
-      await expectLater(host.list(), throwsA(_hostError(message: contains('in time'))));
+        String? startedId;
+        host.start(agent: 'omp', cwd: '/x').then((info) => startedId = info.id);
+        async.elapse(const Duration(milliseconds: 300));
+        expect(startedId, 'k1');
+
+        Object? listError;
+        host.list().then<void>((_) {}, onError: (Object e) => listError = e);
+        async.elapse(const Duration(milliseconds: 199));
+        expect(listError, isNull, reason: 'the quick timeout is 200 ms');
+        async.elapse(const Duration(milliseconds: 1));
+        expect(listError, _hostError(message: contains('in time')));
+      });
     });
   });
 

@@ -1,5 +1,6 @@
+// The heavy tests drive 12 to 200 real turns through python: the default 30 s per test is what a busy machine runs out of, not a hang.
+@Timeout(Duration(minutes: 5))
 @TestOn('linux || mac-os')
-@Tags(['timing'])
 library;
 
 import 'dart:convert';
@@ -39,7 +40,7 @@ void main() {
     Future<Replay> replay(KeeperHost h, String id) async {
       final c = await h.attach(id);
       await c.initialize();
-      final load = await c.load(h);
+      final load = await c.load(h, timeout: const Duration(seconds: 120));
       final updates = c.seen.where(isMethod('session/update')).toList();
       await c.close();
       return (
@@ -340,9 +341,10 @@ void main() {
       expect(soft['dropped'], 0);
       expect(soft['trimmed'], 599);
       expect(soft['bytes'] as int, lessThanOrEqualTo((soft['newestBytes'] as int) + 600 * 12 * 1024));
-      expect(soft['seconds'], lessThan(20));
-      // Nothing re-scans the log per update: 60000 updates, bounded at 20000 entries.
-      expect(out['seconds'], lessThan(20));
+      // Python calls per update, not seconds: they do not move with the load. A pass over the turns per update would cost 1300+ (idle: ~190).
+      expect(soft['callsPerUpdate'] as num, lessThan(400));
+      // Nothing re-scans the log per update: 60000 updates, bounded at 20000 entries (a scan of them is 20000 calls per update; idle: ~176).
+      expect(out['callsPerUpdate'] as num, lessThan(400));
       expect(out['count'], lessThanOrEqualTo(20000));
       expect(out['hotDropped'], greaterThan(0));
     });

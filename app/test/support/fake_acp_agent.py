@@ -27,7 +27,7 @@ Prompt texts:
                 without the answer: the turn stays open until session/cancel.
   big:<n>       a tool call update, then a chunk, each with <n> bytes of output, end_turn
   reply:<text>  one chunk "re: <text>" with its own message id, end_turn
-  quiet:<s>     says nothing for <s> seconds, then end_turn
+  quiet         says nothing and waits for session/cancel, which ends the turn `cancelled`
   task:<id>     an `async_task_spawned` (shell, canStop) for <id>, a chunk, end_turn
   sdktask:<id>  Claude's raw `_claude/sdkMessage` `background_tasks_changed` naming <id>
                 (a `local_bash`), a chunk, end_turn
@@ -404,8 +404,9 @@ def prompt(msg):
                      "content": [{"type": "content", "content": {"type": "text", "text": "y" * n}}]})
         chunk(sid, "z" * n, "mbig")
         chunk(sid, "tail", "mtail")
-    elif text.startswith("quiet:"):
-        time.sleep(float(text[6:]))
+    elif text == "quiet":
+        hold_until_cancel()
+        stop = "cancelled"
     elif text.startswith("picture:"):
         # picture:<chars>: the agent shows a picture of that many base64 characters.
         n = int(text[8:])

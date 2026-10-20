@@ -2,7 +2,6 @@
 // it is set to and opening in place, one at a time, with a newer version's row
 // above them that opens the update sheet. These tests hold the rules that keep
 // it five rows long, and the update's path from notes to Install.
-@Tags(['timing'])
 library;
 
 import 'dart:async';
@@ -208,9 +207,12 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    /// Real IO runs in `runAsync`; what the screen schedules needs a pump.
+    /// Real IO runs in `runAsync`; what the screen schedules needs a pump. The
+    /// budget is a wide wall-clock one (not a count of 10 ms turns, which a loaded
+    /// runner stretches past what the disk needs); a quick run never waits for it.
     Future<void> until(WidgetTester tester, bool Function() done) async {
-      for (var i = 0; i < 200 && !done(); i++) {
+      final end = DateTime.now().add(const Duration(seconds: 60));
+      while (!done() && DateTime.now().isBefore(end)) {
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
         await tester.pump();
       }

@@ -82,6 +82,14 @@ every step to the end, and remove what does not serve them (skill
 8. **Tests catch what a person would notice:** behaviour, boundaries,
    transitions and errors. Don't pin wording, wiring or incidental defaults.
    For UI, look at the render with worst-case data (skill `herdr-screen-check`).
+   A test never depends on the clock or the CPU: no fixed `delayed(N)` waiting
+   for work, no `Stopwatch` bound, no real timer raced against another. Poll for
+   the condition, await the event, or inject a clock; a test that cannot be made
+   independent gets `@Tags(['timing'])` and runs in CI's own job. Nor on another
+   test or file: CI runs shards (a different subset, one shared engine), so a
+   file that needs the app fonts loads them itself (`loadAppFonts`). Why: on a
+   4-core runner ten files failed intermittently until they were fixed, and a
+   rerun hides a real bug (`docs/DEVELOPMENT.md`, "Commands").
 9. **Clean cutover.** Migrate every caller and delete what the change made
    obsolete, giving the reason next to the rule. Update a doc only when the
    change makes what it says wrong (see "Writing things down").
@@ -136,7 +144,7 @@ upstream instead of editing them, or the next refresh loses the edit.
 cd app && flutter analyze && flutter test   # Flutter 3.47 on PATH
 ```
 
-`tool/check.sh [--quick]` runs pub get, analyze and the tests in one command; run it
+`tool/check.sh [--quick | --tests]` runs pub get, analyze and the tests in one command; run it
 before yielding (`HERDR_FLUTTER_BIN` points it at another Flutter). On the
 phone, `./autoresearch-keyboard.sh` measures the keyboard and `./autoresearch-stream.sh`
 measures streaming; `./autoresearch.sh` needs no phone and measures what watching
