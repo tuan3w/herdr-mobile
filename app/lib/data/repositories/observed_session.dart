@@ -1030,9 +1030,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     // a channel that stays quiet without failing: live once it has been quiet a
     // moment.
     final ready = Timer(readyAfter, () {
-      // A channel that came back after a drop is ready already, but the link
-      // still says reconnecting: it is live again once it has been quiet.
-      if (!_alive(epoch) || (_ready && _logLink == AgentLink.live)) return;
+      if (!_alive(epoch) || _ready) return;
       _ready = true;
       _failure = null;
       _setLink(AgentLink.live);
