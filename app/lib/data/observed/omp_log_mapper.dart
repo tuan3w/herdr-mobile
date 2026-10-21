@@ -21,7 +21,8 @@ import 'observed_contracts.dart';
 /// - `custom_message` that the user started (a skill prompt, a peer's prompt)
 ///   and `irc:incoming` (a message from another agent, as a note); an
 ///   `async-result` only updates [subagents];
-/// - `compaction`, `branch_summary` and `reset_boundary` (one quiet note);
+/// - `compaction` and `branch_summary` (one quiet note); `reset_boundary` (the
+///   conversation was cleared: the transcript starts over with one note);
 /// - `custom`: `user_todo_edit` (the plan) and `session_exit` (the process is
 ///   gone, so what was running is cancelled).
 ///
