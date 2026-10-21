@@ -468,25 +468,32 @@ void main() {
   });
 
   group('housekeeping, errors, odd input', () {
-    test('compaction, branch summary and a clear are quiet notes; the header title shows', () {
+    test('compaction and branch summary are quiet notes; a clear drops what came before it; the header title shows', () {
       final (s, _) = _run('compaction_branch');
       expect(s.title, 'Long running work');
-      expect(_texts(s, MessageRole.user), ['First question', 'Second question', 'After the clear']);
-      expect(_texts(s, MessageRole.agent), [
-        'First answer',
-        'Earlier messages were summarised',
-        'Earlier messages were summarised',
-        'The conversation was cleared on the machine',
-      ]);
-      expect(s.items.map((i) => i is TranscriptMessage ? i.role.name : 't').toList(), [
-        'user',
-        'agent',
-        'agent',
-        'agent',
-        'user',
-        'agent',
-        'user',
-      ], reason: 'notes sit where they happened');
+      expect(_texts(s, MessageRole.user), ['After the clear']);
+      expect(_texts(s, MessageRole.agent), ['The conversation was cleared on the machine']);
+      expect(
+        s.items.map((i) => i is TranscriptMessage ? i.role.name : 't').toList(),
+        ['agent', 'user'],
+        reason: 'the note opens the new conversation, nothing from before it stays',
+      );
+    });
+
+    test('compaction and branch summary notes sit where they happened', () {
+      final m = OmpLogMapper();
+      var s = AgentSessionState('s');
+      for (final line in [
+        '{"type":"message","id":"n1","timestamp":"2026-10-04T11:30:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Q"}]}}',
+        '{"type":"compaction","id":"n2","timestamp":"2026-10-04T11:31:00.000Z"}',
+        '{"type":"message","id":"n3","timestamp":"2026-10-04T11:32:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Q2"}]}}',
+      ]) {
+        for (final u in m.map(line)) {
+          s = s.apply(u);
+        }
+      }
+      expect(s.items.map((i) => i is TranscriptMessage ? i.role.name : 't').toList(), ['user', 'agent', 'user']);
+      expect(_texts(s, MessageRole.agent), ['Earlier messages were summarised']);
     });
 
     test('a failed turn says so with the error text; interrupted calls are cancelled', () {
@@ -720,7 +727,16 @@ void main() {
         expect(transcriptFingerprint(_feed(twiceSameMapper, [...lines, ...lines])), once, reason: 'replayed log, same mapper');
 
         final freshMapper = _feed(OmpLogMapper(), lines);
-        expect(transcriptFingerprint(_feed(OmpLogMapper(), lines, freshMapper)), once, reason: 'replayed log, new mapper');
+        // A clear drops the old rows, so a replay into the same state shows the
+        // same conversation under new keys (never an old key for new content).
+        final replayed = transcriptFingerprint(_feed(OmpLogMapper(), lines, freshMapper));
+        final keyless = RegExp(r'^([mns]) \S+ ', multiLine: true);
+        final cleared = lines.any((l) => l.contains('"reset_boundary"'));
+        expect(
+          cleared ? replayed.replaceAllMapped(keyless, (m) => '${m[1]} ') : replayed,
+          cleared ? once.replaceAllMapped(keyless, (m) => '${m[1]} ') : once,
+          reason: 'replayed log, new mapper',
+        );
 
         final doubled = _feed(OmpLogMapper(), [for (final l in lines) ...[l, l]]);
         expect(transcriptFingerprint(doubled), once, reason: 'every line twice');

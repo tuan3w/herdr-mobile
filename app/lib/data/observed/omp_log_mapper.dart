@@ -163,7 +163,7 @@ class OmpLogMapper implements SessionLogMapper {
       case 'branch_summary':
         return _note(e, line, 'Earlier messages were summarised');
       case 'reset_boundary':
-        return _note(e, line, 'The conversation was cleared on the machine');
+        return _cleared(e, line);
       case 'custom_message':
         return _customMessage(e, line);
       case 'custom':
@@ -182,6 +182,17 @@ class OmpLogMapper implements SessionLogMapper {
     final t = title.trim();
     if (t.isEmpty) return const [];
     return [SessionInfoUpdate(hasTitle: true, title: cutText(t, 200), hasUpdatedAt: false)];
+  }
+
+  /// The conversation was cleared on the machine: what was open is over, the
+  /// transcript restarts with one note saying why it is short.
+  List<SessionUpdate> _cleared(Json e, String line) {
+    final key = _firstTime(e, line);
+    if (key == null) return const [];
+    _ask = null;
+    _proposed = null;
+    _open.clear();
+    return [const TranscriptCleared(), messageUpsert(MessageRole.agent, key, 'The conversation was cleared on the machine')];
   }
 
   /// One quiet agent message for a housekeeping entry.

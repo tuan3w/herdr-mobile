@@ -2074,6 +2074,13 @@ class SdkTaskNotification extends SessionUpdate {
   final bool ambient;
 }
 
+/// The agent dropped the conversation (omp's `reset_boundary`, a clear typed
+/// in the terminal): what the transcript held is gone from the agent's side,
+/// so the phone must not keep showing it above the new conversation.
+class TranscriptCleared extends SessionUpdate {
+  const TranscriptCleared();
+}
+
 /// An update this client does not model (newer protocol, agent extension).
 class UnknownUpdate extends SessionUpdate {
   const UnknownUpdate(this.type, this.raw);

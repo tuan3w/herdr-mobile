@@ -609,6 +609,7 @@ class AgentSessionState {
     AsyncTaskStateUpdate() => _background(backgroundBook.withState(update, now: now)),
     SdkBackgroundTasks() => _background(backgroundBook.withSdkTasks(update, now: now)),
     SdkTaskNotification() => _background(backgroundBook.withSdkNotification(update, now: now)),
+    TranscriptCleared() => _copy(items: const [], liveIndex: -1, echoed: 0),
     UnknownUpdate() => this,
   };
 
