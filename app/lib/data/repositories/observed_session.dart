@@ -1030,7 +1030,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     // a channel that stays quiet without failing: live once it has been quiet a
     // moment.
     final ready = Timer(readyAfter, () {
-      if (!_alive(epoch) || _ready) return;
+      // A channel that came back after a drop is ready already, but the link
+      // still says reconnecting: it is live again once it has been quiet.
+      if (!_alive(epoch) || (_ready && _logLink == AgentLink.live)) return;
       _ready = true;
       _failure = null;
       _setLink(AgentLink.live);
@@ -1069,7 +1071,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (first) _toldSinceFirstBatch = false;
     _ready = true;
     _failure = null;
-    if (first) _setLink(AgentLink.live);
+    // Also after a drop: the first batch of the new channel ends the outage.
+    _setLink(AgentLink.live);
     if (wide) {
       // The older turns are not shown until all of them are there.
       if (!batch.caughtUp || _wideLog == null) {
