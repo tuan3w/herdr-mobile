@@ -19,6 +19,21 @@ remote agent output, hostnames, paths and protocol values in their original form
 Widgets use `context.l10n` from `l10n_context.dart`; standalone widget tests
 without the app delegate still use their enclosing locale (English by default).
 
+The localization boundaries and count/freshness design are in
+`docs/DESIGN.md`, "Japanese localization contract". Generate code with
+`flutter gen-l10n`; never edit the generated accessors. Focused checks:
+
+```bash
+cd app
+flutter test test/ui/japanese_localization_test.dart
+HERDR_JA_SHOTS=1 flutter test test/ui/japanese_localization_test.dart
+flutter test screenshot_test/japanese_screens_shots_test.dart
+```
+
+The last two commands write review images under `/tmp/herdr-ja-shots` and
+`/tmp/herdr-ja-screens`. Inspect the images; passing screenshot tests alone
+does not establish translated-text coverage or visual correctness.
+
 ## Commands
 
 ```bash
