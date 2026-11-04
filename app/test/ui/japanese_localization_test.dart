@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
+import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
@@ -12,6 +13,7 @@ import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:herdr_mobile/l10n/app_localizations_en.dart';
 import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/ui/features/files/file_widgets.dart';
 import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -134,6 +136,47 @@ void main() {
       expect(en.statusNeedsYou(2), '2 need you');
       expect(en.heardJustNow, 'heard just now');
       expect(en.heardAgo('3m'), 'heard 3m ago');
+    });
+
+    test('the remaining count resources say Japanese and keep the English plurals', () {
+      expect(ja.messageOfNeedsYou(3, 2), '対応待ち3件中2件目');
+      expect(en.messageOfNeedsYou(3, 2), '2 of 3 need you');
+      expect(en.messageOfNeedsYou(1, 1), '1 of 1 needs you');
+      expect(ja.messageForgetRemembered(3), '保存済みのメッセージ3件を削除');
+      expect(ja.messageForgetRemembered(1), '保存済みのメッセージ1件を削除');
+      expect(en.messageForgetRemembered(1), 'Forget 1 remembered message');
+      expect(en.messageForgetRemembered(3), 'Forget 3 remembered messages');
+      expect(ja.messageWorkingThereWillStop(2), 'ここで実行中のエージェント2体は停止します。');
+      expect(en.messageWorkingThereWillStop(1), '1 agent working there will stop. ');
+      expect(ja.messageRunningThereWillLoseTheFolder(1), 'ここで実行中の携帯セッション1件はフォルダーを失います。');
+      expect(en.messageRunningThereWillLoseTheFolder(2), '2 phone sessions running there will lose the folder. ');
+      expect(ja.messageHiddenItemCount(2), '非表示の項目2件');
+      expect(en.messageHiddenItemCount(2), '2 hidden items');
+      expect(ja.messageAgentsWorkingHereAWorktreeKeepsThemApart(2), 'ここでエージェント2体が作業中 · worktreeなら分けて実行できます');
+      expect(
+        en.messageAgentsWorkingHereAWorktreeKeepsThemApart(1),
+        '1 agent working here · a worktree keeps them apart',
+      );
+      expect(ja.messageWorkspaceCount(2), 'ワークスペース2件');
+      expect(en.messageWorkspaceCount(2), '2 workspaces');
+      expect(ja.messageConnectedHerdrVersion('1.2.3'), '接続済み · herdr 1.2.3');
+      expect(en.messageConnectedHerdrVersion('1.2.3'), 'Connected · herdr 1.2.3');
+      expect(ja.messageHostKey('SHA256:abc'), 'ホスト鍵 SHA256:abc');
+      expect(en.messageHostKey('SHA256:abc'), 'Host key SHA256:abc');
+    });
+
+    test('file errors translate app-owned words and keep the host message', () {
+      final notFound = describeFileError(RemoteFileException(RemoteFileErrorKind.notFound, 'raw'), 'notes.md', ja);
+      expect(notFound.title, '見つかりません');
+      expect(notFound.message, 'notes.mdはもうありません。移動または削除された可能性があります。');
+      expect(
+        describeFileError(RemoteFileException(RemoteFileErrorKind.notFound, 'raw'), 'notes.md', en).title,
+        'Not found',
+      );
+
+      final failed = describeFileError(RemoteFileException(RemoteFileErrorKind.failed, 'permission denied'), 'x', ja);
+      expect(failed.title, 'これを読み取れませんでした');
+      expect(failed.message, 'permission denied');
     });
 
     test('the compact elapsed labels use Japanese units and keep English', () {

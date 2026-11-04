@@ -462,6 +462,7 @@ class _Tools extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.read<FileBrowserViewModel>();
     final options = vm.options;
+    final sortWords = _sortWords(context, options.sort);
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.xs),
       child: Column(
@@ -485,8 +486,8 @@ class _Tools extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: Gap.gutter),
                   children: [
                     AppChip(
-                      label: options.sort.label,
-                      semanticLabel: context.l10n.messageSortBy(options.sort.label),
+                      label: sortWords.label,
+                      semanticLabel: context.l10n.messageSortBy(sortWords.label),
                       icon: LucideIcons.arrowUpDown,
                       selected: options.sort != FileSort.name,
                       onTap: () => unawaited(_showSortSheet(context, options)),
@@ -517,6 +518,16 @@ const _sortIcons = {
   FileSort.size: LucideIcons.hardDrive,
   FileSort.type: LucideIcons.fileType,
 };
+
+({String label, String hint}) _sortWords(BuildContext context, FileSort sort) {
+  final l10n = context.l10n;
+  return switch (sort) {
+    FileSort.name => (label: l10n.uiName, hint: l10n.uiAToZ),
+    FileSort.modified => (label: l10n.uiModified, hint: l10n.uiNewestFirst),
+    FileSort.size => (label: l10n.uiSize, hint: l10n.uiLargestFirst),
+    FileSort.type => (label: l10n.uiType, hint: l10n.uiByExtension),
+  };
+}
 
 Future<void> _showSortSheet(BuildContext context, FileBrowserOptions options) => showAppSheet<void>(
   context,
@@ -564,6 +575,7 @@ class _SortRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
+    final words = _sortWords(context, sort);
     return PressRow(
       onTap: () {
         Haptics.tick();
@@ -581,8 +593,8 @@ class _SortRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(sort.label, style: Type.row.copyWith(color: ds.text)),
-                Text(sort.hint, style: Type.caption.copyWith(color: ds.textSecondary)),
+                Text(words.label, style: Type.row.copyWith(color: ds.text)),
+                Text(words.hint, style: Type.caption.copyWith(color: ds.textSecondary)),
               ],
             ),
           ),
@@ -649,10 +661,13 @@ class EmptyFolderState extends StatelessWidget {
           ? context.l10n.uiOnlyHiddenFiles
           : (onlyFiles ? context.l10n.uiNoFoldersHere : context.l10n.uiFolderIsEmpty),
       message: onlyHidden
-          ? context.l10n.messageHas(vm.name, countOf(vm.hiddenCount, 'hidden item'))
+          ? context.l10n.messageHas(vm.name, context.l10n.messageHiddenItemCount(vm.hiddenCount))
           : (onlyFiles
                 ? context.l10n.uiChooseThisFolderOrGoBack
-                : context.l10n.messageNothingInYet(vm.name, pullToRefresh ? ' Pull down to check again.' : '')),
+                : context.l10n.messageNothingInYet(
+                    vm.name,
+                    pullToRefresh ? context.l10n.messagePullDownToCheckAgain : '',
+                  )),
       action: onlyHidden
           ? AppButton(
               label: context.l10n.uiShowHiddenFiles,

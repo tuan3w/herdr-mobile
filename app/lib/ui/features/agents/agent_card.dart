@@ -36,6 +36,14 @@ const _previewRows = 5;
 /// on every preview refresh.
 final _replyWidths = <(String, double), double>{};
 
+String _statusLabel(BuildContext context, AgentStatus status) => switch (status) {
+  AgentStatus.blocked => context.l10n.uiNeedsYou,
+  AgentStatus.working => context.l10n.uiWorking,
+  AgentStatus.done => context.l10n.uiDone,
+  AgentStatus.idle => context.l10n.uiIdle,
+  AgentStatus.unknown => context.l10n.uiUnknown,
+};
+
 double _replyWidth(TextScaler scaler, String label) => _replyWidths[(label, scaler.scale(1))] ??= () {
   final painter = TextPainter(
     text: TextSpan(text: label, style: Type.labelStrong),
@@ -231,7 +239,7 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
         onTap: sel.active ? _pick : _open,
         onLongPress: () => _pick(feedback: false),
         selected: sel.active ? sel.selected : null,
-        semanticLabel: _semanticLabel(prompt),
+        semanticLabel: _semanticLabel(prompt, context),
         builder: (context, pressed) => AnimatedContainer(
           duration: Motion.pressing(pressed),
           curve: Motion.easeOut,
@@ -363,14 +371,16 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
     return _lineOf(prompt.subject.isEmpty ? Type.prompt : Mono.input, scaler);
   }
 
-  String _semanticLabel(PromptInfo? prompt) => [
-    _agent.status.label,
+  String _semanticLabel(PromptInfo? prompt, BuildContext context) => [
+    _statusLabel(context, _agent.status),
     _agent.title,
     if (_agent.subtitle.isNotEmpty) _agent.subtitle,
-    if (_agent.stale) 'offline',
+    if (_agent.stale) context.l10n.uiOffline,
     if (prompt != null)
-      'Asks: ${prompt.question.replaceAll('\n', ' ')}'
-          '${prompt.subject.isEmpty ? '' : '. ${prompt.subject.replaceAll('\n', ', ')}'}',
+      context.l10n.messageAsks(
+        '${prompt.question.replaceAll('\n', ' ')}'
+        '${prompt.subject.isEmpty ? '' : '. ${prompt.subject.replaceAll('\n', ', ')}'}',
+      ),
   ].join(', ');
 
   /// The card's inner edge: its corner radius, so content sits concentric.
@@ -453,7 +463,7 @@ class StateTime extends StatelessWidget {
         child: Text(text, maxLines: 1, softWrap: false, style: style),
       ),
     );
-    if (agent.stale) return label('offline', 'offline');
+    if (agent.stale) return label(context.l10n.uiOffline, context.l10n.uiOffline);
     if (agent.quietMinutes > 0) {
       // design-lint: allow(raw-duration) a count of minutes the machine measured, not a timer
       final quiet = Duration(minutes: agent.quietMinutes);
@@ -662,7 +672,7 @@ class AgentCompactRow extends StatelessWidget {
             // Merged from the glyph and the texts, plus what dimming only implies.
             semanticLabel: agent.stale
                 ? [
-                    agent.status.label,
+                    _statusLabel(context, agent.status),
                     agent.title,
                     if (agent.subtitle.isNotEmpty) agent.subtitle,
                     context.l10n.uiOffline,

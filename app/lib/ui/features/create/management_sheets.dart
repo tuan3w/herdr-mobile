@@ -9,7 +9,6 @@ import '../../../data/models/herdr_models.dart';
 import '../../../data/models/machine_layout.dart';
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/machine_connection.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -92,10 +91,8 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
         shortPath(folder),
         machine.profile.label,
         branch == null ? context.l10n.uiTheBranchStays : context.l10n.messageTheBranchStays(branch),
-        working.stop > 0 ? context.l10n.messageWorkingThereWillStop(countOf(working.stop, 'agent')) : '',
-        working.lose > 0
-            ? context.l10n.messageRunningThereWillLoseTheFolder(countOf(working.lose, 'phone session'))
-            : '',
+        working.stop > 0 ? context.l10n.messageWorkingThereWillStop(working.stop) : '',
+        working.lose > 0 ? context.l10n.messageRunningThereWillLoseTheFolder(working.lose) : '',
       ),
     );
     if (!ok) return;

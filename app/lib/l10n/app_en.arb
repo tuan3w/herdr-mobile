@@ -600,25 +600,19 @@
       }
     }
   },
-  "messageForgetRemembered": "Forget {p0} remembered {p1}",
+  "messageForgetRemembered": "Forget {count} remembered {count, plural, =1{message} other{messages}}",
   "@messageForgetRemembered": {
     "placeholders": {
-      "p0": {
-        "type": "String"
-      },
-      "p1": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
-  "messageForgetRemembered30": "Forget {p0} remembered {p1}?",
+  "messageForgetRemembered30": "Forget {count} remembered {count, plural, =1{message} other{messages}}?",
   "@messageForgetRemembered30": {
     "placeholders": {
-      "p0": {
-        "type": "String"
-      },
-      "p1": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -1811,19 +1805,19 @@
       }
     }
   },
-  "messageWorkingThereWillStop": "{p0} working there will stop. ",
+  "messageWorkingThereWillStop": "{count, plural, =1{1 agent working there will stop. } other{{count} agents working there will stop. }}",
   "@messageWorkingThereWillStop": {
     "placeholders": {
-      "p0": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
-  "messageRunningThereWillLoseTheFolder": "{p0} running there will lose the folder. ",
+  "messageRunningThereWillLoseTheFolder": "{count, plural, =1{1 phone session running there will lose the folder. } other{{count} phone sessions running there will lose the folder. }}",
   "@messageRunningThereWillLoseTheFolder": {
     "placeholders": {
-      "p0": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -2069,5 +2063,121 @@
   "uiCouldnTConnect": "Couldn’t connect",
   "uiRetryUnderTheMessageOpensItAgain": "Retry, under the message, opens it again.",
   "uiPathCopied": "Path copied",
-  "uiLinkCopied": "Link copied"
+  "uiLinkCopied": "Link copied",
+  "uiHoldOrTapAgain": "Hold or tap again",
+  "messageHoldTo": "Hold to {p0}",
+  "@messageHoldTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiNotFound": "Not found",
+  "uiNoPermission": "No permission",
+  "uiFilesUnavailable": "Files are unavailable",
+  "uiTooLargeToOpen": "Too large to open",
+  "uiCantOpenThis": "Can’t open this",
+  "uiNotAFolder": "Not a folder",
+  "uiNotReachable": "Not reachable",
+  "uiCouldntReadThis": "Couldn’t read this",
+  "messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": "{p0} is no longer there. It may have been moved or deleted.",
+  "@messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageYourLoginOnThisMachineIsntAllowedToRead": "Your login on this machine isn’t allowed to read {p0}.",
+  "@messageYourLoginOnThisMachineIsntAllowedToRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiType": "Type",
+  "uiAToZ": "A to Z",
+  "uiLargestFirst": "Largest first",
+  "uiByExtension": "By extension",
+  "messagePullDownToCheckAgain": " Pull down to check again.",
+  "@messagePullDownToCheckAgain": {
+    "description": "Appended to what an empty folder says, when pulling down checks again."
+  },
+  "messageHiddenItemCount": "{count, plural, =1{1 hidden item} other{{count} hidden items}}",
+  "@messageHiddenItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAgentsWorkingHereAWorktreeKeepsThemApart": "{count, plural, =1{1 agent working here · a worktree keeps them apart} other{{count} agents working here · a worktree keeps them apart}}",
+  "@messageAgentsWorkingHereAWorktreeKeepsThemApart": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageWorkingHereCount": "{count, plural, =1{1 working here} other{{count} working here}}",
+  "@messageWorkingHereCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageBranchesFromCurrentCommit": "Branches from the current commit of this folder",
+  "messageOfNeedsYou": "{total, plural, =1{{index} of 1 needs you} other{{index} of {total} need you}}",
+  "@messageOfNeedsYou": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAsks": "Asks: {p0}",
+  "@messageAsks": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiOnline": "Online",
+  "uiReconnecting": "Reconnecting…",
+  "uiNeedsAttention": "Needs attention",
+  "uiDisabled": "Disabled",
+  "uiOfflineState": "Offline",
+  "uiWaitingForApproval": "Waiting for approval",
+  "uiNotConnecting": "not connecting",
+  "messageConnectedHerdrVersion": "Connected · herdr {p0}",
+  "@messageConnectedHerdrVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkspaceCount": "{count, plural, =1{1 workspace} other{{count} workspaces}}",
+  "@messageWorkspaceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageHostKey": "Host key {p0}",
+  "@messageHostKey": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  }
 }

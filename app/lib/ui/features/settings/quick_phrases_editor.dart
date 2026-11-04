@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 
 import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/sent_phrases.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -88,7 +87,7 @@ class QuickPhrasesSection extends StatelessWidget {
           ),
           if (sent.tracked > 0)
             AppButton(
-              label: context.l10n.messageForgetRemembered('${sent.tracked}', plural(sent.tracked, 'message')),
+              label: context.l10n.messageForgetRemembered(sent.tracked),
               kind: AppButtonKind.secondary,
               expand: true,
               // Not recoverable (the counts are gone), and one tap forgets all
@@ -105,7 +104,7 @@ Future<void> _forget(BuildContext context, SentPhrases sent) async {
   final n = sent.tracked;
   final ok = await showConfirmSheet(
     context,
-    title: context.l10n.messageForgetRemembered30('$n', plural(n, 'message')),
+    title: context.l10n.messageForgetRemembered30(n),
     message: context.l10n.uiTheMessagesLearnedFromWhatYouSendAreDeleted,
     confirmLabel: context.l10n.uiForget,
   );

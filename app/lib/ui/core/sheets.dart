@@ -355,7 +355,7 @@ Future<bool> showConfirmSheet(
             onPressed: () => Navigator.of(ctx).pop(true),
           ),
         AppButton(
-          label: context.l10n.uiCancel,
+          label: ctx.l10n.uiCancel,
           kind: AppButtonKind.secondary,
           expand: true,
           onPressed: () => Navigator.of(ctx).pop(false),
@@ -415,9 +415,9 @@ class _HoldConfirmButtonState extends State<_HoldConfirmButton> {
       scale: PressScale.panel,
       builder: (context, hold) {
         final shown = _primed
-            ? 'Hold or tap again'
+            ? context.l10n.uiHoldOrTapAgain
             : hold.showsHold
-            ? 'Hold to ${widget.label.toLowerCase()}'
+            ? context.l10n.messageHoldTo(widget.label.toLowerCase())
             : widget.label;
         return AnimatedContainer(
           duration: Motion.pressing(hold.holding),

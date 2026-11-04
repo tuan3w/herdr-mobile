@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/worktrees.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -42,23 +41,24 @@ class CheckoutField extends StatelessWidget {
     return null;
   }
 
-  String get _text => switch (choice) {
-    ThisFolder() => 'This folder',
+  String _text(BuildContext context) => switch (choice) {
+    ThisFolder() => context.l10n.uiThisFolder,
     ExistingCheckout(:final path) => _entry(path)?.name ?? _nameOf(path),
-    NewWorktree() => 'New worktree',
+    NewWorktree() => context.l10n.uiNewWorktree,
   };
 
-  String get _helper {
+  String _helper(BuildContext context) {
+    final l10n = context.l10n;
     switch (choice) {
       case ThisFolder():
         final n = agentsWorking(folder);
-        if (n > 0) return '${countOf(n, 'agent')} working here · a worktree keeps them apart';
+        if (n > 0) return l10n.messageAgentsWorkingHereAWorktreeKeepsThemApart(n);
         return _entry(folder)?.branch ?? ' ';
       case ExistingCheckout(:final path):
         final n = agentsWorking(path);
-        return '${_entry(path)?.branch ?? 'detached'}${n > 0 ? ' · $n working here' : ''}';
+        return '${_entry(path)?.branch ?? l10n.uiDetached}${n > 0 ? ' · ${l10n.messageWorkingHereCount(n)}' : ''}';
       case NewWorktree():
-        return 'Branches from the current commit of this folder';
+        return l10n.messageBranchesFromCurrentCommit;
     }
   }
 
@@ -135,6 +135,7 @@ class CheckoutField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
+    final text = _text(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -146,7 +147,7 @@ class CheckoutField extends StatelessWidget {
         ),
         PressBuilder(
           onTap: () => _choose(context),
-          semanticLabel: context.l10n.messageCheckout(_text),
+          semanticLabel: context.l10n.messageCheckout(text),
           button: true,
           builder: (context, pressed) => AnimatedContainer(
             duration: Motion.pressing(pressed),
@@ -163,7 +164,7 @@ class CheckoutField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    _text,
+                    text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Type.input.copyWith(color: ds.text),
@@ -178,7 +179,7 @@ class CheckoutField extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
           child: Text(
-            _helper,
+            _helper(context),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Type.caption.copyWith(color: ds.textMuted),

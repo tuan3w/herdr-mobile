@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/remote_file.dart';
 import '../../../data/repositories/path_finder.dart' show PathNotFound;
+import '../../../l10n/app_localizations.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -122,60 +123,66 @@ IconData iconForEntry(RemoteEntry e) {
 /// What a failed file operation says: an icon, a short title, a sentence.
 ({IconData icon, String title, String message, bool retry, bool danger}) describeFileError(
   RemoteFileException e,
-  String name,
-) => switch (e.kind) {
+  String name, [
+  AppLocalizations? l10n,
+]) => switch (e.kind) {
   RemoteFileErrorKind.notFound => (
     icon: LucideIcons.fileX,
-    title: 'Not found',
-    message: e is PathNotFound ? e.message : '$name is no longer there. It may have been moved or deleted.',
+    title: l10n?.uiNotFound ?? 'Not found',
+    message: e is PathNotFound
+        ? e.message
+        : l10n?.messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted(name) ??
+              '$name is no longer there. It may have been moved or deleted.',
     retry: true,
     danger: false,
   ),
   RemoteFileErrorKind.permission => (
     icon: LucideIcons.lock,
-    title: 'No permission',
-    message: 'Your login on this machine isn’t allowed to read $name.',
+    title: l10n?.uiNoPermission ?? 'No permission',
+    message:
+        l10n?.messageYourLoginOnThisMachineIsntAllowedToRead(name) ??
+        'Your login on this machine isn’t allowed to read $name.',
     retry: true,
     danger: true,
   ),
   RemoteFileErrorKind.unsupported => (
     icon: HerdrIcons.machinesOff,
-    title: 'Files are unavailable',
+    title: l10n?.uiFilesUnavailable ?? 'Files are unavailable',
     message: e.message,
     retry: false,
     danger: false,
   ),
   RemoteFileErrorKind.tooLarge => (
     icon: LucideIcons.fileWarning,
-    title: 'Too large to open',
+    title: l10n?.uiTooLargeToOpen ?? 'Too large to open',
     message: e.message,
     retry: false,
     danger: false,
   ),
   RemoteFileErrorKind.notAFile => (
     icon: LucideIcons.fileCog,
-    title: 'Can’t open this',
+    title: l10n?.uiCantOpenThis ?? 'Can’t open this',
     message: e.message,
     retry: false,
     danger: false,
   ),
   RemoteFileErrorKind.notADirectory => (
     icon: LucideIcons.file,
-    title: 'Not a folder',
+    title: l10n?.uiNotAFolder ?? 'Not a folder',
     message: e.message,
     retry: false,
     danger: false,
   ),
   RemoteFileErrorKind.network => (
     icon: LucideIcons.cloudOff,
-    title: 'Not reachable',
+    title: l10n?.uiNotReachable ?? 'Not reachable',
     message: e.message,
     retry: true,
     danger: true,
   ),
   RemoteFileErrorKind.failed => (
     icon: LucideIcons.circleAlert,
-    title: 'Couldn’t read this',
+    title: l10n?.uiCouldntReadThis ?? 'Couldn’t read this',
     message: e.message,
     retry: true,
     danger: true,
@@ -210,7 +217,7 @@ class FileErrorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final d = describeFileError(error, name);
+    final d = describeFileError(error, name, context.l10n);
     final retry = d.retry && onRetry != null
         ? AppButton(label: context.l10n.uiRetry, kind: AppButtonKind.secondary, compact: true, onPressed: onRetry)
         : null;
@@ -303,7 +310,7 @@ class FileResolvingPage extends StatelessWidget {
                             label: context.l10n.uiCopyPath,
                             icon: LucideIcons.copy,
                             kind: AppButtonKind.secondary,
-                            onPressed: () => copyText(context, path!, what: 'Path copied'),
+                            onPressed: () => copyText(context, path!, what: context.l10n.uiPathCopied),
                           ),
                         ),
                       ],

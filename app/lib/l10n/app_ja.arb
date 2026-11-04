@@ -600,25 +600,19 @@
       }
     }
   },
-  "messageForgetRemembered": "保存済みの{p1}を{p0}件削除",
+  "messageForgetRemembered": "保存済みのメッセージ{count}件を削除",
   "@messageForgetRemembered": {
     "placeholders": {
-      "p0": {
-        "type": "String"
-      },
-      "p1": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
-  "messageForgetRemembered30": "保存済みの{p1}を{p0}件削除しますか？",
+  "messageForgetRemembered30": "保存済みのメッセージ{count}件を削除しますか？",
   "@messageForgetRemembered30": {
     "placeholders": {
-      "p0": {
-        "type": "String"
-      },
-      "p1": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -1811,19 +1805,19 @@
       }
     }
   },
-  "messageWorkingThereWillStop": "ここで実行中の{p0}は停止します。",
+  "messageWorkingThereWillStop": "ここで実行中のエージェント{count}体は停止します。",
   "@messageWorkingThereWillStop": {
     "placeholders": {
-      "p0": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
-  "messageRunningThereWillLoseTheFolder": "ここで実行中の{p0}からフォルダーが失われます。",
+  "messageRunningThereWillLoseTheFolder": "ここで実行中の携帯セッション{count}件はフォルダーを失います。",
   "@messageRunningThereWillLoseTheFolder": {
     "placeholders": {
-      "p0": {
-        "type": "String"
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -1902,5 +1896,118 @@
   "uiCouldnTConnect": "接続できませんでした",
   "uiRetryUnderTheMessageOpensItAgain": "メッセージの下の「再試行」で開き直します。",
   "uiPathCopied": "パスをコピーしました",
-  "uiLinkCopied": "リンクをコピーしました"
+  "uiLinkCopied": "リンクをコピーしました",
+  "uiHoldOrTapAgain": "長押し、またはもう一度タップ",
+  "messageHoldTo": "{p0}には長押し",
+  "@messageHoldTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiNotFound": "見つかりません",
+  "uiNoPermission": "権限がありません",
+  "uiFilesUnavailable": "ファイルを利用できません",
+  "uiTooLargeToOpen": "開くには大きすぎます",
+  "uiCantOpenThis": "これを開けません",
+  "uiNotAFolder": "フォルダーではありません",
+  "uiNotReachable": "接続できません",
+  "uiCouldntReadThis": "これを読み取れませんでした",
+  "messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": "{p0}はもうありません。移動または削除された可能性があります。",
+  "@messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageYourLoginOnThisMachineIsntAllowedToRead": "このマシンへのログインには{p0}を読み取る権限がありません。",
+  "@messageYourLoginOnThisMachineIsntAllowedToRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiType": "種類",
+  "uiAToZ": "A→Z",
+  "uiLargestFirst": "大きい順",
+  "uiByExtension": "拡張子順",
+  "messagePullDownToCheckAgain": " 下に引いて再確認してください。",
+  "messageHiddenItemCount": "非表示の項目{count}件",
+  "@messageHiddenItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAgentsWorkingHereAWorktreeKeepsThemApart": "ここでエージェント{count}体が作業中 · worktreeなら分けて実行できます",
+  "@messageAgentsWorkingHereAWorktreeKeepsThemApart": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageWorkingHereCount": "ここで{count}件作業中",
+  "@messageWorkingHereCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageBranchesFromCurrentCommit": "このフォルダーの現在のコミットからブランチを作成します",
+  "messageOfNeedsYou": "{total, plural, =1{対応待ち{total}件中{index}件目} other{対応待ち{total}件中{index}件目}}",
+  "@messageOfNeedsYou": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAsks": "質問: {p0}",
+  "@messageAsks": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiOnline": "オンライン",
+  "uiReconnecting": "再接続中…",
+  "uiNeedsAttention": "対応が必要",
+  "uiDisabled": "無効",
+  "uiOfflineState": "オフライン",
+  "uiWaitingForApproval": "承認待ち",
+  "uiNotConnecting": "接続していません",
+  "messageConnectedHerdrVersion": "接続済み · herdr {p0}",
+  "@messageConnectedHerdrVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkspaceCount": "ワークスペース{count}件",
+  "@messageWorkspaceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageHostKey": "ホスト鍵 {p0}",
+  "@messageHostKey": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  }
 }

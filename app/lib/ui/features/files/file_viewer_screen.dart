@@ -192,7 +192,7 @@ class _ViewerPageState extends State<_ViewerPage> {
           SheetAction(
             label: context.l10n.uiCopyPath,
             icon: LucideIcons.link,
-            onTap: () => copyText(context, stat.path, what: 'Path copied'),
+            onTap: () => copyText(context, stat.path, what: context.l10n.uiPathCopied),
           ),
         ],
       ),
@@ -426,7 +426,7 @@ class _Body extends StatelessWidget {
                 label: context.l10n.uiCopyPath,
                 icon: LucideIcons.copy,
                 kind: AppButtonKind.secondary,
-                onPressed: () => copyText(context, vm.stat.path, what: 'Path copied'),
+                onPressed: () => copyText(context, vm.stat.path, what: context.l10n.uiPathCopied),
               ),
             ),
           ],
@@ -448,7 +448,7 @@ class _Body extends StatelessWidget {
           ),
           FileKind.svg || FileKind.pdf || FileKind.binary => BinaryView(
             model: vm,
-            onCopyPath: () => copyText(context, vm.stat.path, what: 'Path copied'),
+            onCopyPath: () => copyText(context, vm.stat.path, what: context.l10n.uiPathCopied),
             onShare: onShare,
             onViewAsText: vm.canViewAsText ? vm.viewAsText : null,
             onShowAsPage: canShowAsPage(vm.name) ? () => unawaited(_showAsPage(context, vm.stat)) : null,

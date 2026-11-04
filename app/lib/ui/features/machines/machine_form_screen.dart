@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/machine_repository.dart';
 import '../../../data/services/key_generator.dart';
-import '../../../data/words/plural.dart';
 import 'approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -740,9 +739,9 @@ class _TestResult extends StatelessWidget {
             TestState.ok => (
               ds.done,
               LucideIcons.circleCheck,
-              'Connected · herdr ${vm.version}',
-              '${countOf(vm.workspaceCount, 'workspace')}'
-                  '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
+              context.l10n.messageConnectedHerdrVersion('${vm.version}'),
+              '${context.l10n.messageWorkspaceCount(vm.workspaceCount)}'
+                  '${vm.fingerprint == null ? '' : '\n${context.l10n.messageHostKey(vm.fingerprint!)}'}',
             ),
             TestState.failed => (ds.danger, LucideIcons.circleAlert, context.l10n.uiCouldnTConnect, vm.message),
             _ => null,

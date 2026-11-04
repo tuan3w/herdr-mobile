@@ -16,7 +16,6 @@ import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/pane_previews.dart';
 import '../../../data/words/agent_names.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -357,7 +356,7 @@ class _TriageBar extends StatelessWidget {
           child: Semantics(
             liveRegion: true,
             child: Text(
-              context.l10n.messageOf88('${index + 1}', needYou(total)),
+              context.l10n.messageOfNeedsYou(total, index + 1),
               textAlign: TextAlign.center,
               style: Type.labelStrong.copyWith(color: ds.blockedText, fontFeatures: Type.tabular),
             ),
