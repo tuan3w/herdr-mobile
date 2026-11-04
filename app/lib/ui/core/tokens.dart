@@ -379,7 +379,9 @@ const monoFamily = 'JetBrainsMono';
 /// Code's `⏵⏵ auto mode on`, `⏺`, `⎿` and spinner stars, braille spinners.
 /// Subset from Noto onto JetBrains Mono's cell (tool/fonts/build_symbols.py),
 /// because the phone's own fallback drew them as boxes (`▯▯ auto mode on`).
-const monoFallback = ['HerdrSymbols'];
+// Bundle the Japanese regional face instead of relying on the device's CJK
+// fallback, which can select Chinese glyph forms for Japanese text (Issue #2).
+const monoFallback = ['HerdrSymbols', 'HerdrJapanese'];
 
 /// Mono text by role. Ligatures are off: code is read character by character
 /// (`!=` must not become one glyph). The terminal keeps its own, user-sized
@@ -429,12 +431,12 @@ abstract final class Mono {
   );
 }
 
-/// Type scale (Inter). Sizes are for the default text scale; they grow with the
+/// Type scale (IBM Plex Sans JP). Sizes are for the default text scale; they grow with the
 /// system setting. Tracking is size-specific: tight on large text, neutral on
 /// body, never one value for all sizes. Weight comes with the role: a screen
 /// never sets `fontWeight`, it picks the `Strong` variant.
 abstract final class Type {
-  static const family = 'Inter';
+  static const family = 'IBMPlexSansJP';
 
   static const largeTitle = TextStyle(
     fontFamily: family,

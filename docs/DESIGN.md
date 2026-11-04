@@ -17,7 +17,7 @@ without one gets deleted by the next person who does not understand it.
 1. **Content is the interface.** No cards around list items: flat rows divided
    by hairlines. Containers (the terminal, panels, sheets, the agent card that
    holds answers) are the exception.
-2. **Type does the hierarchy.** Inter, size + weight + tracking as one token.
+2. **Type does the hierarchy.** IBM Plex Sans JP, size + weight + tracking as one token.
    A screen never sets a weight; it picks the role (`Type.label` or
    `Type.labelStrong`). Sentence case, never letterspaced caps.
 3. **One accent** (`Ds.accent`). It marks the selected chip or segment, the one
@@ -174,6 +174,16 @@ the symbols agents' TUIs draw that JetBrains Mono lacks (`⏵ ⏸ ⏺ ⎿ ✻ �
 braille spinners), subset from Noto onto the mono cell by
 `tool/fonts/build_symbols.py` (OFL, about 50 KB in the APK). Why: the phone's
 own fallback drew Claude Code's `⏵⏵ auto mode on` as `▯▯ auto mode on`.
+Japanese UI uses bundled IBM Plex Sans JP at weights 400/500/600/700.
+Mono text falls back next to Herdr Japanese at 400/700, generated from
+Noto Sans Mono CJK JP by `tool/fonts/build_japanese.py`. Its advances match
+JetBrains Mono (Latin: one cell; Japanese: two), preserving terminal columns.
+The Japanese regional glyphs remain unchanged,
+so Japanese CJK glyph forms do not depend on a device's Chinese fallback.
+Latin terminal cells keep JetBrains Mono. Mermaid diagrams retain Inter for
+Latin labels so their measured layout remains correct, with IBM Plex Sans JP
+as the explicit fallback for Japanese labels. Both Japanese families are OFL;
+their license files are bundled next to the font sources in assets/fonts/.
 
 ### Space, radius, icons
 
