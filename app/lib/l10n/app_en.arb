@@ -2354,5 +2354,134 @@
   "batchFailureTimeout": "no answer in time",
   "@batchFailureTimeout": {
     "description": "An app-owned batch failure when the machine did not answer in time."
-  }
+  },
+  "messageFileCountItems": "{shown, plural, =1{{shownGrouped} item} other{{shownGrouped} items}}",
+  "@messageFileCountItems": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountFolders": "{shown, plural, =1{{shownGrouped} folder} other{{shownGrouped} folders}}",
+  "@messageFileCountFolders": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountItemsOf": "{shownGrouped} of {base, plural, =1{{baseGrouped} item} other{{baseGrouped} items}}",
+  "@messageFileCountItemsOf": {
+    "placeholders": {
+      "shownGrouped": {
+        "type": "String"
+      },
+      "base": {
+        "type": "int"
+      },
+      "baseGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountFoldersOf": "{shownGrouped} of {base, plural, =1{{baseGrouped} folder} other{{baseGrouped} folders}}",
+  "@messageFileCountFoldersOf": {
+    "placeholders": {
+      "shownGrouped": {
+        "type": "String"
+      },
+      "base": {
+        "type": "int"
+      },
+      "baseGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountItemsHidden": "{shown, plural, =1{{shownGrouped} item} other{{shownGrouped} items}} · {hidden} hidden",
+  "@messageFileCountItemsHidden": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      },
+      "hidden": {
+        "type": "int"
+      }
+    }
+  },
+  "messageFileCountFoldersHidden": "{shown, plural, =1{{shownGrouped} folder} other{{shownGrouped} folders}} · {hidden} hidden",
+  "@messageFileCountFoldersHidden": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      },
+      "hidden": {
+        "type": "int"
+      }
+    }
+  },
+  "messagePhotoCount": "{photos, plural, =1{{photosGrouped} photo} other{{photosGrouped} photos}}",
+  "@messagePhotoCount": {
+    "placeholders": {
+      "photos": {
+        "type": "int"
+      },
+      "photosGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePhotoCountFoldersInList": "{folders, plural, =1{{foldersGrouped} folder in list} other{{foldersGrouped} folders in list}}",
+  "@messagePhotoCountFoldersInList": {
+    "placeholders": {
+      "folders": {
+        "type": "int"
+      },
+      "foldersGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "uiChooseAFile": "choose a file",
+  "uiOpenParent": "Open parent",
+  "uiGoUp": "Go up",
+  "uiPaneClosed": "Pane closed",
+  "uiWaitingForSignInApproval": "Waiting for sign-in approval",
+  "uiOfflineReconnecting": "Offline · reconnecting",
+  "uiNeedsAttentionSeeAbove": "Needs attention · see above",
+  "uiMachineDisabled": "Machine disabled",
+  "messageMessageAgent": "Message {agent}…",
+  "@messageMessageAgent": {
+    "placeholders": {
+      "agent": {
+        "type": "String"
+      }
+    }
+  },
+  "uiTypeACommand": "Type a command…",
+  "uiTitleCopied": "Title copied",
+  "uiPaneIdCopied": "Pane id copied",
+  "uiThatMachineWasRemoved": "That machine was removed",
+  "messageMachineIsOffline": "{machine} is offline",
+  "@messageMachineIsOffline": {
+    "placeholders": {
+      "machine": {
+        "type": "String"
+      }
+    }
+  },
+  "uiThePaneIsGone": "The pane is gone"
 }

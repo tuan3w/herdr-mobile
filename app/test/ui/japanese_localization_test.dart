@@ -12,15 +12,24 @@ import 'package:herdr_mobile/data/words/elapsed.dart';
 import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:herdr_mobile/l10n/app_localizations_en.dart';
 import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
+import 'package:herdr_mobile/data/repositories/agent_screens.dart';
+import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/ui/features/composer/composer_frame.dart';
+import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
+import 'package:herdr_mobile/ui/features/files/file_thumb.dart';
 import 'package:herdr_mobile/ui/features/files/file_widgets.dart';
+import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:provider/provider.dart';
 
+import '../support/fake_fs.dart';
+import '../support/files_support.dart';
 import '../support/memory_app_settings_store.dart';
 import '../support/memory_terminal_settings_store.dart';
 import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts, shoot;
+import 'board_support.dart';
 import 'ui_harness.dart';
 
 Widget _app(ValueNotifier<Locale> locale, {Brightness brightness = Brightness.light, double scale = 1}) =>
@@ -47,6 +56,10 @@ Widget _app(ValueNotifier<Locale> locale, {Brightness brightness = Brightness.li
         ),
       ),
     );
+
+/// Named `.png`: the browser decides what is a picture by name, so these bytes
+/// are never decoded. A folder of them is what the grid count is read on.
+const _png = 'x';
 
 void main() {
   setUpAll(loadAppFonts);
@@ -256,6 +269,269 @@ void main() {
       expect(find.textContaining('3件', findRichText: true), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownUi(tester, h);
+    });
+  });
+
+  group('Japanese file and pane words', () {
+    final ja = AppLocalizationsJa();
+    final en = AppLocalizationsEn();
+
+    /// The file browser on [path], in the phone's Japanese.
+    Future<void> pumpBrowser(WidgetTester tester, FakeFs fs, String path) async {
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AppSettings(MemoryAppSettingsStore())),
+            ChangeNotifierProvider(create: (_) => TerminalSettings(MemoryTerminalSettingsStore())),
+            ChangeNotifierProvider(create: (_) => NotificationSettings(MemoryNotificationStore())),
+          ],
+          // A fresh key per call: a second folder in one test must not inherit
+          // the first one's view model.
+          child: MaterialApp(
+            key: UniqueKey(),
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(),
+            locale: const Locale('ja'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: FileBrowserScreen(
+              machine: machineWithFiles(fs),
+              path: path,
+              clock: () => DateTime.utc(2026, 5, 20, 12),
+              thumbs: ThumbLoader(),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+    }
+
+    String list(
+      AppLocalizations l10n, {
+      bool failed = false,
+      String path = '/home/dev/notes',
+      int shown = 0,
+      int hidden = 0,
+      int base = 0,
+      bool filtered = false,
+      bool folders = false,
+      bool pickFile = false,
+    }) => fileCountLine(
+      l10n,
+      failed: failed,
+      path: path,
+      shown: shown,
+      hidden: hidden,
+      base: base,
+      filtered: filtered,
+      folders: folders,
+      pickFile: pickFile,
+    );
+
+    test('the list count says Japanese, groups digits and keeps the English plurals', () {
+      expect(list(ja, shown: 1, base: 1), '1件');
+      expect(list(ja, shown: 1234, base: 1234), '1,234件');
+      expect(list(ja, shown: 2, base: 2, folders: true), 'フォルダー2件');
+      expect(list(ja, shown: 5, base: 1234, filtered: true), '全1,234件中5件');
+      expect(list(ja, shown: 1, base: 1, filtered: true, folders: true), '全1件中1件のフォルダー');
+      expect(list(ja, shown: 15, base: 15, hidden: 3), '15件 · 非表示3件');
+      expect(list(ja, shown: 0, base: 1, hidden: 1), '0件 · 非表示1件');
+      // A search or "changed in the last hour" says what it found of the whole
+      // folder. The hidden count speaks for files that are not in the list, so
+      // a filtered line drops it rather than saying it twice.
+      expect(list(ja, shown: 3, base: 8, hidden: 2, filtered: true), '全8件中3件');
+      expect(list(ja, shown: 0, base: 9, filtered: true), '全9件中0件');
+      expect(list(ja, shown: 2, base: 2, hidden: 1, folders: true), 'フォルダー2件 · 非表示1件');
+      expect(list(ja, shown: 2, base: 2, pickFile: true), '2件 · ファイルを選択');
+
+      expect(list(en, shown: 1, base: 1), '1 item');
+      expect(list(en, shown: 3, base: 3), '3 items');
+      expect(list(en, shown: 2, base: 2, folders: true), '2 folders');
+      expect(list(en, shown: 5, base: 1234, filtered: true), '5 of 1,234 items');
+      expect(list(en, shown: 15, base: 15, hidden: 3), '15 items · 3 hidden');
+      expect(list(en, shown: 0, base: 1, hidden: 1), '0 items · 1 hidden');
+      expect(list(en, shown: 3, base: 8, hidden: 2, filtered: true), '3 of 8 items');
+      expect(list(en, shown: 0, base: 9, filtered: true), '0 of 9 items');
+      expect(list(en, shown: 2, base: 2, hidden: 1, folders: true), '2 folders · 1 hidden');
+      expect(list(en, shown: 2, base: 2, pickFile: true), '2 items · choose a file');
+    });
+
+    test('an unreadable folder shows the path as the host gave it', () {
+      // The path is the host's, not the app's: it is never re-worded or wrapped.
+      expect(list(ja, failed: true, path: '/home/dev/日本語 の メモ', shown: 2, base: 2), '/home/dev/日本語 の メモ');
+      expect(list(en, failed: true, path: '/home/dev/日本語 の メモ', shown: 2, base: 2), '/home/dev/日本語 の メモ');
+    });
+
+    testWidgets('a folder the phone may not read offers its way out in Japanese', (tester) async {
+      const secret = '/home/dev/secret';
+      final fs = FakeFs()
+        ..addDir(secret)
+        ..deny.add(secret);
+      await pumpBrowser(tester, fs, secret);
+
+      // The title, the retry and the way out are one panel: none of them may
+      // stay English next to the others.
+      expect(find.text('権限がありません'), findsOneWidget);
+      expect(find.text('再試行'), findsOneWidget);
+      expect(find.text('親フォルダーを開く'), findsOneWidget);
+      expect(find.text('Open parent'), findsNothing);
+
+      await pumpBrowser(tester, fs, '/home/dev/gone');
+      expect(find.text('見つかりません'), findsOneWidget);
+      expect(find.text('上へ'), findsOneWidget);
+      expect(find.text('Go up'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('the photo grid count says Japanese and says where the folders went', () {
+      expect(photoCountLine(ja, photos: 1, folders: 0), '写真1枚');
+      expect(photoCountLine(ja, photos: 1200, folders: 0), '写真1,200枚');
+      expect(photoCountLine(ja, photos: 1, folders: 1), '写真1枚 · フォルダー1件はリスト内');
+      expect(photoCountLine(ja, photos: 1200, folders: 3), '写真1,200枚 · フォルダー3件はリスト内');
+
+      expect(photoCountLine(en, photos: 1, folders: 0), '1 photo');
+      expect(photoCountLine(en, photos: 2, folders: 0), '2 photos');
+      expect(photoCountLine(en, photos: 1, folders: 1), '1 photo · 1 folder in list');
+      expect(photoCountLine(en, photos: 2, folders: 3), '2 photos · 3 folders in list');
+    });
+
+    test('the composer hint follows the phone and keeps its English default', () {
+      // The argument is optional, and the two callers that pass no l10n (the
+      // chat composer and the reply sheet) keep the English they shipped with.
+      expect(composerHint(null), 'Type a command…');
+      expect(composerHint('Claude'), 'Message Claude…');
+
+      expect(composerHint(null, l10n: ja), 'コマンドを入力…');
+      expect(composerHint('Claude', l10n: ja), 'Claudeにメッセージ…');
+      expect(composerHint(null, l10n: en), 'Type a command…');
+      expect(composerHint('Claude', l10n: en), 'Message Claude…');
+
+      // What is in the way wins, in the same language.
+      expect(composerHint('Claude', linkWord: ja.uiOfflineReconnecting, l10n: ja), 'オフライン · 再接続中');
+    });
+
+    test('every connection state has its own Japanese word', () {
+      const words = {
+        LinkState.connecting: '接続中…',
+        LinkState.online: 'オンライン',
+        LinkState.reconnecting: '再接続中…',
+        LinkState.attention: '対応が必要',
+        LinkState.disabled: '無効',
+        LinkState.offline: 'オフライン',
+        LinkState.approval: '承認待ち',
+      };
+      // A state added later has no word here, so this fails instead of passing
+      // on a screen that would say nothing about it.
+      expect(words.keys.toSet(), LinkState.values.toSet(), reason: 'every state is worded');
+      for (final MapEntry(key: state, value: word) in words.entries) {
+        expect(state.labelFor(ja), word);
+      }
+    });
+
+    testWidgets('the file browser counts a Japanese folder in Japanese', (tester) async {
+      const root = '/home/dev/notes';
+      final fs = FakeFs()
+        ..addDir('$root/sub')
+        ..addFile('$root/日本語のメモ.txt', 'メモ\n')
+        ..addFile('$root/.env', 'SECRET=1\n');
+      await pumpBrowser(tester, fs, root);
+
+      // Two things to see (a folder and a file), one hidden: the words are the
+      // app's, the names are the host's.
+      expect(find.text('2件 · 非表示1件'), findsOneWidget);
+      expect(find.textContaining(' items', findRichText: true), findsNothing);
+      expect(find.textContaining('hidden', findRichText: true), findsNothing);
+      expect(find.textContaining('日本語のメモ.txt', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the photo grid says its count in Japanese and says where the folders went', (tester) async {
+      const root = '/home/dev/camera';
+      final fs = FakeFs()..addDir('$root/trips');
+      // Well above the number of pictures a grid needs, so this test is about
+      // the words, not about the toggle appearing.
+      for (var i = 1; i <= 12; i++) {
+        fs.addFile('$root/IMG_$i.png', _png);
+      }
+      await pumpBrowser(tester, fs, root);
+
+      await tester.tap(find.byIcon(HerdrIcons.pictures));
+      await settle(tester);
+
+      expect(find.text('写真12枚 · フォルダー1件はリスト内'), findsOneWidget);
+      expect(find.textContaining(' photos', findRichText: true), findsNothing);
+      expect(find.textContaining('folders in list', findRichText: true), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    /// The pane screen for pane 1 of a one-machine fleet, in the phone's
+    /// Japanese until a test says otherwise.
+    Future<({BoardHarness h, ValueNotifier<Locale> locale})> pumpPane(WidgetTester tester) async {
+      final h = await BoardHarness.create([
+        (
+          profile: const MachineProfile(id: 'm', label: 'box', host: 'h', username: 'u'),
+          snapshot: snapshotWith([(id: 'w1:p1', ws: 'w1', agent: 'claude', status: 'idle')]),
+        ),
+      ]);
+      tester.view
+        ..physicalSize = const Size(412, 892)
+        ..devicePixelRatio = 1;
+      final locale = ValueNotifier(const Locale('ja'));
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        h.dispose();
+        locale.dispose();
+      });
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: h.providers,
+          child: ValueListenableBuilder<Locale>(
+            valueListenable: locale,
+            builder: (_, language, _) => MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.dark(),
+              locale: language,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: const PaneScreen(agent: PaneAgent('m', 'w1:p1')),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      return (h: h, locale: locale);
+    }
+
+    testWidgets('the pane screen says its offline state and hint in Japanese, then in English', (tester) async {
+      final (:h, :locale) = await pumpPane(tester);
+
+      // The phone loses its radio: the banner and what the composer is waiting
+      // for are the app's words, in the phone's language.
+      h.network.goOffline();
+      await settle(tester);
+      expect(find.text('オフライン'), findsWidgets);
+      expect(find.text('オフライン · 再接続中'), findsOneWidget);
+
+      locale.value = const Locale('en');
+      await settle(tester);
+      expect(find.text('オフライン'), findsNothing);
+      expect(find.text('Offline · reconnecting'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a pane on an offline machine says why, and keeps the machine name', (tester) async {
+      final (:h, locale: _) = await pumpPane(tester);
+      h.network.goOffline();
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('ペインの操作'));
+      await settle(tester);
+
+      expect(find.text('複製'), findsOneWidget);
+      // `box` is the host's name for the machine: it is not translated.
+      expect(find.text('boxはオフラインです'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

@@ -2042,5 +2042,134 @@
   "batchResultSkipped": "{count}件スキップ",
   "batchResultMore": "（他{count}件）",
   "batchFailureUnsupported": "このherdrでは実行できません。更新してください",
-  "batchFailureTimeout": "時間内に応答がありません"
+  "batchFailureTimeout": "時間内に応答がありません",
+  "messageFileCountItems": "{shownGrouped}件",
+  "@messageFileCountItems": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountFolders": "フォルダー{shownGrouped}件",
+  "@messageFileCountFolders": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountItemsOf": "全{baseGrouped}件中{shownGrouped}件",
+  "@messageFileCountItemsOf": {
+    "placeholders": {
+      "shownGrouped": {
+        "type": "String"
+      },
+      "base": {
+        "type": "int"
+      },
+      "baseGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountFoldersOf": "全{baseGrouped}件中{shownGrouped}件のフォルダー",
+  "@messageFileCountFoldersOf": {
+    "placeholders": {
+      "shownGrouped": {
+        "type": "String"
+      },
+      "base": {
+        "type": "int"
+      },
+      "baseGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFileCountItemsHidden": "{shownGrouped}件 · 非表示{hidden}件",
+  "@messageFileCountItemsHidden": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      },
+      "hidden": {
+        "type": "int"
+      }
+    }
+  },
+  "messageFileCountFoldersHidden": "フォルダー{shownGrouped}件 · 非表示{hidden}件",
+  "@messageFileCountFoldersHidden": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "shownGrouped": {
+        "type": "String"
+      },
+      "hidden": {
+        "type": "int"
+      }
+    }
+  },
+  "messagePhotoCount": "写真{photosGrouped}枚",
+  "@messagePhotoCount": {
+    "placeholders": {
+      "photos": {
+        "type": "int"
+      },
+      "photosGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePhotoCountFoldersInList": "フォルダー{foldersGrouped}件はリスト内",
+  "@messagePhotoCountFoldersInList": {
+    "placeholders": {
+      "folders": {
+        "type": "int"
+      },
+      "foldersGrouped": {
+        "type": "String"
+      }
+    }
+  },
+  "uiChooseAFile": "ファイルを選択",
+  "uiOpenParent": "親フォルダーを開く",
+  "uiGoUp": "上へ",
+  "uiPaneClosed": "ペインは閉じています",
+  "uiWaitingForSignInApproval": "サインインの承認待ち",
+  "uiOfflineReconnecting": "オフライン · 再接続中",
+  "uiNeedsAttentionSeeAbove": "対応が必要 · 上を確認",
+  "uiMachineDisabled": "マシンは無効です",
+  "messageMessageAgent": "{agent}にメッセージ…",
+  "@messageMessageAgent": {
+    "placeholders": {
+      "agent": {
+        "type": "String"
+      }
+    }
+  },
+  "uiTypeACommand": "コマンドを入力…",
+  "uiTitleCopied": "タイトルをコピーしました",
+  "uiPaneIdCopied": "ペインIDをコピーしました",
+  "uiThatMachineWasRemoved": "そのマシンは削除されました",
+  "messageMachineIsOffline": "{machine}はオフラインです",
+  "@messageMachineIsOffline": {
+    "placeholders": {
+      "machine": {
+        "type": "String"
+      }
+    }
+  },
+  "uiThePaneIsGone": "ペインはもうありません"
 }

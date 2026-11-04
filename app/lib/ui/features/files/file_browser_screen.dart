@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 import '../../../data/models/remote_file.dart';
 import '../../../data/repositories/machine_connection.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -405,8 +406,8 @@ class _BrowserViewState extends State<_BrowserView> {
     final up = parent == null
         ? null
         : switch (failed.kind) {
-            RemoteFileErrorKind.notFound => 'Go up',
-            RemoteFileErrorKind.permission => 'Open parent',
+            RemoteFileErrorKind.notFound => context.l10n.uiGoUp,
+            RemoteFileErrorKind.permission => context.l10n.uiOpenParent,
             _ => null,
           };
     return FileErrorPanel(
@@ -422,24 +423,64 @@ class _BrowserViewState extends State<_BrowserView> {
 
   String _countLine(FileBrowserViewModel vm, {required bool grid}) {
     if (grid) {
-      // Folders are not in the grid: say so, and where they went.
-      final photos = vm.photos.length;
-      final folders = vm.entries.where((e) => e.isDirectory).length;
-      final counted = '${groupDigits(photos)} ${plural(photos, 'photo')}';
-      return folders > 0 ? '$counted · ${groupDigits(folders)} ${plural(folders, 'folder')} in list' : counted;
+      return photoCountLine(
+        context.l10n,
+        photos: vm.photos.length,
+        folders: vm.entries.where((e) => e.isDirectory).length,
+      );
     }
-    final shown = vm.entries.length;
-    String noun(int n) => plural(n, _pick ? 'folder' : 'item');
-    final hidden = vm.hiddenCount;
-    if (vm.error != null) return vm.path;
-    final base = vm.baseCount;
-    final counted = vm.filtered
-        ? '${groupDigits(shown)} of ${groupDigits(base)} ${noun(base)}'
-        : (hidden > 0
-              ? '${groupDigits(shown)} ${noun(shown)} · $hidden hidden'
-              : '${groupDigits(shown)} ${noun(shown)}');
-    return _pickFile ? '$counted · choose a file' : counted;
+    return fileCountLine(
+      context.l10n,
+      failed: vm.error != null,
+      path: vm.path,
+      shown: vm.entries.length,
+      hidden: vm.hiddenCount,
+      base: vm.baseCount,
+      filtered: vm.filtered,
+      folders: _pick,
+      pickFile: _pickFile,
+    );
   }
+}
+
+/// The photo grid's count: pictures shown, then where the folders went (they
+/// are not in the grid). Typed counts keep the English plurals and digits
+/// grouped while every app-owned word follows the phone's language.
+String photoCountLine(AppLocalizations l10n, {required int photos, required int folders}) {
+  final counted = l10n.messagePhotoCount(photos, groupDigits(photos));
+  return folders > 0 ? '$counted · ${l10n.messagePhotoCountFoldersInList(folders, groupDigits(folders))}' : counted;
+}
+
+/// The list's count line: `15 items · 3 hidden`, `5 of 8 folders`, or the path
+/// when the folder could not be read. The words are app-owned chrome; the path
+/// stays exactly as the host gave it.
+String fileCountLine(
+  AppLocalizations l10n, {
+  required bool failed,
+  required String path,
+  required int shown,
+  required int hidden,
+  required int base,
+  required bool filtered,
+  required bool folders,
+  required bool pickFile,
+}) {
+  if (failed) return path;
+  final shownText = groupDigits(shown);
+  final String counted;
+  if (filtered) {
+    final baseText = groupDigits(base);
+    counted = folders
+        ? l10n.messageFileCountFoldersOf(shownText, base, baseText)
+        : l10n.messageFileCountItemsOf(shownText, base, baseText);
+  } else if (hidden > 0) {
+    counted = folders
+        ? l10n.messageFileCountFoldersHidden(shown, shownText, hidden)
+        : l10n.messageFileCountItemsHidden(shown, shownText, hidden);
+  } else {
+    counted = folders ? l10n.messageFileCountFolders(shown, shownText) : l10n.messageFileCountItems(shown, shownText);
+  }
+  return pickFile ? '$counted · ${l10n.uiChooseAFile}' : counted;
 }
 
 /// Find-in-folder, and the two things to do to the list: how it is sorted and

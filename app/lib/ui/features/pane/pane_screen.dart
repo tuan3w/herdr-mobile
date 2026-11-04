@@ -192,12 +192,13 @@ class _PaneScreenState extends State<PaneScreen> {
   SheetAction _duplicateAction() {
     final machine = _machine;
     final pane = machine?.paneById(_paneId);
+    final l10n = context.l10n;
     final reason = machine == null
-        ? 'That machine was removed'
+        ? l10n.uiThatMachineWasRemoved
         : !machine.isLive
-        ? '${machine.profile.label} is offline'
+        ? l10n.messageMachineIsOffline(machine.profile.label)
         : pane == null
-        ? 'The pane is gone'
+        ? l10n.uiThePaneIsGone
         : null;
     return SheetAction(
       label: context.l10n.uiDuplicate,
@@ -253,12 +254,12 @@ class _PaneScreenState extends State<PaneScreen> {
           SheetAction(
             label: context.l10n.uiCopyTitle,
             icon: LucideIcons.copy,
-            onTap: () => copyText(context, title, what: 'Title copied'),
+            onTap: () => copyText(context, title, what: context.l10n.uiTitleCopied),
           ),
           SheetAction(
             label: context.l10n.messageCopyPaneId(_paneId),
             icon: LucideIcons.hash,
-            onTap: () => copyText(context, _paneId, what: 'Pane id copied'),
+            onTap: () => copyText(context, _paneId, what: context.l10n.uiPaneIdCopied),
           ),
         ],
       ),
@@ -918,7 +919,7 @@ class _BannerState extends State<_Banner> {
     final _Problem? problem;
     if (link.state != LinkState.online) {
       problem = _Problem(
-        title: link.state.label,
+        title: link.state.labelFor(context.l10n),
         detail: link.error,
         color: link.state.color(ds),
         icon: switch (link.state) {
@@ -1010,16 +1011,18 @@ class _Composer extends StatelessWidget {
     });
     final sending = context.select<PaneViewModel, bool>((v) => v.sending);
     final enabled = state == LinkState.online && open;
+    final l10n = context.l10n;
     final hint = composerHint(
       agent == null || agent.isEmpty ? null : agentName(agent),
       linkWord: switch (state) {
-        LinkState.online => open ? null : 'Pane closed',
-        LinkState.connecting => 'Connecting…',
-        LinkState.approval => 'Waiting for sign-in approval',
-        LinkState.reconnecting || LinkState.offline => 'Offline · reconnecting',
-        LinkState.attention => 'Needs attention · see above',
-        LinkState.disabled => 'Machine disabled',
+        LinkState.online => open ? null : l10n.uiPaneClosed,
+        LinkState.connecting => l10n.uiConnecting,
+        LinkState.approval => l10n.uiWaitingForSignInApproval,
+        LinkState.reconnecting || LinkState.offline => l10n.uiOfflineReconnecting,
+        LinkState.attention => l10n.uiNeedsAttentionSeeAbove,
+        LinkState.disabled => l10n.uiMachineDisabled,
       },
+      l10n: l10n,
     );
     return ComposerFrame(
       // An agent's prompt takes pictures and files, as the chat's does; a
