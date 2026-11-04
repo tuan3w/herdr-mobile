@@ -294,7 +294,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
       ChangeNotifierProvider.value(value: widget.agentScreens),
       if (widget.lastSeen case final seen?) Provider<LastSeen>.value(value: seen),
       Provider<PanePreviews>.value(value: _previews),
-      if (widget.observedSessions case final observed?) Provider<ObservedSessions>.value(value: observed),
+      if (widget.observedSessions case final observed?) ListenableProvider<ObservedSessions>.value(value: observed),
       Provider<TransportFactory>.value(value: createSshTransport),
       if (widget.agentSessions case final sessions?) ListenableProvider<AgentSessions>.value(value: sessions),
       ChangeNotifierProvider.value(value: _attentionSet),
