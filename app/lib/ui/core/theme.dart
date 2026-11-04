@@ -288,6 +288,7 @@ abstract final class AppTheme {
       brightness: ds.brightness,
       colorScheme: scheme,
       fontFamily: Type.family,
+      fontFamilyFallback: Type.fallback,
       textTheme: textTheme,
       scaffoldBackgroundColor: ds.bg,
       canvasColor: ds.bg,

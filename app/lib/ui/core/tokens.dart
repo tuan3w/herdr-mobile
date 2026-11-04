@@ -379,7 +379,9 @@ const monoFamily = 'JetBrainsMono';
 /// Code's `⏵⏵ auto mode on`, `⏺`, `⎿` and spinner stars, braille spinners.
 /// Subset from Noto onto JetBrains Mono's cell (tool/fonts/build_symbols.py),
 /// because the phone's own fallback drew them as boxes (`▯▯ auto mode on`).
-const monoFallback = ['HerdrSymbols'];
+// Bundle the Japanese regional face instead of relying on the device's CJK
+// fallback, which can select Chinese glyph forms for Japanese text (Issue #2).
+const monoFallback = ['HerdrSymbols', 'HerdrJapanese'];
 
 /// Mono text by role. Ligatures are off: code is read character by character
 /// (`!=` must not become one glyph). The terminal keeps its own, user-sized
@@ -429,15 +431,17 @@ abstract final class Mono {
   );
 }
 
-/// Type scale (Inter). Sizes are for the default text scale; they grow with the
+/// Type scale (IBM Plex Sans JP). Sizes are for the default text scale; they grow with the
 /// system setting. Tracking is size-specific: tight on large text, neutral on
 /// body, never one value for all sizes. Weight comes with the role: a screen
 /// never sets `fontWeight`, it picks the `Strong` variant.
 abstract final class Type {
-  static const family = 'Inter';
+  static const family = 'IBMPlexSansJP';
+  static const fallback = ['HerdrJapanese'];
 
   static const largeTitle = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 32,
     height: 1.18,
     fontWeight: FontWeight.w700,
@@ -445,6 +449,7 @@ abstract final class Type {
   );
   static const title = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 20,
     height: 1.25,
     fontWeight: FontWeight.w600,
@@ -454,6 +459,7 @@ abstract final class Type {
   /// Compact page title in the top bar.
   static const barTitle = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 16,
     height: 1.25,
     fontWeight: FontWeight.w600,
@@ -463,6 +469,7 @@ abstract final class Type {
   /// The name of a thing in a list: an agent, a machine, a file.
   static const row = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 16,
     height: 1.3,
     fontWeight: FontWeight.w500,
@@ -473,6 +480,7 @@ abstract final class Type {
   /// out from the actions around them.
   static const cell = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 16,
     height: 1.3,
     fontWeight: FontWeight.w400,
@@ -482,6 +490,7 @@ abstract final class Type {
   /// Text the person types into a field.
   static const input = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 16,
     height: 1.3,
     fontWeight: FontWeight.w400,
@@ -490,6 +499,7 @@ abstract final class Type {
 
   static const body = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 15,
     height: 1.45,
     fontWeight: FontWeight.w400,
@@ -499,6 +509,7 @@ abstract final class Type {
   /// Secondary text under a row title.
   static const secondary = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 13.5,
     height: 1.35,
     fontWeight: FontWeight.w400,
@@ -508,6 +519,7 @@ abstract final class Type {
   /// [secondary] with weight: a log row's line, an emphasised meta.
   static const secondaryStrong = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 13.5,
     height: 1.35,
     fontWeight: FontWeight.w500,
@@ -517,6 +529,7 @@ abstract final class Type {
   /// Section labels and chips: Notion-style sentence case, not letterspaced caps.
   static const label = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 13,
     height: 1.3,
     fontWeight: FontWeight.w500,
@@ -526,6 +539,7 @@ abstract final class Type {
   /// [label] with weight: section headers, a group's title, a text action.
   static const labelStrong = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 13,
     height: 1.3,
     fontWeight: FontWeight.w600,
@@ -534,6 +548,7 @@ abstract final class Type {
 
   static const button = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 15,
     height: 1.2,
     fontWeight: FontWeight.w600,
@@ -543,6 +558,7 @@ abstract final class Type {
   /// A compact button, a segment of a switch.
   static const buttonCompact = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 13.5,
     height: 1.2,
     fontWeight: FontWeight.w600,
@@ -551,6 +567,7 @@ abstract final class Type {
 
   static const caption = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 12,
     height: 1.3,
     fontWeight: FontWeight.w500,
@@ -560,6 +577,7 @@ abstract final class Type {
   /// [caption] with weight: a diff mark, a small state word.
   static const captionStrong = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 12,
     height: 1.3,
     fontWeight: FontWeight.w600,
@@ -569,6 +587,7 @@ abstract final class Type {
   /// A count beside a label (`Needs you 1`, a section's total): tabular.
   static const count = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 12,
     height: 1.2,
     fontWeight: FontWeight.w600,
@@ -579,6 +598,7 @@ abstract final class Type {
   /// The number in a count badge (the agent switcher's, a machine's).
   static const badge = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 11,
     height: 1.0,
     fontWeight: FontWeight.w700,
@@ -590,6 +610,7 @@ abstract final class Type {
   /// [body]).
   static const compact = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 14.5,
     height: 1.4,
     fontWeight: FontWeight.w400,
@@ -599,6 +620,7 @@ abstract final class Type {
   /// The question an agent asks (card, dock, sheet): one size everywhere.
   static const prompt = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 14,
     height: 1.35,
     fontWeight: FontWeight.w500,
@@ -608,6 +630,7 @@ abstract final class Type {
   /// A one-tap answer, a button label inside a panel, a panel's title.
   static const answer = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 14.5,
     height: 1.25,
     fontWeight: FontWeight.w600,
@@ -617,6 +640,7 @@ abstract final class Type {
   /// Markdown headings, levels 1 to 3 (4 and below are [bodyStrong]).
   static const h1 = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 22,
     height: 1.25,
     fontWeight: FontWeight.w700,
@@ -624,6 +648,7 @@ abstract final class Type {
   );
   static const h2 = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 18.5,
     height: 1.3,
     fontWeight: FontWeight.w600,
@@ -631,6 +656,7 @@ abstract final class Type {
   );
   static const h3 = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 16,
     height: 1.3,
     fontWeight: FontWeight.w600,
@@ -640,6 +666,7 @@ abstract final class Type {
   /// [body] with weight: markdown h4, a quiet heading, a table header.
   static const bodyStrong = TextStyle(
     fontFamily: family,
+    fontFamilyFallback: fallback,
     fontSize: 15,
     height: 1.45,
     fontWeight: FontWeight.w600,

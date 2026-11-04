@@ -126,8 +126,11 @@ flutter:
     - assets/CHANGELOG.md
     # The licence of the symbol fallback font, shown in Settings > About > Licences.
     - assets/fonts/HerdrSymbols-OFL.txt
+    - assets/fonts/IBMPlexSansJP-OFL.txt
+    - assets/fonts/NotoSansMonoCJKjp-OFL.txt
 
   fonts:
+    # Diagram Latin metrics use Inter; Japanese labels fall back to IBM Plex Sans JP.
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Regular.ttf
@@ -136,6 +139,20 @@ flutter:
         - asset: assets/fonts/Inter-SemiBold.ttf
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: IBMPlexSansJP
+      fonts:
+        - asset: assets/fonts/IBMPlexSansJP-Regular.ttf
+        - asset: assets/fonts/IBMPlexSansJP-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSansJP-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSansJP-Bold.ttf
+          weight: 700
+    - family: HerdrJapanese
+      fonts:
+        - asset: assets/fonts/HerdrJapanese-Regular.otf
+        - asset: assets/fonts/HerdrJapanese-Bold.otf
           weight: 700
     - family: JetBrainsMono
       fonts:

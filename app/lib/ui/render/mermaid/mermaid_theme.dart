@@ -33,7 +33,8 @@ core.MermaidTheme mermaidThemeOf(Ds ds) {
     clusterBorder: _c(ds.border),
     titleColor: _c(ds.textSecondary),
     edgeLabelBackground: _c(ds.surface),
-    fontFamily: Type.family,
+    // Keep measured Latin metrics; Japanese labels use the bundled JP face.
+    fontFamily: 'Inter, ${Type.family}',
     // design-lint: allow(raw-type) the engine's own size field, in the layout's units, not a TextStyle
     fontSize: mermaidFontSize,
     actorBkg: _c(ds.fill),
