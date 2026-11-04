@@ -2479,6 +2479,7 @@
   "messageDateDayMonthYear": "{day} {month} {year}",
   "@messageDateDayMonthYear": {"placeholders": {"day": {"type": "int"}, "month": {"type": "String"}, "year": {"type": "int"}}},
   "uiBrokenLink": "Broken link",
+  "uiUnknownSize": "Unknown size",
   "uiPaneClosed": "Pane closed",
   "uiWaitingForSignInApproval": "Waiting for sign-in approval",
   "uiOfflineReconnecting": "Offline · reconnecting",

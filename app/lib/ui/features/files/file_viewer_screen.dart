@@ -330,7 +330,7 @@ class _Tools extends StatelessWidget {
   String _meta(BuildContext context) {
     final s = vm.stat;
     final parts = <String>[];
-    parts.add(formatBytes(s.size));
+    parts.add(formatBytes(s.size, l10n: context.l10n));
     final when = s.modified == null ? '' : formatAgo(s.modified!, DateTime.now(), l10n: context.l10n);
     if (when.isNotEmpty) parts.add(when);
     return parts.join(' · ');

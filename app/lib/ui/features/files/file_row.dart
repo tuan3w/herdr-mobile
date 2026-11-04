@@ -64,7 +64,7 @@ class FileRow extends StatelessWidget {
       return e.isBrokenLink ? '${l10n.uiBrokenLink}$to' : '${l10n.uiLink}$to';
     }
     if (e.isDirectory) return when;
-    final size = formatBytes(e.size);
+    final size = formatBytes(e.size, l10n: l10n);
     return when.isEmpty ? size : '$size · $when';
   }
 

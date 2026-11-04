@@ -89,8 +89,8 @@ class BinaryView extends StatelessWidget {
           value: stat.size == null
               ? 'Unknown'
               : stat.size! < 1024
-              ? formatBytes(stat.size)
-              : '${formatBytes(stat.size)} (${groupDigits(stat.size!)} bytes)',
+              ? formatBytes(stat.size, l10n: context.l10n)
+              : '${formatBytes(stat.size, l10n: context.l10n)} (${groupDigits(stat.size!)} bytes)',
         ),
         if (stat.modified case final at?)
           InfoRow(label: context.l10n.uiModified, value: formatWhen(at, DateTime.now())),
