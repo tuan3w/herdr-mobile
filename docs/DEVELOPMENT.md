@@ -4,6 +4,12 @@
 
 Requires Flutter ≥ 3.47 (Dart ≥ 3.13) with `flutter` on `PATH`.
 
+Android builds support Android 7.0 and later (API 24+). Keep `minSdk` at 24
+when updating Flutter or plugins; `targetSdk` follows Flutter independently.
+The Android CI job builds a debug APK and checks its merged manifest's minimum
+SDK. Installation, SSH and Japanese rendering on API 24 still require device
+or emulator verification; a successful build alone does not prove those flows.
+
 ## Commands
 
 ```bash

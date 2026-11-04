@@ -34,6 +34,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android:
+    name: Android API 24 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+      - name: Build debug APK
+        working-directory: app
+        run: flutter build apk --debug
+      - name: Check APK minimum SDK
+        shell: bash
+        run: |
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          test -n "$aapt"
+          "$aapt" dump badging app/build/app/outputs/flutter-apk/app-debug.apk > "$RUNNER_TEMP/herdr-apk-badging.txt"
+          grep -Fx "sdkVersion:'24'" "$RUNNER_TEMP/herdr-apk-badging.txt"
+
   # analyze + design lint: seconds, so its own job and never queued behind tests.
   check:
     runs-on: ubuntu-24.04
