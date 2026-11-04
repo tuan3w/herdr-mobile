@@ -38,7 +38,7 @@ Future<PathCandidate?> showPathChoices(BuildContext context, String name, List<P
                 titleMaxLines: 2,
                 subtitle: [
                   candidates[i].rootName,
-                  if (candidates[i].modified case final at?) formatAgo(at, now),
+                  if (candidates[i].modified case final at?) formatAgo(at, now, l10n: context.l10n),
                 ].join(' · '),
                 leading: Icon(
                   candidates[i].stat.isDirectory ? LucideIcons.folder : fileIconForName(candidates[i].stat.name),
