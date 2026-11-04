@@ -1,3 +1,7 @@
+import 'package:flutter/rendering.dart';
+
+import 'dart:ui' show BoxHeightStyle;
+
 // A blocked agent's card and reply sheet show what the answer approves (the
 // command), in order after the question, and the confirm chip says why.
 import 'package:flutter/material.dart';
@@ -178,10 +182,18 @@ void main() {
         tester.getSize(find.text(subject)).height,
         lessThanOrEqualTo(3 * Mono.input.fontSize! * Mono.input.height! * 2 + 1),
       );
+      final question = tester.renderObject<RenderParagraph>(find.text(prompt.question));
+      final questionLines = question
+          .getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: prompt.question.length),
+            boxHeightStyle: BoxHeightStyle.max,
+          )
+          .map((box) => box.top)
+          .toSet();
       expect(
-        tester.getSize(find.text(prompt.question)).height,
-        lessThanOrEqualTo(2 * Type.secondaryStrong.fontSize! * Type.secondaryStrong.height! * 2 + 1),
-        reason: 'with a subject the question is held to two lines',
+        questionLines.length,
+        lessThanOrEqualTo(2),
+        reason: 'with a subject the question is held to two lines, including fallback glyphs',
       );
 
       // The long reason fits the chip too.
