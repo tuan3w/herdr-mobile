@@ -5,6 +5,7 @@ import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/models/status_time.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
+import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
 import 'package:herdr_mobile/ui/features/agents/agents_screen.dart' show heardLabel;
 
 import 'support/fake_transport.dart';
@@ -71,6 +72,7 @@ void main() {
       expect(heardLabel([r.c]), 'heard just now');
       r.advance(const Duration(minutes: 3));
       expect(heardLabel([r.c]), contains('3m'));
+      expect(heardLabel([r.c], l10n: AppLocalizationsJa()), '最終応答：3分前');
     });
   });
 

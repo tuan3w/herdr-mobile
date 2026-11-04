@@ -1866,5 +1866,187 @@
   "uiInvalid": "Invalid",
   "uiPastePrivateKey": "Paste your private key",
   "uiSessionNameError": "Letters, digits, . _ - only",
-  "uiReply": "Reply…"
+  "uiReply": "Reply…",
+  "machineCount": "{count, plural, =1{1 machine} other{{count} machines}}",
+  "@machineCount": {
+    "description": "A number of machines, in a list header or a quiet status.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentCount": "{count, plural, =1{1 agent} other{{count} agents}}",
+  "@agentCount": {
+    "description": "A number of agents on one machine.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "machinesHealth": "{online} of {total, plural, =1{1 machine} other{{total} machines}}",
+  "@machinesHealth": {
+    "description": "Connected machines out of the machines that are switched on.",
+    "placeholders": {
+      "online": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "machinesHealthSpoken": "{words} online",
+  "@machinesHealthSpoken": {
+    "description": "The machine health chip read aloud, with its visible words.",
+    "placeholders": {
+      "words": {
+        "type": "String"
+      }
+    }
+  },
+  "allMachinesOff": "All machines off",
+  "@allMachinesOff": {
+    "description": "Every machine is switched off."
+  },
+  "noAgents": "No agents",
+  "@noAgents": {
+    "description": "A machine with no agents, instead of a zero count."
+  },
+  "statusNeedsYou": "{count, plural, =1{1 needs you} other{{count} need you}}",
+  "@statusNeedsYou": {
+    "description": "Agents waiting on the person, the board status line's loud fact.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusToReview": "{count, plural, =1{1 to review} other{{count} to review}}",
+  "@statusToReview": {
+    "description": "Finished agents that can be marked reviewed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusWorking": "{count, plural, =1{1 working} other{{count} working}}",
+  "@statusWorking": {
+    "description": "Agents running now, on the board status line.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusNotConnected": "{count, plural, =1{1 not connected} other{{count} not connected}}",
+  "@statusNotConnected": {
+    "description": "Machines that are not connected, on the board status line.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusOffline": "{count} offline",
+  "@statusOffline": {
+    "description": "Finished agents that are out of reach, after the review count.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusOfflineToReview": "{count} offline to review",
+  "@statusOfflineToReview": {
+    "description": "Finished agents that are out of reach, when none can be marked now.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusNothingRunning": "nothing running",
+  "@statusNothingRunning": {
+    "description": "Agents exist but none is running, on the board status line."
+  },
+  "machinesNotConnected": "{count, plural, =1{1 machine not connected} other{{count} machines not connected}}",
+  "@machinesNotConnected": {
+    "description": "The connection strip summing up several machines that are not connected.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "heardJustNow": "heard just now",
+  "@heardJustNow": {
+    "description": "The board's freshness, when the quietest machine answered within a minute."
+  },
+  "heardAgo": "heard {ago} ago",
+  "@heardAgo": {
+    "description": "The board's freshness, with a compact duration such as 3m or 23h 59m.",
+    "placeholders": {
+      "ago": {
+        "type": "String"
+      }
+    }
+  },
+  "elapsedUnderAMinute": "<1m",
+  "@elapsedUnderAMinute": {
+    "description": "A compact elapsed label under a minute, when seconds are not shown."
+  },
+  "elapsedSeconds": "{count}s",
+  "@elapsedSeconds": {
+    "description": "A compact elapsed label in seconds.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedMinutes": "{count}m",
+  "@elapsedMinutes": {
+    "description": "A compact elapsed label in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedHours": "{hours}h",
+  "@elapsedHours": {
+    "description": "A compact elapsed label in whole hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedHoursMinutes": "{hours}h {paddedMinutes}m",
+  "@elapsedHoursMinutes": {
+    "description": "A compact elapsed label in hours and minutes; the padded minutes keep the label width steady.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "String"
+      },
+      "paddedMinutes": {
+        "type": "String"
+      }
+    }
+  },
+  "elapsedDays": "{count}d",
+  "@elapsedDays": {
+    "description": "A compact elapsed label in days.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

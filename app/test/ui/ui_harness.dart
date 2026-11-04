@@ -13,6 +13,7 @@ import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
+import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
@@ -129,6 +130,7 @@ Future<void> pumpUi(
   double height = 740,
   double textScale = 1,
   Brightness brightness = Brightness.dark,
+  Locale? locale,
 }) async {
   tester.view
     ..physicalSize = Size(width, height) * 2
@@ -153,6 +155,9 @@ Future<void> pumpUi(
         attentionSetProvider(),
       ],
       child: MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),

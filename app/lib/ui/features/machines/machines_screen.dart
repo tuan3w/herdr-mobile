@@ -43,7 +43,7 @@ class MachinesScreen extends StatelessWidget {
                 SliverLargeTitle.back(
                   title: context.l10n.uiMachines,
                   subtitle: Text(
-                    count == 0 ? context.l10n.uiNoneYet : countOf(count, 'machine'),
+                    count == 0 ? context.l10n.uiNoneYet : context.l10n.machineCount(count),
                     style: Type.secondary.copyWith(color: ds.textSecondary),
                   ),
                   actions: [
@@ -289,7 +289,7 @@ class _Subtitle extends StatelessWidget {
     // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;
     final lead = state == LinkState.online
-        ? (agents == 0 ? 'No agents' : countOf(agents, 'agent'))
+        ? (agents == 0 ? context.l10n.noAgents : context.l10n.agentCount(agents))
         : p.enabled
         ? state.label
         : '${state.label} · not connecting';
