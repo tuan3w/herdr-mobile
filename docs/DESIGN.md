@@ -529,6 +529,9 @@ settings, and layouts are checked in both themes at 320/412 dp and 1/1.6 text
 scale. Acceptance evidence for the completed pass and the current remaining
 work live in `docs/DEVELOPMENT.md`, "Translations", and
 [GitHub Issue #1](https://github.com/hogehonya/herdr-mobile/issues/1).
+Related font and Android acceptance remain tracked in
+[Issue #2](https://github.com/hogehonya/herdr-mobile/issues/2) and
+[Issue #3](https://github.com/hogehonya/herdr-mobile/issues/3).
 
 ## Touch targets
 
