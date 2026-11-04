@@ -2198,5 +2198,161 @@
         "type": "String"
       }
     }
+  },
+  "batchStopTitle": "Stop agents",
+  "@batchStopTitle": {
+    "description": "The confirm sheet title for stopping a batch of agents."
+  },
+  "batchStopAbout": "Sends Esc to each terminal agent and stops the turn of each agent session.",
+  "batchStopHeader": "Will be stopped",
+  "@batchStopHeader": {
+    "description": "The section of agents a stop will act on."
+  },
+  "batchStopButton": "{count, plural, =1{Stop 1 agent} other{Stop {count} agents}}",
+  "@batchStopButton": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchStopProgress": "{count, plural, =1{Stopping 1 agent} other{Stopping {count} agents}}",
+  "@batchStopProgress": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchMessageTitle": "Message agents",
+  "@batchMessageTitle": {
+    "description": "The confirm sheet title for messaging a batch of agents."
+  },
+  "batchMessageHeader": "Will get the message",
+  "@batchMessageHeader": {
+    "description": "The section of agents a message will reach."
+  },
+  "batchMessageButton": "{count, plural, =1{Message 1 agent} other{Message {count} agents}}",
+  "@batchMessageButton": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchMessageProgress": "{count, plural, =1{Messaging 1 agent} other{Messaging {count} agents}}",
+  "@batchMessageProgress": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchCloseTitle": "Close agents",
+  "@batchCloseTitle": {
+    "description": "The confirm sheet title for closing a batch of agents."
+  },
+  "batchCloseAbout": "This closes these terminal panes and ends these agent sessions. Whatever runs in them stops, and it can’t be undone.",
+  "batchCloseHeader": "Will be closed",
+  "@batchCloseHeader": {
+    "description": "The section of agents a close will act on."
+  },
+  "batchCloseButton": "{count, plural, =1{Close 1 agent} other{Close {count} agents}}",
+  "@batchCloseButton": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchCloseProgress": "{count, plural, =1{Closing 1 agent} other{Closing {count} agents}}",
+  "@batchCloseProgress": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchWillBeTypedIntoItsQuestion": "Will be typed into its question",
+  "@batchWillBeTypedIntoItsQuestion": {
+    "description": "A message target that shows a question and takes the text as its answer."
+  },
+  "batchSkipConnecting": "Connecting",
+  "@batchSkipConnecting": {
+    "description": "A batch target whose agent session is connecting."
+  },
+  "batchSkipReconnecting": "Reconnecting",
+  "@batchSkipReconnecting": {
+    "description": "A batch target whose agent session is reconnecting."
+  },
+  "batchSkipEnded": "Ended",
+  "@batchSkipEnded": {
+    "description": "A batch target whose agent session has ended."
+  },
+  "batchSkipNotConnected": "Not connected",
+  "@batchSkipNotConnected": {
+    "description": "A batch target whose agent session is not connected."
+  },
+  "batchSkipStatusUnknown": "Status unknown",
+  "@batchSkipStatusUnknown": {
+    "description": "A batch target whose status is unknown."
+  },
+  "batchSkipNotWorking": "Not working",
+  "@batchSkipNotWorking": {
+    "description": "A stop target that is idle or done."
+  },
+  "batchSkipStillWorking": "Still working",
+  "@batchSkipStillWorking": {
+    "description": "A close target that is still working."
+  },
+  "batchResultStopped": "{count, plural, =1{Stopped 1} other{Stopped {count}}}",
+  "@batchResultStopped": {
+    "description": "The first part of a stop batch result."
+  },
+  "batchResultMessaged": "{count, plural, =1{Messaged 1} other{Messaged {count}}}",
+  "@batchResultMessaged": {
+    "description": "The first part of a message batch result."
+  },
+  "batchResultClosed": "{count, plural, =1{Closed 1} other{Closed {count}}}",
+  "@batchResultClosed": {
+    "description": "The first part of a close batch result."
+  },
+  "batchResultFailed": "{count, plural, =1{1 failed: {causes}} other{{count} failed: {causes}}}",
+  "@batchResultFailed": {
+    "description": "A batch result part naming how many targets failed and why.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "causes": {
+        "type": "String"
+      }
+    }
+  },
+  "batchResultSkipped": "{count, plural, =1{1 skipped} other{{count} skipped}}",
+  "@batchResultSkipped": {
+    "description": "A batch result part naming how many targets were left alone.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchResultMore": " (+{count} more)",
+  "@batchResultMore": {
+    "description": "The cut-off tail of a list of failure causes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchFailureUnsupported": "this herdr can’t do that, update it",
+  "@batchFailureUnsupported": {
+    "description": "An app-owned batch failure when the herdr API is too old."
+  },
+  "batchFailureTimeout": "no answer in time",
+  "@batchFailureTimeout": {
+    "description": "An app-owned batch failure when the machine did not answer in time."
   }
 }

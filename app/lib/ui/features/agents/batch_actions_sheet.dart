@@ -12,7 +12,6 @@ import '../../../data/repositories/fleet_repository.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-import '../../../data/words/plural.dart';
 import 'agents_grouping.dart' show AgentsOverview;
 import 'board_selection.dart';
 
@@ -24,33 +23,31 @@ class BatchRequest {
   final String text;
 }
 
-/// "3 agents", "1 agent".
-String agentCount(int n) => countOf(n, 'agent');
-
 /// One button of the action bar, start to finish: the confirm sheet, the run
 /// (the bar shows a spinner while it lasts), the result line, and the end of
 /// selection mode.
 Future<void> performBatchAction(BuildContext context, BatchAction action, BoardSelection selection) async {
+  final words = context.l10n;
   final toaster = Toaster.of(context);
   final request = await showAppSheet<BatchRequest>(
     context,
     builder: (_) => BatchSheet(action: action, refs: selection.refs),
   );
   if (request == null) return;
-  final verb = switch (action) {
-    BatchAction.stop => 'Stopping',
-    BatchAction.message => 'Messaging',
-    BatchAction.close => 'Closing',
-  };
-  selection.begin('$verb ${agentCount(request.plan.run.length)}');
+  final n = request.plan.run.length;
+  selection.begin(switch (action) {
+    BatchAction.stop => words.batchStopProgress(n),
+    BatchAction.message => words.batchMessageProgress(n),
+    BatchAction.close => words.batchCloseProgress(n),
+  });
   final BatchResult result;
   try {
-    result = await runBatch(request.plan, text: request.text);
+    result = await runBatch(request.plan, text: request.text, l10n: words);
   } finally {
     selection.finish();
   }
   toaster.show(
-    result.summary,
+    result.summaryIn(words),
     kind: result.failed.isEmpty ? ToastKind.success : ToastKind.failed,
     duration: Dwell.batchResult,
   );
@@ -108,21 +105,16 @@ class _BatchSheetState extends State<BatchSheet> {
     final plan = BatchPlan.of(_action, targets, sendAnyway: sendAnyway);
     final n = plan.run.length;
     final canConfirm = n > 0 && (!message || _text.text.trim().isNotEmpty);
+    final words = context.l10n;
 
-    final (title, about, runHeader, verb) = switch (_action) {
-      BatchAction.stop => (
-        'Stop agents',
-        'Sends Esc to each terminal agent and stops the turn of each agent session.',
-        'Will be stopped',
-        'Stop',
-      ),
-      BatchAction.message => ('Message agents', null, 'Will get the message', 'Message'),
+    final (title, about, runHeader, confirm) = switch (_action) {
+      BatchAction.stop => (words.batchStopTitle, words.batchStopAbout, words.batchStopHeader, words.batchStopButton(n)),
+      BatchAction.message => (words.batchMessageTitle, null, words.batchMessageHeader, words.batchMessageButton(n)),
       BatchAction.close => (
-        'Close agents',
-        'This closes these terminal panes and ends these agent sessions. '
-            'Whatever runs in them stops, and it can’t be undone.',
-        'Will be closed',
-        'Close',
+        words.batchCloseTitle,
+        words.batchCloseAbout,
+        words.batchCloseHeader,
+        words.batchCloseButton(n),
       ),
     };
 
@@ -144,7 +136,7 @@ class _BatchSheetState extends State<BatchSheet> {
       bleed: true,
       actions: [
         AppButton(
-          label: '$verb ${agentCount(n)}',
+          label: confirm,
           kind: _action == BatchAction.close ? AppButtonKind.danger : AppButtonKind.primary,
           expand: true,
           onPressed: canConfirm ? () => _confirm(plan) : null,
@@ -192,7 +184,7 @@ class _BatchSheetState extends State<BatchSheet> {
                     _TargetRow(
                       target: t,
                       note: sendAnyway && t.status == AgentStatus.blocked && t.kind == BatchKind.terminal
-                          ? 'Will be typed into its question'
+                          ? words.batchWillBeTypedIntoItsQuestion
                           : null,
                       noteColor: ds.blockedText,
                     ),
@@ -214,14 +206,14 @@ class _BatchSheetState extends State<BatchSheet> {
                         ),
                       ),
                     for (final s in waiting)
-                      _TargetRow(target: s.target, note: _sentence(s.reason), noteColor: ds.blockedText),
+                      _TargetRow(target: s.target, note: s.reason.text(words), noteColor: ds.blockedText),
                   ],
                   if (skipped.isNotEmpty) ...[
                     SectionLabel(label: context.l10n.uiSkipped, count: skipped.length),
                     for (final s in skipped)
                       _TargetRow(
                         target: s.target,
-                        note: _sentence(s.reason),
+                        note: s.reason.text(words),
                         noteColor: s.kind == SkipKind.waiting ? ds.blockedText : ds.textMuted,
                       ),
                   ],
@@ -233,8 +225,6 @@ class _BatchSheetState extends State<BatchSheet> {
       ),
     );
   }
-
-  static String _sentence(String reason) => '${reason[0].toUpperCase()}${reason.substring(1)}';
 }
 
 /// One target in the sheet: status shape, title, `agent · machine`, the
@@ -292,7 +282,11 @@ class _TargetRow extends StatelessWidget {
             const SizedBox(width: Gap.sm),
             Padding(
               padding: const EdgeInsets.only(top: Gap.hair),
-              child: Text(status.label, maxLines: 1, style: Type.caption.copyWith(color: status.textColor(ds))),
+              child: Text(
+                status.labelFor(context.l10n),
+                maxLines: 1,
+                style: Type.caption.copyWith(color: status.textColor(ds)),
+              ),
             ),
           ],
         ),

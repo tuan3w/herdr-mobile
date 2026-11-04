@@ -2,6 +2,7 @@
 // resources, so a Japanese phone reads them in Japanese; the English getters
 // remain the default for code that has no BuildContext.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/l10n/app_localizations_en.dart';
 import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
@@ -16,6 +17,14 @@ void main() {
       expect(state.labelFor(en), state.label);
       expect(state.labelFor(ja), isNot(state.label));
       expect(state.labelFor(ja), isNotEmpty);
+    }
+  });
+
+  test('every agent status has a Japanese label', () {
+    for (final status in AgentStatus.values) {
+      expect(status.labelFor(en), status.label);
+      expect(status.labelFor(ja), isNot(status.label));
+      expect(status.labelFor(ja), isNotEmpty);
     }
   });
 

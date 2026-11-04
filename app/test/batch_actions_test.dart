@@ -9,6 +9,7 @@ import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/batch_actions.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
 
 import 'support/fake_agent_session.dart';
 
@@ -19,7 +20,7 @@ BatchTarget _t(
   String machine = 'a',
   AgentStatus status = AgentStatus.working,
   BatchKind kind = BatchKind.terminal,
-  String? unreachable,
+  BatchSkipReason? unreachable,
   required List<String> log,
   Future<void>? gate,
   Object? fail,
@@ -55,7 +56,7 @@ BatchPlan _plan(
   BatchAction action,
   AgentStatus status, {
   BatchKind kind = BatchKind.terminal,
-  String? unreachable,
+  BatchSkipReason? unreachable,
   bool sendAnyway = false,
 }) => BatchPlan.of(action, [
   _t('x', status: status, kind: kind, unreachable: unreachable, log: []),
@@ -66,15 +67,15 @@ void main() {
     test('touches only working agents and says why the others are left', () {
       final reasons = {for (final s in AgentStatus.values) s: _plan(BatchAction.stop, s)};
       expect(reasons[AgentStatus.working]!.run, hasLength(1));
-      expect(reasons[AgentStatus.idle]!.skipped.single.reason, 'not working');
-      expect(reasons[AgentStatus.done]!.skipped.single.reason, 'not working');
-      expect(reasons[AgentStatus.unknown]!.skipped.single.reason, 'status unknown');
+      expect(reasons[AgentStatus.idle]!.skipped.single.reason.text(null), 'Not working');
+      expect(reasons[AgentStatus.done]!.skipped.single.reason.text(null), 'Not working');
+      expect(reasons[AgentStatus.unknown]!.skipped.single.reason.text(null), 'Status unknown');
       // Esc at a permission prompt would answer it, so a blocked agent is
       // left alone and listed as waiting.
       final blocked = reasons[AgentStatus.blocked]!;
       expect(blocked.run, isEmpty);
       expect(blocked.skipped.single.kind, SkipKind.waiting);
-      expect(blocked.skipped.single.reason, 'waiting for an answer');
+      expect(blocked.skipped.single.reason, BatchSkipReason.waitingForAnswer);
     });
   });
 
@@ -82,8 +83,8 @@ void main() {
     test('touches only finished or idle agents', () {
       expect(_plan(BatchAction.close, AgentStatus.done).run, hasLength(1));
       expect(_plan(BatchAction.close, AgentStatus.idle).run, hasLength(1));
-      expect(_plan(BatchAction.close, AgentStatus.working).skipped.single.reason, 'still working');
-      expect(_plan(BatchAction.close, AgentStatus.unknown).skipped.single.reason, 'status unknown');
+      expect(_plan(BatchAction.close, AgentStatus.working).skipped.single.reason.text(null), 'Still working');
+      expect(_plan(BatchAction.close, AgentStatus.unknown).skipped.single.reason.text(null), 'Status unknown');
       final blocked = _plan(BatchAction.close, AgentStatus.blocked);
       expect(blocked.run, isEmpty);
       expect(blocked.skipped.single.kind, SkipKind.waiting);
@@ -109,10 +110,15 @@ void main() {
     });
 
     test('"send anyway" never reaches an offline agent', () {
-      final plan = _plan(BatchAction.message, AgentStatus.blocked, unreachable: 'offline', sendAnyway: true);
+      final plan = _plan(
+        BatchAction.message,
+        AgentStatus.blocked,
+        unreachable: BatchSkipReason.offline,
+        sendAnyway: true,
+      );
       expect(plan.run, isEmpty);
       expect(plan.skipped.single.kind, SkipKind.unreachable);
-      expect(plan.skipped.single.reason, 'offline');
+      expect(plan.skipped.single.reason.text(null), 'Offline');
       expect(plan.waiting, isEmpty);
     });
 
@@ -121,7 +127,7 @@ void main() {
       expect(_plan(BatchAction.message, AgentStatus.done, kind: BatchKind.session).run, hasLength(1));
       final working = _plan(BatchAction.message, AgentStatus.working, kind: BatchKind.session);
       expect(working.run, isEmpty);
-      expect(working.skipped.single.reason, 'still working');
+      expect(working.skipped.single.reason.text(null), 'Still working');
       // The switch does not open a blocked session either.
       final blocked = _plan(BatchAction.message, AgentStatus.blocked, kind: BatchKind.session, sendAnyway: true);
       expect(blocked.run, isEmpty);
@@ -131,7 +137,7 @@ void main() {
 
   test('unreachable targets are skipped first, whatever the action', () {
     for (final a in BatchAction.values) {
-      final plan = _plan(a, AgentStatus.working, unreachable: 'offline');
+      final plan = _plan(a, AgentStatus.working, unreachable: BatchSkipReason.offline);
       expect(plan.run, isEmpty, reason: '$a');
       expect(plan.skipped.single.kind, SkipKind.unreachable);
     }
@@ -144,7 +150,7 @@ void main() {
       _t('2', status: AgentStatus.blocked, log: log),
       _t('3', status: AgentStatus.idle, log: log),
       _t('4', status: AgentStatus.working, log: log),
-      _t('5', status: AgentStatus.done, unreachable: 'offline', log: log),
+      _t('5', status: AgentStatus.done, unreachable: BatchSkipReason.offline, log: log),
     ]);
     expect(_keys(plan.run), ['1', '3']);
     expect([for (final s in plan.skipped) s.target.key], ['2', '4', '5']);
@@ -211,11 +217,22 @@ void main() {
       ]);
     });
 
+    test('Japanese localizes app-owned failure words and keeps remote text', () async {
+      final log = <String>[];
+      final plan = BatchPlan.of(BatchAction.stop, [
+        _t('1', log: log, fail: const HerdrApiException('pane_busy', 'the pane is busy')),
+        _t('2', log: log, fail: const HerdrUnsupportedException('pane.send_keys')),
+        _t('3', log: log, fail: TimeoutException('slow')),
+      ]);
+      final messages = [for (final f in (await runBatch(plan, l10n: AppLocalizationsJa())).failed) f.message];
+      expect(messages, ['the pane is busy', 'このherdrでは実行できません。更新してください', '時間内に応答がありません']);
+    });
+
     test('offline targets are listed as skipped and never called', () async {
       final log = <String>[];
       final plan = BatchPlan.of(BatchAction.message, [
         _t('on', log: log),
-        _t('off', machine: 'b', log: log, unreachable: 'offline'),
+        _t('off', machine: 'b', log: log, unreachable: BatchSkipReason.offline),
       ], sendAnyway: true);
       final result = await runBatch(plan, text: 'hi');
       expect(log.where((l) => l.contains('off')), isEmpty);
@@ -287,6 +304,8 @@ void main() {
   });
 
   group('the summary', () {
+    final ja = AppLocalizationsJa();
+
     BatchResult result({
       BatchAction action = BatchAction.stop,
       int done = 3,
@@ -298,7 +317,10 @@ void main() {
         action: action,
         done: [for (var i = 0; i < done; i++) _t('d$i', log: log)],
         failed: failed,
-        skipped: [for (var i = 0; i < skipped; i++) BatchSkip(_t('s$i', log: log), SkipKind.ineligible, 'not working')],
+        skipped: [
+          for (var i = 0; i < skipped; i++)
+            BatchSkip(_t('s$i', log: log), SkipKind.ineligible, BatchSkipReason.notWorking),
+        ],
       );
     }
 
@@ -326,6 +348,23 @@ void main() {
         'Stopped 3 · 4 failed: machine-a: x; machine-b: y (+2 more)',
       );
     });
+
+    test('Japanese says the count and result, keeping machine labels and remote errors', () {
+      expect(result().summaryIn(ja), '3件停止');
+      expect(result(action: BatchAction.message, done: 1).summaryIn(ja), '1件送信');
+      expect(result(action: BatchAction.close, skipped: 2).summaryIn(ja), '3件終了 · 2件スキップ');
+      expect(
+        result(failed: [failure('studio-mac', 'connection lost')]).summaryIn(ja),
+        '3件停止 · 失敗1件：machine-studio-mac: connection lost',
+      );
+      expect(
+        result(failed: [failure('a', 'x'), failure('b', 'y'), failure('c', 'z'), failure('d', 'w')]).summaryIn(ja),
+        '3件停止 · 失敗4件：machine-a: x; machine-b: y（他2件）',
+      );
+      expect(BatchSkipReason.notWorking.text(ja), '実行していません');
+      expect(BatchSkipReason.stillWorking.text(ja), '実行中');
+      expect(BatchSkipReason.offline.text(ja), 'オフライン');
+    });
   });
 
   group('an agent session as a target', () {
@@ -344,7 +383,7 @@ void main() {
 
     test('a machine that isn’t online makes it unreachable', () {
       final s = FakeAgentSession();
-      expect(BatchTarget.session(session: s, status: AgentStatus.idle).unreachable, 'offline');
+      expect(BatchTarget.session(session: s, status: AgentStatus.idle).unreachable, BatchSkipReason.offline);
     });
   });
 }

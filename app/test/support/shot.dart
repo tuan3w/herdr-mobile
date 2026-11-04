@@ -72,6 +72,7 @@ Future<void> shoot(
   Widget Function(Widget app)? wrap,
   double imageScale = 1.5,
   Size size = phone,
+  double textScale = 1,
 }) async {
   tester.view.physicalSize = size * phoneDpr;
   tester.view.devicePixelRatio = phoneDpr;
@@ -91,7 +92,13 @@ Future<void> shoot(
     navigatorObservers: observers,
     builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
       value: AppTheme.systemBars(Theme.of(context).brightness),
-      child: RepaintBoundary(key: key, child: child!),
+      child: RepaintBoundary(
+        key: key,
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+      ),
     ),
     home: home,
   );

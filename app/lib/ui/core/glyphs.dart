@@ -30,6 +30,14 @@ extension AgentStatusColor on AgentStatus {
     AgentStatus.idle => 'Idle',
     AgentStatus.unknown => 'Unknown',
   };
+
+  String labelFor(AppLocalizations l10n) => switch (this) {
+    AgentStatus.blocked => l10n.uiNeedsYou,
+    AgentStatus.working => l10n.uiWorking,
+    AgentStatus.done => l10n.uiDone,
+    AgentStatus.idle => l10n.uiIdle,
+    AgentStatus.unknown => l10n.uiUnknown,
+  };
 }
 
 /// Colour per connection state. [color] is for the dot and a state's panel;

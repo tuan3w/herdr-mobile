@@ -2012,5 +2012,35 @@
         "type": "String"
       }
     }
-  }
+  },
+  "batchStopTitle": "エージェントを停止",
+  "batchStopAbout": "各ターミナルエージェントにEscを送り、各エージェントセッションのターンを停止します。",
+  "batchStopHeader": "停止するエージェント",
+  "batchStopButton": "{count}件を停止",
+  "batchStopProgress": "{count, plural, =1{エージェント1件を停止中} other{エージェント{count}件を停止中}}",
+  "batchMessageTitle": "エージェントにメッセージ",
+  "batchMessageHeader": "メッセージを送るエージェント",
+  "batchMessageButton": "{count}件に送信",
+  "batchMessageProgress": "{count, plural, =1{エージェント1件に送信中} other{エージェント{count}件に送信中}}",
+  "batchCloseTitle": "エージェントを閉じる",
+  "batchCloseAbout": "これらのターミナルペインを閉じ、エージェントセッションを終了します。実行中の処理は停止し、元に戻せません。",
+  "batchCloseHeader": "閉じるエージェント",
+  "batchCloseButton": "{count}件を閉じる",
+  "batchCloseProgress": "{count, plural, =1{エージェント1件を閉じています} other{エージェント{count}件を閉じています}}",
+  "batchWillBeTypedIntoItsQuestion": "質問への入力として送信されます",
+  "batchSkipConnecting": "接続中",
+  "batchSkipReconnecting": "再接続中",
+  "batchSkipEnded": "終了済み",
+  "batchSkipNotConnected": "未接続",
+  "batchSkipStatusUnknown": "状態不明",
+  "batchSkipNotWorking": "実行していません",
+  "batchSkipStillWorking": "実行中",
+  "batchResultStopped": "{count}件停止",
+  "batchResultMessaged": "{count}件送信",
+  "batchResultClosed": "{count}件終了",
+  "batchResultFailed": "失敗{count}件：{causes}",
+  "batchResultSkipped": "{count}件スキップ",
+  "batchResultMore": "（他{count}件）",
+  "batchFailureUnsupported": "このherdrでは実行できません。更新してください",
+  "batchFailureTimeout": "時間内に応答がありません"
 }
