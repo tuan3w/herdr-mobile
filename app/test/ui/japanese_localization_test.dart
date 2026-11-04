@@ -27,6 +27,7 @@ Widget _app(ValueNotifier<Locale> locale, {Brightness brightness = Brightness.li
       child: ValueListenableBuilder<Locale>(
         valueListenable: locale,
         builder: (_, language, _) => MaterialApp(
+          debugShowCheckedModeBanner: false,
           theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
@@ -76,7 +77,7 @@ void main() {
     }
     await openSettingsGroup(tester, '外観');
     expect(find.text('文字サイズ'), findsOneWidget);
-    expect(find.text('端末に合わせる'), findsOneWidget);
+    expect(find.text('自動'), findsOneWidget);
     await tester.tap(find.text('ダーク'));
     await tester.pumpAndSettle();
     final settings = tester.element(find.byType(SettingsScreen)).read<AppSettings>();
