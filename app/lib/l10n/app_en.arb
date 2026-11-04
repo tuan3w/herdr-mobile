@@ -2048,5 +2048,26 @@
         "type": "int"
       }
     }
-  }
+  },
+  "uiUndo": "Undo",
+  "uiSelectedNumber": "selected, number {number}",
+  "@uiSelectedNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "uiTypedIntoEachAgentThenEnter": "Typed into each agent, then Enter.",
+  "uiNotInThisPhoneSSpeechService": "Not in this phone’s speech service",
+  "uiPhoneSLanguage": "Phone’s language",
+  "uiAllowHerdrUnderInstallUnknownAppsOnTheAndroidPageThatOpenedThenComeBackAndTapInstall": "Allow herdr under “Install unknown apps” on the Android page that opened, then come back and tap Install.",
+  "uiNamedSessionsNeedHerdr09OnTheMachine": "Named sessions need herdr 0.9+ on the machine",
+  "uiOnlyUsedWhenHerdrLacksRemoteApiBridge": "Only used when herdr lacks remote-api-bridge",
+  "uiLeaveEmptyToShowTheProgramSOwnTitle": "Leave empty to show the program’s own title",
+  "uiCouldnTSave": "Couldn’t save",
+  "uiCouldnTConnect": "Couldn’t connect",
+  "uiRetryUnderTheMessageOpensItAgain": "Retry, under the message, opens it again.",
+  "uiPathCopied": "Path copied",
+  "uiLinkCopied": "Link copied"
 }

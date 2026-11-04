@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -31,8 +33,8 @@ class AgentSwipe extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     container: true,
     customSemanticsActions: {
-      _next: () => swipeToAgent(context, agent, 1),
-      _previous: () => swipeToAgent(context, agent, -1),
+      CustomSemanticsAction(label: context.l10n.uiNextAgent): () => swipeToAgent(context, agent, 1),
+      CustomSemanticsAction(label: context.l10n.uiPreviousAgent): () => swipeToAgent(context, agent, -1),
     },
     child: AgentSwipeDetector(peek: (step) => _peek(context, step), child: child),
   );
@@ -51,9 +53,6 @@ class AgentSwipe extends StatelessWidget {
       go: () => stepToAgent(context, to.item.agent, step),
     );
   }
-
-  static const _next = CustomSemanticsAction(label: 'Next agent');
-  static const _previous = CustomSemanticsAction(label: 'Previous agent');
 }
 
 /// What a recognised swipe shows ([card]), and what letting go past the

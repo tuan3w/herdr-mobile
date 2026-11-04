@@ -306,7 +306,8 @@ class _FileRow extends StatelessWidget {
     final shown = visibleText(name);
     final picked = number != null;
     final trailing = kMinTap * (onForget == null ? 1 : 2);
-    final label = '$shown, ${detail.replaceAll(' · ', ', ')}, ${picked ? 'selected' : 'not selected'}';
+    final label =
+        '$shown, ${detail.replaceAll(' · ', ', ')}, ${picked ? context.l10n.uiSelected : context.l10n.uiNotSelected}';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

@@ -18,10 +18,11 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// toast ("Marked 3 reviewed") whose Undo takes all of them back.
 bool markReviewedWithUndo(BuildContext context, MachineConnection machine, String paneId) {
   final toaster = Toaster.maybeOf(context);
+  final undoLabel = context.l10n.uiUndo;
   if (!machine.markReviewed(paneId)) return false;
   toaster?.show(
     context.l10n.uiMarkedReviewed,
-    action: ToastAction('Undo', () {
+    action: ToastAction(undoLabel, () {
       if (machine.unmarkReviewed(paneId)) Haptics.tick();
     }),
     groupKey: _reviewGroup,
@@ -38,12 +39,13 @@ bool markReviewedWithUndo(BuildContext context, MachineConnection machine, Strin
 /// again at once.
 bool markSessionReviewedWithUndo(BuildContext context, AgentSessionView session, {VoidCallback? onUndo}) {
   final toaster = Toaster.maybeOf(context);
+  final undoLabel = context.l10n.uiUndo;
   if (!session.unseenDone) return false;
   session.markSeen();
   if (session.unseenDone) return false;
   toaster?.show(
     context.l10n.uiMarkedReviewed,
-    action: ToastAction('Undo', () {
+    action: ToastAction(undoLabel, () {
       onUndo?.call();
       if (session.unmarkSeen()) Haptics.tick();
     }),
@@ -63,6 +65,7 @@ int markAllReviewedWithUndo(
   required Iterable<AgentSessionView> sessions,
 }) {
   final toaster = Toaster.maybeOf(context);
+  final undoLabel = context.l10n.uiUndo;
   final undo = <bool Function()>[];
   for (final (:machine, :paneId) in panes) {
     if (machine.markReviewed(paneId)) undo.add(() => machine.unmarkReviewed(paneId));
@@ -75,7 +78,7 @@ int markAllReviewedWithUndo(
   if (undo.isEmpty) return 0;
   toaster?.show(
     _reviewedMessage(undo.length),
-    action: ToastAction('Undo', () {
+    action: ToastAction(undoLabel, () {
       var restored = false;
       for (final back in undo) {
         restored |= back();

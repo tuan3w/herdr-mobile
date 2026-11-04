@@ -603,14 +603,14 @@ class _FormState extends State<_Form> with RestorationMixin {
                                     key: _sessionKey,
                                     label: context.l10n.uiHerdrSession,
                                     controller: _session,
-                                    helper: 'Named sessions need herdr 0.9+ on the machine',
+                                    helper: context.l10n.uiNamedSessionsNeedHerdr09OnTheMachine,
                                     validator: (v) => _sessionError(v, context.l10n.uiSessionNameError),
                                   ),
                                   LabeledField(
                                     label: context.l10n.uiAPISocketPathOptional,
                                     controller: _socket,
                                     hint: '~/.config/herdr/herdr.sock',
-                                    helper: 'Only used when herdr lacks remote-api-bridge',
+                                    helper: context.l10n.uiOnlyUsedWhenHerdrLacksRemoteApiBridge,
                                   ),
                                 ],
                               ),
@@ -727,7 +727,7 @@ class _TestResult extends StatelessWidget {
     final approval = vm.testState == TestState.testing ? vm.approvalUrl : null;
     final saveError = vm.saveError;
     final (Color color, IconData icon, String title, String? detail)? view = saveError != null
-        ? (ds.danger, LucideIcons.circleAlert, 'Couldn’t save', saveError)
+        ? (ds.danger, LucideIcons.circleAlert, context.l10n.uiCouldnTSave, saveError)
         : approval != null
         ? (
             ds.blocked,
@@ -744,7 +744,7 @@ class _TestResult extends StatelessWidget {
               '${countOf(vm.workspaceCount, 'workspace')}'
                   '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
             ),
-            TestState.failed => (ds.danger, LucideIcons.circleAlert, 'Couldn’t connect', vm.message),
+            TestState.failed => (ds.danger, LucideIcons.circleAlert, context.l10n.uiCouldnTConnect, vm.message),
             _ => null,
           };
     return AnimatedSize(

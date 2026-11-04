@@ -653,7 +653,7 @@ class _PhotoTileState extends State<PhotoTile> {
     if (picked) picture = ClipRRect(borderRadius: BorderRadius.circular(Radii.xs), child: picture);
     return Semantics(
       container: true,
-      label: '$label, ${picked ? 'selected, number $n' : context.l10n.uiNotSelected}',
+      label: '$label, ${picked ? context.l10n.uiSelectedNumber(n) : context.l10n.uiNotSelected}',
       button: true,
       onTap: widget.onOpen,
       onLongPress: _toggle,

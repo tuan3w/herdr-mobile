@@ -172,7 +172,7 @@ class _BatchSheetState extends State<BatchSheet> {
                 label: context.l10n.uiMessage,
                 controller: _text,
                 hint: context.l10n.uiOneMessageForEveryAgentBelow,
-                helper: 'Typed into each agent, then Enter.',
+                helper: context.l10n.uiTypedIntoEachAgentThenEnter,
                 minLines: 2,
                 maxLines: 6,
                 autofocus: true,

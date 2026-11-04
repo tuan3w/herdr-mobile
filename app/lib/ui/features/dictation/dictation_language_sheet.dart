@@ -15,8 +15,10 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// language is the first choice.
 List<({String? id, String label, String? missing})> dictationChoices(
   List<DictationLanguage> available,
-  String? chosen,
-) {
+  String? chosen, {
+  String phoneLanguage = 'Phone’s language',
+  String missingReason = 'Not in this phone’s speech service',
+}) {
   DictationLanguage? find(bool Function(String id) test) {
     for (final l in available) {
       if (test(l.id.toLowerCase().replaceAll('-', '_'))) return l;
@@ -29,11 +31,10 @@ List<({String? id, String label, String? missing})> dictationChoices(
   final other = chosen == null || (en?.id == chosen) || (vi?.id == chosen)
       ? null
       : available.where((l) => l.id == chosen).firstOrNull;
-  const missing = 'Not in this phone’s speech service';
   return [
-    (id: null, label: 'Phone’s language', missing: null),
-    (id: en?.id, label: 'English', missing: en == null ? missing : null),
-    (id: vi?.id, label: 'Tiếng Việt', missing: vi == null ? missing : null),
+    (id: null, label: phoneLanguage, missing: null),
+    (id: en?.id, label: 'English', missing: en == null ? missingReason : null),
+    (id: vi?.id, label: 'Tiếng Việt', missing: vi == null ? missingReason : null),
     if (other != null) (id: other.id, label: other.name, missing: null),
   ];
 }
@@ -41,6 +42,7 @@ List<({String? id, String label, String? missing})> dictationChoices(
 /// A long press on the mic: which language to listen in. One list, the choice
 /// is kept and shows with a check.
 Future<void> showDictationLanguageSheet(BuildContext context, Dictation dictation) async {
+  final l10n = context.l10n;
   final available = await dictation.languages();
   if (!context.mounted) return;
   if (available.isEmpty) {
@@ -48,14 +50,19 @@ Future<void> showDictationLanguageSheet(BuildContext context, Dictation dictatio
     return;
   }
   final chosen = dictation.languageId;
-  final choices = dictationChoices(available, chosen);
+  final choices = dictationChoices(
+    available,
+    chosen,
+    phoneLanguage: l10n.uiPhoneSLanguage,
+    missingReason: l10n.uiNotInThisPhoneSSpeechService,
+  );
   unawaited(
     showAppSheet<void>(
       context,
       builder: (ctx) {
         final ds = ctx.ds;
         return SheetScaffold(
-          title: context.l10n.uiDictateIn,
+          title: l10n.uiDictateIn,
           kind: SheetKind.list,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -77,7 +84,7 @@ Future<void> showDictationLanguageSheet(BuildContext context, Dictation dictatio
               Padding(
                 padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
                 child: Text(
-                  context.l10n.uiOneLanguageAtATimeThePhoneSSpeech,
+                  l10n.uiOneLanguageAtATimeThePhoneSSpeech,
                   style: Type.caption.copyWith(color: ds.textSecondary),
                 ),
               ),

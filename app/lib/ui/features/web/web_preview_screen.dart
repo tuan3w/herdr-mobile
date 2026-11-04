@@ -395,7 +395,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   void _offerWeb(Uri url) {
     _toaster.show(
       context.l10n.messageIsnTFrom(visibleText(url.host), widget.machine.profile.label),
-      action: ToastAction('Open', () => unawaited(_openWeb(url))),
+      action: ToastAction(context.l10n.uiOpen, () => unawaited(_openWeb(url))),
     );
   }
 
@@ -426,7 +426,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       }
       _toaster.show(
         context.l10n.messageIsnTOpenOnThisPhone(where),
-        action: ToastAction('Open', () => unawaited(_forward(url))),
+        action: ToastAction(context.l10n.uiOpen, () => unawaited(_forward(url))),
       );
       return;
     }
@@ -750,7 +750,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
             label: context.l10n.uiReload,
             icon: LucideIcons.rotateCw,
             unavailable: _failure != null
-                ? 'Retry, under the message, opens it again.'
+                ? context.l10n.uiRetryUnderTheMessageOpensItAgain
                 : _phase == _Phase.opening
                 ? 'The page is still opening.'
                 : null,
@@ -759,7 +759,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
           SheetAction(
             label: isFile ? context.l10n.uiCopyPath : context.l10n.uiCopyLink,
             icon: LucideIcons.link,
-            onTap: () => copyText(context, link, what: isFile ? 'Path copied' : 'Link copied'),
+            onTap: () => copyText(context, link, what: isFile ? context.l10n.uiPathCopied : context.l10n.uiLinkCopied),
           ),
           SheetAction(
             label: context.l10n.uiOpenInBrowser,

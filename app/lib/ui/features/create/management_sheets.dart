@@ -193,7 +193,7 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
       title: context.l10n.uiRenamePane,
       label: context.l10n.uiName,
       initial: pane.label ?? '',
-      helper: 'Leave empty to show the program’s own title',
+      helper: context.l10n.uiLeaveEmptyToShowTheProgramSOwnTitle,
       allowEmpty: true,
     );
     if (label == null || label == (pane.label ?? '')) return;

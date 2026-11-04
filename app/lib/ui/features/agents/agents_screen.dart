@@ -175,7 +175,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
       icon: HerdrIcons.settings,
       tooltip: context.l10n.uiSettings,
       mark: widget.pages.update?.release != null,
-      markLabel: 'update available',
+      markLabel: context.l10n.uiUpdateAvailable,
       onPressed: _showSettings,
     ),
   );
