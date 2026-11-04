@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 import '../acp/agent_host.dart' show AgentHostException;
 import '../models/herdr_models.dart';
 import '../services/herdr_api.dart';
@@ -65,7 +67,7 @@ class BatchTarget {
     title: title,
     agent: agent,
     status: status,
-    unreachable: machine.isLive ? null : 'offline',
+    unreachable: machine.isLive ? null : BatchSkipReason.offline,
     stop: () => machine.api.sendKeys(paneId, const ['esc']),
     message: (text) async {
       await machine.api.sendLine(paneId, text);
@@ -98,13 +100,13 @@ class BatchTarget {
       agent: session.agentLabel,
       status: status,
       unreachable: !machine.isLive
-          ? 'offline'
+          ? BatchSkipReason.offline
           : switch (session.link) {
               AgentLink.live => null,
-              AgentLink.connecting => 'connecting',
-              AgentLink.reconnecting => 'reconnecting',
-              AgentLink.ended => 'ended',
-              AgentLink.failed => 'not connected',
+              AgentLink.connecting => BatchSkipReason.connecting,
+              AgentLink.reconnecting => BatchSkipReason.reconnecting,
+              AgentLink.ended => BatchSkipReason.ended,
+              AgentLink.failed => BatchSkipReason.notConnected,
             },
       stop: () async => session.cancel(),
       message: (text) async => unawaited(session.send(text)),
@@ -123,8 +125,8 @@ class BatchTarget {
   final String agent;
   final AgentStatus status;
 
-  /// Why nothing can reach it (`offline`, `ended`, ...), null when it can.
-  final String? unreachable;
+  /// Why nothing can reach it, null when it can.
+  final BatchSkipReason? unreachable;
 
   /// `Claude Code · machine`; a pane with no agent is a `Shell`.
   String get detail => whereLine(agent: agentName(agent), machine: machineLabel, title: title);
@@ -149,6 +151,33 @@ enum SkipKind {
   ineligible,
 }
 
+/// Why an action leaves a target alone, in app-owned words rather than a
+/// string matched later.
+enum BatchSkipReason {
+  offline,
+  connecting,
+  reconnecting,
+  ended,
+  notConnected,
+  waitingForAnswer,
+  statusUnknown,
+  notWorking,
+  stillWorking;
+
+  /// With [l10n], the person's language; without it, the English default.
+  String text(AppLocalizations? l10n) => switch (this) {
+    offline => l10n?.uiOfflineState ?? 'Offline',
+    connecting => l10n?.batchSkipConnecting ?? 'Connecting',
+    reconnecting => l10n?.batchSkipReconnecting ?? 'Reconnecting',
+    ended => l10n?.batchSkipEnded ?? 'Ended',
+    notConnected => l10n?.batchSkipNotConnected ?? 'Not connected',
+    waitingForAnswer => l10n?.uiWaitingForAnAnswer ?? 'Waiting for an answer',
+    statusUnknown => l10n?.batchSkipStatusUnknown ?? 'Status unknown',
+    notWorking => l10n?.batchSkipNotWorking ?? 'Not working',
+    stillWorking => l10n?.batchSkipStillWorking ?? 'Still working',
+  };
+}
+
 /// A selected agent that an action leaves alone, and why.
 class BatchSkip {
   const BatchSkip(this.target, this.kind, this.reason, {this.canSendAnyway = false});
@@ -156,8 +185,8 @@ class BatchSkip {
   final BatchTarget target;
   final SkipKind kind;
 
-  /// "offline", "not working", "waiting for an answer".
-  final String reason;
+  /// The app-owned reason, ready to localize where it is shown.
+  final BatchSkipReason reason;
 
   /// A message may still be typed into it, on the person's say so.
   final bool canSendAnyway;
@@ -205,33 +234,32 @@ class BatchPlan {
   static BatchSkip? _skip(BatchAction action, BatchTarget t, bool sendAnyway) {
     final why = t.unreachable;
     if (why != null) return BatchSkip(t, SkipKind.unreachable, why);
-    const waiting = 'waiting for an answer';
     switch (action) {
       case BatchAction.stop:
         return switch (t.status) {
           AgentStatus.working => null,
-          AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, waiting),
-          AgentStatus.unknown => BatchSkip(t, SkipKind.ineligible, 'status unknown'),
-          AgentStatus.idle || AgentStatus.done => BatchSkip(t, SkipKind.ineligible, 'not working'),
+          AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, BatchSkipReason.waitingForAnswer),
+          AgentStatus.unknown => BatchSkip(t, SkipKind.ineligible, BatchSkipReason.statusUnknown),
+          AgentStatus.idle || AgentStatus.done => BatchSkip(t, SkipKind.ineligible, BatchSkipReason.notWorking),
         };
       case BatchAction.close:
         return switch (t.status) {
           AgentStatus.idle || AgentStatus.done => null,
-          AgentStatus.working => BatchSkip(t, SkipKind.ineligible, 'still working'),
-          AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, waiting),
-          AgentStatus.unknown => BatchSkip(t, SkipKind.ineligible, 'status unknown'),
+          AgentStatus.working => BatchSkip(t, SkipKind.ineligible, BatchSkipReason.stillWorking),
+          AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, BatchSkipReason.waitingForAnswer),
+          AgentStatus.unknown => BatchSkip(t, SkipKind.ineligible, BatchSkipReason.statusUnknown),
         };
       case BatchAction.message:
         switch (t.kind) {
           case BatchKind.terminal:
             if (t.status == AgentStatus.blocked && !sendAnyway) {
-              return BatchSkip(t, SkipKind.waiting, waiting, canSendAnyway: true);
+              return BatchSkip(t, SkipKind.waiting, BatchSkipReason.waitingForAnswer, canSendAnyway: true);
             }
             return null;
           case BatchKind.session:
             return switch (t.status) {
-              AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, waiting),
-              AgentStatus.working => BatchSkip(t, SkipKind.ineligible, 'still working'),
+              AgentStatus.blocked => BatchSkip(t, SkipKind.waiting, BatchSkipReason.waitingForAnswer),
+              AgentStatus.working => BatchSkip(t, SkipKind.ineligible, BatchSkipReason.stillWorking),
               _ => null,
             };
         }
@@ -256,16 +284,27 @@ class BatchResult {
   final List<BatchFailure> failed;
   final List<BatchSkip> skipped;
 
-  /// `Stopped 3 · 1 failed: studio-mac: connection lost · 2 skipped`.
-  String get summary {
-    final parts = ['${action.past} ${done.length}'];
+  /// `Stopped 3 · 1 failed: studio-mac: connection lost · 2 skipped`, in
+  /// English unless [l10n] is given.
+  String get summary => summaryIn(null);
+
+  String summaryIn(AppLocalizations? l10n) {
+    final parts = [
+      switch (action) {
+        BatchAction.stop => l10n?.batchResultStopped(done.length) ?? '${action.past} ${done.length}',
+        BatchAction.message => l10n?.batchResultMessaged(done.length) ?? '${action.past} ${done.length}',
+        BatchAction.close => l10n?.batchResultClosed(done.length) ?? '${action.past} ${done.length}',
+      },
+    ];
     if (failed.isNotEmpty) {
       final causes = <String>{for (final f in failed) '${f.target.machineLabel}: ${f.message}'}.toList();
       final shown = causes.take(2).join('; ');
-      final more = causes.length > 2 ? ' (+${causes.length - 2} more)' : '';
-      parts.add('${failed.length} failed: $shown$more');
+      final more = causes.length > 2
+          ? (l10n?.batchResultMore(causes.length - 2) ?? ' (+${causes.length - 2} more)')
+          : '';
+      parts.add(l10n?.batchResultFailed(failed.length, '$shown$more') ?? '${failed.length} failed: $shown$more');
     }
-    if (skipped.isNotEmpty) parts.add('${skipped.length} skipped');
+    if (skipped.isNotEmpty) parts.add(l10n?.batchResultSkipped(skipped.length) ?? '${skipped.length} skipped');
     return parts.join(' · ');
   }
 }
@@ -273,7 +312,7 @@ class BatchResult {
 /// Runs [plan]: the targets of one machine one after the other in plan order,
 /// the machines side by side. A target that fails is recorded and the rest go
 /// on. [text] is the message, passed on as it is.
-Future<BatchResult> runBatch(BatchPlan plan, {String text = ''}) async {
+Future<BatchResult> runBatch(BatchPlan plan, {String text = '', AppLocalizations? l10n}) async {
   if (plan.action == BatchAction.message && text.trim().isEmpty) {
     throw ArgumentError.value(text, 'text', 'a message needs some text');
   }
@@ -293,7 +332,7 @@ Future<BatchResult> runBatch(BatchPlan plan, {String text = ''}) async {
           BatchAction.close => run[i].close(),
         };
       } on Exception catch (e) {
-        errors[i] = _words(e);
+        errors[i] = _words(e, l10n);
       }
     }
     final settle = [for (final i in indexes) run[i].settle].nonNulls.firstOrNull;
@@ -321,14 +360,14 @@ Future<BatchResult> runBatch(BatchPlan plan, {String text = ''}) async {
   );
 }
 
-String _words(Exception e) {
+String _words(Exception e, AppLocalizations? l10n) {
   final text = switch (e) {
-    HerdrUnsupportedException() => 'this herdr can’t do that, update it',
+    HerdrUnsupportedException() => l10n?.batchFailureUnsupported ?? 'this herdr can’t do that, update it',
     HerdrApiException(:final message) => message,
     HerdrTransportException(:final message) => message,
     AgentHostException(:final message) => message,
-    TimeoutException() => 'no answer in time',
+    TimeoutException() => l10n?.batchFailureTimeout ?? 'no answer in time',
     _ => e.toString(),
   };
-  return text.isEmpty ? 'failed' : text;
+  return text.isEmpty ? (l10n?.uiFailed ?? 'failed') : text;
 }
