@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -64,6 +66,7 @@ Future<void> shoot(
   Widget home,
   String path, {
   Brightness brightness = Brightness.light,
+  Locale? locale,
   Future<void> Function(WidgetTester tester)? pump,
   List<NavigatorObserver> observers = const [],
   Widget Function(Widget app)? wrap,
@@ -79,6 +82,9 @@ Future<void> shoot(
   final key = GlobalKey();
   Widget app = MaterialApp(
     debugShowCheckedModeBanner: false,
+    locale: locale,
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     theme: AppTheme.light(),
     darkTheme: AppTheme.dark(),
     themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
