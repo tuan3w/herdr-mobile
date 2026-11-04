@@ -1,6 +1,10 @@
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 /// "0 B", "1.5 KB", "12 MB": binary units, one decimal under 10, none above.
-String formatBytes(int? bytes) {
-  if (bytes == null || bytes < 0) return 'Unknown size';
+/// A size the host did not give says so in the phone's language when [l10n] is
+/// passed; the number and the unit are the same everywhere.
+String formatBytes(int? bytes, {AppLocalizations? l10n}) {
+  if (bytes == null || bytes < 0) return l10n?.uiUnknownSize ?? 'Unknown size';
   if (bytes < 1024) return '$bytes B';
   const units = ['KB', 'MB', 'GB', 'TB'];
   var value = bytes / 1024;

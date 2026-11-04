@@ -6,6 +6,8 @@ import '../../../data/models/remote_file.dart';
 import '../../../data/services/remote_files.dart';
 import '../../../data/words/elapsed.dart';
 
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'file_format.dart';
@@ -51,17 +53,18 @@ class FileRow extends StatelessWidget {
   /// has no selection at all.
   final bool? selected;
 
-  /// `12 KB · 3 min ago`, `Link → target`, `No permission`.
-  String subtitle() {
+  /// `12 KB · 3 min ago`, `Link → target`, `No permission`. The words follow
+  /// the phone's language; the size, the time and the target do not.
+  String subtitle(AppLocalizations l10n) {
     final e = entry;
-    if (denied) return 'No permission';
-    final when = e.modified == null ? '' : formatAgo(e.modified!, now);
+    if (denied) return l10n.uiNoPermission;
+    final when = e.modified == null ? '' : formatAgo(e.modified!, now, l10n: l10n);
     if (e.kind == RemoteEntryKind.link) {
       final to = e.linkTarget == null ? '' : ' → ${e.linkTarget}';
-      return e.isBrokenLink ? 'Broken link$to' : 'Link$to';
+      return e.isBrokenLink ? '${l10n.uiBrokenLink}$to' : '${l10n.uiLink}$to';
     }
     if (e.isDirectory) return when;
-    final size = formatBytes(e.size);
+    final size = formatBytes(e.size, l10n: l10n);
     return when.isEmpty ? size : '$size · $when';
   }
 
@@ -69,7 +72,7 @@ class FileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final e = entry;
-    final sub = subtitle();
+    final sub = subtitle(context.l10n);
     final indent = Gap.gutter + 32 + Gap.md;
     Widget row = Column(
       mainAxisSize: MainAxisSize.min,

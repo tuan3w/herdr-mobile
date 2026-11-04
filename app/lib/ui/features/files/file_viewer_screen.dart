@@ -327,11 +327,11 @@ class _Tools extends StatelessWidget {
       vm.phase == ViewerPhase.ready &&
       (vm.kind == FileKind.binary || vm.kind == FileKind.svg || vm.kind == FileKind.pdf || vm.kind == FileKind.video);
 
-  String get _meta {
+  String _meta(BuildContext context) {
     final s = vm.stat;
     final parts = <String>[];
-    parts.add(formatBytes(s.size));
-    final when = s.modified == null ? '' : formatAgo(s.modified!, DateTime.now());
+    parts.add(formatBytes(s.size, l10n: context.l10n));
+    final when = s.modified == null ? '' : formatAgo(s.modified!, DateTime.now(), l10n: context.l10n);
     if (when.isNotEmpty) parts.add(when);
     return parts.join(' · ');
   }
@@ -383,7 +383,7 @@ class _Tools extends StatelessWidget {
                 child: Padding(
                   padding: chips.isEmpty ? EdgeInsets.zero : const EdgeInsets.only(left: Gap.md),
                   child: Text(
-                    _meta,
+                    _meta(context),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: chips.isEmpty ? TextAlign.left : TextAlign.right,
