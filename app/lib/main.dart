@@ -12,6 +12,12 @@ Future<void> main() async {
   // About > Licences opens.
   LicenseRegistry.addLicense(() async* {
     yield LicenseEntryWithLineBreaks(const [
+      'IBM Plex Sans JP',
+    ], await rootBundle.loadString('assets/fonts/IBMPlexSansJP-OFL.txt'));
+    yield LicenseEntryWithLineBreaks(const [
+      'Noto Sans Mono CJK JP',
+    ], await rootBundle.loadString('assets/fonts/NotoSansMonoCJKjp-OFL.txt'));
+    yield LicenseEntryWithLineBreaks(const [
       'HerdrSymbols (Noto Sans Symbols)',
     ], await rootBundle.loadString('assets/fonts/HerdrSymbols-OFL.txt'));
   });

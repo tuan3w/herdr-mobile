@@ -21,6 +21,13 @@ Future<void> loadAppFonts() async {
   }
 
   await load('Inter', const ['Inter-Regular.ttf', 'Inter-Medium.ttf', 'Inter-SemiBold.ttf', 'Inter-Bold.ttf']);
+  await load('IBMPlexSansJP', const [
+    'IBMPlexSansJP-Regular.ttf',
+    'IBMPlexSansJP-Medium.ttf',
+    'IBMPlexSansJP-SemiBold.ttf',
+    'IBMPlexSansJP-Bold.ttf',
+  ]);
+  await load('HerdrJapanese', const ['HerdrJapanese-Regular.otf', 'HerdrJapanese-Bold.otf']);
   await load('JetBrainsMono', const [
     'JetBrainsMono-Regular.ttf',
     'JetBrainsMono-Bold.ttf',
