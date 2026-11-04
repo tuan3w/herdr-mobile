@@ -9,6 +9,12 @@ when updating Flutter or plugins; `targetSdk` follows Flutter independently.
 The Android CI job builds a debug APK and checks its merged manifest's minimum
 SDK. Installation, SSH and Japanese rendering on API 24 still require device
 or emulator verification; a successful build alone does not prove those flows.
+CI installs NDK 28.2.13676358 itself instead of letting the Android Gradle
+plugin fetch it through the SDK manager: that download failed twice with
+`ZipFile unknown archive` and blocked the APK job. The step downloads the
+official archive, checks its published size and SHA-1 and its zip integrity,
+and installs it under `$ANDROID_HOME/ndk/`; it fails the job rather than
+building against a broken toolchain.
 
 ## Translations
 
