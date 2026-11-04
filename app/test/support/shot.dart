@@ -20,7 +20,7 @@ Future<void> loadAppFonts() async {
     await loader.load();
   }
 
-  await load('Inter', const ['Inter-Regular.ttf', 'Inter-Bold.ttf']);
+  await load('Inter', const ['Inter-Regular.ttf', 'Inter-Medium.ttf', 'Inter-SemiBold.ttf', 'Inter-Bold.ttf']);
   await load('IBMPlexSansJP', const [
     'IBMPlexSansJP-Regular.ttf',
     'IBMPlexSansJP-Medium.ttf',

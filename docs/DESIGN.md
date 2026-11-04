@@ -183,7 +183,10 @@ so Japanese CJK glyph forms do not depend on a device's Chinese fallback.
 Latin terminal cells keep JetBrains Mono. Mermaid diagrams retain Inter for
 Latin labels so their measured layout remains correct, with IBM Plex Sans JP
 as the explicit fallback for Japanese labels. Both Japanese families are OFL;
-their license files are bundled next to the font sources in assets/fonts/.
+their license files are bundled next to the font files in assets/fonts/.
+UI styles explicitly use Herdr Japanese for characters outside Plex's coverage.
+The terminal adaptation changes advances only, preserving outlines and text
+size; Japanese glyphs have additional space within their two-cell allocation.
 
 ### Space, radius, icons
 
