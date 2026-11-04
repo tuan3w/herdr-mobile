@@ -40,6 +40,34 @@ The last two commands write review images under `/tmp/herdr-ja-shots` and
 `/tmp/herdr-ja-screens`. Inspect the images; passing screenshot tests alone
 does not establish translated-text coverage or visual correctness.
 
+### Handoff: 2026-11-04
+
+PR #6 is merged (integration commit `2c8dfff55edd0816b4adf0617548c9e0cc01e8ba`,
+tested head `763b0ccfccac323cadc3109d9aec01ce53292dfa`); do not reimplement its
+changes. It covers 689 English/Japanese resource keys, following the device
+locale, English fallback, and preserving remote bodies, questions, answer
+options, commands and paths. PR CI
+<https://github.com/hogehonya/herdr-mobile/actions/runs/41762814049> and main CI
+<https://github.com/hogehonya/herdr-mobile/actions/runs/41763726146> each ran
+7 jobs successfully, including the Android debug APK and merged-manifest minSdk
+24 check. Independent reviews approved it; 24 rendered images were inspected
+(board, machines and form × light/dark × 320/412 dp × 1/1.6 text scale).
+
+Not verified: SSH, Japanese rendering and the full character repertoire on an
+Android 7 device or emulator, and the release APK and its size.
+
+Issue #1 remains OPEN. Next, check and fix remaining app-owned dynamic strings:
+bulk-action progress and results in
+`app/lib/ui/features/agents/batch_actions_sheet.dart`, dynamic file-browser
+aggregation in `app/lib/ui/features/files/file_browser_screen.dart`, and pane
+connection labels in `app/lib/ui/features/pane/pane_screen.dart`. These files
+are not confirmed fully translated or verified, and the remaining list is not
+confirmed complete.
+
+Keep English semantics/defaults, typed ICU messages, and measurement/painting
+agreement; reuse the focused tests and image checks above. Device and release
+verification stay separate unverified acceptance.
+
 ## Commands
 
 ```bash
