@@ -80,7 +80,7 @@ class _MachineViewState extends State<_MachineView> {
             TextSpan(
               children: [
                 TextSpan(
-                  text: state.label,
+                  text: state.labelFor(context.l10n),
                   style: Type.secondary.copyWith(color: loud ? ds.blockedText : ds.textSecondary),
                 ),
                 if (snap.version.isNotEmpty)

@@ -18,15 +18,16 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// toast ("Marked 3 reviewed") whose Undo takes all of them back.
 bool markReviewedWithUndo(BuildContext context, MachineConnection machine, String paneId) {
   final toaster = Toaster.maybeOf(context);
-  final undoLabel = context.l10n.uiUndo;
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   if (!machine.markReviewed(paneId)) return false;
   toaster?.show(
-    context.l10n.uiMarkedReviewed,
+    l10n.messageReviewedCount(1),
     action: ToastAction(undoLabel, () {
       if (machine.unmarkReviewed(paneId)) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
   );
   return true;
 }
@@ -39,18 +40,19 @@ bool markReviewedWithUndo(BuildContext context, MachineConnection machine, Strin
 /// again at once.
 bool markSessionReviewedWithUndo(BuildContext context, AgentSessionView session, {VoidCallback? onUndo}) {
   final toaster = Toaster.maybeOf(context);
-  final undoLabel = context.l10n.uiUndo;
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   if (!session.unseenDone) return false;
   session.markSeen();
   if (session.unseenDone) return false;
   toaster?.show(
-    context.l10n.uiMarkedReviewed,
+    l10n.messageReviewedCount(1),
     action: ToastAction(undoLabel, () {
       onUndo?.call();
       if (session.unmarkSeen()) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
   );
   return true;
 }
@@ -65,7 +67,8 @@ int markAllReviewedWithUndo(
   required Iterable<AgentSessionView> sessions,
 }) {
   final toaster = Toaster.maybeOf(context);
-  final undoLabel = context.l10n.uiUndo;
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   final undo = <bool Function()>[];
   for (final (:machine, :paneId) in panes) {
     if (machine.markReviewed(paneId)) undo.add(() => machine.unmarkReviewed(paneId));
@@ -77,7 +80,7 @@ int markAllReviewedWithUndo(
   }
   if (undo.isEmpty) return 0;
   toaster?.show(
-    _reviewedMessage(undo.length),
+    l10n.messageReviewedCount(undo.length),
     action: ToastAction(undoLabel, () {
       var restored = false;
       for (final back in undo) {
@@ -86,15 +89,13 @@ int markAllReviewedWithUndo(
       if (restored) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
     count: undo.length,
   );
   return undo.length;
 }
 
 const _reviewGroup = 'review.mark';
-
-String _reviewedMessage(int count) => count == 1 ? 'Marked reviewed' : 'Marked $count reviewed';
 
 /// A horizontal swipe to the left on a finished agent: the row follows the
 /// finger 1:1 and a quiet "Reviewed" (a check and the word, no fill) is

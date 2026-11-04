@@ -1404,6 +1404,7 @@
   "uiOpenSummary": "概要を開く",
   "uiCallDetails": "呼び出しの詳細",
   "uiMarkedReviewed": "確認済みにしました",
+  "messageReviewedCount": "{count, plural, =1{確認済みにしました} other{{count}件を確認済みにしました}}",
   "uiCouldnTOpenOnThisPhoneNoBrowserCould": "この端末のブラウザーでは開けませんでした。",
   "uiReplaceTheCurrentKey": "現在の鍵を置き換えますか？",
   "uiThePrivateKeyInThisFormIsReplacedIf": "この画面の秘密鍵を置き換えます。別の場所にコピーがなければ、以前の鍵は復元できません。",

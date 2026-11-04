@@ -90,15 +90,6 @@ class MachinesScreen extends StatelessWidget {
 /// One machine: a flat row with the same metrics as [ListRow]. It is a local
 /// row because the status line needs a [LinkDot] and the problem panel sits
 /// under the text, neither of which [ListRow] can express.
-String _linkStateLabel(BuildContext context, LinkState state) => switch (state) {
-  LinkState.online => context.l10n.uiOnline,
-  LinkState.connecting => context.l10n.uiConnecting,
-  LinkState.reconnecting => context.l10n.uiReconnecting,
-  LinkState.attention => context.l10n.uiNeedsAttention,
-  LinkState.disabled => context.l10n.uiDisabled,
-  LinkState.offline => context.l10n.uiOfflineState,
-  LinkState.approval => context.l10n.uiWaitingForApproval,
-};
 
 class _MachineRow extends StatelessWidget {
   const _MachineRow({super.key, required this.machine});
@@ -170,7 +161,7 @@ class _MachineRow extends StatelessWidget {
 
     final semantic = [
       p.label,
-      _linkStateLabel(context, state),
+      state.labelFor(context.l10n),
       if (waiting > 0) context.l10n.statusNeedsYou(waiting),
     ].join(', ');
 
@@ -298,7 +289,7 @@ class _Subtitle extends StatelessWidget {
     final p = machine.profile;
     final state = machine.state;
     final agents = machine.agentPanes.length;
-    final stateWords = _linkStateLabel(context, state);
+    final stateWords = state.labelFor(context.l10n);
     // Only the states that need the person are tinted (with the AA text tone,
     // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;

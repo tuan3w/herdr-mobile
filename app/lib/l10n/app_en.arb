@@ -1404,6 +1404,15 @@
   "uiOpenSummary": "Open summary",
   "uiCallDetails": "Call details",
   "uiMarkedReviewed": "Marked reviewed",
+  "messageReviewedCount": "{count, plural, =1{Marked reviewed} other{Marked {count} reviewed}}",
+  "@messageReviewedCount": {
+    "description": "One or several finished agents marked reviewed, with Undo.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "uiCouldnTOpenOnThisPhoneNoBrowserCould": "Couldn’t open on this phone: no browser could open it.",
   "uiReplaceTheCurrentKey": "Replace the current key?",
   "uiThePrivateKeyInThisFormIsReplacedIf": "The private key in this form is replaced. If you haven’t kept a copy elsewhere, it is gone for good.",

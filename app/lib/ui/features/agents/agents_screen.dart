@@ -981,7 +981,7 @@ class _ConnectionStrip extends StatelessWidget {
       color: t.state.color(ds),
       leading: LinkDot(state: t.state),
       title: t.label,
-      detail: t.state.label,
+      detail: t.state.labelFor(context.l10n),
       action: switch (t.approvalUrl) {
         final url? => ApprovalButton(url: url),
         null => AppButton(

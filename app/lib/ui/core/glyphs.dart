@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/herdr_models.dart';
 import '../../data/repositories/machine_connection.dart';
+import '../../l10n/app_localizations.dart';
 import 'motion.dart';
 import 'tokens.dart';
 
@@ -57,6 +58,16 @@ extension LinkStateColor on LinkState {
     LinkState.disabled => 'Disabled',
     LinkState.offline => 'Offline',
     LinkState.approval => 'Waiting for approval',
+  };
+
+  String labelFor(AppLocalizations l10n) => switch (this) {
+    LinkState.online => l10n.uiOnline,
+    LinkState.connecting => l10n.uiConnecting,
+    LinkState.reconnecting => l10n.uiReconnecting,
+    LinkState.attention => l10n.uiNeedsAttention,
+    LinkState.disabled => l10n.uiDisabled,
+    LinkState.offline => l10n.uiOfflineState,
+    LinkState.approval => l10n.uiWaitingForApproval,
   };
 }
 
