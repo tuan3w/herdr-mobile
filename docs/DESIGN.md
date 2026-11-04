@@ -508,6 +508,10 @@ Fleet counts and freshness are part of that chrome, including the health chip,
 board summary and machine-list subtitles. Use typed message parameters and ICU
 plurals, preserving English singular/plural forms. Japanese uses units such as
 `マシン5台`, `エージェント3件`, `対応待ち1件` and `確認待ち2件`.
+When a narrow list cannot fit the full agent count, use a typed compact count:
+measure the compact string that is painted, and keep the full label in
+Semantics. Connection state and the bulk review Undo action and count are also
+app-owned chrome and must be localized; remote text stays as received.
 The same localized string must feed both width measurement and painting. In
 particular, the board's reserved freshness width must use a localized longest
 label, and reply-label width caches must include the label or locale.
@@ -522,8 +526,10 @@ Japanese UI uses IBM Plex Sans JP and the explicit Japanese fallback described
 under Type. Android's baseline stays API 24. A successful APK build and manifest
 check do not prove API 24 device behavior. Language switching must retain app
 settings, and layouts are checked in both themes at 320/412 dp and 1/1.6 text
-scale. The remaining implementation and acceptance evidence live in
-[GitHub Issue #1](https://github.com/hogehonya/herdr-mobile/issues/1),
+scale. Acceptance evidence for the completed pass and the current remaining
+work live in `docs/DEVELOPMENT.md`, "Translations", and
+[GitHub Issue #1](https://github.com/hogehonya/herdr-mobile/issues/1).
+Related font and Android acceptance remain tracked in
 [Issue #2](https://github.com/hogehonya/herdr-mobile/issues/2) and
 [Issue #3](https://github.com/hogehonya/herdr-mobile/issues/3).
 
