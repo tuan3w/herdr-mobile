@@ -68,6 +68,52 @@ Keep English semantics/defaults, typed ICU messages, and measurement/painting
 agreement; reuse the focused tests and image checks above. Device and release
 verification stay separate unverified acceptance.
 
+### Follow-up: 2026-11-04 (dynamic Japanese, unmerged)
+
+This follow-up started from `main` containing PR #7's documentation merge
+(`fc46497`). The additional dynamic Japanese work described here is unmerged
+and undeployed. Do not reimplement the completed PR #6/#7 work.
+
+Unmerged implementation and tests exist for localizing bulk-action progress,
+results and skip reasons, plus `AgentStatus` labels. The latest focused run
+reported 64 passing tests and one real UI failure: the board behind the Japanese
+BatchSheet also shows the same remote title, so its assertion must be scoped to
+the sheet. A separate invocation-path error prevented the localized-label suite
+from loading; the correct path is `app/test/ui/localized_labels_test.dart`. This
+follow-up is not fully passing.
+
+Partial source is preserved for file counts (filtered, hidden, photo grid and
+picker) and pane connection/composer hints, but test additions, generation,
+formatting and verification are unfinished.
+
+The unmerged work contains an env-gated batch-sheet screenshots fixture. It has
+not been run, its images have not been inspected, and it is not on `main`.
+
+Resume in this order:
+
+1. Fix the one remaining batch finder failure and verify the localized-label
+   suite at the correct path.
+2. Continue the file/pane partial work with typed count/connection
+   locale-boundary tests and verification.
+3. Generate the affected UI at light/dark, 320/412 dp and 1/1.6 text scale, then
+   inspect the real images.
+4. Get an independent review from a separate Go job, run CI on the latest head,
+   merge the PR and confirm it lands on `main`.
+5. Build the signed universal ARM release APK, check its size and distribute
+   it.
+
+This additional work has had no independent review, CI, PR merge or release
+yet. The GitHub fork has no release-signing secrets and no release. Do not
+publish while the signing key and distribution target are unsettled. The release
+APK and its size are still unverified.
+
+SSH on an Android 7 device or emulator, Japanese rendering and the full
+character repertoire remain unverified. Issues
+[#1](https://github.com/hogehonya/herdr-mobile/issues/1),
+[#2](https://github.com/hogehonya/herdr-mobile/issues/2) and
+[#3](https://github.com/hogehonya/herdr-mobile/issues/3) remain OPEN; close them
+only with their related acceptance.
+
 ## Commands
 
 ```bash
