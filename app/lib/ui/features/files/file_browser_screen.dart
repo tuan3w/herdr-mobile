@@ -406,8 +406,8 @@ class _BrowserViewState extends State<_BrowserView> {
     final up = parent == null
         ? null
         : switch (failed.kind) {
-            RemoteFileErrorKind.notFound => 'Go up',
-            RemoteFileErrorKind.permission => 'Open parent',
+            RemoteFileErrorKind.notFound => context.l10n.uiGoUp,
+            RemoteFileErrorKind.permission => context.l10n.uiOpenParent,
             _ => null,
           };
     return FileErrorPanel(

@@ -2456,6 +2456,8 @@
     }
   },
   "uiChooseAFile": "choose a file",
+  "uiOpenParent": "Open parent",
+  "uiGoUp": "Go up",
   "uiPaneClosed": "Pane closed",
   "uiWaitingForSignInApproval": "Waiting for sign-in approval",
   "uiOfflineReconnecting": "Offline · reconnecting",

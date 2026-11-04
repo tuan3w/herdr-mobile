@@ -2144,6 +2144,8 @@
     }
   },
   "uiChooseAFile": "ファイルを選択",
+  "uiOpenParent": "親フォルダーを開く",
+  "uiGoUp": "上へ",
   "uiPaneClosed": "ペインは閉じています",
   "uiWaitingForSignInApproval": "サインインの承認待ち",
   "uiOfflineReconnecting": "オフライン · 再接続中",
