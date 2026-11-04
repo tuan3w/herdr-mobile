@@ -2168,6 +2168,8 @@
   "@messageDateDayMonthYear": {"placeholders": {"day": {"type": "int"}, "month": {"type": "String"}, "year": {"type": "int"}}},
   "uiBrokenLink": "リンク切れ",
   "uiUnknownSize": "サイズ不明",
+  "uiSessionEndedReadOnly": "セッション終了 · 読み取り専用",
+  "uiNotConnected": "未接続",
   "uiPaneClosed": "ペインは閉じています",
   "uiWaitingForSignInApproval": "サインインの承認待ち",
   "uiOfflineReconnecting": "オフライン · 再接続中",

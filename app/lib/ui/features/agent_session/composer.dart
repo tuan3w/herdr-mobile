@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:herdr_mobile/l10n/l10n_context.dart';
 
 import 'dart:async';
@@ -27,12 +28,12 @@ import 'session_chips_row.dart';
 import 'session_select.dart';
 
 /// Why the composer cannot send, in the words of its hint; null when it can.
-String? composerReason(AgentLink link) => switch (link) {
+String? composerReason(AgentLink link, {AppLocalizations? l10n}) => switch (link) {
   AgentLink.live => null,
-  AgentLink.connecting => 'Connecting…',
-  AgentLink.reconnecting => 'Offline · reconnecting',
-  AgentLink.ended => 'Session ended · read only',
-  AgentLink.failed => 'Not connected',
+  AgentLink.connecting => l10n?.uiConnecting ?? 'Connecting…',
+  AgentLink.reconnecting => l10n?.uiOfflineReconnecting ?? 'Offline · reconnecting',
+  AgentLink.ended => l10n?.uiSessionEndedReadOnly ?? 'Session ended · read only',
+  AgentLink.failed => l10n?.uiNotConnected ?? 'Not connected',
 };
 
 /// Rounded multi-line input (grows to five lines) between an attach button at
@@ -99,158 +100,163 @@ class Composer extends StatelessWidget {
   final DictationSession? dictation;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) => SessionSelect<(AgentLink, AgentPhase, bool, String?, String?, SendDelivery, bool)>(
-    session: session,
-    select: (s) =>
-        (s.link, s.phase, s.state.cancelRequested, s.sendBlocked, s.relayNote, s.delivery, s.waitingOnBackground),
-    builder: (context, snapshot) {
-      final (link, phase, stopping, blocked, relay, delivery, waiting) = snapshot;
-      final live = link == AgentLink.live;
-      final typing = live && blocked == null;
-      final reason = composerReason(link);
-      // Waiting on background work the turn is over: Send, not Stop (Stop
-      // would end nothing, and an agent in a terminal still says `working`).
-      final working = live && phase != AgentPhase.idle && relay == null && !waiting;
-      final observed = session.isObserved;
-      final attaches = session.attachMode != AttachMode.none;
-      final queuing = working && !observed;
-      final hint = composerHint(session.agentLabel, linkWord: reason ?? blocked ?? (relay != null ? '$relay…' : null));
-      final field = ComposerFrame(
-        // A subagent's run takes no attachments. In the compact layout the
-        // chips are gone, and the paperclip says how many go along.
-        leading: !attaches
-            ? null
-            : ListenableBuilder(
-                listenable: attachments,
-                builder: (context, _) {
-                  void open() => unawaited(showAttachSheet(context, target: session, attachments: attachments));
-                  return HideWhenCompact(
-                    compact: ComposerAttachButton(
-                      enabled: typing,
-                      count: attachments.items.length,
-                      onPressed: open,
-                      onWarm: attachments.warm,
-                    ),
-                    child: ComposerAttachButton(enabled: typing, onPressed: open, onWarm: attachments.warm),
-                  );
-                },
-              ),
-        field: ListenableBuilder(
-          // The hint says why Send waits while a picture or a file is still
-          // on its way.
-          listenable: attachments,
-          builder: (context, _) => ComposerField(
-            controller: controller,
-            focusNode: focusNode,
-            enabled: typing,
-            keyboardOnPointerDown: live,
-            keyboardType: TextInputType.multiline,
-            hint: reason ?? blocked ?? attachments.waitingReason ?? hint,
-            onSubmit: onSubmit,
-            hasLeading: attaches,
-          ),
-        ),
-        trailing: ListenableBuilder(
-          listenable: Listenable.merge([controller, attachments, ?dictation]),
-          builder: (context, _) {
-            final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
-            final (sendLabel, sendIcon) = switch (delivery) {
-              SendDelivery.queued => ('Queue', LucideIcons.listPlus),
-              SendDelivery.steered => ('Send to the running turn', LucideIcons.arrowUp),
-              SendDelivery.now => ('Send', LucideIcons.arrowUp),
-            };
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (working)
-                  _StopButton(
-                    key: const ValueKey('stop'),
-                    stopping: stopping,
-                    onPressed: () {
-                      onStop?.call();
-                      session.cancel();
+  Widget build(BuildContext context) =>
+      SessionSelect<(AgentLink, AgentPhase, bool, String?, String?, SendDelivery, bool)>(
+        session: session,
+        select: (s) =>
+            (s.link, s.phase, s.state.cancelRequested, s.sendBlocked, s.relayNote, s.delivery, s.waitingOnBackground),
+        builder: (context, snapshot) {
+          final (link, phase, stopping, blocked, relay, delivery, waiting) = snapshot;
+          final live = link == AgentLink.live;
+          final typing = live && blocked == null;
+          final reason = composerReason(link, l10n: context.l10n);
+          // Waiting on background work the turn is over: Send, not Stop (Stop
+          // would end nothing, and an agent in a terminal still says `working`).
+          final working = live && phase != AgentPhase.idle && relay == null && !waiting;
+          final observed = session.isObserved;
+          final attaches = session.attachMode != AttachMode.none;
+          final queuing = working && !observed;
+          final hint = composerHint(
+            session.agentLabel,
+            linkWord: reason ?? blocked ?? (relay != null ? '$relay…' : null),
+            l10n: context.l10n,
+          );
+          final field = ComposerFrame(
+            // A subagent's run takes no attachments. In the compact layout the
+            // chips are gone, and the paperclip says how many go along.
+            leading: !attaches
+                ? null
+                : ListenableBuilder(
+                    listenable: attachments,
+                    builder: (context, _) {
+                      void open() => unawaited(showAttachSheet(context, target: session, attachments: attachments));
+                      return HideWhenCompact(
+                        compact: ComposerAttachButton(
+                          enabled: typing,
+                          count: attachments.items.length,
+                          onPressed: open,
+                          onWarm: attachments.warm,
+                        ),
+                        child: ComposerAttachButton(enabled: typing, onPressed: open, onWarm: attachments.warm),
+                      );
                     },
-                    // Beside Send it is the secondary action; alone (a
-                    // terminal agent) it is the only one.
-                    quiet: queuing,
                   ),
-                if (!working || queuing)
-                  if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
-                    // The mic is Send's place while there is nothing to send;
-                    // a long press picks the language.
-                    ComposerRoundButton(
-                      key: const ValueKey('mic'),
-                      label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
-                      icon: LucideIcons.mic,
-                      iconSize: IconSize.bar,
-                      ready: true,
-                      quiet: !dictate.listening,
-                      onPressed: () => unawaited(dictate.toggle()),
-                      onLongPress: dictate.listening
-                          ? null
-                          : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
-                    )
-                  else
-                    ComposerRoundButton(
-                      key: const ValueKey('send'),
-                      label: sendLabel,
-                      icon: sendIcon,
-                      iconSize: IconSize.bar,
-                      ready: typing && hasContent && attachments.canSend,
-                      onPressed: onSubmit,
-                      onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
-                    ),
-              ],
-            );
-          },
-        ),
-      );
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Mode, model and the switches, then the quick phrases and what
-          // waits to be sent: all go in the compact layout, and while the
-          // command palette is open (they are not what is being acted on).
-          HideWhenCompact(
-            child: HideWhileCommanding(
-              input: controller,
-              model: commands,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SessionChipsRow(session: session, focus: focusNode),
-                  if (live) QuickPhrasesRow(input: controller, focus: focusNode),
-                  if (live) _QueueShare(child: QueuedMessages(session: session)),
-                ],
+            field: ListenableBuilder(
+              // The hint says why Send waits while a picture or a file is still
+              // on its way.
+              listenable: attachments,
+              builder: (context, _) => ComposerField(
+                controller: controller,
+                focusNode: focusNode,
+                enabled: typing,
+                keyboardOnPointerDown: live,
+                keyboardType: TextInputType.multiline,
+                hint: reason ?? blocked ?? attachments.waitingReason ?? hint,
+                onSubmit: onSubmit,
+                hasLeading: attaches,
               ),
             ),
-          ),
-          // What goes out with the draft, above the field; the quiet line
-          // about its delivery under it, once the person engages the field
-          // (focus or a draft): a turn ending must not shrink the composer
-          // under an answer that is being read.
-          HideWhenCompact(child: AttachmentChips(attachments: attachments)),
-          HideWhenCompact(
-            child: HideWhileCommanding(
-              input: controller,
-              model: commands,
-              child: ListenableBuilder(
-                listenable: Listenable.merge([focusNode, controller]),
-                builder: (context, _) => DeliveryHint(
-                  delivery: queuing && typing && (focusNode.hasFocus || controller.text.isNotEmpty) ? delivery : null,
+            trailing: ListenableBuilder(
+              listenable: Listenable.merge([controller, attachments, ?dictation]),
+              builder: (context, _) {
+                final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
+                final (sendLabel, sendIcon) = switch (delivery) {
+                  SendDelivery.queued => ('Queue', LucideIcons.listPlus),
+                  SendDelivery.steered => ('Send to the running turn', LucideIcons.arrowUp),
+                  SendDelivery.now => ('Send', LucideIcons.arrowUp),
+                };
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (working)
+                      _StopButton(
+                        key: const ValueKey('stop'),
+                        stopping: stopping,
+                        onPressed: () {
+                          onStop?.call();
+                          session.cancel();
+                        },
+                        // Beside Send it is the secondary action; alone (a
+                        // terminal agent) it is the only one.
+                        quiet: queuing,
+                      ),
+                    if (!working || queuing)
+                      if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
+                        // The mic is Send's place while there is nothing to send;
+                        // a long press picks the language.
+                        ComposerRoundButton(
+                          key: const ValueKey('mic'),
+                          label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
+                          icon: LucideIcons.mic,
+                          iconSize: IconSize.bar,
+                          ready: true,
+                          quiet: !dictate.listening,
+                          onPressed: () => unawaited(dictate.toggle()),
+                          onLongPress: dictate.listening
+                              ? null
+                              : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                        )
+                      else
+                        ComposerRoundButton(
+                          key: const ValueKey('send'),
+                          label: sendLabel,
+                          icon: sendIcon,
+                          iconSize: IconSize.bar,
+                          ready: typing && hasContent && attachments.canSend,
+                          onPressed: onSubmit,
+                          onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
+                        ),
+                  ],
+                );
+              },
+            ),
+          );
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Mode, model and the switches, then the quick phrases and what
+              // waits to be sent: all go in the compact layout, and while the
+              // command palette is open (they are not what is being acted on).
+              HideWhenCompact(
+                child: HideWhileCommanding(
+                  input: controller,
+                  model: commands,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SessionChipsRow(session: session, focus: focusNode),
+                      if (live) QuickPhrasesRow(input: controller, focus: focusNode),
+                      if (live) _QueueShare(child: QueuedMessages(session: session)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
-          field,
-        ],
+              // What goes out with the draft, above the field; the quiet line
+              // about its delivery under it, once the person engages the field
+              // (focus or a draft): a turn ending must not shrink the composer
+              // under an answer that is being read.
+              HideWhenCompact(child: AttachmentChips(attachments: attachments)),
+              HideWhenCompact(
+                child: HideWhileCommanding(
+                  input: controller,
+                  model: commands,
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge([focusNode, controller]),
+                    builder: (context, _) => DeliveryHint(
+                      delivery: queuing && typing && (focusNode.hasFocus || controller.text.isNotEmpty)
+                          ? delivery
+                          : null,
+                    ),
+                  ),
+                ),
+              ),
+              field,
+            ],
+          );
+        },
       );
-    },
-  );
 }
 
 /// Takes [child] out of the layout in the compact layout (landscape with the
