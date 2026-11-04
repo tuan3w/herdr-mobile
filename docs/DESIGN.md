@@ -511,7 +511,7 @@ plurals, preserving English singular/plural forms. Japanese uses units such as
 When a narrow list cannot fit the full agent count, use a typed compact count:
 measure the compact string that is painted, and keep the full label in
 Semantics. Connection state and the bulk review Undo action and count are also
-app-owned chrome, so they are localized; remote text stays as received.
+app-owned chrome and must be localized; remote text stays as received.
 The same localized string must feed both width measurement and painting. In
 particular, the board's reserved freshness width must use a localized longest
 label, and reply-label width caches must include the label or locale.
