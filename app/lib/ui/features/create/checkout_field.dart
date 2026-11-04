@@ -44,7 +44,7 @@ class CheckoutField extends StatelessWidget {
   String _text(BuildContext context) => switch (choice) {
     ThisFolder() => context.l10n.uiThisFolder,
     ExistingCheckout(:final path) => _entry(path)?.name ?? _nameOf(path),
-    NewWorktree() => context.l10n.uiNewWorktree,
+    NewWorktree() => context.l10n.uiNewWorktreeValue,
   };
 
   String _helper(BuildContext context) {
