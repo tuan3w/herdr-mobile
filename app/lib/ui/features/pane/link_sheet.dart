@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -71,15 +73,25 @@ Future<void> showLinkSheet(BuildContext context, String url, {MachineConnection?
       );
 
       return SheetScaffold(
-        title: host.isEmpty ? 'Link' : host,
+        title: host.isEmpty ? context.l10n.uiLink : host,
         kind: SheetKind.message,
         actions: [
           if (!local)
-            AppButton(label: 'Open in browser', icon: LucideIcons.externalLink, expand: true, onPressed: open)
+            AppButton(
+              label: context.l10n.uiOpenInBrowser,
+              icon: LucideIcons.externalLink,
+              expand: true,
+              onPressed: open,
+            )
           else if (previewable)
-            AppButton(label: 'Open page', icon: LucideIcons.smartphone, expand: true, onPressed: openOnPhone),
+            AppButton(
+              label: context.l10n.uiOpenPage,
+              icon: LucideIcons.smartphone,
+              expand: true,
+              onPressed: openOnPhone,
+            ),
           AppButton(
-            label: 'Copy link',
+            label: context.l10n.uiCopyLink,
             icon: LucideIcons.copy,
             kind: local && !previewable ? AppButtonKind.primary : AppButtonKind.secondary,
             expand: true,

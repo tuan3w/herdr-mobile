@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -18,7 +19,7 @@ Future<PathCandidate?> showPathChoices(BuildContext context, String name, List<P
     builder: (ctx) {
       final ds = ctx.ds;
       return SheetScaffold(
-        title: '$name is in ${candidates.length} places',
+        title: context.l10n.messageIsInPlaces(name, '${candidates.length}'),
         kind: SheetKind.list,
         // The rows bring their own gutter.
         bleed: true,
@@ -28,7 +29,7 @@ Future<PathCandidate?> showPathChoices(BuildContext context, String name, List<P
           children: [
             Padding(
               padding: const EdgeInsets.only(left: Gap.gutter, right: Gap.gutter, bottom: Gap.sm),
-              child: Text('Newest first', style: Type.secondary.copyWith(color: ds.textSecondary)),
+              child: Text(context.l10n.uiNewestFirst, style: Type.secondary.copyWith(color: ds.textSecondary)),
             ),
             for (var i = 0; i < candidates.length; i++) ...[
               if (i > 0) Hairline(indent: ListRow.textIndent()),

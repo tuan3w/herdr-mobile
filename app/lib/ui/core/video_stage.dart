@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
@@ -31,7 +32,7 @@ class VideoStage extends StatelessWidget {
         final ended = v.isCompleted || (v.duration > Duration.zero && v.position >= v.duration);
         return Semantics(
           button: true,
-          label: ended ? 'Play again' : (v.isPlaying ? 'Pause' : 'Play'),
+          label: ended ? context.l10n.uiPlayAgain : (v.isPlaying ? context.l10n.uiPause : context.l10n.uiPlay),
           excludeSemantics: true,
           child: PressBuilder(
             onTap: onTap,
@@ -63,7 +64,7 @@ class VideoStage extends StatelessWidget {
                                   ),
                                   const SizedBox(width: Gap.xs),
                                   Text(
-                                    ended ? 'Play again' : 'Play',
+                                    ended ? context.l10n.uiPlayAgain : context.l10n.uiPlay,
                                     style: Type.labelStrong.copyWith(color: ds.onInverse),
                                   ),
                                 ],

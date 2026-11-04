@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -28,7 +30,7 @@ class Skeleton extends StatelessWidget {
       ),
     );
     return Semantics(
-      label: 'Loading',
+      label: context.l10n.uiLoading,
       excludeSemantics: true,
       child: ExcludeFocus(
         child: IgnorePointer(

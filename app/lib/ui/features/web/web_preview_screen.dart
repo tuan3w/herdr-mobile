@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -349,8 +351,8 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       setState(() {
         _linkLost = true;
         _failure = (
-          title: 'Lost the connection to ${widget.machine.profile.label}',
-          message: 'The page comes back by itself when herdr is connected again.',
+          title: context.l10n.messageLostTheConnectionTo(widget.machine.profile.label),
+          message: context.l10n.uiThePageComesBackByItselfWhenHerdrIs,
         );
         _failedUrl = _url;
       });
@@ -373,7 +375,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         if (request.isMainFrame && _pending == request.url) {
           // A file: Android asks for it again instead of showing it.
           if (mounted) setState(() => _progress = 100);
-          _toaster.show('That link is a file, and herdr doesn’t download files. Open in browser (⋯) can.');
+          _toaster.show(context.l10n.uiThatLinkIsAFileAndHerdrDoesnT);
           return NavigationDecision.prevent;
         }
         if (request.isMainFrame) _pending = request.url;
@@ -392,7 +394,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// where it leads and opens it in the phone's browser with a tap.
   void _offerWeb(Uri url) {
     _toaster.show(
-      '${visibleText(url.host)} isn’t from ${widget.machine.profile.label}.',
+      context.l10n.messageIsnTFrom(visibleText(url.host), widget.machine.profile.label),
       action: ToastAction('Open', () => unawaited(_openWeb(url))),
     );
   }
@@ -401,9 +403,10 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// through the link sheet, which shows the whole address and says it is
   /// not encrypted.
   Future<void> _openWeb(Uri url) async {
+    final openFailed = context.l10n.uiCouldnTOpenOnThisPhoneNoBrowserCould;
     if (url.scheme == 'https') {
       if (!await openInBrowser(url.toString())) {
-        _toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
+        _toaster.show(openFailed, kind: ToastKind.failed);
       }
     } else if (mounted) {
       await showLinkSheet(context, url.toString());
@@ -418,17 +421,20 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     if (WebPreview.canPreview(url.toString())) {
       final service = sensitiveServiceOf(url.hasPort ? url.port : 80);
       if (service != null) {
-        _toaster.show('$where is a $service port. Open its link from the terminal if you mean to.');
+        _toaster.show(context.l10n.messageIsAPortOpenItsLinkFromThe(where, service));
         return;
       }
-      _toaster.show('$where isn’t open on this phone.', action: ToastAction('Open', () => unawaited(_forward(url))));
+      _toaster.show(
+        context.l10n.messageIsnTOpenOnThisPhone(where),
+        action: ToastAction('Open', () => unawaited(_forward(url))),
+      );
       return;
     }
     if (isMachineLocalUrl(url.toString())) {
-      _toaster.show('$where isn’t open on this phone.');
+      _toaster.show(context.l10n.messageIsnTOpenOnThisPhone(where));
       return;
     }
-    _toaster.show('herdr doesn’t open ${visibleText(url.scheme)}: links from a page.');
+    _toaster.show(context.l10n.messageHerdrDoesnTOpenLinksFromAPage(visibleText(url.scheme)));
   }
 
   /// Another port of the machine, on the person's tap. Back from it returns
@@ -672,7 +678,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         builder: (ctx) {
           final ds = ctx.ds;
           return SheetScaffold(
-            title: 'Pages in this visit',
+            title: context.l10n.uiPagesInThisVisit,
             kind: SheetKind.list,
             // The rows bring their own gutter.
             bleed: true,
@@ -686,7 +692,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
                 ],
                 Hairline(indent: ListRow.textIndent()),
                 ListRow(
-                  title: 'Close page',
+                  title: context.l10n.uiClosePage,
                   leading: Icon(LucideIcons.x, size: IconSize.lead, color: ds.textSecondary),
                   onTap: () {
                     Navigator.of(ctx).pop();
@@ -712,7 +718,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       title: visibleText(title ?? where),
       subtitle: title == null ? null : where,
       leading: Icon(LucideIcons.globe, size: IconSize.lead, color: ds.textSecondary),
-      trailing: here ? Text('Here', style: Type.label.copyWith(color: ds.textSecondary)) : null,
+      trailing: here ? Text(context.l10n.uiHere, style: Type.label.copyWith(color: ds.textSecondary)) : null,
       onTap: () {
         Navigator.of(ctx).pop();
         if (!here) unawaited(_pageBack(steps));
@@ -741,7 +747,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         actions: [
           // In ⋯ since the bar holds two actions (the page-back arrow and ⋯).
           SheetAction(
-            label: 'Reload',
+            label: context.l10n.uiReload,
             icon: LucideIcons.rotateCw,
             unavailable: _failure != null
                 ? 'Retry, under the message, opens it again.'
@@ -751,12 +757,12 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
             onTap: () => unawaited(_view.reload()),
           ),
           SheetAction(
-            label: isFile ? 'Copy path' : 'Copy link',
+            label: isFile ? context.l10n.uiCopyPath : context.l10n.uiCopyLink,
             icon: LucideIcons.link,
             onTap: () => copyText(context, link, what: isFile ? 'Path copied' : 'Link copied'),
           ),
           SheetAction(
-            label: 'Open in browser',
+            label: context.l10n.uiOpenInBrowser,
             icon: LucideIcons.externalLink,
             onTap: () => unawaited(foreign ? _openWeb(_url!) : _openInBrowser()),
           ),
@@ -765,7 +771,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.xs, Gap.lg, Gap.sm),
             child: Text(
-              'For a page that needs your browser, such as a sign-in. The browser’s copy works only while this screen stays open.',
+              context.l10n.uiForAPageThatNeedsYourBrowserSuchAs,
               style: Type.caption.copyWith(color: ds.textSecondary),
             ),
           ),
@@ -779,11 +785,12 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// cookies, so it gets an entry URL of its own; the page keeps working
   /// while this screen (and its hold on the connection) stays.
   Future<void> _openInBrowser() async {
+    final openFailed = context.l10n.uiCouldnTOpenOnThisPhoneNoBrowserCould;
     try {
       final url = _url;
       final entry = url != null && _web.machinePage(url) != null ? await _web.reopen(url) : await _entryOf(widget.page);
       if (!await openPreviewUrl(entry)) {
-        _toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
+        _toaster.show(openFailed, kind: ToastKind.failed);
       }
     } on WebPreviewException catch (e) {
       _toaster.show(e.message, kind: ToastKind.failed);
@@ -840,14 +847,14 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
               // ✕ leaves from any depth; the arrow steps back through the
               // pages. Why two controls: Back alone walked every page, so ten
               // links deep was ten presses back to the chat.
-              leading: CircleButton(icon: LucideIcons.x, tooltip: 'Close page', onPressed: _close),
+              leading: CircleButton(icon: LucideIcons.x, tooltip: context.l10n.uiClosePage, onPressed: _close),
               actions: [
                 _PageBackButton(
                   canGoBack: _behind > 0,
                   onPressed: () => unawaited(_pageBack(1)),
                   onLongPress: _showVisit,
                 ),
-                CircleButton(icon: LucideIcons.ellipsis, tooltip: 'Page options', onPressed: _showOptions),
+                CircleButton(icon: LucideIcons.ellipsis, tooltip: context.l10n.uiPageOptions, onPressed: _showOptions),
               ],
             ),
             _LoadBar(progress: loading ? _progress : null),
@@ -874,7 +881,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
                                       message: failure.message,
                                       liveRegion: true,
                                       trailing: AppButton(
-                                        label: 'Retry',
+                                        label: context.l10n.uiRetry,
                                         kind: AppButtonKind.secondary,
                                         compact: true,
                                         onPressed: _retry,
@@ -910,10 +917,10 @@ class _PageBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MergeSemantics(
     child: Semantics(
-      hint: canGoBack ? 'Hold for the pages of this visit' : 'This is the first page of this visit',
+      hint: canGoBack ? context.l10n.uiHoldForThePagesOfThisVisit : context.l10n.uiThisIsTheFirstPageOfThisVisit,
       child: CircleButton(
         icon: LucideIcons.arrowLeft,
-        tooltip: 'Previous page',
+        tooltip: context.l10n.uiPreviousPage,
         onPressed: canGoBack ? onPressed : null,
         onLongPress: canGoBack ? onLongPress : null,
       ),

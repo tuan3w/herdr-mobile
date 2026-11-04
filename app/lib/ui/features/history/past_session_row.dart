@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -68,7 +69,7 @@ class PastSessionRow extends StatelessWidget {
       trailing: busy
           ? const BusySpinner(size: IconSize.bar)
           : open
-          ? Text('Open', style: Type.labelStrong.copyWith(color: ds.accentText))
+          ? Text(context.l10n.uiOpen, style: Type.labelStrong.copyWith(color: ds.accentText))
           : onTap == null
           ? null
           : Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textTertiary),

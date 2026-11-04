@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -164,7 +165,12 @@ class _AttachActionBarState extends State<AttachActionBar> {
               padding: const EdgeInsets.only(left: Gap.xs, right: Gap.sm),
               child: Row(
                 children: [
-                  AppButton(label: 'Clear', kind: AppButtonKind.ghost, compact: true, onPressed: tray.clear),
+                  AppButton(
+                    label: context.l10n.uiClear,
+                    kind: AppButtonKind.ghost,
+                    compact: true,
+                    onPressed: tray.clear,
+                  ),
                   Expanded(
                     child: Semantics(
                       liveRegion: true,
@@ -177,7 +183,7 @@ class _AttachActionBarState extends State<AttachActionBar> {
                     ),
                   ),
                   AppButton(
-                    label: 'Attach ($count)',
+                    label: context.l10n.messageAttach('$count'),
                     icon: LucideIcons.paperclip,
                     onPressed: widget.onAttach,
                     compact: true,

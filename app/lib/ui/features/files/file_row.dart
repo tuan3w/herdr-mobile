@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -121,7 +122,7 @@ class FileRow extends StatelessWidget {
     );
     // An Opacity layer only for the rare unreadable row.
     if (denied) row = Opacity(opacity: 0.55, child: row);
-    return Semantics(hint: e.isDirectory ? 'Folder' : null, selected: selected, child: row);
+    return Semantics(hint: e.isDirectory ? context.l10n.uiFolder : null, selected: selected, child: row);
   }
 }
 

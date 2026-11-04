@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -83,24 +85,25 @@ class BinaryView extends StatelessWidget {
         const SizedBox(height: Gap.lg),
         const Hairline(),
         InfoRow(
-          label: 'Size',
+          label: context.l10n.uiSize,
           value: stat.size == null
               ? 'Unknown'
               : stat.size! < 1024
               ? formatBytes(stat.size)
               : '${formatBytes(stat.size)} (${groupDigits(stat.size!)} bytes)',
         ),
-        if (stat.modified case final at?) InfoRow(label: 'Modified', value: formatWhen(at, DateTime.now())),
-        if (perms.isNotEmpty) InfoRow(label: 'Permissions', value: perms, mono: true),
-        InfoRow(label: 'Path', value: stat.path, mono: true, divider: false),
+        if (stat.modified case final at?)
+          InfoRow(label: context.l10n.uiModified, value: formatWhen(at, DateTime.now())),
+        if (perms.isNotEmpty) InfoRow(label: context.l10n.uiPermissions, value: perms, mono: true),
+        InfoRow(label: context.l10n.uiPath, value: stat.path, mono: true, divider: false),
         const SizedBox(height: Gap.lg),
         if (onShowAsPage != null) ...[
-          AppButton(label: 'Show as page', icon: LucideIcons.globe, expand: true, onPressed: onShowAsPage),
+          AppButton(label: context.l10n.uiShowAsPage, icon: LucideIcons.globe, expand: true, onPressed: onShowAsPage),
           const SizedBox(height: Gap.sm),
         ],
         // What there is to do with a file the viewer cannot show: take it elsewhere.
         AppButton(
-          label: 'Share or save\u2026',
+          label: context.l10n.uiShareOrSave,
           icon: LucideIcons.share2,
           expand: true,
           kind: onShowAsPage == null && onViewAsText == null ? AppButtonKind.primary : AppButtonKind.secondary,
@@ -111,7 +114,7 @@ class BinaryView extends StatelessWidget {
           children: [
             Expanded(
               child: AppButton(
-                label: 'Copy path',
+                label: context.l10n.uiCopyPath,
                 icon: LucideIcons.copy,
                 expand: true,
                 kind: AppButtonKind.secondary,
@@ -122,7 +125,7 @@ class BinaryView extends StatelessWidget {
               const SizedBox(width: Gap.sm),
               Expanded(
                 child: AppButton(
-                  label: 'Show as text',
+                  label: context.l10n.uiShowAsText,
                   icon: LucideIcons.fileText,
                   expand: true,
                   kind: onShowAsPage == null ? AppButtonKind.primary : AppButtonKind.secondary,
@@ -137,7 +140,9 @@ class BinaryView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: Gap.sm),
             child: Text(
-              model.head.length < (stat.size ?? model.head.length) ? 'First ${model.head.length} bytes' : 'Contents',
+              model.head.length < (stat.size ?? model.head.length)
+                  ? context.l10n.messageFirstBytes('${model.head.length}')
+                  : context.l10n.uiContents,
               style: Type.label.copyWith(color: ds.textSecondary),
             ),
           ),

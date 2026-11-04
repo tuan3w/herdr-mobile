@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -27,8 +28,8 @@ class AgentMoreRow extends StatelessWidget {
       },
       minHeight: kMinTap,
       semanticLabel: open
-          ? 'Show less ${more.status.name} agents'
-          : '$title agents, folded${detail == null || detail.isEmpty ? '' : '. $detail'}',
+          ? context.l10n.messageShowLessAgents(more.status.name)
+          : context.l10n.messageAgentsFolded(title, detail == null || detail.isEmpty ? '' : '. $detail'),
       padding: const EdgeInsets.symmetric(horizontal: Gap.gutter - PressRow.inset, vertical: Gap.sm),
       child: Row(
         children: [

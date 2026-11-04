@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -434,7 +436,10 @@ class _SubagentCardState extends State<SubagentCard> {
                 if (cut > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: Gap.xs),
-                    child: Text(countOf(cut, 'more character'), style: Type.caption.copyWith(color: ds.textMuted)),
+                    child: Text(
+                      countOf(cut, context.l10n.uiMoreCharacter),
+                      style: Type.caption.copyWith(color: ds.textMuted),
+                    ),
                   ),
                 const SizedBox(height: Gap.xs),
               ] else if (run.note != null && run.note!.trim().isNotEmpty) ...[
@@ -445,13 +450,13 @@ class _SubagentCardState extends State<SubagentCard> {
           ),
         ),
         _ActionRow(
-          label: run.hasTranscript ? 'Open conversation' : 'Open summary',
+          label: run.hasTranscript ? context.l10n.uiOpenConversation : context.l10n.uiOpenSummary,
           icon: run.hasTranscript ? LucideIcons.messageSquareText : LucideIcons.listTree,
           onTap: _openRun,
         ),
         if (call != null) ...[
           _ActionRow(
-            label: 'Call details',
+            label: context.l10n.uiCallDetails,
             icon: LucideIcons.wrench,
             onTap: () => setState(() => _details = !_details),
             expanded: _details,

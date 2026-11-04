@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -55,7 +57,7 @@ class SessionChipsRow extends StatelessWidget {
           ? null
           : AppChip(
               label: '+$overflow',
-              semanticLabel: '$overflow more ${plural(overflow, 'setting')}',
+              semanticLabel: context.l10n.messageMore89('$overflow', plural(overflow, 'setting')),
               onTap: live ? () => unawaited(_choose(context, session, focus)) : null,
             );
       final maxWidth = AppChip.maxRowWidth(context);
@@ -120,13 +122,13 @@ class _ChipView extends StatelessWidget {
             label: chip.label,
             tint: ds.dangerText,
             leading: icon(LucideIcons.triangleAlert, ds.dangerText),
-            semanticLabel: _said('${chip.title}: ${chip.label}, dangerous'),
+            semanticLabel: _said(context.l10n.messageDangerous(chip.title, chip.label)),
             onTap: _open(context),
           ),
           ModeRisk.elevated => AppChip(
             label: chip.label,
             leading: icon(LucideIcons.shieldHalf, ds.textSecondary),
-            semanticLabel: _said('${chip.title}: ${chip.label}, elevated'),
+            semanticLabel: _said(context.l10n.messageElevated(chip.title, chip.label)),
             onTap: _open(context),
           ),
           ModeRisk.none => AppChip(
@@ -155,7 +157,7 @@ class _ChipView extends StatelessWidget {
           label: chip.label,
           selected: on,
           leading: on ? icon(LucideIcons.check, ds.text) : null,
-          semanticLabel: '${chip.title}, ${on ? 'on' : 'off'}',
+          semanticLabel: '${chip.title}, ${on ? context.l10n.uiOn : context.l10n.uiOff}',
           onTap: live ? () => unawaited(session.setConfigOption(chip.settingId, !on)) : null,
         );
       case SessionChipKind.other:

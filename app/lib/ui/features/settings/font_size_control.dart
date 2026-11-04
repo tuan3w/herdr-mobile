@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -35,7 +37,7 @@ class FontSizeControl extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: Gap.xs),
-          child: Text('Font size', style: Type.row.copyWith(color: ds.text)),
+          child: Text(context.l10n.uiFontSize, style: Type.row.copyWith(color: ds.text)),
         ),
         const SizedBox(height: Gap.sm),
         _Stepper(
@@ -69,7 +71,7 @@ class _Stepper extends StatelessWidget {
         decoration: BoxDecoration(color: ds.fill, borderRadius: BorderRadius.circular(Radii.sm)),
         child: Row(
           children: [
-            _StepButton(icon: LucideIcons.minus, label: 'Decrease font size', onTap: onSmaller),
+            _StepButton(icon: LucideIcons.minus, label: context.l10n.uiDecreaseFontSize, onTap: onSmaller),
             Expanded(
               child: Center(
                 child: Text(
@@ -79,7 +81,7 @@ class _Stepper extends StatelessWidget {
                 ),
               ),
             ),
-            _StepButton(icon: LucideIcons.plus, label: 'Increase font size', onTap: onLarger),
+            _StepButton(icon: LucideIcons.plus, label: context.l10n.uiIncreaseFontSize, onTap: onLarger),
           ],
         ),
       ),

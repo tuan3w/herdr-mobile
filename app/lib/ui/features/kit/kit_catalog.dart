@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -1148,12 +1150,12 @@ class _ColourSheet extends StatelessWidget {
                               style: Mono.small.copyWith(color: ds.textMuted),
                             ),
                             TextSpan(
-                              text: '${_contrast(color, ds.bg).toStringAsFixed(2)}:1 on bg',
+                              text: context.l10n.messageOnBg(_contrast(color, ds.bg).toStringAsFixed(2)),
                               style: Type.count.copyWith(color: ds.text),
                             ),
                             if (on != null)
                               TextSpan(
-                                text: ' · ${_contrast(color, on.$2).toStringAsFixed(2)}:1 on ${on.$1}',
+                                text: context.l10n.messageOn(_contrast(color, on.$2).toStringAsFixed(2), on.$1),
                                 style: Type.count.copyWith(color: ds.text),
                               ),
                           ],
@@ -1340,8 +1342,15 @@ class _MotionSheet extends StatelessWidget {
         for (final (name, d) in _tokens) _MotionRow(name: name, duration: d),
         const SizedBox(height: Gap.md),
         Text(
-          'PressScale: panel ${PressScale.panel}, button ${PressScale.button}, chip ${PressScale.chip}, icon ${PressScale.icon}. '
-          'Travel ${Motion.travel.round()} dp, enter scale ${Motion.enterScale}, roll ${Motion.rollTravel} of the font size.',
+          context.l10n.messagePressScalePanelButtonChipIconTravelDpEnter(
+            '${PressScale.panel}',
+            '${PressScale.button}',
+            '${PressScale.chip}',
+            '${PressScale.icon}',
+            '${Motion.travel.round()}',
+            '${Motion.enterScale}',
+            '${Motion.rollTravel}',
+          ),
           style: Type.secondary.copyWith(color: ds.textSecondary),
         ),
       ],
@@ -1369,7 +1378,7 @@ class _MotionRowState extends State<_MotionRow> {
       children: [
         Expanded(
           child: AppButton(
-            label: '${widget.name} ${widget.duration.inMilliseconds} ms',
+            label: context.l10n.messageMs(widget.name, '${widget.duration.inMilliseconds}'),
             kind: AppButtonKind.secondary,
             compact: true,
             onPressed: () => setState(() => _moved = !_moved),
@@ -1448,7 +1457,7 @@ class _LargeTitleDemo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final actions = [const CircleButton(icon: LucideIcons.plus, tooltip: 'Add machine', onPressed: _noop)];
+    final actions = [CircleButton(icon: LucideIcons.plus, tooltip: context.l10n.uiAddMachine, onPressed: _noop)];
     return ColoredBox(
       color: ds.bg,
       child: CustomScrollView(
@@ -1465,16 +1474,16 @@ class _LargeTitleDemo extends StatelessWidget {
               actions: actions,
               bottomHeight: AppChip.height,
               // The header insets its bottom to the page gutter itself.
-              bottom: const Row(
+              bottom: Row(
                 children: [
-                  AppChip(label: 'All', selected: true, onTap: _noop),
+                  AppChip(label: context.l10n.uiAll, selected: true, onTap: _noop),
                   SizedBox(width: Gap.sm),
-                  AppChip(label: 'Needs you', count: 2, onTap: _noop),
+                  AppChip(label: context.l10n.uiNeedsYou, count: 2, onTap: _noop),
                 ],
               ),
             )
           else
-            SliverLargeTitle(title: 'Machines', actions: actions),
+            SliverLargeTitle(title: context.l10n.uiMachines, actions: actions),
           SliverToBoxAdapter(
             child: ListRow(
               leading: const LinkDot(state: LinkState.online),
@@ -1556,7 +1565,7 @@ class _ReplayState extends State<_Replay> {
   Widget build(BuildContext context) => PressBuilder(
     onTap: () => setState(() => _run++),
     haptic: true,
-    semanticLabel: 'Draw again',
+    semanticLabel: context.l10n.uiDrawAgain,
     builder: (context, pressed) => Align(
       alignment: AlignmentDirectional.centerStart,
       child: KeyedSubtree(key: ValueKey(_run), child: widget.builder(context)),

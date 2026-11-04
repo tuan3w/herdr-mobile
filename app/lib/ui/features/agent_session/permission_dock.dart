@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -156,7 +158,7 @@ class OriginLine extends StatelessWidget {
           const SizedBox(width: Gap.sm),
           Expanded(
             child: Text(
-              'From subagent: ${visibleText(origin.label)}',
+              context.l10n.messageFromSubagent(visibleText(origin.label)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Type.caption.copyWith(color: ds.textSecondary),
@@ -334,7 +336,7 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
         builder: (ctx) {
           final ds = ctx.ds;
           return SheetScaffold(
-            title: 'Everything it will run',
+            title: context.l10n.uiEverythingItWillRun,
             kind: SheetKind.message,
             child: SelectableText(_info.subject, style: Mono.input.copyWith(color: ds.text)),
           );
@@ -459,7 +461,8 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
                         ),
                       ),
                     ),
-                    if (_overflows) ReadAllCue(text: _atEnd ? null : 'More below · $lines lines', onOpen: _openFull),
+                    if (_overflows)
+                      ReadAllCue(text: _atEnd ? null : context.l10n.messageMoreBelowLines('$lines'), onOpen: _openFull),
                   ],
                   if (_evidence.diffs.isNotEmpty) ...[
                     const SizedBox(height: Gap.sm),
@@ -484,7 +487,7 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
                         const SizedBox(width: Gap.sm),
                         Expanded(
                           child: Text(
-                            'Look closely: ${info.risk}',
+                            context.l10n.messageLookClosely('${info.risk}'),
                             style: Type.secondaryStrong.copyWith(color: ds.dangerText),
                           ),
                         ),
@@ -527,11 +530,14 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (widget.more > 0)
-                    Text('${widget.more} more waiting', style: Type.labelStrong.copyWith(color: ds.blockedText)),
+                    Text(
+                      context.l10n.messageMoreWaiting('${widget.more}'),
+                      style: Type.labelStrong.copyWith(color: ds.blockedText),
+                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: Gap.md),
                     child: TextAction(
-                      label: 'Cancel request',
+                      label: context.l10n.uiCancelRequest,
                       tone: TextActionTone.quiet,
                       // The answer's own haptic fires once it is handed over.
                       haptic: false,
@@ -623,7 +629,10 @@ class _Paths extends StatelessWidget {
             ),
           ),
         if (paths.length > _shown)
-          Text(countOf(paths.length - _shown, 'more file'), style: Type.caption.copyWith(color: ds.textSecondary)),
+          Text(
+            countOf(paths.length - _shown, context.l10n.uiMoreFile),
+            style: Type.caption.copyWith(color: ds.textSecondary),
+          ),
       ],
     );
   }

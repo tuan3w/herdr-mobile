@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
@@ -515,7 +517,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       Haptics.sent();
       if (!mounted) return;
       unawaited(openAgent(context, SessionAgent(next.key), replace: true));
-      toaster?.show('New conversation started. The previous one is still on the board.');
+      toaster?.show(context.l10n.uiNewConversationStartedThePreviousOneIsStillOn);
     } on AgentHostException catch (e) {
       Haptics.failed();
       toaster?.show(e.message, kind: ToastKind.failed);
@@ -761,7 +763,7 @@ class _WaitsUntilLive extends StatelessWidget {
               padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
               child: StatusStrip(
                 color: context.ds.blocked,
-                title: 'Needs you',
+                title: context.l10n.uiNeedsYou,
                 detail: 'Its request shows here once connected.',
                 leading: const StatusGlyph(status: AgentStatus.blocked, size: IconSize.row),
               ),
@@ -844,7 +846,7 @@ class _LinkStrip extends StatelessWidget {
     // way out of both.
     final openTerminal = observed && session.terminalPaneId != null
         ? AppButton(
-            label: 'Open terminal',
+            label: context.l10n.uiOpenTerminal,
             compact: true,
             kind: AppButtonKind.secondary,
             onPressed: () => _openTerminal(context),
@@ -873,7 +875,7 @@ class _LinkStrip extends StatelessWidget {
         return _strip(
           color: ds.blocked,
           state: LinkState.attention,
-          title: 'Needs you in the terminal',
+          title: context.l10n.uiNeedsYouInTheTerminal,
           detail: 'It asks something the chat can’t show.',
           action: openTerminal,
         );

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -49,7 +51,7 @@ class UpdateGroup extends StatelessWidget {
       };
       return SettingsGroup(
         icon: HerdrIcons.update,
-        title: 'Update available',
+        title: context.l10n.uiUpdateAvailable,
         summary: summary,
         tint: context.ds.accent,
         // Ready, or stopped: news a screen reader says even with the
@@ -110,7 +112,7 @@ class _UpdateSheet extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(_inset, Gap.md, _inset, Gap.sm),
               child: Semantics(
                 header: true,
-                child: Text('Update to ${release.version}', style: Type.title.copyWith(color: ds.text)),
+                child: Text(context.l10n.messageUpdateTo(release.version), style: Type.title.copyWith(color: ds.text)),
               ),
             ),
             if (clip != null) ClipCard(clip, version: release.version),
@@ -133,10 +135,15 @@ class _UpdateSheet extends StatelessWidget {
       UpdateStage.downloading => [
         _ProgressBar(update.received / release.size),
         Text(
-          'Downloading ${megabytes(update.received)} of ${megabytes(release.size)}',
+          context.l10n.messageDownloadingOf(megabytes(update.received), megabytes(release.size)),
           style: Type.secondary.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
         ),
-        AppButton(label: 'Cancel', kind: AppButtonKind.secondary, expand: true, onPressed: update.cancelDownload),
+        AppButton(
+          label: context.l10n.uiCancel,
+          kind: AppButtonKind.secondary,
+          expand: true,
+          onPressed: update.cancelDownload,
+        ),
       ],
       UpdateStage.ready => [
         if (update.needsInstallPermission)
@@ -145,17 +152,17 @@ class _UpdateSheet extends StatelessWidget {
             'then come back and tap Install.',
           ),
         AppButton(
-          label: 'Install ${release.version}',
+          label: context.l10n.messageInstall(release.version),
           icon: LucideIcons.packageCheck,
           expand: true,
           onPressed: () => unawaited(update.install()),
         ),
-        Text('Android asks before it installs.', style: caption, textAlign: TextAlign.center),
+        Text(context.l10n.uiAndroidAsksBeforeItInstalls, style: caption, textAlign: TextAlign.center),
       ],
       _ => [
         if (update.problem case final problem?) _Note(problem, failed: true),
         AppButton(
-          label: update.problem != null ? 'Retry' : 'Download ${megabytes(release.size)}',
+          label: update.problem != null ? context.l10n.uiRetry : context.l10n.messageDownload(megabytes(release.size)),
           icon: HerdrIcons.update,
           expand: true,
           // A check that runs meanwhile (after a failed download) keeps the
@@ -193,11 +200,11 @@ class _Facts extends StatelessWidget {
             children: [
               Icon(LucideIcons.badgeCheck, size: IconSize.inline, color: ds.done),
               const SizedBox(width: Gap.xs),
-              Expanded(child: Text('Checksum matched: the file the release lists', style: caption)),
+              Expanded(child: Text(context.l10n.uiChecksumMatchedTheFileTheReleaseLists, style: caption)),
             ],
           )
         else
-          Text('From github.com/$appRepository \u00b7 you have $appVersion', style: caption),
+          Text(context.l10n.messageFromGithubComYouHave(appRepository, appVersion), style: caption),
       ],
     );
   }
@@ -214,7 +221,8 @@ class ClipCard extends StatelessWidget {
   final ReleaseClip clip;
   final String version;
 
-  void _play(BuildContext context) => unawaited(openClipPlayer(context, clip, title: 'What\u2019s new in $version'));
+  void _play(BuildContext context) =>
+      unawaited(openClipPlayer(context, clip, title: context.l10n.messageWhatSNewIn(version)));
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +236,7 @@ class ClipCard extends StatelessWidget {
           children: [
             Icon(LucideIcons.play, size: IconSize.inline, color: ds.onInverse),
             const SizedBox(width: Gap.xs),
-            Text('Play', style: Type.labelStrong.copyWith(color: ds.onInverse)),
+            Text(context.l10n.uiPlay, style: Type.labelStrong.copyWith(color: ds.onInverse)),
           ],
         ),
       ),
@@ -237,7 +245,7 @@ class ClipCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(_inset, Gap.xs, _inset, Gap.md),
       child: Semantics(
         button: true,
-        label: '${clip.label}, plays here',
+        label: context.l10n.messagePlaysHere(clip.label),
         excludeSemantics: true,
         child: PressBuilder(
           minTapSize: kMinTap,
@@ -301,13 +309,14 @@ class _NoNotes extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('No notes came with this release.', style: Type.secondary.copyWith(color: ds.textSecondary)),
+        Text(context.l10n.uiNoNotesCameWithThisRelease, style: Type.secondary.copyWith(color: ds.textSecondary)),
         TextAction(
-          label: 'Open on GitHub',
+          label: context.l10n.uiOpenOnGitHub,
           onTap: () async {
             final toaster = Toaster.of(context);
+            final openFailed = context.l10n.uiCouldnTOpenOnThisPhoneNoBrowserCould;
             if (!await openInBrowser(release.pageUrl)) {
-              toaster.show('Couldn\u2019t open on this phone: no browser could open it.', kind: ToastKind.failed);
+              toaster.show(openFailed, kind: ToastKind.failed);
             }
           },
         ),
@@ -344,7 +353,7 @@ class _ProgressBar extends StatelessWidget {
     final ds = context.ds;
     final value = fraction.clamp(0.0, 1.0);
     return Semantics(
-      label: 'Download progress',
+      label: context.l10n.uiDownloadProgress,
       value: '${(value * 100).floor()}%',
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Radii.pill),

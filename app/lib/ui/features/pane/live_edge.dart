@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -119,7 +121,7 @@ class _LiveEdgeState extends State<LiveEdge> {
               left: Gap.md,
               bottom: LiveEdge.ruleHeight + Gap.sm,
               child: Semantics(
-                label: 'Output is stale',
+                label: context.l10n.uiOutputIsStale,
                 // The seconds change every second: not for a screen reader.
                 excludeSemantics: true,
                 child: DecoratedBox(

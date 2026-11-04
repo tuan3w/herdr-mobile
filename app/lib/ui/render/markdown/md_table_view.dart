@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -129,15 +131,15 @@ class _MdTableViewState extends State<MdTableView> {
     unawaited(
       showActionSheet(
         context,
-        title: 'Table',
+        title: context.l10n.uiTable,
         actions: [
           SheetAction(
-            label: 'Copy as Markdown',
+            label: context.l10n.uiCopyAsMarkdown,
             icon: LucideIcons.copy,
             onTap: () => copyText(context, mdTableMarkdown(t), what: 'Table copied'),
           ),
           SheetAction(
-            label: 'Copy as TSV',
+            label: context.l10n.uiCopyAsTSV,
             icon: LucideIcons.table,
             onTap: () => copyText(context, t.plainText, what: 'Table copied as TSV'),
           ),
@@ -199,7 +201,9 @@ class _MdTableViewState extends State<MdTableView> {
     final hidden = t.rows.length - mdTableRowCap;
     final more = t.rows.length > mdTableRowCap
         ? MoreRow(
-            label: widget.expanded ? '${t.rows.length} rows' : '$hidden more rows',
+            label: widget.expanded
+                ? context.l10n.messageRows('${t.rows.length}')
+                : context.l10n.messageMoreRows('$hidden'),
             action: widget.expanded ? 'Show less' : 'Show all',
             onTap: widget.onToggleExpanded ?? () {},
           )
@@ -228,7 +232,7 @@ class _MdTableViewState extends State<MdTableView> {
         container: true,
         explicitChildNodes: true,
         label: label,
-        customSemanticsActions: {const CustomSemanticsAction(label: 'Copy table'): () => _actions(context)},
+        customSemanticsActions: {CustomSemanticsAction(label: context.l10n.uiCopyTable): () => _actions(context)},
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           excludeFromSemantics: true,

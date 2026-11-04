@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -183,7 +185,7 @@ class _MdDiagramViewState extends State<MdDiagramView> {
               );
         final more = size.height > mdDiagramCap
             ? MoreRow(
-                label: widget.expanded ? 'Whole diagram' : 'Cropped',
+                label: widget.expanded ? context.l10n.uiWholeDiagram : context.l10n.uiCropped,
                 action: widget.expanded ? 'Show less' : 'Show all',
                 onTap: widget.onToggleExpanded ?? () {},
               )
@@ -212,7 +214,7 @@ class _MdDiagramViewState extends State<MdDiagramView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(
-                label: d.turned ? '${d.kind.label} · top-down' : d.kind.label,
+                label: d.turned ? context.l10n.messageTopDown(d.kind.label) : d.kind.label,
                 copied: _copied,
                 onCopy: _copy,
                 onOpen: open == null ? null : () => open(context, d),
@@ -226,7 +228,7 @@ class _MdDiagramViewState extends State<MdDiagramView> {
     return Semantics(
       container: true,
       explicitChildNodes: true,
-      label: 'Diagram, ${d.kind.label.toLowerCase()}',
+      label: context.l10n.messageDiagram(d.kind.label.toLowerCase()),
       value: d.labels.take(40).join(', '),
       child: plate,
     );
@@ -281,14 +283,14 @@ class _Header extends StatelessWidget {
           if (onOpen != null)
             PressBuilder(
               onTap: onOpen,
-              semanticLabel: 'Open diagram',
+              semanticLabel: context.l10n.uiOpenDiagram,
               minTapSize: kMinTap,
               builder: (context, pressed) =>
                   Icon(LucideIcons.maximize2, size: 16, color: pressed ? ds.accentText : ds.textMuted),
             ),
           PressBuilder(
             onTap: onCopy,
-            semanticLabel: copied ? 'Copied' : 'Copy source',
+            semanticLabel: copied ? context.l10n.uiCopied : context.l10n.uiCopySource,
             minTapSize: kMinTap,
             builder: (context, pressed) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xs),

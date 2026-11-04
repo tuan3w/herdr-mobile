@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -182,7 +184,10 @@ class ReplyChips extends StatelessWidget {
     final upper = [
       for (final r in layout.allow) chip(r, refuse: false),
       if (layout.hidden > 0)
-        _MoreChip(label: '${layout.hidden} more…', onTap: onMore != null && !locked ? onMore : null),
+        _MoreChip(
+          label: context.l10n.messageMore90('${layout.hidden}'),
+          onTap: onMore != null && !locked ? onMore : null,
+        ),
     ];
     final lower = [for (final r in layout.refuse) chip(r, refuse: true)];
     List<Widget> spaced(List<Widget> group) => [

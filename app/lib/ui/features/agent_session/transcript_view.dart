@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -708,7 +710,7 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
         onToggle: _toggle,
       ),
       TranscriptRowKind.changedMore => ChangedMoreRow(rowKey: row.key, count: row.count, all: open, onToggle: _toggle),
-      TranscriptRowKind.divider => SinceDivider(rowKey: row.key, label: row.label ?? 'New', gap: row.gap),
+      TranscriptRowKind.divider => SinceDivider(rowKey: row.key, label: row.label ?? context.l10n.uiNew, gap: row.gap),
       TranscriptRowKind.stop => StopNoteRow(rowKey: row.key, reason: (item as TranscriptStop).reason, gap: row.gap),
       TranscriptRowKind.note => TranscriptNoteRow(rowKey: row.key, text: (item as TranscriptNote).text, gap: row.gap),
     };
@@ -751,12 +753,12 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
     if (_rows.isEmpty) {
       if (_earlier == EarlierHistory.none) {
         // Scrolls when the keyboard leaves it little room.
-        return const Center(
+        return Center(
           child: SingleChildScrollView(
             child: EmptyState(
               icon: HerdrIcons.message,
-              title: 'Nothing said yet',
-              message: 'Tell the agent what to do.',
+              title: context.l10n.uiNothingSaidYet,
+              message: context.l10n.uiTellTheAgentWhatToDo,
             ),
           ),
         );
@@ -953,7 +955,7 @@ class EarlierRow extends StatelessWidget {
       child: Center(
         child: switch (earlier) {
           EarlierHistory.available => AppButton(
-            label: 'Load earlier messages',
+            label: context.l10n.uiLoadEarlierMessages,
             kind: AppButtonKind.ghost,
             compact: true,
             onPressed: onLoad,
@@ -965,7 +967,7 @@ class EarlierRow extends StatelessWidget {
           ),
           // 64 MB: `_maxTail` of the observed session and the host's ceiling.
           EarlierHistory.tooLong => Text(
-            'Earlier messages are not shown: the phone reads the last 64 MB of a log.',
+            context.l10n.uiEarlierMessagesAreNotShownThePhoneReadsThe,
             textAlign: TextAlign.center,
             style: style,
           ),

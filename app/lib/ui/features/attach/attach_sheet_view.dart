@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -58,7 +60,7 @@ class AttachSheetController {
   Widget buildBody(BuildContext context) => Semantics(
     scopesRoute: true,
     namesRoute: true,
-    label: 'Attach',
+    label: context.l10n.uiAttach,
     explicitChildNodes: true,
     child: _Tabs(
       tab: tab,

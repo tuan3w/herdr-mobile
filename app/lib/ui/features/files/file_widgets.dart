@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -211,7 +212,7 @@ class FileErrorPanel extends StatelessWidget {
     final ds = context.ds;
     final d = describeFileError(error, name);
     final retry = d.retry && onRetry != null
-        ? AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: onRetry)
+        ? AppButton(label: context.l10n.uiRetry, kind: AppButtonKind.secondary, compact: true, onPressed: onRetry)
         : null;
     final both = action != null && alsoRetry && retry != null;
     return StatusPanel(
@@ -286,7 +287,7 @@ class FileResolvingPage extends StatelessWidget {
                         alsoRetry: true,
                         action: failed is PathNotFound && failed.canSearch && onSearch != null
                             ? AppButton(
-                                label: 'Search',
+                                label: context.l10n.uiSearch,
                                 icon: LucideIcons.search,
                                 kind: AppButtonKind.secondary,
                                 compact: true,
@@ -299,7 +300,7 @@ class FileResolvingPage extends StatelessWidget {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: AppButton(
-                            label: 'Copy path',
+                            label: context.l10n.uiCopyPath,
                             icon: LucideIcons.copy,
                             kind: AppButtonKind.secondary,
                             onPressed: () => copyText(context, path!, what: 'Path copied'),

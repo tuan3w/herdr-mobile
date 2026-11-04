@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
@@ -373,7 +375,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
           ],
         );
         return SheetScaffold(
-          title: 'Made in this session',
+          title: context.l10n.uiMadeInThisSession,
           kind: SheetKind.list,
           child: Padding(
             // The list kind's inset 4 + 12: the rows sit 16 from the edge.
@@ -387,7 +389,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: Gap.xl),
                       child: Text(
-                        'Nothing has come up in this session yet.',
+                        context.l10n.uiNothingHasComeUpInThisSessionYet,
                         style: Type.secondary.copyWith(color: ds.textSecondary),
                       ),
                     ),
@@ -448,8 +450,8 @@ class _EarlierNote extends StatelessWidget {
         padding: const EdgeInsets.only(top: Gap.sm),
         child: Row(
           children: [
-            Expanded(child: Text('Couldn’t read the earlier part of this chat. These are the newest.', style: style)),
-            AppButton(label: 'Retry', kind: AppButtonKind.ghost, compact: true, onPressed: onRead),
+            Expanded(child: Text(context.l10n.uiCouldnTReadTheEarlierPartOfThisChat, style: style)),
+            AppButton(label: context.l10n.uiRetry, kind: AppButtonKind.ghost, compact: true, onPressed: onRead),
           ],
         ),
       ),
@@ -457,8 +459,8 @@ class _EarlierNote extends StatelessWidget {
         padding: const EdgeInsets.only(top: Gap.sm),
         child: Row(
           children: [
-            Expanded(child: Text('Only the end of this chat has been read.', style: style)),
-            AppButton(label: 'Read earlier', kind: AppButtonKind.ghost, compact: true, onPressed: onRead),
+            Expanded(child: Text(context.l10n.uiOnlyTheEndOfThisChatHasBeenRead, style: style)),
+            AppButton(label: context.l10n.uiReadEarlier, kind: AppButtonKind.ghost, compact: true, onPressed: onRead),
           ],
         ),
       ),
@@ -499,7 +501,7 @@ class _KindTabs extends StatelessWidget {
             count: count,
             leading: running ? const LinkDot.live() : null,
             // The dot is all a sighted person gets of "running"; say it.
-            semanticLabel: running ? '$label, $count, running' : null,
+            semanticLabel: running ? context.l10n.messageRunning(label, '$count') : null,
           ),
       ],
       value: selected,
@@ -519,7 +521,7 @@ class _MoreRow extends StatelessWidget {
   Widget build(BuildContext context) => ListRow(
     leading: const IconTile(icon: LucideIcons.chevronDown),
     leadingOnTitle: false,
-    title: '$count more',
+    title: context.l10n.messageMore85('$count'),
     onTap: onTap,
   );
 }
@@ -658,9 +660,9 @@ class _AppRow extends StatelessWidget {
     final row = ListRow(
       leading: IconTile(icon: HerdrIcons.madeServer, color: running ? ds.done : null),
       leadingOnTitle: false,
-      title: visibleText(service ?? named ?? 'App on port ${app.port}'),
+      title: visibleText(service ?? named ?? context.l10n.messageAppOnPort('${app.port}')),
       // The fallback name already says the port.
-      subtitle: [if (service != null || named != null) 'Port ${app.port}', status].join(' · '),
+      subtitle: [if (service != null || named != null) context.l10n.messagePort('${app.port}'), status].join(' · '),
       dim: state == ServerState.stopped || service != null,
       onTap: () => onOpen(app.entry),
       trailing: running ? const LinkDot.live() : null,
@@ -959,7 +961,7 @@ class _PictureTileState extends State<_PictureTile> {
     return PressBuilder(
       onTap: !widget.enabled ? null : (unknown ? _retry : widget.onTap),
       haptic: true,
-      semanticLabel: unknown ? '$name, couldn’t be loaded, tap to retry' : name,
+      semanticLabel: unknown ? context.l10n.messageCouldnTBeLoadedTapToRetry(name) : name,
       builder: (context, pressed) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1054,7 +1056,7 @@ class _MoreTile extends StatelessWidget {
       aspectRatio: 4 / 3,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Radii.sm),
-        child: _QuietTile(icon: LucideIcons.chevronDown, pressed: pressed, text: '$count more'),
+        child: _QuietTile(icon: LucideIcons.chevronDown, pressed: pressed, text: context.l10n.messageMore85('$count')),
       ),
     ),
   );
@@ -1088,11 +1090,13 @@ class MadeChip extends StatelessWidget {
             ? const EdgeInsets.only(left: Gap.sm, bottom: Gap.hair)
             : const EdgeInsets.only(bottom: Gap.hair),
         child: AppChip(
-          label: partial ? (assets.isEmpty ? 'Made' : 'Made ${madeCountOf(assets)}+') : 'Made',
+          label: partial
+              ? (assets.isEmpty ? context.l10n.uiMade : context.l10n.messageMade('${madeCountOf(assets)}'))
+              : context.l10n.uiMade,
           count: partial ? null : madeCountOf(assets),
           semanticLabel: partial
-              ? '${countOf(madeCountOf(assets), 'item')} made so far, earlier history not read'
-              : '${countOf(madeCountOf(assets), 'item')} made',
+              ? context.l10n.messageMadeSoFarEarlierHistoryNotRead(countOf(madeCountOf(assets), 'item'))
+              : context.l10n.messageMade83(countOf(madeCountOf(assets), 'item')),
           leading: Icon(HerdrIcons.made, size: IconSize.inline, color: context.ds.textSecondary),
           onTap: () => unawaited(showSessionMade(context, session)),
         ),

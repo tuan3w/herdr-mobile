@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -78,7 +80,7 @@ class _QueuedMessagesState extends State<QueuedMessages> {
                     ),
                   ),
                   AppButton(
-                    label: 'Resume',
+                    label: context.l10n.uiResume,
                     kind: AppButtonKind.secondary,
                     compact: true,
                     onPressed: widget.session.resumeQueue,
@@ -106,7 +108,9 @@ class _QueuedMessagesState extends State<QueuedMessages> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: TextAction(
-                  label: _all ? 'Show less' : '${queued.length - shown.length} more queued',
+                  label: _all
+                      ? context.l10n.uiShowLess
+                      : context.l10n.messageMoreQueued('${queued.length - shown.length}'),
                   tone: TextActionTone.quiet,
                   onTap: () => setState(() => _all = !_all),
                 ),
@@ -153,7 +157,7 @@ class _QueuedRow extends StatelessWidget {
                     message.held ? LucideIcons.pause : LucideIcons.clock,
                     size: IconSize.inline,
                     color: ds.textSecondary,
-                    semanticLabel: message.held ? 'Held' : 'Queued',
+                    semanticLabel: message.held ? context.l10n.uiHeld : context.l10n.uiQueued,
                   ),
                   const SizedBox(width: Gap.sm),
                   Expanded(
@@ -162,7 +166,7 @@ class _QueuedRow extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          message.text.isEmpty ? 'Attachment' : visibleText(message.text),
+                          message.text.isEmpty ? context.l10n.uiAttachment : visibleText(message.text),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Type.compact.copyWith(color: ds.text),
@@ -183,7 +187,7 @@ class _QueuedRow extends StatelessWidget {
           ),
           CircleButton(
             icon: LucideIcons.x,
-            tooltip: 'Remove queued message',
+            tooltip: context.l10n.uiRemoveQueuedMessage,
             size: kMinTap - Gap.md,
             filled: false,
             onPressed: onRemove,
@@ -200,9 +204,9 @@ class _QueuedRow extends StatelessWidget {
 Future<bool> _confirmRemove(BuildContext context, AgentSessionView session, String id) async {
   final ok = await showConfirmSheet(
     context,
-    title: 'Remove this queued message?',
-    message: 'It won’t be sent. Its text and attachments are dropped.',
-    confirmLabel: 'Remove',
+    title: context.l10n.uiRemoveThisQueuedMessage,
+    message: context.l10n.uiItWonTBeSentItsTextAndAttachments,
+    confirmLabel: context.l10n.uiRemove,
   );
   if (ok) session.removeQueued(id);
   return ok;
@@ -270,7 +274,7 @@ class _EditQueuedState extends State<_EditQueued> {
         final attachments = message?.attachments.length ?? 0;
         final changed = _text.text.trim().isNotEmpty && _text.text != _initial;
         return SheetScaffold(
-          title: 'Edit queued message',
+          title: context.l10n.uiEditQueuedMessage,
           kind: SheetKind.form,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -278,7 +282,7 @@ class _EditQueuedState extends State<_EditQueued> {
             children: [
               const SizedBox(height: Gap.sm),
               LabeledField(
-                label: 'Message',
+                label: context.l10n.uiMessage,
                 prose: true,
                 controller: _text,
                 minLines: 2,
@@ -295,10 +299,14 @@ class _EditQueuedState extends State<_EditQueued> {
               const SizedBox(height: Gap.sm),
               Row(
                 children: [
-                  AppButton(label: 'Remove', kind: AppButtonKind.ghost, onPressed: gone ? null : _remove),
+                  AppButton(label: context.l10n.uiRemove, kind: AppButtonKind.ghost, onPressed: gone ? null : _remove),
                   const SizedBox(width: Gap.sm),
                   Expanded(
-                    child: AppButton(label: 'Save', expand: true, onPressed: gone || !changed ? null : _save),
+                    child: AppButton(
+                      label: context.l10n.uiSave,
+                      expand: true,
+                      onPressed: gone || !changed ? null : _save,
+                    ),
                   ),
                 ],
               ),

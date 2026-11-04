@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -53,7 +55,7 @@ Future<void> showDictationLanguageSheet(BuildContext context, Dictation dictatio
       builder: (ctx) {
         final ds = ctx.ds;
         return SheetScaffold(
-          title: 'Dictate in',
+          title: context.l10n.uiDictateIn,
           kind: SheetKind.list,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -75,8 +77,7 @@ Future<void> showDictationLanguageSheet(BuildContext context, Dictation dictatio
               Padding(
                 padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
                 child: Text(
-                  'One language at a time. The phone’s speech service may send what you say '
-                  'to Google, unless an offline language is installed in it.',
+                  context.l10n.uiOneLanguageAtATimeThePhoneSSpeech,
                   style: Type.caption.copyWith(color: ds.textSecondary),
                 ),
               ),

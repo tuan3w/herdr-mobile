@@ -4,6 +4,15 @@
 
 Requires Flutter ≥ 3.47 (Dart ≥ 3.13) with `flutter` on `PATH`.
 
+## Translations
+
+App-owned UI labels live in `app/lib/l10n/app_en.arb` and `app_ja.arb`.
+Flutter generates the Dart accessors during `flutter pub get`; English remains
+the fallback and Japanese follows the device language. Keep command text,
+remote agent output, hostnames, paths and protocol values in their original form.
+Widgets use `context.l10n` from `l10n_context.dart`; standalone widget tests
+without the app delegate still use their enclosing locale (English by default).
+
 ## Commands
 
 ```bash

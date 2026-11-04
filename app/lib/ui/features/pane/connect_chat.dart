@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import '../../../data/repositories/machine_connection.dart';
@@ -12,6 +13,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// installed without the tap on the confirm button: the hook is added to the
 /// agent's own settings on that machine.
 Future<void> showConnectChat(BuildContext context, MachineConnection machine, String paneId, String target) async {
+  final words = context.l10n;
   final name = agentName(target);
   final home = switch (target) {
     'claude' => '~/.claude',
@@ -21,23 +23,21 @@ Future<void> showConnectChat(BuildContext context, MachineConnection machine, St
   final toaster = Toaster.of(context);
   final ok = await showConfirmSheet(
     context,
-    title: 'Set up chat for $name',
-    message:
-        'The chat needs herdr to know which session this agent runs. This adds herdr\u2019s hook to $home on ${machine.profile.label}. '
-        'It applies to sessions started or resumed afterwards: resume this one in its terminal, when it is idle.'
-        '${target == 'codex' ? ' Codex asks you to trust the hook the first time.' : ''}',
-    confirmLabel: 'Install herdr hook',
+    title: words.messageSetUpChatFor(name),
+    message: words.messageTheChatNeedsHerdrToKnowWhichSession(
+      home,
+      machine.profile.label,
+      target == 'codex' ? words.uiCodexAsksYouToTrustTheHookTheFirst : '',
+    ),
+    confirmLabel: words.uiInstallHerdrHook,
     destructive: false,
   );
   if (!ok) return;
   try {
     await machine.api.installIntegration(target);
-    toaster.show('Installed on ${machine.profile.label}. Resume the session to read it as a chat.');
+    toaster.show(words.messageInstalledOnResumeTheSessionToReadIt(machine.profile.label));
   } on HerdrUnsupportedException {
-    toaster.show(
-      'This herdr is too old to install it. Run herdr integration install $target on the machine.',
-      kind: ToastKind.failed,
-    );
+    toaster.show(words.messageThisHerdrIsTooOldToInstallIt(target), kind: ToastKind.failed);
   } on HerdrApiException catch (e) {
     toaster.show(e.message, kind: ToastKind.failed);
   } on HerdrTransportException catch (e) {

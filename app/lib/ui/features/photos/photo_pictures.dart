@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -205,7 +207,7 @@ class _Loading extends StatelessWidget {
         Center(
           child: Semantics(
             liveRegion: true,
-            label: 'Loading photo, $line',
+            label: context.l10n.messageLoadingPhoto(line),
             child: ExcludeSemantics(
               child: DecoratedBox(
                 decoration: BoxDecoration(

@@ -34,6 +34,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   dartssh2: ^4.1.0
   # sha1 of a session key names its folder in the host inbox (host_inbox.dart)
@@ -92,6 +94,7 @@ dependencies:
   # GitHub serves release files as downloads (attachment, octet-stream), so a
   # browser saves the .mp4 instead of playing it; the player streams it.
   video_player: ^2.14.1
+  intl: any
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -109,6 +112,7 @@ dev_dependencies:
   video_player_platform_interface: ^6.6.0
   webview_flutter_platform_interface: ^2.15.1
 flutter:
+  generate: true
 
   # Material widgets (TextField, Tooltip, SnackBar, sheets) are used for their
   # behaviour, but never the Material icon font: icons are Lucide. Kept on

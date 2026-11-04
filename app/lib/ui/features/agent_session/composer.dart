@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:ui' show FlutterView;
 
@@ -180,7 +182,7 @@ class Composer extends StatelessWidget {
                     // a long press picks the language.
                     ComposerRoundButton(
                       key: const ValueKey('mic'),
-                      label: dictate.listening ? 'Stop dictating' : 'Dictate',
+                      label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
                       icon: LucideIcons.mic,
                       iconSize: IconSize.bar,
                       ready: true,
@@ -322,7 +324,7 @@ class _StopButton extends StatefulWidget {
 class _StopButtonState extends State<_StopButton> with TapGuardState<_StopButton> {
   @override
   Widget build(BuildContext context) => ComposerRoundButton(
-    label: 'Stop',
+    label: context.l10n.uiStop,
     icon: HerdrIcons.stopMark,
     iconSize: IconSize.row,
     busy: widget.stopping,

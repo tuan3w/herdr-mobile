@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -369,7 +370,7 @@ class _MdList extends StatelessWidget {
           child: Padding(
             padding: EdgeInsetsDirectional.only(top: (line - glyph) / 2, end: em * 0.4),
             child: Semantics(
-              label: item.checked! ? 'Done' : 'Not done',
+              label: item.checked! ? context.l10n.uiDone : context.l10n.uiNotDone,
               excludeSemantics: true,
               child: StatusGlyph(status: item.checked! ? AgentStatus.done : AgentStatus.idle, size: glyph),
             ),

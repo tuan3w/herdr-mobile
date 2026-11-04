@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -177,10 +179,10 @@ Widget? stopControl(
   required VoidCallback onHold,
   required VoidCallback onRetry,
 }) => switch (stop?.phase) {
-  StopPhase.stopping => _StopStatus(label: 'Stopping…', semantic: 'Stopping ${visibleText(task.id)}'),
+  StopPhase.stopping => _StopStatus(label: context.l10n.uiStopping, semantic: 'Stopping ${visibleText(task.id)}'),
   StopPhase.unconfirmed => AppChip(
-    label: 'Retry',
-    semanticLabel: 'Retry stopping ${visibleText(task.id)}',
+    label: context.l10n.uiRetry,
+    semanticLabel: context.l10n.messageRetryStopping(visibleText(task.id)),
     onTap: onRetry,
   ),
   StopPhase.finished => null,
@@ -226,13 +228,15 @@ class StopAllChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnswerChip(
-    label: 'Stop all',
+    label: context.l10n.uiStopAll,
     tone: AnswerChipTone.danger,
     hold: true,
     holdVerb: 'Hold to stop all',
     state: primed ? AnswerChipState.primed : AnswerChipState.rest,
     maxLines: 1,
-    semanticLabel: primed ? 'Confirm: Stop all $count, activate again to confirm' : 'Stop all $count, hold to confirm',
+    semanticLabel: primed
+        ? context.l10n.messageConfirmStopAllActivateAgainToConfirm('$count')
+        : context.l10n.messageStopAllHoldToConfirm('$count'),
     onTap: onTap,
     onHeld: onHeld,
   );
@@ -271,7 +275,11 @@ class ShowMoreRow extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: Gap.md),
     child: Align(
       alignment: Alignment.centerLeft,
-      child: TextAction(label: open ? 'Show less' : 'Show $hidden more', tone: TextActionTone.quiet, onTap: onTap),
+      child: TextAction(
+        label: open ? context.l10n.uiShowLess : context.l10n.messageShowMore('$hidden'),
+        tone: TextActionTone.quiet,
+        onTap: onTap,
+      ),
     ),
   );
 }

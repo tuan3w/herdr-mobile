@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -32,13 +33,17 @@ class ContentBlockView extends StatelessWidget {
       expanded: expanded,
       onToggle: onToggle ?? _nothing,
     ),
-    AudioBlock(:final mimeType) => ContentChip(icon: LucideIcons.audioLines, title: 'Audio', detail: mimeType),
+    AudioBlock(:final mimeType) => ContentChip(
+      icon: LucideIcons.audioLines,
+      title: context.l10n.uiAudio,
+      detail: mimeType,
+    ),
     UnknownBlock(:final type) => ContentChip(
       icon: LucideIcons.circleHelp,
-      title: 'Content this app can’t show',
+      title: context.l10n.uiContentThisAppCanTShow,
       detail: type,
       muted: true,
     ),
-    TextBlock(:final text) => ContentChip(icon: LucideIcons.fileText, title: 'Text', detail: text),
+    TextBlock(:final text) => ContentChip(icon: LucideIcons.fileText, title: context.l10n.uiText, detail: text),
   };
 }

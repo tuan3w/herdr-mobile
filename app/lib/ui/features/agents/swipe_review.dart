@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -18,7 +20,7 @@ bool markReviewedWithUndo(BuildContext context, MachineConnection machine, Strin
   final toaster = Toaster.maybeOf(context);
   if (!machine.markReviewed(paneId)) return false;
   toaster?.show(
-    'Marked reviewed',
+    context.l10n.uiMarkedReviewed,
     action: ToastAction('Undo', () {
       if (machine.unmarkReviewed(paneId)) Haptics.tick();
     }),
@@ -40,7 +42,7 @@ bool markSessionReviewedWithUndo(BuildContext context, AgentSessionView session,
   session.markSeen();
   if (session.unseenDone) return false;
   toaster?.show(
-    'Marked reviewed',
+    context.l10n.uiMarkedReviewed,
     action: ToastAction('Undo', () {
       onUndo?.call();
       if (session.unmarkSeen()) Haptics.tick();
@@ -352,7 +354,7 @@ class _SwipeToReviewState extends State<SwipeToReview> with SingleTickerProvider
       children: [
         Icon(LucideIcons.check, size: IconSize.bar, color: color),
         const SizedBox(width: Gap.sm),
-        Text('Reviewed', maxLines: 1, softWrap: false, style: Type.label.copyWith(color: color)),
+        Text(context.l10n.uiReviewed, maxLines: 1, softWrap: false, style: Type.label.copyWith(color: color)),
       ],
     );
     if (fade < 1) label = Opacity(opacity: fade, child: label);
@@ -399,7 +401,7 @@ class ReviewAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MergeSemantics(
     child: Semantics(
-      customSemanticsActions: enabled ? {const CustomSemanticsAction(label: 'Mark reviewed'): _review} : null,
+      customSemanticsActions: enabled ? {CustomSemanticsAction(label: context.l10n.uiMarkReviewed): _review} : null,
       child: child,
     ),
   );

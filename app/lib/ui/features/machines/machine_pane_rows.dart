@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -81,7 +83,10 @@ class _ShowAllRow extends StatelessWidget {
       start: ListRow.textIndent(leadingExtent: MachinePaneRow.leadingExtent) - PressRow.inset,
       end: Gap.gutter - PressRow.inset,
     ),
-    child: Text('Show all $total panes', style: Type.labelStrong.copyWith(color: context.ds.accentText)),
+    child: Text(
+      context.l10n.messageShowAllPanes('$total'),
+      style: Type.labelStrong.copyWith(color: context.ds.accentText),
+    ),
   );
 
   /// A quiet closing row, lower than a pane row.

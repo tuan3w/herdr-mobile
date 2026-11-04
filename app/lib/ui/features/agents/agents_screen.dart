@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -170,7 +172,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     builder: (context, _) => CircleButton(
       key: const ValueKey('settings'),
       icon: HerdrIcons.settings,
-      tooltip: 'Settings',
+      tooltip: context.l10n.uiSettings,
       mark: widget.pages.update?.release != null,
       markLabel: 'update available',
       onPressed: _showSettings,
@@ -249,16 +251,20 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
         slivers: [
           // Settings stays one tap away before the first machine; there is no
           // fleet yet for the chip to sum up, and nothing to start.
-          SliverLargeTitle(title: 'Agents', actions: [_settingsButton()]),
+          SliverLargeTitle(title: context.l10n.uiAgents, actions: [_settingsButton()]),
           SliverFillRemaining(
             hasScrollBody: false,
             child: Padding(
               padding: EdgeInsets.only(bottom: inset),
               child: EmptyState(
                 mark: const BrandMark(),
-                title: 'No machines yet',
-                message: 'Add a machine running herdr and its agents show here.',
-                action: AppButton(label: 'Add your first machine', icon: LucideIcons.plus, onPressed: _addMachine),
+                title: context.l10n.uiNoMachinesYet,
+                message: context.l10n.uiAddAMachineRunningHerdrAndItsAgentsShow,
+                action: AppButton(
+                  label: context.l10n.uiAddYourFirstMachine,
+                  icon: LucideIcons.plus,
+                  onPressed: _addMachine,
+                ),
               ),
             ),
           ),
@@ -321,7 +327,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverLargeTitle(
-            title: 'Agents',
+            title: context.l10n.uiAgents,
             // The board's one status line. Steps once a minute, so "heard 3m
             // ago" grows while nothing else changes: a board that went quiet
             // says so instead of looking live. It takes a second line rather
@@ -349,7 +355,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
             // and Settings. Past sessions is a row of the `+` form, where
             // resuming is one of the ways to start.
             actions: [
-              CircleButton(icon: LucideIcons.plus, tooltip: 'New agent session', onPressed: _newSession),
+              CircleButton(icon: LucideIcons.plus, tooltip: context.l10n.uiNewAgentSession, onPressed: _newSession),
               _settingsButton(),
             ],
           ),
@@ -369,10 +375,10 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               hasScrollBody: false,
               child: Padding(
                 padding: EdgeInsets.only(bottom: inset),
-                child: const EmptyState(
+                child: EmptyState(
                   icon: LucideIcons.moon,
-                  title: 'No agents running',
-                  message: 'Start one in herdr and it shows here.',
+                  title: context.l10n.uiNoAgentsRunning,
+                  message: context.l10n.uiStartOneInHerdrAndItShowsHere,
                 ),
               ),
             )
@@ -383,7 +389,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               itemBuilder: (context, i) => switch (listed[i]) {
                 final AgentHeader h => _SectionHeader(
                   key: h.key,
-                  label: sectionLabel(h.status),
+                  label: sectionLabel(h.status, words: context.l10n),
                   // Needs you, Working and To review are counted by the
                   // status line, so their headers do not say it again.
                   count: _countedAbove(h.status) ? null : h.section.count,
@@ -924,7 +930,7 @@ class _ReviewCount extends StatelessWidget {
       onTap: onTap,
       haptic: true,
       button: true,
-      semanticLabel: '$text, select them',
+      semanticLabel: context.l10n.messageSelectThem(text),
       // The line scales an inline widget by its text scale itself.
       builder: (context, pressed) => MediaQuery.withNoTextScaling(
         child: Text(text, maxLines: 1, style: style(context.ds, pressed: pressed)),
@@ -950,7 +956,7 @@ class _ConnectionStrip extends StatelessWidget {
       return StatusStrip(
         color: state.color(ds),
         leading: LinkDot(state: state),
-        title: '${countOf(troubled.length, 'machine')} not connected',
+        title: context.l10n.messageNotConnected(countOf(troubled.length, 'machine')),
         action: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textSecondary),
         onTap: onShowMachines,
       );
@@ -964,7 +970,12 @@ class _ConnectionStrip extends StatelessWidget {
       detail: t.state.label,
       action: switch (t.approvalUrl) {
         final url? => ApprovalButton(url: url),
-        null => AppButton(label: 'Retry', compact: true, kind: AppButtonKind.secondary, onPressed: t.machine.retry),
+        null => AppButton(
+          label: context.l10n.uiRetry,
+          compact: true,
+          kind: AppButtonKind.secondary,
+          onPressed: t.machine.retry,
+        ),
       },
     );
   }

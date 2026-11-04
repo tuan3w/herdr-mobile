@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -69,13 +71,13 @@ class _ReleaseHistoryScreenState extends State<ReleaseHistoryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppTopBar(title: 'What’s new', subtitle: 'Release notes up to $appVersion'),
+            AppTopBar(title: context.l10n.uiWhatSNew, subtitle: context.l10n.messageReleaseNotesUpTo(appVersion)),
             Expanded(
               child: _failed || (releases != null && releases.isEmpty)
                   ? Padding(
                       padding: const EdgeInsets.all(Gap.gutter),
                       child: Text(
-                        'The release notes couldn’t be read on this phone.',
+                        context.l10n.uiTheReleaseNotesCouldnTBeReadOnThis,
                         style: Type.secondary.copyWith(color: ds.textSecondary),
                       ),
                     )
@@ -88,8 +90,8 @@ class _ReleaseHistoryScreenState extends State<ReleaseHistoryScreen> {
                             for (final r in releases)
                               EntityRow(
                                 id: r.version,
-                                title: r.version == appVersion ? '${r.version} · Installed' : r.version,
-                                subtitle: r.headline.isEmpty ? 'No headline' : r.headline,
+                                title: r.version == appVersion ? context.l10n.messageInstalled(r.version) : r.version,
+                                subtitle: r.headline.isEmpty ? context.l10n.uiNoHeadline : r.headline,
                                 subtitleMaxLines: 3,
                                 subtitle2: r.date.isEmpty ? null : r.date,
                                 trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textTertiary),
@@ -132,14 +134,17 @@ class _NotesSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(_inset, Gap.md, _inset, Gap.sm),
             child: Semantics(
               header: true,
-              child: Text('What’s new in ${release.version}', style: Type.title.copyWith(color: ds.text)),
+              child: Text(context.l10n.messageWhatSNewIn(release.version), style: Type.title.copyWith(color: ds.text)),
             ),
           ),
           if (clip != null) ClipCard(clip, version: release.version),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: _inset),
             child: notes.isEmpty
-                ? Text('No notes came with this release.', style: Type.secondary.copyWith(color: ds.textSecondary))
+                ? Text(
+                    context.l10n.uiNoNotesCameWithThisRelease,
+                    style: Type.secondary.copyWith(color: ds.textSecondary),
+                  )
                 : MdDocumentView(document: parseMd(notes, softBreaksAsNewlines: false)),
           ),
         ],

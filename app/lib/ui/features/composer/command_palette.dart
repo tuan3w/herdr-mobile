@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -158,7 +159,7 @@ class _Row extends StatelessWidget {
           ],
           if (pinned) ...[
             const SizedBox(width: Gap.sm),
-            Icon(LucideIcons.pin, size: IconSize.inline, color: ds.textTertiary, semanticLabel: 'Pinned'),
+            Icon(LucideIcons.pin, size: IconSize.inline, color: ds.textTertiary, semanticLabel: context.l10n.uiPinned),
           ],
         ],
       ),

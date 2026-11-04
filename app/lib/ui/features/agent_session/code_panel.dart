@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import '../../../data/acp/turns/plain_text.dart' show safeEnd;
@@ -114,7 +115,7 @@ class CodePanel extends StatelessWidget {
     final more = over
         ? MoreRow(
             label: all
-                ? countOf(total, 'line')
+                ? countOf(total, context.l10n.uiLine)
                 : fromEnd
                 ? countOf(hidden, 'earlier line')
                 : countOf(hidden, 'more line'),
@@ -124,7 +125,7 @@ class CodePanel extends StatelessWidget {
             copyLabel: copyLabel,
           )
         : (onCopy != null && total > copyRowFrom
-              ? MoreRow(label: countOf(total, 'line'), onCopy: onCopy, copyLabel: copyLabel)
+              ? MoreRow(label: countOf(total, context.l10n.uiLine), onCopy: onCopy, copyLabel: copyLabel)
               : null);
 
     Widget line(CodeLine l) {

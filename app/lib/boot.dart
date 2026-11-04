@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
+import 'l10n/app_localizations.dart';
+import 'l10n/l10n_context.dart';
 import 'data/repositories/agent_screens.dart';
 import 'data/repositories/agent_session_repository.dart';
 import 'data/repositories/agent_session_settings.dart';
@@ -91,28 +93,32 @@ class _BootFailedAppState extends State<BootFailedApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     theme: AppTheme.light(),
     darkTheme: AppTheme.dark(),
-    home: Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(Gap.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Builder(
-                  builder: (context) => StatusPanel(
-                    color: context.ds.danger,
-                    title: 'Could not start',
-                    message: '${widget.error}',
-                    messageMaxLines: 6,
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(Gap.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Builder(
+                    builder: (context) => StatusPanel(
+                      color: context.ds.danger,
+                      title: context.l10n.uiCouldNotStart,
+                      message: '${widget.error}',
+                      messageMaxLines: 6,
+                    ),
                   ),
-                ),
-                const SizedBox(height: Gap.md),
-                AppButton(label: 'Retry', onPressed: _retry, loading: _retrying),
-              ],
+                  const SizedBox(height: Gap.md),
+                  AppButton(label: context.l10n.uiRetry, onPressed: _retry, loading: _retrying),
+                ],
+              ),
             ),
           ),
         ),

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -229,7 +231,9 @@ class _BackgroundSheetState extends State<BackgroundSheet> {
         ),
       };
       return SheetScaffold(
-        title: work.runningCount == 0 ? 'Background work' : 'Background work · ${work.runningCount}',
+        title: work.runningCount == 0
+            ? context.l10n.uiBackgroundWork
+            : context.l10n.messageBackgroundWork('${work.runningCount}'),
         kind: SheetKind.list,
         scrolls: items.isNotEmpty,
         child: items.isEmpty
@@ -491,7 +495,7 @@ class _OpenText extends StatelessWidget {
               style: style,
             ),
             ...after,
-            if (cut) TextAction(label: 'Read all', onTap: onReadAll),
+            if (cut) TextAction(label: context.l10n.uiReadAll, onTap: onReadAll),
           ],
         );
       },

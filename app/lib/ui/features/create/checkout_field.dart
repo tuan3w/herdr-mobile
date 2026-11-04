@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -88,7 +89,7 @@ class CheckoutField extends StatelessWidget {
 
         final rows = [
           row(
-            title: 'This folder',
+            title: context.l10n.uiThisFolder,
             subtitle: shortPath(folder),
             icon: LucideIcons.folder,
             selected: choice is ThisFolder,
@@ -96,26 +97,26 @@ class CheckoutField extends StatelessWidget {
           ),
           for (final c in others)
             row(
-              title: c.isLinked ? c.name : 'Main checkout',
+              title: c.isLinked ? c.name : context.l10n.uiMainCheckout,
               subtitle: [
-                c.branch ?? 'detached',
-                if (agentsWorking(c.path) case final n when n > 0) '$n working',
-                if (c.openWorkspaceId == null) 'not open in herdr',
+                c.branch ?? context.l10n.uiDetached,
+                if (agentsWorking(c.path) case final n when n > 0) context.l10n.messageWorking('$n'),
+                if (c.openWorkspaceId == null) context.l10n.uiNotOpenInHerdr,
               ].join(' · '),
               icon: c.isLinked ? LucideIcons.gitBranch : LucideIcons.folder,
               selected: choice == ExistingCheckout(c.path),
               picks: ExistingCheckout(c.path),
             ),
           row(
-            title: 'New worktree…',
-            subtitle: 'A new folder and branch next to this repo',
+            title: context.l10n.uiNewWorktree,
+            subtitle: context.l10n.uiANewFolderAndBranchNextToThisRepo,
             icon: LucideIcons.gitBranchPlus,
             selected: choice is NewWorktree,
             picks: const NewWorktree(),
           ),
         ];
         return SheetScaffold(
-          title: 'Checkout',
+          title: context.l10n.uiCheckout,
           kind: SheetKind.list,
           // The rows bring their own gutter.
           bleed: true,
@@ -140,12 +141,12 @@ class CheckoutField extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: Gap.sm),
           child: ExcludeSemantics(
-            child: Text('Checkout', style: Type.label.copyWith(color: ds.textSecondary)),
+            child: Text(context.l10n.uiCheckout, style: Type.label.copyWith(color: ds.textSecondary)),
           ),
         ),
         PressBuilder(
           onTap: () => _choose(context),
-          semanticLabel: 'Checkout, $_text',
+          semanticLabel: context.l10n.messageCheckout(_text),
           button: true,
           builder: (context, pressed) => AnimatedContainer(
             duration: Motion.pressing(pressed),

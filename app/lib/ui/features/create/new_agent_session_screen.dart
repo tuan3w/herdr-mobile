@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -175,6 +177,7 @@ class _FormState extends State<_Form> {
   }
 
   Future<void> _start({required bool open}) async {
+    final words = context.l10n;
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     final nav = Navigator.of(context);
@@ -189,8 +192,11 @@ class _FormState extends State<_Form> {
       if (mounted) nav.pop();
       showStartedToast(
         toaster,
-        message:
-            '${session.agentLabel} started in ${placeName(session.machine.places, session.cwd)} · ${session.machine.profile.label}',
+        message: words.messageStartedIn(
+          session.agentLabel,
+          placeName(session.machine.places, session.cwd),
+          session.machine.profile.label,
+        ),
         onOpen: () => unawaited(openAgent(nav.context, SessionAgent(session.key))),
       );
     }
@@ -205,19 +211,17 @@ class _FormState extends State<_Form> {
         backgroundColor: ds.bg,
         body: CustomScrollView(
           slivers: [
-            SliverLargeTitle.back(title: 'New agent session'),
+            SliverLargeTitle.back(title: context.l10n.uiNewAgentSession),
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
                 padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
                 child: EmptyState(
                   icon: HerdrIcons.machinesOff,
-                  title: 'No machine is online',
-                  message:
-                      'An agent session starts on a connected machine. Check Machines, '
-                      'then come back.',
+                  title: context.l10n.uiNoMachineIsOnline,
+                  message: context.l10n.uiAnAgentSessionStartsOnAConnectedMachineCheck,
                   action: AppButton(
-                    label: 'Back',
+                    label: context.l10n.uiBack,
                     kind: AppButtonKind.secondary,
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
@@ -241,13 +245,13 @@ class _FormState extends State<_Form> {
               child: CustomScrollView(
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 slivers: [
-                  SliverLargeTitle.back(title: 'New agent session'),
+                  SliverLargeTitle.back(title: context.l10n.uiNewAgentSession),
                   SliverToBoxAdapter(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         FormSection(
-                          label: 'Where',
+                          label: context.l10n.uiWhere,
                           children: [
                             MachineField(
                               machine: vm.machine,
@@ -259,7 +263,7 @@ class _FormState extends State<_Form> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 LabeledField(
-                                  label: 'Folder',
+                                  label: context.l10n.uiFolder,
                                   controller: _folder,
                                   mono: true,
                                   hint: '/home/you/code/my-project',
@@ -278,7 +282,7 @@ class _FormState extends State<_Form> {
                                           heightFactor: 1,
                                           child: CircleButton(
                                             icon: HerdrIcons.folder,
-                                            tooltip: 'Browse folders',
+                                            tooltip: context.l10n.uiBrowseFolders,
                                             filled: false,
                                             size: CircleButton.compact,
                                             onPressed: () => _browse(machine),
@@ -307,10 +311,10 @@ class _FormState extends State<_Form> {
                                           child: Padding(
                                             padding: const EdgeInsets.only(top: Gap.sm),
                                             child: LabeledField(
-                                              label: 'Branch',
+                                              label: context.l10n.uiBranch,
                                               controller: _branch,
                                               mono: true,
-                                              hint: 'Named by herdr',
+                                              hint: context.l10n.uiNamedByHerdr,
                                               helper: 'Change it, or clear it to let herdr name it',
                                               validator: vm.branchError,
                                             ),
@@ -336,13 +340,13 @@ class _FormState extends State<_Form> {
                           ],
                         ),
                         FormSection(
-                          label: 'Agent',
+                          label: context.l10n.uiAgent,
                           endsWithField: false,
                           children: [_AgentChips(vm: vm)],
                         ),
                         ListRow(
-                          title: 'Past sessions',
-                          subtitle: 'Continue a conversation an agent kept',
+                          title: context.l10n.uiPastSessions,
+                          subtitle: context.l10n.uiContinueAConversationAnAgentKept,
                           leading: Icon(LucideIcons.history, size: IconSize.lead, color: ds.textSecondary),
                           trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textTertiary),
                           onTap: () {
@@ -390,7 +394,7 @@ class _AgentChips extends StatelessWidget {
         if (vm.checking)
           Padding(
             padding: const EdgeInsets.only(top: Gap.hair),
-            child: Text('Checking what is installed…', style: Type.caption.copyWith(color: ds.textMuted)),
+            child: Text(context.l10n.uiCheckingWhatIsInstalled, style: Type.caption.copyWith(color: ds.textMuted)),
           ),
         for (final reason in reasons)
           Padding(
@@ -468,14 +472,14 @@ class _StartBar extends StatelessWidget {
                   ),
           ),
           AppButton(
-            label: busy && !opening ? 'Starting…' : 'Start',
+            label: busy && !opening ? context.l10n.uiStarting : context.l10n.uiStart,
             expand: true,
             loading: busy && !opening,
             onPressed: start == null || busy ? null : () => start(open: false),
           ),
           const SizedBox(height: Gap.sm),
           AppButton(
-            label: busy && opening ? 'Starting…' : 'Start and open',
+            label: busy && opening ? context.l10n.uiStarting : context.l10n.uiStartAndOpen,
             kind: AppButtonKind.secondary,
             expand: true,
             loading: busy && opening,

@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -40,15 +41,15 @@ class MachinesScreen extends StatelessWidget {
               slivers: [
                 // A page over home, opened from its header: Back returns there.
                 SliverLargeTitle.back(
-                  title: 'Machines',
+                  title: context.l10n.uiMachines,
                   subtitle: Text(
-                    count == 0 ? 'None yet' : countOf(count, 'machine'),
+                    count == 0 ? context.l10n.uiNoneYet : countOf(count, 'machine'),
                     style: Type.secondary.copyWith(color: ds.textSecondary),
                   ),
                   actions: [
                     CircleButton(
                       icon: LucideIcons.plus,
-                      tooltip: 'Add machine',
+                      tooltip: context.l10n.uiAddMachine,
                       onPressed: () => openMachineForm(context),
                     ),
                   ],
@@ -60,12 +61,10 @@ class MachinesScreen extends StatelessWidget {
                       padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
                       child: EmptyState(
                         icon: HerdrIcons.machines,
-                        title: 'No machines yet',
-                        message:
-                            'Add a machine that runs herdr. You can connect as many as '
-                            'you like and see them all together.',
+                        title: context.l10n.uiNoMachinesYet,
+                        message: context.l10n.uiAddAMachineThatRunsHerdrYouCanConnect,
                         action: AppButton(
-                          label: 'Add machine',
+                          label: context.l10n.uiAddMachine,
                           icon: LucideIcons.plus,
                           onPressed: () => openMachineForm(context),
                         ),
@@ -108,11 +107,9 @@ class _MachineRow extends StatelessWidget {
     final p = machine.profile;
     final ok = await showConfirmSheet(
       context,
-      title: 'Remove ${p.label}?',
-      message:
-          'The saved connection and its credentials are deleted from this '
-          'phone. Agents on the machine keep running.',
-      confirmLabel: 'Remove',
+      title: context.l10n.messageRemove53(p.label),
+      message: context.l10n.uiTheSavedConnectionAndItsCredentialsAreDeletedFrom,
+      confirmLabel: context.l10n.uiRemove,
       // Credentials are deleted and cannot be brought back: a hold, not a tap.
       hold: true,
     );
@@ -127,16 +124,21 @@ class _MachineRow extends StatelessWidget {
       title: p.label,
       actions: [
         SheetAction(
-          label: 'Edit',
+          label: context.l10n.uiEdit,
           icon: LucideIcons.pencil,
           onTap: () => openMachineForm(context, existing: p),
         ),
         SheetAction(
-          label: p.enabled ? 'Disable' : 'Enable',
+          label: p.enabled ? context.l10n.uiDisable : context.l10n.uiEnable,
           icon: p.enabled ? LucideIcons.powerOff : LucideIcons.power,
           onTap: () => repo.save(p.copyWith(enabled: !p.enabled)),
         ),
-        SheetAction(label: 'Remove', icon: LucideIcons.trash2, destructive: true, onTap: () => _remove(context, repo)),
+        SheetAction(
+          label: context.l10n.uiRemove,
+          icon: LucideIcons.trash2,
+          destructive: true,
+          onTap: () => _remove(context, repo),
+        ),
       ],
     );
   }
@@ -163,7 +165,7 @@ class _MachineRow extends StatelessWidget {
     // phone or with large system text (it would squeeze the name to nothing).
     final roomy = MediaQuery.sizeOf(context).width >= 340 && MediaQuery.textScalerOf(context).scale(14) <= 18;
     final enable = AppButton(
-      label: 'Enable',
+      label: context.l10n.uiEnable,
       kind: AppButtonKind.secondary,
       compact: true,
       onPressed: () => context.read<MachineRepository>().save(p.copyWith(enabled: true)),
@@ -220,7 +222,7 @@ class _MachineRow extends StatelessWidget {
               const SizedBox(width: Gap.xs),
               CircleButton(
                 icon: LucideIcons.ellipsis,
-                tooltip: 'More options for ${p.label}',
+                tooltip: context.l10n.messageMoreOptionsFor(p.label),
                 filled: false,
                 size: CircleButton.compact,
                 onPressed: () => _menu(context),
@@ -241,7 +243,7 @@ class _MachineRow extends StatelessWidget {
               message: machine.error,
               messageMaxLines: 3,
               trailing: AppButton(
-                label: 'Retry',
+                label: context.l10n.uiRetry,
                 kind: AppButtonKind.secondary,
                 compact: true,
                 onPressed: machine.retry,
@@ -253,7 +255,7 @@ class _MachineRow extends StatelessWidget {
             padding: EdgeInsets.only(left: indent, right: Gap.gutter, bottom: Gap.md),
             child: StatusPanel(
               color: ds.blocked,
-              message: 'Tailscale needs you to approve this sign-in.',
+              message: context.l10n.uiTailscaleNeedsYouToApproveThisSignIn,
               footer: Align(
                 alignment: Alignment.centerLeft,
                 child: ApprovalButton(url: approval),

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -317,7 +319,7 @@ class _BrowserViewState extends State<_BrowserView> {
               if (showToggle)
                 CircleButton(
                   icon: HerdrIcons.pictures,
-                  tooltip: showGrid ? 'List' : 'Photos',
+                  tooltip: showGrid ? context.l10n.uiList : context.l10n.uiPhotos,
                   active: showGrid,
                   onPressed: () {
                     Haptics.tick();
@@ -326,7 +328,7 @@ class _BrowserViewState extends State<_BrowserView> {
                 ),
               CircleButton(
                 icon: vm.showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
-                tooltip: vm.showHidden ? 'Hide hidden files' : 'Show hidden files',
+                tooltip: vm.showHidden ? context.l10n.uiHideHiddenFiles : context.l10n.uiShowHiddenFiles,
                 active: vm.showHidden,
                 onPressed: () => vm.setShowHidden(!vm.showHidden),
               ),
@@ -467,7 +469,11 @@ class _Tools extends StatelessWidget {
           if (search)
             Padding(
               padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.xs, Gap.gutter, Gap.xs),
-              child: SearchField(controller: controller, hint: 'Find in ${vm.name}', onChanged: vm.setQuery),
+              child: SearchField(
+                controller: controller,
+                hint: context.l10n.messageFindIn(vm.name),
+                onChanged: vm.setQuery,
+              ),
             ),
           if (!compact)
             SizedBox(
@@ -480,14 +486,14 @@ class _Tools extends StatelessWidget {
                   children: [
                     AppChip(
                       label: options.sort.label,
-                      semanticLabel: 'Sort by ${options.sort.label}',
+                      semanticLabel: context.l10n.messageSortBy(options.sort.label),
                       icon: LucideIcons.arrowUpDown,
                       selected: options.sort != FileSort.name,
                       onTap: () => unawaited(_showSortSheet(context, options)),
                     ),
                     const SizedBox(width: Gap.sm),
                     AppChip(
-                      label: 'Changed in the last hour',
+                      label: context.l10n.uiChangedInTheLastHour,
                       icon: LucideIcons.clock,
                       selected: options.recentOnly,
                       onTap: () => options.setRecentOnly(!options.recentOnly),
@@ -518,7 +524,7 @@ Future<void> _showSortSheet(BuildContext context, FileBrowserOptions options) =>
     listenable: options,
     builder: (context, _) {
       return SheetScaffold(
-        title: 'Sort by',
+        title: context.l10n.uiSortBy,
         kind: SheetKind.actions,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -535,7 +541,11 @@ Future<void> _showSortSheet(BuildContext context, FileBrowserOptions options) =>
               ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-              child: SwitchRow(title: 'Folders first', value: options.foldersFirst, onChanged: options.setFoldersFirst),
+              child: SwitchRow(
+                title: context.l10n.uiFoldersFirst,
+                value: options.foldersFirst,
+                onChanged: options.setFoldersFirst,
+              ),
             ),
           ],
         ),
@@ -610,10 +620,10 @@ class EmptyFolderState extends StatelessWidget {
       if (vm.searching) {
         return EmptyState(
           icon: LucideIcons.searchX,
-          title: 'No matches',
-          message: 'Nothing in ${vm.name} matches “${vm.query.trim()}”.',
+          title: context.l10n.uiNoMatches,
+          message: context.l10n.messageNothingInMatches(vm.name, vm.query.trim()),
           action: AppButton(
-            label: 'Clear search',
+            label: context.l10n.uiClearSearch,
             kind: AppButtonKind.secondary,
             icon: LucideIcons.x,
             onPressed: onClearSearch,
@@ -622,10 +632,10 @@ class EmptyFolderState extends StatelessWidget {
       }
       return EmptyState(
         icon: LucideIcons.clock,
-        title: 'Nothing changed in the last hour',
-        message: 'Only this folder is checked, not the folders inside it.',
+        title: context.l10n.uiNothingChangedInTheLastHour,
+        message: context.l10n.uiOnlyThisFolderIsCheckedNotTheFoldersInside,
         action: AppButton(
-          label: 'Show all files',
+          label: context.l10n.uiShowAllFiles,
           kind: AppButtonKind.secondary,
           onPressed: () => vm.options.setRecentOnly(false),
         ),
@@ -635,15 +645,17 @@ class EmptyFolderState extends StatelessWidget {
     final onlyFiles = pick && vm.totalCount == 0;
     return EmptyState(
       icon: LucideIcons.folderOpen,
-      title: onlyHidden ? 'Only hidden files' : (onlyFiles ? 'No folders here' : 'Folder is empty'),
+      title: onlyHidden
+          ? context.l10n.uiOnlyHiddenFiles
+          : (onlyFiles ? context.l10n.uiNoFoldersHere : context.l10n.uiFolderIsEmpty),
       message: onlyHidden
-          ? '${vm.name} has ${countOf(vm.hiddenCount, 'hidden item')}.'
+          ? context.l10n.messageHas(vm.name, countOf(vm.hiddenCount, 'hidden item'))
           : (onlyFiles
-                ? 'Choose this folder, or go back.'
-                : 'Nothing in ${vm.name} yet.${pullToRefresh ? ' Pull down to check again.' : ''}'),
+                ? context.l10n.uiChooseThisFolderOrGoBack
+                : context.l10n.messageNothingInYet(vm.name, pullToRefresh ? ' Pull down to check again.' : '')),
       action: onlyHidden
           ? AppButton(
-              label: 'Show hidden files',
+              label: context.l10n.uiShowHiddenFiles,
               kind: AppButtonKind.secondary,
               icon: LucideIcons.eye,
               onPressed: () => vm.setShowHidden(true),
@@ -771,7 +783,7 @@ class _PickBar extends StatelessWidget {
             ),
             const SizedBox(height: Gap.md),
             AppButton(
-              label: 'Choose this folder',
+              label: context.l10n.uiChooseThisFolder,
               icon: LucideIcons.check,
               expand: true,
               onPressed: enabled ? () => Navigator.of(context).pop(path) : null,

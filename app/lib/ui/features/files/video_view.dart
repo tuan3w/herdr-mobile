@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -205,10 +207,10 @@ class _Card extends StatelessWidget {
           style: Type.secondary.copyWith(color: ds.textSecondary),
         ),
         const SizedBox(height: Gap.lg),
-        AppButton(label: 'Play', icon: LucideIcons.play, onPressed: onPlay),
+        AppButton(label: context.l10n.uiPlay, icon: LucideIcons.play, onPressed: onPlay),
         const SizedBox(height: Gap.md),
         Text(
-          'It is copied to the phone first, then it plays from there.',
+          context.l10n.uiItIsCopiedToThePhoneFirstThenIt,
           textAlign: TextAlign.center,
           style: Type.compact.copyWith(color: ds.textMuted),
         ),
@@ -237,7 +239,7 @@ class _Copying extends StatelessWidget {
         Semantics(
           liveRegion: true,
           // No numbers: a label that changes with every piece would be read out every piece.
-          label: 'Copying ${stat.name} to the phone',
+          label: context.l10n.messageCopyingToThePhone(stat.name),
           child: ExcludeSemantics(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -253,7 +255,7 @@ class _Copying extends StatelessWidget {
                 if (total > 0) ProgressLine(fraction: copy.written / total) else const BusySpinner(size: IconSize.lead),
                 const SizedBox(height: Gap.md),
                 Text(
-                  'Copying to the phone · $line',
+                  context.l10n.messageCopyingToThePhone104(line),
                   textAlign: TextAlign.center,
                   style: Type.compact.copyWith(color: ds.textSecondary),
                 ),
@@ -262,11 +264,11 @@ class _Copying extends StatelessWidget {
           ),
         ),
         const SizedBox(height: Gap.lg),
-        AppButton(label: 'Cancel', kind: AppButtonKind.secondary, onPressed: copy.cancel),
+        AppButton(label: context.l10n.uiCancel, kind: AppButtonKind.secondary, onPressed: copy.cancel),
         if (willPlay) ...[
           const SizedBox(height: Gap.md),
           Text(
-            'It plays when the copy is done.',
+            context.l10n.uiItPlaysWhenTheCopyIsDone,
             textAlign: TextAlign.center,
             style: Type.compact.copyWith(color: ds.textMuted),
           ),
@@ -291,9 +293,14 @@ class _CopyFailed extends StatelessWidget {
         StatusPanel(
           color: ds.danger,
           icon: LucideIcons.circleAlert,
-          title: 'Couldn\u2019t copy the video',
+          title: context.l10n.uiCouldnTCopyTheVideo,
           message: message,
-          trailing: AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: onRetry),
+          trailing: AppButton(
+            label: context.l10n.uiRetry,
+            kind: AppButtonKind.secondary,
+            compact: true,
+            onPressed: onRetry,
+          ),
         ),
       ],
     );
@@ -319,13 +326,12 @@ class _CannotPlay extends StatelessWidget {
         StatusPanel(
           color: ds.danger,
           icon: LucideIcons.circleAlert,
-          title: 'This phone can\u2019t play this video',
-          message:
-              'Android couldn\u2019t open it, usually because of its format. Share it to open it in a player that can.',
+          title: context.l10n.uiThisPhoneCanTPlayThisVideo,
+          message: context.l10n.uiAndroidCouldnTOpenItUsuallyBecauseOfIts,
         ),
         const SizedBox(height: Gap.lg),
         AppButton(
-          label: 'Share or save\u2026',
+          label: context.l10n.uiShareOrSave,
           icon: LucideIcons.share2,
           expand: true,
           loading: busy,
@@ -334,7 +340,7 @@ class _CannotPlay extends StatelessWidget {
         if (onSave != null) ...[
           const SizedBox(height: Gap.sm),
           AppButton(
-            label: 'Save to gallery',
+            label: context.l10n.uiSaveToGallery,
             icon: LucideIcons.download,
             expand: true,
             kind: AppButtonKind.secondary,
@@ -389,7 +395,7 @@ class _Player extends StatelessWidget {
           children: [
             if (onSave != null)
               AppButton(
-                label: 'Save to gallery',
+                label: context.l10n.uiSaveToGallery,
                 icon: LucideIcons.download,
                 kind: AppButtonKind.secondary,
                 compact: true,
@@ -398,7 +404,7 @@ class _Player extends StatelessWidget {
                 onPressed: onSave,
               ),
             AppButton(
-              label: 'Share or save\u2026',
+              label: context.l10n.uiShareOrSave,
               icon: LucideIcons.share2,
               kind: AppButtonKind.secondary,
               compact: true,

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -118,7 +120,7 @@ class _LogImageViewState extends State<LogImageView> {
     final size = block.ref.bytes;
     return ContentChip(
       icon: HerdrIcons.picture,
-      title: 'Image',
+      title: context.l10n.uiImage,
       // The size first: at a large text size the type may wrap or be cut, and the
       // size is what tells the person whether a tap is worth it.
       detail: [if (size != null) formatBytes(size), if (block.mimeType.isNotEmpty) block.mimeType].join(' · '),
@@ -154,7 +156,7 @@ class ImageReferenceLine extends StatelessWidget {
     final note = problem ?? (uri.isEmpty ? 'The agent sent no picture data.' : null);
     return ContentChip(
       icon: HerdrIcons.picture,
-      title: 'Image',
+      title: context.l10n.uiImage,
       detail: [if (detail.isNotEmpty) detail else if (mime.isNotEmpty) mime].join(' · '),
       note: note,
       muted: target == null,
@@ -233,7 +235,7 @@ class _InlineImageState extends State<_InlineImage> {
       final retryable = _entry.retryable;
       return ContentChip(
         icon: HerdrIcons.picture,
-        title: 'Image',
+        title: context.l10n.uiImage,
         detail: widget.block.mimeType,
         note: retryable ? '$problem Tap to retry.' : problem,
         muted: !retryable,

@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -25,7 +26,7 @@ Widget compactErrorView(FlutterErrorDetails details) => Builder(
           borderRadius: BorderRadius.circular(Radii.sm),
         ),
         child: Text(
-          'Couldn’t draw this · $message',
+          context.l10n.messageCouldnTDrawThis(message),
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
           style: Type.secondary.copyWith(

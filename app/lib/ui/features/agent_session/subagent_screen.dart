@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -83,10 +84,10 @@ class _SubagentRunScreenState extends State<SubagentRunScreen> {
               builder: (context, v) {
                 final (exists, transcript) = v;
                 if (!exists) {
-                  return const EmptyState(
+                  return EmptyState(
                     icon: HerdrIcons.agents,
-                    title: 'Subagent gone',
-                    message: 'The agent no longer lists this subagent.',
+                    title: context.l10n.uiSubagentGone,
+                    message: context.l10n.uiTheAgentNoLongerListsThisSubagent,
                   );
                 }
                 if (!transcript) {
@@ -142,7 +143,9 @@ class _RunBar extends StatelessWidget {
       final (title, type) = v;
       return AppTopBar(
         title: visibleText(title),
-        subtitle: type == null || type.trim().isEmpty ? 'Subagent' : 'Subagent · ${visibleText(type.trim())}',
+        subtitle: type == null || type.trim().isEmpty
+            ? context.l10n.uiSubagent
+            : context.l10n.messageSubagent(visibleText(type.trim())),
       );
     },
   );
@@ -261,7 +264,7 @@ class _PinnedPromptState extends State<PinnedPrompt> {
               header: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Asked to', style: Type.captionStrong.copyWith(color: ds.textMuted)),
+                  Text(context.l10n.uiAskedTo, style: Type.captionStrong.copyWith(color: ds.textMuted)),
                   if (!_open) ...[
                     const SizedBox(height: Gap.hair),
                     AskedPreview(
@@ -352,7 +355,7 @@ class LogStatusLine extends StatelessWidget {
         if (!failed) {
           return Semantics(
             liveRegion: false,
-            label: 'Loading the subagent’s log',
+            label: context.l10n.uiLoadingTheSubagentSLog,
             child: ExcludeSemantics(
               child: Container(
                 width: double.infinity,
@@ -372,7 +375,7 @@ class LogStatusLine extends StatelessWidget {
             const SizedBox(width: Gap.sm),
             Expanded(
               child: Text(
-                'Couldn’t read the log · Tap to retry',
+                context.l10n.uiCouldnTReadTheLogTapToRetry,
                 style: Type.secondary.copyWith(color: ds.textSecondary),
               ),
             ),
@@ -383,7 +386,7 @@ class LogStatusLine extends StatelessWidget {
           children: [
             PressRow(
               onTap: () => session.retrySubagentLog(runId),
-              semanticLabel: 'Couldn’t read the log. Retry',
+              semanticLabel: context.l10n.uiCouldnTReadTheLogRetry,
               minHeight: kMinTap,
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg - PressRow.inset),
               child: content,
@@ -418,7 +421,7 @@ class _SummaryNote extends StatelessWidget {
           const SizedBox(width: Gap.sm),
           Expanded(
             child: Text(
-              'Summary only. ${agentName(agent)} sends a summary of its subagents, not their conversation.',
+              context.l10n.messageSummaryOnlySendsASummaryOfItsSubagents(agentName(agent)),
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
           ),

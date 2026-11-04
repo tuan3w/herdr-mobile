@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -126,7 +128,9 @@ class _SelectPill extends StatelessWidget {
         scale: PressScale.button,
         minTapSize: kMinTap,
         selected: picked,
-        semanticLabel: picked ? 'Selected, number $number. Tap to deselect' : 'Select this photo',
+        semanticLabel: picked
+            ? context.l10n.messageSelectedNumberTapToDeselect('$number')
+            : context.l10n.uiSelectThisPhoto,
         builder: (context, pressed) => Container(
           height: _pickHeight,
           padding: const EdgeInsets.only(left: Gap.sm, right: Gap.lg),
@@ -140,7 +144,7 @@ class _SelectPill extends StatelessWidget {
               SelectMark(selected: picked, number: number, onPhoto: true, size: SelectMark.photoSize),
               const SizedBox(width: Gap.sm),
               Text(
-                picked ? 'Selected' : 'Select',
+                picked ? context.l10n.uiSelected : context.l10n.uiSelect,
                 style: Type.buttonCompact.copyWith(color: picked ? ds.onAccent : ds.onPhoto),
               ),
               if (picked) ...[

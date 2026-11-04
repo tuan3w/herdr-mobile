@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -224,7 +225,7 @@ class AnswerChip extends StatelessWidget {
             AnswerRisk.gate when this.hold => Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Hold', style: Type.caption.copyWith(color: markColor)),
+                Text(context.l10n.uiHold, style: Type.caption.copyWith(color: markColor)),
                 const SizedBox(width: Gap.xs),
                 Icon(LucideIcons.triangleAlert, size: IconSize.inline, color: markColor),
               ],

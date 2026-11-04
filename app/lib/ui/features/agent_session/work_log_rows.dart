@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -152,14 +153,14 @@ class ThinkingRow extends StatelessWidget {
             expanded: open,
             child: PressRow(
               onTap: () => onToggle(rowKey),
-              semanticLabel: 'Thinking',
+              semanticLabel: context.l10n.uiThinking,
               minHeight: kMinTap,
               padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
               child: Row(
                 children: [
                   Icon(LucideIcons.brain, size: IconSize.row, color: ds.textSecondary),
                   const SizedBox(width: Gap.sm),
-                  Text('Thinking', style: Type.secondaryStrong.copyWith(color: ds.textSecondary)),
+                  Text(context.l10n.uiThinking, style: Type.secondaryStrong.copyWith(color: ds.textSecondary)),
                 ],
               ),
             ),

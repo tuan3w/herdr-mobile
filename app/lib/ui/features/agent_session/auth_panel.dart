@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -66,7 +68,7 @@ class _AuthPanelState extends State<AuthPanel> {
     try {
       final launched = await widget
           .launcherFor(machine)
-          .launch(LaunchRequest(folder: folder, label: 'Sign in to ${_session.agentLabel}'));
+          .launch(LaunchRequest(folder: folder, label: context.l10n.messageSignInTo(_session.agentLabel)));
       if (!mounted) return;
       await widget.openPane(context, machine, launched.paneId);
     } on Exception catch (e) {
@@ -98,7 +100,9 @@ class _AuthPanelState extends State<AuthPanel> {
     return StatusPanel(
       color: ds.blocked,
       icon: LucideIcons.keyRound,
-      title: need.keychain ? '${visibleText(_session.agentLabel)} needs a token' : 'Sign in on the machine',
+      title: need.keychain
+          ? context.l10n.messageNeedsAToken(visibleText(_session.agentLabel))
+          : context.l10n.uiSignInOnTheMachine,
       message: [
         visibleText(need.message),
         // Signing in again stores the login in the Keychain again, so the
@@ -109,7 +113,7 @@ class _AuthPanelState extends State<AuthPanel> {
           '3. Start a new session.',
         ] else if (names.isNotEmpty)
           'Ways to sign in: ${names.join(' \u00b7 ')}.',
-        if (large) 'Terminal on $machine.',
+        if (large) context.l10n.messageTerminalOn(machine),
       ].join('\n'),
       messageMaxLines: need.keychain ? 12 : 7,
       footer: Column(
@@ -127,7 +131,7 @@ class _AuthPanelState extends State<AuthPanel> {
               ),
             ),
           AppButton(
-            label: large ? 'Open a terminal' : 'Open a terminal on $machine',
+            label: large ? context.l10n.uiOpenATerminal : context.l10n.messageOpenATerminalOn(machine),
             icon: large ? null : LucideIcons.terminal,
             expand: true,
             loading: _busy,
@@ -137,7 +141,7 @@ class _AuthPanelState extends State<AuthPanel> {
             Padding(
               padding: const EdgeInsets.only(top: Gap.sm),
               child: AppButton(
-                label: 'Copy command',
+                label: context.l10n.uiCopyCommand,
                 icon: large ? null : LucideIcons.copy,
                 kind: AppButtonKind.secondary,
                 expand: true,
@@ -150,7 +154,7 @@ class _AuthPanelState extends State<AuthPanel> {
             Padding(
               padding: const EdgeInsets.only(top: Gap.sm),
               child: AppButton(
-                label: 'Retry',
+                label: context.l10n.uiRetry,
                 kind: AppButtonKind.secondary,
                 expand: true,
                 onPressed: () => unawaited(_session.reattach()),

@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import '../../../data/acp/turns/turns.dart';
@@ -54,7 +55,7 @@ class ChangedHeadRow extends StatelessWidget {
                   header: true,
                   child: Text.rich(
                     TextSpan(
-                      text: 'Changed',
+                      text: context.l10n.uiChanged,
                       style: Type.labelStrong.copyWith(color: ds.text),
                       children: [
                         TextSpan(
@@ -166,7 +167,7 @@ class ChangedFileRow extends StatelessWidget {
                 children: [
                   if (file.diffs.isEmpty)
                     Text(
-                      file.isDelete ? 'The file was deleted.' : 'No changes to show.',
+                      file.isDelete ? context.l10n.uiTheFileWasDeleted : context.l10n.uiNoChangesToShow,
                       style: Type.secondary.copyWith(color: ds.textMuted),
                     ),
                   for (final (i, diff) in file.diffs.indexed) ...[
@@ -210,7 +211,7 @@ class ChangedMoreRow extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: Gap.xs),
         child: PressRow(
           onTap: () => onToggle(rowKey),
-          semanticLabel: all ? 'Show less' : countOf(count, 'more file'),
+          semanticLabel: all ? context.l10n.uiShowLess : countOf(count, context.l10n.uiMoreFile),
           minHeight: kMinTap,
           padding: const EdgeInsets.symmetric(horizontal: Gap.md - PressRow.inset),
           child: Text(label, style: Type.labelStrong.copyWith(color: ds.accentText)),

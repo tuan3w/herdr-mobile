@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,7 +14,6 @@ import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/services/disk_cache.dart';
 import '../../../data/services/notifier.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -67,7 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: CustomScrollView(
         primary: true,
         slivers: [
-          const SliverLargeTitle.back(title: 'Settings'),
+          SliverLargeTitle.back(title: context.l10n.uiSettings),
           // Each group draws its own hairline (it opens in place), so the
           // groups are custom rows that bring their own separation. Built
           // whole, not lazily: five groups, and an opening group measures
@@ -121,10 +122,10 @@ class _LookGroup extends StatelessWidget {
   final bool open;
   final VoidCallback onToggle;
 
-  static String _theme(ThemeChoice choice) => switch (choice) {
-    ThemeChoice.light => 'Light',
-    ThemeChoice.dark => 'Dark',
-    ThemeChoice.system => 'System',
+  static String _theme(BuildContext context, ThemeChoice choice) => switch (choice) {
+    ThemeChoice.light => context.l10n.uiLight,
+    ThemeChoice.dark => context.l10n.uiDark,
+    ThemeChoice.system => context.l10n.uiSystem,
   };
 
   @override
@@ -138,20 +139,20 @@ class _LookGroup extends StatelessWidget {
     final fontSize = context.select<TerminalSettings, double>((s) => s.fontSize);
     return SettingsGroup(
       icon: HerdrIcons.look,
-      title: 'Look',
-      summary: '${_theme(theme)} \u00b7 ${FontSizeControl.format(fontSize)} pt',
+      title: context.l10n.uiLook,
+      summary: context.l10n.messagePt(_theme(context, theme), FontSizeControl.format(fontSize)),
       open: open,
       onToggle: onToggle,
       rows: [
         CustomRow(
           id: 'theme',
           child: SettingsField(
-            title: 'Theme',
+            title: context.l10n.uiTheme,
             child: Segmented<ThemeChoice>(
-              options: const [
-                SegmentOption(ThemeChoice.light, 'Light', icon: LucideIcons.sun),
-                SegmentOption(ThemeChoice.dark, 'Dark', icon: LucideIcons.moon),
-                SegmentOption(ThemeChoice.system, 'System', icon: LucideIcons.smartphone),
+              options: [
+                SegmentOption(ThemeChoice.light, context.l10n.uiLight, icon: LucideIcons.sun),
+                SegmentOption(ThemeChoice.dark, context.l10n.uiDark, icon: LucideIcons.moon),
+                SegmentOption(ThemeChoice.system, context.l10n.uiSystem, icon: LucideIcons.smartphone),
               ],
               value: theme,
               onChanged: (next) => unawaited(settings.setTheme(next)),
@@ -167,22 +168,22 @@ class _LookGroup extends StatelessWidget {
         ),
         ToggleRow(
           id: 'wrap',
-          title: 'Wrap long lines',
-          subtitle: 'Fit lines to the screen instead of scrolling sideways.',
+          title: context.l10n.uiWrapLongLines,
+          subtitle: context.l10n.uiFitLinesToTheScreenInsteadOfScrollingSideways,
           value: wrap,
           onChanged: (next) => unawaited(terminal.setWrap(next)),
         ),
         ToggleRow(
           id: 'dark-terminal',
-          title: 'Dark terminal',
-          subtitle: 'Keep it dark when the app is light.',
+          title: context.l10n.uiDarkTerminal,
+          subtitle: context.l10n.uiKeepItDarkWhenTheAppIsLight,
           value: darkTerminal,
           onChanged: (next) => unawaited(settings.setDarkTerminal(next)),
         ),
         ToggleRow(
           id: 'smooth-text',
-          title: 'Smooth text',
-          subtitle: 'Show answers at an even pace, not in bursts.',
+          title: context.l10n.uiSmoothText,
+          subtitle: context.l10n.uiShowAnswersAtAnEvenPaceNotInBursts,
           value: smoothText,
           onChanged: (next) => unawaited(settings.setSmoothText(next)),
         ),
@@ -204,25 +205,25 @@ class _AgentsGroup extends StatelessWidget {
     final openAs = context.select<AppSettings, OpenAgentsAs>((s) => s.openAgentsAs);
     // Absent where the app runs without them (tests).
     final phrases = context.watch<QuickPhrases?>()?.phrases.length;
-    final opens = openAs == OpenAgentsAs.chat ? 'Opens as chat' : 'Opens as terminal';
+    final opens = openAs == OpenAgentsAs.chat ? context.l10n.uiOpensAsChat : context.l10n.uiOpensAsTerminal;
     return SettingsGroup(
       icon: HerdrIcons.agents,
-      title: 'Agents',
-      summary: phrases == null ? opens : '$opens \u00b7 ${countOf(phrases, 'phrase')}',
+      title: context.l10n.uiAgents,
+      summary: phrases == null ? opens : '$opens \u00b7 ${context.l10n.phraseCount(phrases)}',
       open: open,
       onToggle: onToggle,
       rows: [
         CustomRow(
           id: 'open-as',
           child: SettingsField(
-            title: 'Open agents as',
+            title: context.l10n.uiOpenAgentsAs,
             hint: openAs == OpenAgentsAs.chat
-                ? 'omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it can’t find, opens as a terminal.'
-                : 'A running agent opens as its terminal.',
+                ? context.l10n.uiOmpClaudeCodeAndCodexOpenAsAChat
+                : context.l10n.uiARunningAgentOpensAsItsTerminal,
             child: Segmented<OpenAgentsAs>(
-              options: const [
-                SegmentOption(OpenAgentsAs.chat, 'Chat', icon: HerdrIcons.message),
-                SegmentOption(OpenAgentsAs.terminal, 'Terminal', icon: LucideIcons.terminal),
+              options: [
+                SegmentOption(OpenAgentsAs.chat, context.l10n.uiChat, icon: HerdrIcons.message),
+                SegmentOption(OpenAgentsAs.terminal, context.l10n.uiTerminal, icon: LucideIcons.terminal),
               ],
               value: openAs,
               onChanged: (next) => unawaited(settings.setOpenAgentsAs(next)),
@@ -232,7 +233,7 @@ class _AgentsGroup extends StatelessWidget {
         if (phrases != null)
           ActionRow(
             id: 'quick-phrases',
-            title: 'Quick phrases',
+            title: context.l10n.uiQuickPhrases,
             value: '$phrases',
             chevron: true,
             onTap: () => unawaited(
@@ -311,14 +312,14 @@ class _NotificationsGroupState extends State<_NotificationsGroup> {
       icon: _blocked ? HerdrIcons.notificationsOff : HerdrIcons.notifications,
       // The orange that means "needs you", only while it does.
       tint: _blocked ? ds.blocked : null,
-      title: 'Notifications',
+      title: context.l10n.uiNotifications,
       summary: _blocked
-          ? 'Blocked by Android'
+          ? context.l10n.uiBlockedByAndroid
           : !enabled
-          ? 'Off'
+          ? context.l10n.uiOff69
           : alsoDone
-          ? 'When an agent needs me or finishes'
-          : 'When an agent needs me',
+          ? context.l10n.uiWhenAnAgentNeedsMeOrFinishes
+          : context.l10n.uiWhenAnAgentNeedsMe,
       open: widget.open,
       onToggle: widget.onToggle,
       rows: [
@@ -331,32 +332,24 @@ class _NotificationsGroupState extends State<_NotificationsGroup> {
                 color: ds.blocked,
                 icon: HerdrIcons.notificationsOff,
                 liveRegion: true,
-                message:
-                    'Android is blocking notifications for herdr. '
-                    'Allow them in the system settings for this app.',
+                message: context.l10n.uiAndroidIsBlockingNotificationsForHerdrAllowThemIn,
               ),
             ),
           ),
         ToggleRow(
           id: 'notify',
-          title: 'Notify me when an agent needs me',
+          title: context.l10n.uiNotifyMeWhenAnAgentNeedsMe,
           value: enabled,
           onChanged: (next) => unawaited(_setEnabled(next)),
         ),
         ToggleRow(
           id: 'also-done',
-          title: 'Also when an agent finishes',
+          title: context.l10n.uiAlsoWhenAnAgentFinishes,
           value: alsoDone,
           enabled: enabled,
           onChanged: (next) => unawaited(settings.setAlsoDone(next)),
         ),
-        const NoteRow(
-          id: 'watching',
-          text:
-              'While agents work, or a page from a machine is open, herdr keeps a quiet '
-              '\u201cWatching\u201d notice so Android keeps the connection alive. '
-              'Notifications clear when you open the app.',
-        ),
+        NoteRow(id: 'watching', text: context.l10n.uiWhileAgentsWorkOrAPageFromAMachine),
       ],
     );
   }
@@ -416,8 +409,9 @@ class _StorageGroupState extends State<_StorageGroup> {
 
   Future<void> _clear() async {
     final toaster = Toaster.of(context);
+    final words = context.l10n;
     final freed = await DiskCache.shared.clear();
-    toaster.show(freed == 0 ? 'Nothing to clear' : 'Cleared ${formatBytes(freed)}');
+    toaster.show(freed == 0 ? words.uiNothingToClear : words.messageCleared(formatBytes(freed)));
     _refresh();
   }
 
@@ -428,20 +422,20 @@ class _StorageGroupState extends State<_StorageGroup> {
       final bytes = snapshot.data;
       return SettingsGroup(
         icon: HerdrIcons.storage,
-        title: 'Storage',
+        title: context.l10n.uiStorage,
         summary: bytes == null
-            ? 'Cache'
+            ? context.l10n.uiCache
             : bytes == 0
-            ? 'Cache \u00b7 empty'
-            : 'Cache \u00b7 ${formatBytes(bytes)}',
+            ? context.l10n.uiCacheEmpty
+            : context.l10n.messageCache(formatBytes(bytes)),
         open: widget.open,
         onToggle: widget.onToggle,
         rows: [
           EntityRow(
             id: 'clear-cache',
-            title: 'Clear cache',
+            title: context.l10n.uiClearCache,
             titleMaxLines: 1,
-            subtitle: 'Copies of what you looked at on your machines, kept so it isn’t downloaded twice. At most 192 MB, the oldest go first.',
+            subtitle: context.l10n.uiCopiesOfWhatYouLookedAtOnYourMachines,
             subtitleMaxLines: 4,
             trailing: Icon(LucideIcons.trash2, size: IconSize.row, color: context.ds.textTertiary),
             // A plain tap is the right guard: all of it can be downloaded again.
@@ -470,8 +464,9 @@ class _AboutGroup extends StatelessWidget {
 
   Future<void> _openRepo(BuildContext context) async {
     final toaster = Toaster.of(context);
+    final openFailed = context.l10n.uiCouldnTOpenOnThisPhoneNoBrowserCould;
     if (!await openInBrowser(appRepositoryUrl)) {
-      toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
+      toaster.show(openFailed, kind: ToastKind.failed);
     }
   }
 
@@ -487,9 +482,9 @@ class _AboutGroup extends StatelessWidget {
     final update = this.update;
     return SettingsGroup(
       icon: HerdrIcons.about,
-      title: 'About',
+      title: context.l10n.uiAbout,
       // A newer version is said once, on its own row at the top.
-      summary: 'Version $appVersion',
+      summary: context.l10n.messageVersion(appVersion),
       open: open,
       onToggle: onToggle,
       divider: false,
@@ -505,28 +500,25 @@ class _AboutGroup extends StatelessWidget {
           ),
         EntityRow(
           id: 'connection',
-          title: 'Connection',
+          title: context.l10n.uiConnection,
           titleMaxLines: 1,
           subtitleMaxLines: 8,
           subtitle: update == null
-              ? 'Talks to herdr over SSH and sends nothing anywhere else. '
-                    'Dictation uses your phone’s own speech service.'
-              : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
-                    'to look for a new version and, when you tap Download, to fetch it. '
-                    'Dictation uses your phone’s own speech service.',
+              ? context.l10n.uiTalksToHerdrOverSSHAndSendsNothingAnywhere
+              : context.l10n.uiTalksToHerdrOverSSHTheOnlyOtherPlace,
         ),
         EntityRow(
           id: 'whatsnew',
-          title: 'What’s new',
+          title: context.l10n.uiWhatSNew,
           titleMaxLines: 1,
-          subtitle: 'The notes of every release up to $appVersion',
+          subtitle: context.l10n.messageTheNotesOfEveryReleaseUpTo(appVersion),
           subtitleMaxLines: 2,
           trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: context.ds.textTertiary),
           onTap: () => unawaited(openReleaseHistory(context)),
         ),
         EntityRow(
           id: 'source',
-          title: 'Source code',
+          title: context.l10n.uiSourceCode,
           titleMaxLines: 1,
           subtitle: _repoLabel,
           subtitleMaxLines: 2,
@@ -535,7 +527,7 @@ class _AboutGroup extends StatelessWidget {
         ),
         EntityRow(
           id: 'licenses',
-          title: 'Licenses',
+          title: context.l10n.uiLicenses,
           titleMaxLines: 1,
           trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: context.ds.textTertiary),
           onTap: () => _openLicenses(context),
@@ -572,7 +564,7 @@ class _UpdateRows extends StatelessWidget {
         rows: [
           EntityRow(
             id: 'check',
-            title: 'Check for updates',
+            title: context.l10n.uiCheckForUpdates,
             titleMaxLines: 1,
             subtitle: subtitle,
             subtitleMaxLines: 4,
@@ -584,10 +576,8 @@ class _UpdateRows extends StatelessWidget {
           ),
           ToggleRow(
             id: 'auto-check',
-            title: 'Check automatically',
-            subtitle:
-                'Asks github.com about twice a day while you use the app, with this '
-                'app’s name and version. A download comes from GitHub’s file servers.',
+            title: context.l10n.uiCheckAutomatically,
+            subtitle: context.l10n.uiAsksGithubComAboutTwiceADayWhileYou,
             value: update.autoCheck,
             onChanged: (on) => unawaited(update.setAutoCheck(on)),
           ),

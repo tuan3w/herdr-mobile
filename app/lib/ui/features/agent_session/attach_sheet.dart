@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -46,7 +48,7 @@ Future<void> showAttachSheet(
     capacity: attachments.room,
     onAdded: attachments.speculate,
     onRemoved: attachments.abandon,
-    onFull: () => toaster.show('At most $maxAttachments attachments per message.'),
+    onFull: () => toaster.show(context.l10n.messageAtMostAttachmentsPerMessage('$maxAttachments')),
   );
   controller = AttachSheetController(
     kit: attachments.kit,

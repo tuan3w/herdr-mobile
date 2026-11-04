@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -20,10 +21,11 @@ import 'toast.dart';
 /// The one way the app copies (`tool/design_lint.dart` rule `clipboard`).
 Future<bool> copyText(BuildContext context, String text, {required String what, String? caveat}) async {
   final toaster = Toaster.maybeOf(context);
+  final copyFailed = context.l10n.uiCouldnTCopyTheClipboardRefusedIt;
   try {
     await Clipboard.setData(ClipboardData(text: text));
   } on PlatformException {
-    toaster?.show('Couldn’t copy: the clipboard refused it.', kind: ToastKind.failed);
+    toaster?.show(copyFailed, kind: ToastKind.failed);
     return false;
   }
   Haptics.tick();

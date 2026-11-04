@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -79,7 +80,7 @@ class _SearchFieldState extends State<SearchField> {
               ? null
               : PressBuilder(
                   onTap: _clear,
-                  semanticLabel: 'Clear search',
+                  semanticLabel: context.l10n.uiClearSearch,
                   minTapSize: kMinTap,
                   builder: (context, pressed) =>
                       Icon(LucideIcons.x, size: IconSize.row, color: pressed ? ds.text : ds.textSecondary),
