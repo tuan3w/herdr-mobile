@@ -2480,6 +2480,8 @@
   "@messageDateDayMonthYear": {"placeholders": {"day": {"type": "int"}, "month": {"type": "String"}, "year": {"type": "int"}}},
   "uiBrokenLink": "Broken link",
   "uiUnknownSize": "Unknown size",
+  "uiSessionEndedReadOnly": "Session ended · read only",
+  "uiNotConnected": "Not connected",
   "uiPaneClosed": "Pane closed",
   "uiWaitingForSignInApproval": "Waiting for sign-in approval",
   "uiOfflineReconnecting": "Offline · reconnecting",

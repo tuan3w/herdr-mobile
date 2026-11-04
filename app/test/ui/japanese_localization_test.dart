@@ -12,6 +12,8 @@ import 'package:herdr_mobile/data/words/elapsed.dart';
 import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:herdr_mobile/l10n/app_localizations_en.dart';
 import 'package:herdr_mobile/l10n/app_localizations_ja.dart';
+import 'package:herdr_mobile/data/repositories/agent_session.dart';
+import 'package:herdr_mobile/ui/features/agent_session/composer.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -30,6 +32,10 @@ import '../support/memory_app_settings_store.dart';
 import '../support/memory_terminal_settings_store.dart';
 import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts, shoot;
+
+import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
+
+import '../support/fake_agent_session.dart';
 import 'board_support.dart';
 import 'ui_harness.dart';
 
@@ -398,8 +404,8 @@ void main() {
     });
 
     test('the composer hint follows the phone and keeps its English default', () {
-      // The argument is optional, and the two callers that pass no l10n (the
-      // chat composer and the reply sheet) keep the English they shipped with.
+      // The argument is optional: a caller with no context keeps the English
+      // the app shipped with.
       expect(composerHint(null), 'Type a command…');
       expect(composerHint('Claude'), 'Message Claude…');
 
@@ -410,6 +416,57 @@ void main() {
 
       // What is in the way wins, in the same language.
       expect(composerHint('Claude', linkWord: ja.uiOfflineReconnecting, l10n: ja), 'オフライン · 再接続中');
+    });
+
+    test('the chat composer says why it cannot write, in either language', () {
+      expect(composerReason(AgentLink.live), isNull);
+      expect(composerReason(AgentLink.connecting), 'Connecting…');
+
+      // What the English app actually shows comes from the English resources.
+      expect(composerReason(AgentLink.live, l10n: en), isNull);
+      expect(composerReason(AgentLink.connecting, l10n: en), 'Connecting…');
+      expect(composerReason(AgentLink.reconnecting, l10n: en), 'Offline · reconnecting');
+      expect(composerReason(AgentLink.ended, l10n: en), 'Session ended · read only');
+      expect(composerReason(AgentLink.failed, l10n: en), 'Not connected');
+
+      expect(composerReason(AgentLink.connecting, l10n: ja), '接続中…');
+      expect(composerReason(AgentLink.reconnecting, l10n: ja), 'オフライン · 再接続中');
+      expect(composerReason(AgentLink.ended, l10n: ja), 'セッション終了 · 読み取り専用');
+      expect(composerReason(AgentLink.failed, l10n: ja), '未接続');
+    });
+
+    testWidgets('the chat screen says why it cannot write in Japanese', (tester) async {
+      tester.view
+        ..physicalSize = const Size(412, 892) * 2
+        ..devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final session = FakeAgentSession(
+        link: AgentLink.ended,
+        error: 'The agent exited with code 1',
+        state: stateWith(items: [userMsg('u', 'earlier prompt')]),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          locale: const Locale('ja'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: AgentSessionScreen(key: ObjectKey(session), session: session),
+        ),
+      );
+      await tester.pump(Dwell.tapGuard);
+
+      expect(find.text('セッション終了 · 読み取り専用'), findsOneWidget);
+
+      session.setLink(AgentLink.reconnecting);
+      await tester.pump();
+      expect(find.text('オフライン · 再接続中'), findsOneWidget);
+
+      session.setLink(AgentLink.live);
+      await tester.pump();
+      expect(find.text('Claude Codeにメッセージ…'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     test('every connection state has its own Japanese word', () {
