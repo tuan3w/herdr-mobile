@@ -293,17 +293,24 @@ class _Subtitle extends StatelessWidget {
     // Only the states that need the person are tinted (with the AA text tone,
     // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;
-    final lead = state == LinkState.online
+    final fullLead = state == LinkState.online
         ? (agents == 0 ? context.l10n.noAgents : context.l10n.agentCount(agents))
         : p.enabled
         ? stateWords
         : '$stateWords · ${context.l10n.uiNotConnecting}';
+    final compactLead = context.l10n.agentCountCompact(agents);
+    final canCompact = state == LinkState.online && agents > 0;
     final address = '${p.username}@${p.host}${p.port == 22 ? '' : ':${p.port}'}';
     final style = Type.secondary.copyWith(color: ds.textMuted);
     final leadStyle = loud ? Type.secondaryStrong.copyWith(color: ds.blockedText) : style;
     final scaler = MediaQuery.textScalerOf(context);
     return LayoutBuilder(
       builder: (context, box) {
+        // A narrow row cannot hold "エージェント3件"; show only the number
+        // there, so the count the person needs is never the part that is cut.
+        // The same string is measured and drawn, and the address gives way to
+        // it.
+        final lead = canCompact && _width(fullLead, leadStyle, scaler) > box.maxWidth ? compactLead : fullLead;
         // The count or state comes first and is cut last; the address gives
         // way from its middle, and goes when even its end has no room.
         final room = box.maxWidth - _width('$lead · ', leadStyle, scaler);
@@ -318,6 +325,9 @@ class _Subtitle extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           overflow: TextOverflow.ellipsis,
+          // Spoken, the count keeps its full meaning even when the row shows
+          // only the number.
+          semanticsLabel: shown == null ? fullLead : '$fullLead · $shown',
         );
       },
     );

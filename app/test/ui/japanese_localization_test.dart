@@ -116,6 +116,7 @@ void main() {
       expect(ja.machineCount(1), 'マシン1台');
       expect(ja.machineCount(5), 'マシン5台');
       expect(ja.agentCount(3), 'エージェント3件');
+      expect(ja.agentCountCompact(3), '3件');
       expect(ja.statusNeedsYou(1), '対応待ち1件');
       expect(ja.statusNeedsYou(2), '対応待ち2件');
       expect(ja.statusToReview(2), '確認待ち2件');
@@ -131,6 +132,8 @@ void main() {
       expect(en.machineCount(2), '2 machines');
       expect(en.agentCount(1), '1 agent');
       expect(en.agentCount(2), '2 agents');
+      expect(en.agentCountCompact(1), '1 agent');
+      expect(en.agentCountCompact(2), '2 agents');
       expect(en.machinesHealth(1, 2), '1 of 2 machines');
       expect(en.statusNeedsYou(1), '1 needs you');
       expect(en.statusNeedsYou(2), '2 need you');
@@ -229,6 +232,29 @@ void main() {
       expect(find.text('マシン1台'), findsOneWidget);
       expect(find.textContaining('エージェント2件', findRichText: true), findsOneWidget);
       expect(find.textContaining(' machines', findRichText: true), findsNothing);
+      await teardownUi(tester, h);
+    });
+
+    testWidgets('a narrow machine row keeps the agent count visible', (tester) async {
+      final h = await UiHarness.create([
+        (
+          profile: const MachineProfile(id: 'a', label: 'solo', host: 'a.example', username: 'dev'),
+          snapshot: snapshotWith([
+            (id: 'w1:p1', ws: 'w1', agent: 'claude', status: 'blocked'),
+            (id: 'w1:p2', ws: 'w1', agent: 'claude', status: 'working'),
+            (id: 'w1:p3', ws: 'w1', agent: 'codex', status: 'idle'),
+          ]),
+        ),
+      ]);
+      await pumpUi(tester, h, locale: const Locale('ja'), width: 320, textScale: 1.6, height: 1600);
+      await tester.tap(find.byKey(const ValueKey('machine-health')));
+      await settle(tester);
+
+      // The long "エージェント3件" gives way to the number, not the other way
+      // around: the count is what the person is looking for.
+      expect(find.textContaining('エージェント3件', findRichText: true), findsNothing);
+      expect(find.textContaining('3件', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
       await teardownUi(tester, h);
     });
   });

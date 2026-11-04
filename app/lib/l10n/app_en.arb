@@ -1889,6 +1889,15 @@
       }
     }
   },
+  "agentCountCompact": "{count, plural, =1{1 agent} other{{count} agents}}",
+  "@agentCountCompact": {
+    "description": "A number of agents on one machine, short enough for a narrow row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "machinesHealth": "{online} of {total, plural, =1{1 machine} other{{total} machines}}",
   "@machinesHealth": {
     "description": "Connected machines out of the machines that are switched on.",

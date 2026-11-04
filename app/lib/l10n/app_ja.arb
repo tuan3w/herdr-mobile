@@ -1865,6 +1865,7 @@
   "uiReply": "返信…",
   "machineCount": "マシン{count}台",
   "agentCount": "エージェント{count}件",
+  "agentCountCompact": "{count}件",
   "machinesHealth": "{total}台中{online}台",
   "machinesHealthSpoken": "{words}オンライン",
   "allMachinesOff": "全マシン停止",
