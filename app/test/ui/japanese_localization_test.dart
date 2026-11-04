@@ -277,7 +277,7 @@ void main() {
     final en = AppLocalizationsEn();
 
     /// The file browser on [path], in the phone's Japanese.
-    Future<void> pumpBrowser(WidgetTester tester, FakeFs fs, String path) async {
+    Future<void> pumpBrowser(WidgetTester tester, FakeFs fs, String path, {FileBrowserSession? session}) async {
       await tester.pumpWidget(
         MultiProvider(
           providers: [
@@ -297,6 +297,7 @@ void main() {
             home: FileBrowserScreen(
               machine: machineWithFiles(fs),
               path: path,
+              session: session,
               clock: () => DateTime.utc(2026, 5, 20, 12),
               thumbs: ThumbLoader(),
             ),
@@ -426,6 +427,44 @@ void main() {
       for (final MapEntry(key: state, value: word) in words.entries) {
         expect(state.labelFor(ja), word);
       }
+    });
+
+    test('the age of a file follows the phone and keeps its English default', () {
+      final now = DateTime(2026, 10, 20, 12);
+      DateTime before(Duration d) => now.subtract(d);
+
+      expect(formatAgo(before(const Duration(seconds: 20)), now), 'Just now');
+      expect(formatAgo(before(const Duration(minutes: 4)), now), '4m ago');
+      expect(formatAgo(before(const Duration(hours: 3)), now), '3h ago');
+      expect(formatAgo(before(const Duration(days: 1)), now), 'Yesterday');
+      expect(formatAgo(before(const Duration(days: 4)), now), '4d ago');
+      expect(formatAgo(DateTime(2026, 10, 3, 9), now), '3 Oct');
+      expect(formatAgo(DateTime(2025, 10, 3, 9), now), '3 Oct 2025');
+
+      expect(formatAgo(before(const Duration(seconds: 20)), now, l10n: ja), 'たった今');
+      expect(formatAgo(before(const Duration(minutes: 4)), now, l10n: ja), '4分前');
+      expect(formatAgo(before(const Duration(hours: 3)), now, l10n: ja), '3時間前');
+      expect(formatAgo(before(const Duration(days: 1)), now, l10n: ja), '昨日');
+      expect(formatAgo(before(const Duration(days: 4)), now, l10n: ja), '4日前');
+      expect(formatAgo(DateTime(2026, 10, 3, 9), now, l10n: ja), '10月3日');
+      expect(formatAgo(DateTime(2025, 10, 3, 9), now, l10n: ja), '2025年10月3日');
+    });
+
+    testWidgets('a file row says its size, age, permission and link in Japanese', (tester) async {
+      const root = '/home/dev/notes';
+      final fs = FakeFs()
+        ..addFile('$root/日本語のメモ.txt', 'x' * 9, modified: DateTime.utc(2026, 5, 20, 10))
+        ..addDir('$root/secret')
+        ..deny.add('$root/secret')
+        ..addLink('$root/old', 'nowhere');
+      final session = FileBrowserSession()..options.denied.add('$root/secret');
+      await pumpBrowser(tester, fs, root, session: session);
+
+      expect(find.text('9 B · 2時間前'), findsOneWidget);
+      expect(find.text('権限がありません'), findsOneWidget);
+      expect(find.text('リンク切れ → nowhere'), findsOneWidget);
+      expect(find.textContaining(' ago', findRichText: true), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('the file browser counts a Japanese folder in Japanese', (tester) async {
