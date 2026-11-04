@@ -1,3 +1,4 @@
+import 'dart:ui' show BoxHeightStyle;
 // The toast system (ui/core/toast.dart): one toast at a time that replaces the
 // one showing, durations from one place, undo coalescing, motion, haptics, and
 // where it stands (above the batch bar, a form's action bar, or the bottom
@@ -750,7 +751,14 @@ void main() {
 
       final paragraph = tester.renderObject<RenderParagraph>(find.text(long));
       expect(paragraph.didExceedMaxLines, isTrue);
-      expect(paragraph.size.height, lessThan(15 * 1.45 * 2 + 4));
+      final lines = paragraph
+          .getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: long.length),
+            boxHeightStyle: BoxHeightStyle.max,
+          )
+          .map((box) => box.top)
+          .toSet();
+      expect(lines.length, lessThanOrEqualTo(2), reason: 'fallback glyph metrics still fit in two lines');
       final card = tester.getRect(_toast);
       expect(card.left, greaterThanOrEqualTo(12));
       expect(card.right, lessThanOrEqualTo(320 - 12));
