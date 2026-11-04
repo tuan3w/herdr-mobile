@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
@@ -258,7 +260,7 @@ bool leavingInForeground() {
 SheetAction agentViewAction(BuildContext context, AgentRef agent, AgentView shown) {
   final toTerminal = shown == AgentView.chat;
   return SheetAction(
-    label: toTerminal ? 'Show terminal' : 'Show chat',
+    label: toTerminal ? context.l10n.uiShowTerminal : context.l10n.uiShowChat,
     icon: toTerminal ? LucideIcons.terminal : HerdrIcons.message,
     onTap: () => unawaited(showAgentView(context, agent, toTerminal ? AgentView.terminal : AgentView.chat)),
   );

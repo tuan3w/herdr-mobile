@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -54,8 +55,8 @@ class TerminalJumpPill extends StatelessWidget {
           ? null
           : Icon(LucideIcons.chevronsDown, size: IconSize.row, color: context.ds.textSecondary),
       size: FloatingPillSize.compact,
-      tooltip: 'Jump to latest',
-      semanticLabel: label == null ? 'Jump to latest' : '$label, jump to latest',
+      tooltip: context.l10n.uiJumpToLatest,
+      semanticLabel: label == null ? context.l10n.uiJumpToLatest : context.l10n.messageJumpToLatest(label),
       haptic: false,
       visible: visible,
       onTap: onPressed,

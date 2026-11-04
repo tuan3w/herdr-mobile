@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import 'press.dart';
@@ -101,7 +102,7 @@ class QuestionWash extends StatelessWidget {
               style: subjectStyle,
             ),
           ],
-          if (cut) TextAction(label: 'Read all', onTap: onReadAll!),
+          if (cut) TextAction(label: context.l10n.uiReadAll, onTap: onReadAll!),
         ],
       );
     }

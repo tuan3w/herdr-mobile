@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -174,7 +176,7 @@ class SubagentRoster extends StatelessWidget {
         },
       );
       return SheetScaffold(
-        title: summary.total == 0 ? 'Subagents' : 'Subagents · ${summary.total}',
+        title: summary.total == 0 ? context.l10n.uiSubagents : context.l10n.messageSubagents('${summary.total}'),
         kind: SheetKind.list,
         scrolls: items.isNotEmpty,
         child: items.isEmpty

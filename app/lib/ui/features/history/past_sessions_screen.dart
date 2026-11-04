@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -71,6 +73,7 @@ class _BodyState extends State<_Body> {
   }
 
   Future<void> _tap(PastSessionsViewModel vm, PastSession past) async {
+    final words = context.l10n;
     final held = vm.openKeyFor(past);
     if (held != null) {
       Haptics.tick();
@@ -94,8 +97,8 @@ class _BodyState extends State<_Body> {
     } else {
       // The person left while it came back: the session runs; say so.
       toaster.show(
-        '${session.agentLabel} is back in ${cwdTail(past.cwd)}',
-        action: ToastAction('Open', () => unawaited(openAgent(nav.context, SessionAgent(session.key)))),
+        words.messageIsBackIn(session.agentLabel, cwdTail(past.cwd)),
+        action: ToastAction(words.uiOpen, () => unawaited(openAgent(nav.context, SessionAgent(session.key)))),
       );
     }
   }
@@ -109,13 +112,13 @@ class _BodyState extends State<_Body> {
       body: CustomScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: [
-          SliverLargeTitle.back(title: 'Past sessions'),
+          SliverLargeTitle.back(title: context.l10n.uiPastSessions),
           if (vm.machines.isNotEmpty) SliverToBoxAdapter(child: _Filters(vm: vm)),
           if (vm.phase == PastPhase.ready && (vm.history?.sessions.length ?? 0) > _searchFrom)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.xs, Gap.gutter, Gap.xs),
-                child: SearchField(controller: _search, hint: 'Search sessions', onChanged: vm.setQuery),
+                child: SearchField(controller: _search, hint: context.l10n.uiSearchSessions, onChanged: vm.setQuery),
               ),
             ),
           ..._content(context, vm),
@@ -140,10 +143,10 @@ class _BodyState extends State<_Body> {
           filler(
             EmptyState(
               icon: HerdrIcons.machinesOff,
-              title: vm.machineLost ? 'That machine went offline' : 'No machine is online',
+              title: vm.machineLost ? context.l10n.uiThatMachineWentOffline : context.l10n.uiNoMachineIsOnline,
               message: vm.machineLost
-                  ? 'Pick another machine above.'
-                  : 'Past sessions are read from the machine that ran them. Check Machines, then come back.',
+                  ? context.l10n.uiPickAnotherMachineAbove
+                  : context.l10n.uiPastSessionsAreReadFromTheMachineThatRan,
             ),
           ),
         ];
@@ -156,9 +159,9 @@ class _BodyState extends State<_Body> {
           filler(
             EmptyState(
               icon: LucideIcons.circleAlert,
-              title: 'Couldn’t read past sessions',
-              message: vm.failure ?? 'The machine didn’t answer.',
-              action: AppButton(label: 'Retry', kind: AppButtonKind.secondary, onPressed: vm.retry),
+              title: context.l10n.uiCouldnTReadPastSessions,
+              message: vm.failure ?? context.l10n.uiTheMachineDidnTAnswer,
+              action: AppButton(label: context.l10n.uiRetry, kind: AppButtonKind.secondary, onPressed: vm.retry),
             ),
           ),
         ];
@@ -167,8 +170,11 @@ class _BodyState extends State<_Body> {
           filler(
             EmptyState(
               icon: HerdrIcons.agents,
-              title: 'No agent installed',
-              message: 'None of ${_anyAgent()} is installed on ${machine?.profile.label ?? 'this machine'}.',
+              title: context.l10n.uiNoAgentInstalled,
+              message: context.l10n.messageNoneOfIsInstalledOn(
+                _anyAgent(),
+                machine?.profile.label ?? context.l10n.uiThisMachine,
+              ),
             ),
           ),
         ];
@@ -193,8 +199,8 @@ class _BodyState extends State<_Body> {
         filler(
           EmptyState(
             icon: LucideIcons.history,
-            title: 'Not listed',
-            message: '$label doesn’t keep a list the phone can read.',
+            title: context.l10n.uiNotListed,
+            message: context.l10n.messageDoesnTKeepAListThePhoneCan(label),
           ),
         ),
       ];
@@ -204,10 +210,10 @@ class _BodyState extends State<_Body> {
         filler(
           EmptyState(
             icon: LucideIcons.history,
-            title: 'No past sessions',
+            title: context.l10n.uiNoPastSessions,
             message: vm.folderOnly
-                ? 'Nothing remembered for $label in this folder yet.'
-                : 'Nothing remembered for $label here yet.',
+                ? context.l10n.messageNothingRememberedForInThisFolderYet(label)
+                : context.l10n.messageNothingRememberedForHereYet(label),
           ),
         ),
       ];
@@ -218,8 +224,8 @@ class _BodyState extends State<_Body> {
         filler(
           EmptyState(
             icon: LucideIcons.searchX,
-            title: 'No matches',
-            message: 'Nothing in the sessions listed matches “${visibleText(vm.query.trim())}”.',
+            title: context.l10n.uiNoMatches,
+            message: context.l10n.messageNothingInTheSessionsListedMatches(visibleText(vm.query.trim())),
           ),
         ),
       ];
@@ -232,7 +238,7 @@ class _BodyState extends State<_Body> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.xs, Gap.gutter, Gap.sm),
             child: Text(
-              '$label can’t reopen a past session from the phone.',
+              context.l10n.messageCanTReopenAPastSessionFromThe(label),
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
           ),
@@ -257,7 +263,7 @@ class _BodyState extends State<_Body> {
           child: Padding(
             padding: const EdgeInsets.only(left: Gap.gutter, top: Gap.lg, right: Gap.gutter),
             child: Text(
-              'Showing the newest ${history.sessions.length}',
+              context.l10n.messageShowingTheNewest('${history.sessions.length}'),
               textAlign: TextAlign.center,
               style: Type.caption.copyWith(color: ds.textMuted),
             ),
@@ -285,7 +291,7 @@ class _Filters extends StatelessWidget {
       children: [
         if (machines.length > 1)
           _ChipRow(
-            label: 'Machine',
+            label: context.l10n.uiMachine,
             chips: [
               for (final c in machines)
                 _capped(
@@ -300,7 +306,7 @@ class _Filters extends StatelessWidget {
           ),
         if (agents.isNotEmpty)
           _ChipRow(
-            label: 'Agent',
+            label: context.l10n.uiAgent,
             chips: [
               for (final r in agents)
                 AppChip(label: agentName(r.id), selected: r.id == vm.agent, onTap: () => vm.selectAgent(r.id)),
@@ -308,12 +314,12 @@ class _Filters extends StatelessWidget {
           ),
         if (folder != null)
           _ChipRow(
-            label: 'Folder',
+            label: context.l10n.uiFolder,
             chips: [
               _capped(
                 AppChip(
-                  label: 'This folder',
-                  semanticLabel: 'This folder, ${visibleText(cwdTail(folder))}',
+                  label: context.l10n.uiThisFolder,
+                  semanticLabel: context.l10n.messageThisFolder(visibleText(cwdTail(folder))),
                   icon: LucideIcons.folder,
                   selected: vm.folderOnly,
                   onTap: () => vm.setFolderOnly(!vm.folderOnly),

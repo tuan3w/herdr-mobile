@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:io' show Platform;
 
@@ -198,7 +200,7 @@ class _PaneScreenState extends State<PaneScreen> {
         ? 'The pane is gone'
         : null;
     return SheetAction(
-      label: 'Duplicate',
+      label: context.l10n.uiDuplicate,
       icon: LucideIcons.copyPlus,
       unavailable: reason,
       onTap: () {
@@ -229,8 +231,12 @@ class _PaneScreenState extends State<PaneScreen> {
         footer: [
           ListenableBuilder(
             listenable: _settings,
-            builder: (context, _) =>
-                SwitchRow(title: 'Wrap lines', value: _settings.wrap, enabled: _vm != null, onChanged: _setWrap),
+            builder: (context, _) => SwitchRow(
+              title: context.l10n.uiWrapLines,
+              value: _settings.wrap,
+              enabled: _vm != null,
+              onChanged: _setWrap,
+            ),
           ),
         ],
         actions: [
@@ -239,18 +245,18 @@ class _PaneScreenState extends State<PaneScreen> {
             agentViewAction(context, widget.agent, AgentView.terminal),
           if (machine != null && connectTarget != null)
             SheetAction(
-              label: 'Read as chat…',
+              label: context.l10n.uiReadAsChat,
               icon: HerdrIcons.message,
               onTap: () => unawaited(showConnectChat(context, machine, _paneId, connectTarget)),
             ),
           _duplicateAction(),
           SheetAction(
-            label: 'Copy title',
+            label: context.l10n.uiCopyTitle,
             icon: LucideIcons.copy,
             onTap: () => copyText(context, title, what: 'Title copied'),
           ),
           SheetAction(
-            label: 'Copy pane id $_paneId',
+            label: context.l10n.messageCopyPaneId(_paneId),
             icon: LucideIcons.hash,
             onTap: () => copyText(context, _paneId, what: 'Pane id copied'),
           ),
@@ -313,7 +319,7 @@ class _MissingMachine extends StatelessWidget {
             Icon(HerdrIcons.machinesOff, size: IconSize.empty, color: ds.textTertiary),
             const SizedBox(height: Gap.md),
             Text(
-              'This machine is no longer saved',
+              context.l10n.uiThisMachineIsNoLongerSaved,
               textAlign: TextAlign.center,
               style: Type.row.copyWith(color: ds.text),
             ),
@@ -764,7 +770,7 @@ class _PaneLayout extends StatelessWidget {
                               padding: const EdgeInsets.only(right: Gap.sm),
                               child: CircleButton(
                                 icon: LucideIcons.keyboard,
-                                tooltip: keysOpen ? 'Hide keys' : 'Show keys',
+                                tooltip: keysOpen ? context.l10n.uiHideKeys : context.l10n.uiShowKeys,
                                 active: keysOpen,
                                 onPressed: onToggleKeys,
                               ),
@@ -927,7 +933,7 @@ class _BannerState extends State<_Banner> {
       );
     } else if (!link.open) {
       problem = _Problem(
-        title: 'This pane was closed',
+        title: context.l10n.uiThisPaneWasClosed,
         color: ds.textSecondary,
         icon: LucideIcons.squareX,
         retry: false,
@@ -952,7 +958,12 @@ class _BannerState extends State<_Banner> {
                 title: shown.title,
                 detail: shown.detail,
                 action: shown.retry
-                    ? AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: widget.onRetry)
+                    ? AppButton(
+                        label: context.l10n.uiRetry,
+                        kind: AppButtonKind.secondary,
+                        compact: true,
+                        onPressed: widget.onRetry,
+                      )
                     : null,
               ),
             ),
@@ -1052,7 +1063,7 @@ class _Composer extends StatelessWidget {
           final dictate = agent == null ? null : dictation;
           if (dictate != null && enabled && (dictate.listening || !hasContent)) {
             return ComposerRoundButton(
-              label: dictate.listening ? 'Stop dictating' : 'Dictate',
+              label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
               icon: LucideIcons.mic,
               iconSize: IconSize.bar,
               ready: true,
@@ -1064,7 +1075,7 @@ class _Composer extends StatelessWidget {
             );
           }
           return ComposerRoundButton(
-            label: 'Send',
+            label: context.l10n.uiSend,
             icon: LucideIcons.arrowUp,
             iconSize: IconSize.bar,
             ready: enabled && !sending && hasContent && attachments.canSend,

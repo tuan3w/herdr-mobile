@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../data/acp/session_state.dart' show AgentPhase;
@@ -26,7 +27,16 @@ const boardOrder = [AgentStatus.blocked, AgentStatus.working, AgentStatus.done, 
 
 /// A section's name on the board: the status's, but `To review` for what
 /// finished, the words of the status line's `3 to review` that selects them.
-String sectionLabel(AgentStatus status) => status == AgentStatus.done ? 'To review' : status.label;
+String sectionLabel(AgentStatus status, {AppLocalizations? words}) {
+  if (words == null) return status == AgentStatus.done ? 'To review' : status.label;
+  return switch (status) {
+    AgentStatus.blocked => words.uiNeedsYou,
+    AgentStatus.working => words.uiWorking,
+    AgentStatus.done => words.uiToReview,
+    AgentStatus.idle => words.uiIdle,
+    AgentStatus.unknown => words.uiUnknown,
+  };
+}
 
 /// The state a row is in, as a word for screen readers: the visible label
 /// says it with the glyph and the time's colour. Empty for "unknown".

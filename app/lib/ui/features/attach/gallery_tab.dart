@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -113,24 +115,24 @@ class _GalleryTabState extends State<GalleryTab> with WidgetsBindingObserver {
         ),
         GalleryAccess.undetermined => _Panel(
           icon: HerdrIcons.pictures,
-          title: 'Attach photos from your phone',
-          message: 'Photos stay on your phone until you attach them.',
+          title: context.l10n.uiAttachPhotosFromYourPhone,
+          message: context.l10n.uiPhotosStayOnYourPhoneUntilYouAttachThem,
           primary: ('Allow photo access', () => unawaited(model.request())),
           onCamera: widget.onCamera,
           onSystemPicker: widget.onSystemPicker,
         ),
         GalleryAccess.denied => _Panel(
           icon: HerdrIcons.pictureOff,
-          title: 'Photo access is off',
-          message: 'Allow it in the phone\u2019s settings to see your photos here.',
+          title: context.l10n.uiPhotoAccessIsOff,
+          message: context.l10n.uiAllowItInThePhoneSSettingsToSee,
           primary: ('Open settings', () => unawaited(model.openSettings())),
           onCamera: widget.onCamera,
           onSystemPicker: widget.onSystemPicker,
         ),
         GalleryAccess.unavailable => _Panel(
           icon: HerdrIcons.pictureOff,
-          title: 'Photos can’t be listed',
-          message: 'This phone would not show its library to herdr. The system picker still works.',
+          title: context.l10n.uiPhotosCanTBeListed,
+          message: context.l10n.uiThisPhoneWouldNotShowItsLibraryToHerdr,
           onCamera: widget.onCamera,
           onSystemPicker: widget.onSystemPicker,
         ),
@@ -165,16 +167,16 @@ class _Header extends StatelessWidget {
         child: Row(
           children: [
             AppChip(
-              label: album?.name ?? 'Recent',
-              semanticLabel: 'Album: ${album?.name ?? 'Recent'}',
+              label: album?.name ?? context.l10n.uiRecent,
+              semanticLabel: context.l10n.messageAlbum(album?.name ?? context.l10n.uiRecent),
               leading: Icon(LucideIcons.chevronsUpDown, size: IconSize.inline, color: ds.textSecondary),
               onTap: () => unawaited(_chooseAlbum(context, model)),
             ),
             if (limited) ...[
               const SizedBox(width: Gap.sm),
               AppChip(
-                label: 'Manage',
-                semanticLabel: 'Manage which photos herdr can see',
+                label: context.l10n.uiManage,
+                semanticLabel: context.l10n.uiManageWhichPhotosHerdrCanSee,
                 leading: Icon(LucideIcons.slidersHorizontal, size: IconSize.inline, color: ds.textSecondary),
                 onTap: () => unawaited(model.manage()),
               ),
@@ -221,7 +223,7 @@ Future<void> _chooseAlbum(BuildContext context, GalleryModel model) async {
       final ds = sheet.ds;
       final albums = model.albums;
       return SheetScaffold(
-        title: 'Albums',
+        title: context.l10n.uiAlbums,
         kind: SheetKind.list,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -345,7 +347,7 @@ class _PanelState extends State<_Panel> {
                     const SizedBox(height: Gap.sm),
                   ],
                   AppButton(
-                    label: 'Open the system picker',
+                    label: context.l10n.uiOpenTheSystemPicker,
                     icon: HerdrIcons.picture,
                     kind: primary == null ? AppButtonKind.primary : AppButtonKind.secondary,
                     expand: true,
@@ -353,7 +355,7 @@ class _PanelState extends State<_Panel> {
                   ),
                   const SizedBox(height: Gap.sm),
                   AppButton(
-                    label: 'Take a photo',
+                    label: context.l10n.uiTakeAPhoto,
                     icon: LucideIcons.camera,
                     kind: AppButtonKind.ghost,
                     expand: true,
@@ -490,10 +492,10 @@ class _GridState extends State<_Grid> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.only(top: Gap.xl, bottom: clearance),
-                      child: const EmptyState(
+                      child: EmptyState(
                         icon: HerdrIcons.pictureOff,
-                        title: 'No photos yet',
-                        message: 'Take one with the camera, or pick a file from the Files tab.',
+                        title: context.l10n.uiNoPhotosYet,
+                        message: context.l10n.uiTakeOneWithTheCameraOrPickAFile,
                       ),
                     ),
                   ),
@@ -565,7 +567,7 @@ class _CameraTile extends StatelessWidget {
     return PressBuilder(
       onTap: onTap,
       haptic: true,
-      semanticLabel: 'Camera',
+      semanticLabel: context.l10n.uiCamera,
       builder: (context, pressed) => ColoredBox(
         color: pressed ? ds.fillPressed : ds.fill,
         child: Center(
@@ -574,7 +576,7 @@ class _CameraTile extends StatelessWidget {
             children: [
               Icon(LucideIcons.camera, size: IconSize.empty, color: ds.textSecondary),
               const SizedBox(height: Gap.xs),
-              Text('Camera', style: Type.caption.copyWith(color: ds.textSecondary)),
+              Text(context.l10n.uiCamera, style: Type.caption.copyWith(color: ds.textSecondary)),
             ],
           ),
         ),
@@ -651,7 +653,7 @@ class _PhotoTileState extends State<PhotoTile> {
     if (picked) picture = ClipRRect(borderRadius: BorderRadius.circular(Radii.xs), child: picture);
     return Semantics(
       container: true,
-      label: '$label, ${picked ? 'selected, number $n' : 'not selected'}',
+      label: '$label, ${picked ? context.l10n.uiSelectedNumber(n) : context.l10n.uiNotSelected}',
       button: true,
       onTap: widget.onOpen,
       onLongPress: _toggle,
@@ -679,7 +681,9 @@ class _PhotoTileState extends State<PhotoTile> {
               child: SelectionCircle(
                 number: n,
                 onPhoto: true,
-                label: picked ? 'Deselect photo ${widget.index + 1}' : 'Select photo ${widget.index + 1}',
+                label: picked
+                    ? context.l10n.messageDeselectPhoto('${widget.index + 1}')
+                    : context.l10n.messageSelectPhoto('${widget.index + 1}'),
                 onTap: _toggle,
               ),
             ),

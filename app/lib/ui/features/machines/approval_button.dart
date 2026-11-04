@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -18,14 +19,15 @@ class ApprovalButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppButton(
-    label: 'Open sign-in page',
+    label: context.l10n.uiOpenSignInPage,
     icon: LucideIcons.externalLink,
     kind: AppButtonKind.secondary,
     compact: true,
     onPressed: () async {
       final toaster = Toaster.of(context);
+      final openFailed = context.l10n.uiCouldnTOpenOnThisPhoneNoBrowserCould;
       if (!await openInBrowser(url)) {
-        toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
+        toaster.show(openFailed, kind: ToastKind.failed);
       }
     },
   );

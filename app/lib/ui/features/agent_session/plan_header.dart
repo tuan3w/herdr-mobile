@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -128,11 +129,11 @@ class _PlanState extends State<_Plan> {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    text: 'Plan',
+                    text: context.l10n.uiPlan,
                     style: Type.labelStrong.copyWith(color: ds.text),
                     children: [
                       TextSpan(
-                        text: '  $done of ${plan.length}',
+                        text: context.l10n.messageOf('$done', '${plan.length}'),
                         style: Type.label.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
                       ),
                       if (current != null && !_open)

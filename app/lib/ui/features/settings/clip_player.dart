@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -126,12 +128,12 @@ class _Failed extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Couldn\u2019t play the clip. Check the connection, then Retry.',
+            context.l10n.uiCouldnTPlayTheClipCheckTheConnectionThen,
             textAlign: TextAlign.center,
             style: Type.secondary.copyWith(color: ds.dangerText),
           ),
           const SizedBox(height: Gap.md),
-          AppButton(label: 'Retry', kind: AppButtonKind.secondary, onPressed: onRetry),
+          AppButton(label: context.l10n.uiRetry, kind: AppButtonKind.secondary, onPressed: onRetry),
         ],
       ),
     );

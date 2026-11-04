@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -78,12 +80,12 @@ class _MachineViewState extends State<_MachineView> {
             TextSpan(
               children: [
                 TextSpan(
-                  text: state.label,
+                  text: state.labelFor(context.l10n),
                   style: Type.secondary.copyWith(color: loud ? ds.blockedText : ds.textSecondary),
                 ),
                 if (snap.version.isNotEmpty)
                   TextSpan(
-                    text: ' · herdr ${snap.version}',
+                    text: context.l10n.messageHerdr(snap.version),
                     style: Type.secondary.copyWith(color: ds.textMuted),
                   ),
               ],
@@ -118,12 +120,12 @@ class _MachineViewState extends State<_MachineView> {
                 if (machineSupportsFiles(machine))
                   CircleButton(
                     icon: HerdrIcons.folder,
-                    tooltip: 'Browse files',
+                    tooltip: context.l10n.uiBrowseFiles,
                     onPressed: () => openFileBrowser(context, machine),
                   ),
                 CircleButton(
                   icon: LucideIcons.plus,
-                  tooltip: 'New agent session',
+                  tooltip: context.l10n.uiNewAgentSession,
                   onPressed: machine.isLive ? () => unawaited(openNewAgentSession(context, machine: machine)) : null,
                 ),
               ],
@@ -138,7 +140,7 @@ class _MachineViewState extends State<_MachineView> {
                     message: machine.error,
                     messageMaxLines: 3,
                     trailing: AppButton(
-                      label: 'Retry',
+                      label: context.l10n.uiRetry,
                       kind: AppButtonKind.secondary,
                       compact: true,
                       onPressed: machine.retry,
@@ -153,8 +155,8 @@ class _MachineViewState extends State<_MachineView> {
                   child: StatusPanel(
                     color: ds.blocked,
                     icon: LucideIcons.shieldCheck,
-                    title: 'Approve this sign-in',
-                    message: 'Tailscale needs you to approve this sign-in.',
+                    title: context.l10n.uiApproveThisSignIn,
+                    message: context.l10n.uiTailscaleNeedsYouToApproveThisSignIn,
                     footer: Align(
                       alignment: Alignment.centerLeft,
                       child: ApprovalButton(url: approval),
@@ -163,12 +165,12 @@ class _MachineViewState extends State<_MachineView> {
                 ),
               ),
             if (snap.workspaces.isEmpty && machine.isLive)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
                   icon: LucideIcons.layoutDashboard,
-                  title: 'No workspaces',
-                  message: 'Create a workspace in herdr and it will show up here.',
+                  title: context.l10n.uiNoWorkspaces,
+                  message: context.l10n.uiCreateAWorkspaceInHerdrAndItWillShow,
                 ),
               )
             else
@@ -258,7 +260,7 @@ class _WorkspaceSection extends StatelessWidget {
             offset: const Offset(machineDotsNudge, 0),
             child: CircleButton(
               icon: LucideIcons.ellipsis,
-              tooltip: 'Workspace actions',
+              tooltip: context.l10n.uiWorkspaceActions,
               filled: false,
               size: CircleButton.compact,
               onPressed: live ? () => showWorkspaceActions(context, machine, workspace) : null,

@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -52,19 +53,19 @@ class SelectionHeader extends StatelessWidget {
                         child: Semantics(
                           header: true,
                           child: RollText(
-                            text: '${state.count} selected',
+                            text: context.l10n.messageSelected('${state.count}'),
                             style: Type.barTitle.copyWith(color: ds.text, fontFeatures: Type.tabular),
                           ),
                         ),
                       ),
                       AppButton(
-                        label: 'All',
+                        label: context.l10n.uiAll,
                         kind: AppButtonKind.ghost,
                         compact: true,
                         onPressed: state.busy ? null : onAll,
                       ),
                       AppButton(
-                        label: 'Cancel',
+                        label: context.l10n.uiCancel,
                         kind: AppButtonKind.ghost,
                         compact: true,
                         onPressed: state.busy ? null : selection.cancel,
@@ -155,22 +156,22 @@ class BatchActionBar extends StatelessWidget {
     return Row(
       children: [
         _BarAction(
-          label: 'Reviewed',
+          label: context.l10n.uiReviewed,
           icon: HerdrIcons.reviewed,
           onTap: reviewable.isNotEmpty ? () => onReview(reviewable) : null,
         ),
         _BarAction(
-          label: 'Stop',
+          label: context.l10n.uiStop,
           icon: HerdrIcons.stop,
           onTap: can(BatchAction.stop) ? () => onAction(BatchAction.stop) : null,
         ),
         _BarAction(
-          label: 'Message',
+          label: context.l10n.uiMessage,
           icon: HerdrIcons.message,
           onTap: can(BatchAction.message) ? () => onAction(BatchAction.message) : null,
         ),
         _BarAction(
-          label: 'Close',
+          label: context.l10n.uiClose,
           icon: HerdrIcons.close,
           danger: true,
           onTap: can(BatchAction.close) ? () => onAction(BatchAction.close) : null,

@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -129,7 +130,9 @@ class UnknownCommandNote extends StatelessWidget {
                                 style: Mono.input.copyWith(color: ds.text),
                               ),
                               TextSpan(
-                                text: agent == null ? ' isn’t a command.' : ' isn’t one of $agent\u2019s commands.',
+                                text: agent == null
+                                    ? context.l10n.uiIsnTACommand
+                                    : context.l10n.messageIsnTOneOfSCommands(agent),
                               ),
                             ],
                           ),
@@ -139,7 +142,7 @@ class UnknownCommandNote extends StatelessWidget {
                     ],
                   );
                   final button = AppButton(
-                    label: 'Send as message',
+                    label: context.l10n.uiSendAsMessage,
                     kind: AppButtonKind.secondary,
                     compact: true,
                     onPressed: () => guard.sendAnyway(onSend),

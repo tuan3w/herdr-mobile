@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -175,12 +177,12 @@ class _FilesTabState extends State<FilesTab> {
             Padding(
               padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.lg, Gap.gutter, Gap.sm),
               child: Text(
-                'Files you attach from the phone are listed here.',
+                context.l10n.uiFilesYouAttachFromThePhoneAreListedHere,
                 style: Type.secondary.copyWith(color: ds.textMuted),
               ),
             ),
           if (picked.isNotEmpty) ...[
-            SectionLabel(label: 'Picked', count: picked.length),
+            SectionLabel(label: context.l10n.uiPicked, count: picked.length),
             for (final item in picked)
               _FileRow(
                 key: ValueKey('picked:${item.key}'),
@@ -191,7 +193,7 @@ class _FilesTabState extends State<FilesTab> {
               ),
           ],
           if (recents.isNotEmpty) ...[
-            SectionLabel(label: 'Recent', count: recents.length),
+            SectionLabel(label: context.l10n.uiRecent, count: recents.length),
             for (final r in recents) _recentRow(r),
           ],
         ],
@@ -249,14 +251,14 @@ class _ChooseTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Choose files…',
+                  context.l10n.uiChooseFiles,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Type.row.copyWith(color: ds.text),
                 ),
                 const SizedBox(height: Gap.hair),
                 Text(
-                  'Opens the phone’s file picker',
+                  context.l10n.uiOpensThePhoneSFilePicker,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Type.secondary.copyWith(color: ds.textSecondary),
@@ -304,7 +306,8 @@ class _FileRow extends StatelessWidget {
     final shown = visibleText(name);
     final picked = number != null;
     final trailing = kMinTap * (onForget == null ? 1 : 2);
-    final label = '$shown, ${detail.replaceAll(' · ', ', ')}, ${picked ? 'selected' : 'not selected'}';
+    final label =
+        '$shown, ${detail.replaceAll(' · ', ', ')}, ${picked ? context.l10n.uiSelected.toLowerCase() : context.l10n.uiNotSelected}';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -348,14 +351,18 @@ class _FileRow extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SelectionCircle(number: number, onTap: onTap, label: picked ? 'Deselect $shown' : 'Select $shown'),
+                  SelectionCircle(
+                    number: number,
+                    onTap: onTap,
+                    label: picked ? context.l10n.messageDeselect(shown) : context.l10n.messageSelect(shown),
+                  ),
                   if (onForget != null)
                     PressBuilder(
                       onTap: onForget,
                       haptic: true,
                       scale: PressScale.icon,
                       minTapSize: kMinTap,
-                      semanticLabel: 'Remove $shown from recent files',
+                      semanticLabel: context.l10n.messageRemoveFromRecentFiles(shown),
                       builder: (context, pressed) => Icon(LucideIcons.x, size: IconSize.row, color: ds.textSecondary),
                     ),
                 ],

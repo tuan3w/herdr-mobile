@@ -1,19 +1,28 @@
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+
 /// The app's two registers for a length of time, and its two for a moment.
 /// Every duration, "ago" and date the person reads comes from here, so a
 /// minute is spelled one way everywhere.
 abstract final class Elapsed {
   /// `12s`, `4m`, `1h`, `1h 05m`, `3d`: for labels that sit beside a name.
   /// With [seconds] false, anything under a minute is `<1m`, so a label that
-  /// ticks changes at most once a minute.
-  static String compact(Duration d, {bool seconds = true}) {
+  /// ticks changes at most once a minute. With [l10n], the units follow the
+  /// person's language (`59分`, `1時間5分`, `3日`); without it they stay English.
+  static String compact(Duration d, {bool seconds = true, AppLocalizations? l10n}) {
     if (d.isNegative) d = Duration.zero;
-    if (d.inMinutes < 1) return seconds ? '${d.inSeconds}s' : '<1m';
-    if (d.inHours < 1) return '${d.inMinutes}m';
+    if (d.inMinutes < 1) {
+      if (!seconds) return l10n?.elapsedUnderAMinute ?? '<1m';
+      return l10n?.elapsedSeconds(d.inSeconds) ?? '${d.inSeconds}s';
+    }
+    if (d.inHours < 1) return l10n?.elapsedMinutes(d.inMinutes) ?? '${d.inMinutes}m';
     if (d.inDays < 1) {
       final m = d.inMinutes % 60;
+      if (l10n != null) {
+        return m == 0 ? l10n.elapsedHours(d.inHours) : l10n.elapsedHoursMinutes(d.inHours, '$m', _two(m));
+      }
       return m == 0 ? '${d.inHours}h' : '${d.inHours}h ${_two(m)}m';
     }
-    return '${d.inDays}d';
+    return l10n?.elapsedDays(d.inDays) ?? '${d.inDays}d';
   }
 
   /// `12 seconds`, `1 minute`, `1 hour 5 minutes`, `3 days`: inside a

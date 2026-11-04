@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,7 +9,6 @@ import 'package:provider/provider.dart';
 
 import '../../../data/repositories/quick_phrases.dart';
 import '../../../data/repositories/sent_phrases.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -22,7 +23,7 @@ class QuickPhrasesPage extends StatelessWidget {
     backgroundColor: context.ds.bg,
     body: CustomScrollView(
       slivers: [
-        const SliverLargeTitle.back(title: 'Quick phrases'),
+        SliverLargeTitle.back(title: context.l10n.uiQuickPhrases),
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + Gap.lg),
@@ -53,15 +54,14 @@ class QuickPhrasesSection extends StatelessWidget {
       endsWithField: false,
       children: [
         Text(
-          'One-tap chips above the message box while it is empty and focused. '
-          'A tap fills the box; you still press send.',
+          context.l10n.uiOneTapChipsAboveTheMessageBoxWhileIt,
           style: Type.secondary.copyWith(color: ds.textSecondary),
         ),
         const SizedBox(height: Gap.sm),
         if (phrases.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: Gap.sm),
-            child: Text('No phrases yet, so no chips.', style: Type.secondary.copyWith(color: ds.textMuted)),
+            child: Text(context.l10n.uiNoPhrasesYetSoNoChips, style: Type.secondary.copyWith(color: ds.textMuted)),
           ),
         for (final phrase in phrases)
           _PhraseRow(
@@ -71,7 +71,7 @@ class QuickPhrasesSection extends StatelessWidget {
           ),
         const SizedBox(height: Gap.sm),
         AppButton(
-          label: full ? 'List is full (${QuickPhrases.maxCount})' : 'Add a phrase',
+          label: full ? context.l10n.messageListIsFull('${QuickPhrases.maxCount}') : context.l10n.uiAddAPhrase,
           icon: LucideIcons.plus,
           kind: AppButtonKind.secondary,
           expand: true,
@@ -80,16 +80,14 @@ class QuickPhrasesSection extends StatelessWidget {
         if (sent != null) ...[
           const SizedBox(height: Gap.md),
           SwitchRow(
-            title: 'Add what I send most',
-            subtitle:
-                'A message to an agent that you sent at least twice becomes a chip. '
-                'Learned and kept on this phone only.',
+            title: context.l10n.uiAddWhatISendMost,
+            subtitle: context.l10n.uiAMessageToAnAgentThatYouSentAt,
             value: sent.enabled,
             onChanged: (on) => unawaited(sent.setEnabled(on)),
           ),
           if (sent.tracked > 0)
             AppButton(
-              label: 'Forget ${sent.tracked} remembered ${plural(sent.tracked, 'message')}',
+              label: context.l10n.messageForgetRemembered(sent.tracked),
               kind: AppButtonKind.secondary,
               expand: true,
               // Not recoverable (the counts are gone), and one tap forgets all
@@ -106,9 +104,9 @@ Future<void> _forget(BuildContext context, SentPhrases sent) async {
   final n = sent.tracked;
   final ok = await showConfirmSheet(
     context,
-    title: 'Forget $n remembered ${plural(n, 'message')}?',
-    message: 'The messages learned from what you send are deleted from this phone. They can be learned again.',
-    confirmLabel: 'Forget',
+    title: context.l10n.messageForgetRemembered30(n),
+    message: context.l10n.uiTheMessagesLearnedFromWhatYouSendAreDeleted,
+    confirmLabel: context.l10n.uiForget,
   );
   if (ok) await sent.forget();
 }
@@ -208,7 +206,7 @@ class _QuickPhraseEditorState extends State<QuickPhraseEditor> {
     unawaited(phrases.remove(phrase));
     Navigator.of(context).pop();
     // Undo appends: the list has no way to put a phrase back at its place.
-    toaster.show('Phrase deleted', action: ToastAction('Undo', () => unawaited(phrases.add(phrase))));
+    toaster.show(context.l10n.uiPhraseDeleted, action: ToastAction('Undo', () => unawaited(phrases.add(phrase))));
   }
 
   @override
@@ -217,13 +215,13 @@ class _QuickPhraseEditorState extends State<QuickPhraseEditor> {
     // An empty field is not an error yet: Save just waits.
     final shown = _controller.text.trim().isEmpty ? null : problem;
     return SheetScaffold(
-      title: widget.editing == null ? 'New quick phrase' : 'Edit quick phrase',
+      title: widget.editing == null ? context.l10n.uiNewQuickPhrase : context.l10n.uiEditQuickPhrase,
       kind: SheetKind.form,
       actions: [
-        AppButton(label: 'Save', expand: true, onPressed: problem == null ? _save : null),
+        AppButton(label: context.l10n.uiSave, expand: true, onPressed: problem == null ? _save : null),
         if (widget.editing != null)
           AppButton(
-            label: 'Delete',
+            label: context.l10n.uiDelete,
             icon: LucideIcons.trash2,
             kind: AppButtonKind.danger,
             expand: true,
@@ -233,9 +231,9 @@ class _QuickPhraseEditorState extends State<QuickPhraseEditor> {
       child: Padding(
         padding: const EdgeInsets.only(top: Gap.sm),
         child: LabeledField(
-          label: 'Phrase',
+          label: context.l10n.uiPhrase,
           prose: true,
-          hint: 'e.g. run the tests',
+          hint: context.l10n.uiEGRunTheTests,
           controller: _controller,
           autofocus: true,
           helper: shown?.message ?? 'Up to ${QuickPhrases.maxLength} characters, one line.',

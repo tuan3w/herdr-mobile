@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
@@ -161,7 +162,7 @@ class _WalkPlace extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: Gap.xs),
       child: Text(
-        armed ? 'Let go to open' : '$position of $count',
+        armed ? context.l10n.uiLetGoToOpen : context.l10n.messageOf88('$position', '$count'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         textAlign: align,

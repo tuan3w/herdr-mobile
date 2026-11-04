@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -39,7 +40,7 @@ class MachineField extends StatelessWidget {
 
     void choose() => showActionSheet(
       context,
-      title: 'Machine',
+      title: context.l10n.uiMachine,
       actions: [
         for (final c in choices)
           SheetAction(
@@ -56,12 +57,12 @@ class MachineField extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: Gap.sm),
           child: ExcludeSemantics(
-            child: Text('Machine', style: Type.label.copyWith(color: ds.textSecondary)),
+            child: Text(context.l10n.uiMachine, style: Type.label.copyWith(color: ds.textSecondary)),
           ),
         ),
         PressBuilder(
           onTap: canChoose ? choose : null,
-          semanticLabel: 'Machine, ${machine?.profile.label ?? 'none chosen'}',
+          semanticLabel: context.l10n.messageMachine(machine?.profile.label ?? context.l10n.uiNoneChosen),
           button: canChoose,
           builder: (context, pressed) => AnimatedContainer(
             duration: Motion.pressing(pressed),
@@ -78,7 +79,7 @@ class MachineField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    machine?.profile.label ?? 'Choose a machine',
+                    machine?.profile.label ?? context.l10n.uiChooseAMachine,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Type.input.copyWith(color: machine == null ? ds.textMuted : ds.text),
@@ -98,7 +99,7 @@ class MachineField extends StatelessWidget {
           padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
           child: Text(
             lost
-                ? 'That machine went offline. Pick another.'
+                ? context.l10n.uiThatMachineWentOfflinePickAnother
                 : machine == null
                 ? ' '
                 : '${machine.profile.username}@${machine.profile.host}',
@@ -128,7 +129,7 @@ class RecentFolders extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: Gap.hair),
-          child: Text('Open on this machine', style: Type.label.copyWith(color: context.ds.textSecondary)),
+          child: Text(context.l10n.uiOpenOnThisMachine, style: Type.label.copyWith(color: context.ds.textSecondary)),
         ),
         Wrap(
           spacing: Gap.sm,

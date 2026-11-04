@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -245,7 +247,7 @@ class _ObservedRosterState extends State<ObservedRoster> {
           child: Column(
             children: [
               Text(
-                'Subagents from earlier in this chat are not listed.',
+                context.l10n.uiSubagentsFromEarlierInThisChatAreNotListed,
                 textAlign: TextAlign.center,
                 style: Type.secondary.copyWith(color: ds.textMuted),
               ),
@@ -257,7 +259,9 @@ class _ObservedRosterState extends State<ObservedRoster> {
       };
       final partial = earlier != EarlierHistory.none ? '+' : '';
       return SheetScaffold(
-        title: entries.isEmpty ? 'Subagents' : 'Subagents · ${entries.length}$partial',
+        title: entries.isEmpty
+            ? context.l10n.uiSubagents
+            : context.l10n.messageSubagents67('${entries.length}', partial),
         kind: SheetKind.list,
         scrolls: items.isNotEmpty,
         child: items.isEmpty

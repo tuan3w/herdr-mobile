@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -276,7 +278,7 @@ class _ToolLine extends StatelessWidget {
         style: mono,
         children: [
           if (summary.extraLines > 0) TextSpan(text: '  +${countOf(summary.extraLines, 'line')}', style: muted),
-          if (trimmed) TextSpan(text: '  Details trimmed', style: muted),
+          if (trimmed) TextSpan(text: context.l10n.uiDetailsTrimmed, style: muted),
         ],
       ),
       ToolKind.search => TextSpan(
@@ -284,7 +286,7 @@ class _ToolLine extends StatelessWidget {
         style: main,
         children: [
           if (summary.hits != null) TextSpan(text: '  ${_hitsWords(summary.hits!)}', style: muted),
-          if (trimmed) TextSpan(text: '  Details trimmed', style: muted),
+          if (trimmed) TextSpan(text: context.l10n.uiDetailsTrimmed, style: muted),
         ],
       ),
       _ => TextSpan(
@@ -293,8 +295,8 @@ class _ToolLine extends StatelessWidget {
         children: [
           if (hint != null) TextSpan(text: '  $hint', style: muted),
           if (summary.kind == ToolKind.edit && summary.fileCount > 1)
-            TextSpan(text: '  +${summary.fileCount - 1} more', style: muted),
-          if (trimmed) TextSpan(text: '  Details trimmed', style: muted),
+            TextSpan(text: context.l10n.messageMore('${summary.fileCount - 1}'), style: muted),
+          if (trimmed) TextSpan(text: context.l10n.uiDetailsTrimmed, style: muted),
         ],
       ),
     };
@@ -602,7 +604,7 @@ class _ToolBody extends StatelessWidget {
         },
       if (parts.isEmpty && call.locations.isEmpty)
         Text(
-          call.status.isFinished ? 'No output.' : 'Waiting for output…',
+          call.status.isFinished ? context.l10n.uiNoOutput : context.l10n.uiWaitingForOutput,
           style: Type.secondary.copyWith(color: ds.textMuted),
         ),
     ];

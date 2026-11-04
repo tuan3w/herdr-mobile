@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -109,7 +111,7 @@ class _SessionOverviewState extends State<SessionOverview> {
         final runs = state.subagents;
         final observed = session.subagents;
         return SheetScaffold(
-          title: 'Session overview',
+          title: context.l10n.uiSessionOverview,
           kind: SheetKind.list,
           child: Padding(
             // The list kind's inset 4 + 12: the facts sit 16 from the edge.
@@ -186,7 +188,10 @@ class _SessionOverviewState extends State<SessionOverview> {
                 onTap: () => setState(() => _filesShown += 16),
                 minHeight: kMinTap,
                 padding: const EdgeInsets.symmetric(horizontal: Gap.md - PressRow.inset),
-                child: Text('$more more', style: Type.labelStrong.copyWith(color: ds.accentText)),
+                child: Text(
+                  context.l10n.messageMore85('$more'),
+                  style: Type.labelStrong.copyWith(color: ds.accentText),
+                ),
               ),
           ],
         ),
@@ -306,7 +311,7 @@ class _SessionOverviewState extends State<SessionOverview> {
         Padding(
           padding: const EdgeInsets.only(top: Gap.sm),
           child: Text(
-            '${formatTokens(usage!.used)} of ${formatTokens(usage.size)} tokens · $percent% of context',
+            context.l10n.messageOfTokensOfContext(formatTokens(usage!.used), formatTokens(usage.size), '$percent'),
             style: (warn ? Type.secondaryStrong : Type.secondary).copyWith(
               color: ds.textSecondary,
               fontFeatures: Type.tabular,
@@ -354,7 +359,7 @@ class _SessionOverviewState extends State<SessionOverview> {
                     ),
                     if (p.origin != null)
                       Text(
-                        'From subagent: ${visibleText(p.origin!.label)}',
+                        context.l10n.messageFromSubagent(visibleText(p.origin!.label)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Type.caption.copyWith(color: ds.textSecondary),
@@ -368,7 +373,10 @@ class _SessionOverviewState extends State<SessionOverview> {
       if (pending.length > 3)
         Padding(
           padding: const EdgeInsets.only(left: Gap.xs, top: Gap.hair),
-          child: Text('${pending.length - 3} more', style: Type.caption.copyWith(color: ds.textMuted)),
+          child: Text(
+            context.l10n.messageMore85('${pending.length - 3}'),
+            style: Type.caption.copyWith(color: ds.textMuted),
+          ),
         ),
     ];
   }
@@ -554,7 +562,7 @@ class _CommandRow extends StatelessWidget {
       expanded: open,
       child: PressRow(
         onTap: onTap,
-        semanticLabel: [text, if (command.failed) 'failed', ?code].join(', '),
+        semanticLabel: [text, if (command.failed) context.l10n.uiFailed, ?code].join(', '),
         minHeight: kMinTap,
         padding: const EdgeInsets.symmetric(horizontal: Gap.xs, vertical: Gap.xs),
         child: Row(

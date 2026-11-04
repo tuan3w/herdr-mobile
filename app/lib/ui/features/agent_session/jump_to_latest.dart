@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -22,11 +23,11 @@ class JumpToLatest extends StatelessWidget {
     final count = newBlocks > 0;
     return FloatingPill(
       icon: count ? null : LucideIcons.chevronsDown,
-      label: count ? '$newBlocks new' : null,
+      label: count ? context.l10n.messageNew('$newBlocks') : null,
       trailing: count ? Icon(LucideIcons.chevronsDown, size: IconSize.row, color: context.ds.textSecondary) : null,
       size: FloatingPillSize.compact,
-      tooltip: 'Jump to latest',
-      semanticLabel: count ? '$newBlocks new, jump to latest' : 'Jump to latest',
+      tooltip: context.l10n.uiJumpToLatest,
+      semanticLabel: count ? context.l10n.messageNewJumpToLatest('$newBlocks') : context.l10n.uiJumpToLatest,
       haptic: false,
       roll: true,
       visible: visible,

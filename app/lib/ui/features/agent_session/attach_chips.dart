@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -128,7 +130,8 @@ class _Chip extends StatelessWidget {
     );
     return Semantics(
       container: true,
-      label: '${a.kind == AttachmentKind.image ? 'Picture' : 'File'} $label, ${_status(progress?.value)}',
+      label:
+          '${a.kind == AttachmentKind.image ? context.l10n.uiPicture : context.l10n.uiFile} $label, ${_status(progress?.value)}',
       child: DecoratedBox(
         decoration: BoxDecoration(color: ds.fill, borderRadius: BorderRadius.circular(Radii.sm)),
         child: ConstrainedBox(
@@ -143,7 +146,7 @@ class _Chip extends StatelessWidget {
                   scale: 0.98,
                   minTapSize: kMinTap,
                   button: onOpen == null ? null : true,
-                  semanticLabel: onOpen == null ? null : 'Open $label',
+                  semanticLabel: onOpen == null ? null : context.l10n.messageOpen(label),
                   builder: (context, pressed) => Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -180,17 +183,22 @@ class _Chip extends StatelessWidget {
                   onTap: onRetry,
                   haptic: true,
                   minTapSize: kMinTap,
-                  semanticLabel: 'Retry upload of $label',
+                  semanticLabel: context.l10n.messageRetryUploadOf(label),
                   builder: (context, pressed) => Padding(
                     padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                    child: Text('Retry', style: Type.buttonCompact.copyWith(color: pressed ? ds.text : ds.accentText)),
+                    child: Text(
+                      context.l10n.uiRetry,
+                      style: Type.buttonCompact.copyWith(color: pressed ? ds.text : ds.accentText),
+                    ),
                   ),
                 ),
               PressBuilder(
                 onTap: onRemove,
                 haptic: true,
                 minTapSize: kMinTap,
-                semanticLabel: a.uploading ? 'Cancel upload of $label' : 'Remove $label',
+                semanticLabel: a.uploading
+                    ? context.l10n.messageCancelUploadOf(label)
+                    : context.l10n.messageRemove(label),
                 builder: (context, pressed) => SizedBox.square(
                   dimension: kMinTap,
                   child: Center(

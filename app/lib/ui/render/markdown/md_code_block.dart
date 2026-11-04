@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -183,7 +185,7 @@ class _MdCodeBlockState extends State<MdCodeBlock> {
     final hidden = total - mdCodeCap;
     final more = over
         ? MoreRow(
-            label: expanded ? '$total lines' : '$hidden more lines',
+            label: expanded ? context.l10n.messageLines('$total') : context.l10n.messageMoreLines('$hidden'),
             action: expanded ? 'Show less' : 'Show all',
             onTap: widget.onToggleExpanded ?? () {},
           )
@@ -258,14 +260,14 @@ class _Header extends StatelessWidget {
             PressBuilder(
               onTap: onWrap,
               selected: wrap,
-              semanticLabel: 'Wrap long lines',
+              semanticLabel: context.l10n.uiWrapLongLines,
               minTapSize: kMinTap,
               builder: (context, pressed) =>
                   Icon(LucideIcons.textWrap, size: 16, color: wrap || pressed ? context.ds.accentText : colors.muted),
             ),
           PressBuilder(
             onTap: onCopy,
-            semanticLabel: copied ? 'Copied' : 'Copy code',
+            semanticLabel: copied ? context.l10n.uiCopied : context.l10n.uiCopyCode,
             minTapSize: kMinTap,
             builder: (context, pressed) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xs),

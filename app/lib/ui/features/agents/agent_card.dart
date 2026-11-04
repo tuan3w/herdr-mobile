@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -29,15 +31,22 @@ const _previewRows = 5;
 /// The card's way to answer in words, at the end of its last line (the
 /// question's or the preview's). A quiet word, not the ↩ circle it
 /// replaced: the arrow read as undo or back.
-const _replyLabel = 'Reply…';
 
-/// The painted width of [_replyLabel] at each text scale: measured once, not
+/// The painted width of each localized reply label at each text scale: measured once, not
 /// on every preview refresh.
-final _replyWidths = <double, double>{};
+final _replyWidths = <(String, double), double>{};
 
-double _replyWidth(TextScaler scaler) => _replyWidths[scaler.scale(1)] ??= () {
+String _statusLabel(BuildContext context, AgentStatus status) => switch (status) {
+  AgentStatus.blocked => context.l10n.uiNeedsYou,
+  AgentStatus.working => context.l10n.uiWorking,
+  AgentStatus.done => context.l10n.uiDone,
+  AgentStatus.idle => context.l10n.uiIdle,
+  AgentStatus.unknown => context.l10n.uiUnknown,
+};
+
+double _replyWidth(TextScaler scaler, String label) => _replyWidths[(label, scaler.scale(1))] ??= () {
   final painter = TextPainter(
-    text: const TextSpan(text: _replyLabel, style: Type.labelStrong),
+    text: TextSpan(text: label, style: Type.labelStrong),
     textScaler: scaler,
     textDirection: TextDirection.ltr,
     maxLines: 1,
@@ -205,7 +214,7 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
     final chipsHeight = prompt == null ? 0.0 : ReplyChips.heightFor(prompt);
     final canReply = !a.stale;
     final scaler = MediaQuery.textScalerOf(context);
-    final replyWidth = _replyWidth(scaler);
+    final replyWidth = _replyWidth(scaler, context.l10n.uiReply);
     // What a line keeps clear at its end for `Reply…`.
     final replyRoom = replyWidth + Gap.sm;
     final stackTime = _stackTime(context);
@@ -230,7 +239,7 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
         onTap: sel.active ? _pick : _open,
         onLongPress: () => _pick(feedback: false),
         selected: sel.active ? sel.selected : null,
-        semanticLabel: _semanticLabel(prompt),
+        semanticLabel: _semanticLabel(prompt, context),
         builder: (context, pressed) => AnimatedContainer(
           duration: Motion.pressing(pressed),
           curve: Motion.easeOut,
@@ -343,9 +352,9 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
       child: IgnorePointer(
         ignoring: ignoring,
         child: TextAction(
-          label: _replyLabel,
+          label: context.l10n.uiReply,
           tone: TextActionTone.quiet,
-          semanticLabel: 'Reply to $title',
+          semanticLabel: context.l10n.messageReplyTo(title),
           onTap: _openSheet,
         ),
       ),
@@ -362,14 +371,16 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
     return _lineOf(prompt.subject.isEmpty ? Type.prompt : Mono.input, scaler);
   }
 
-  String _semanticLabel(PromptInfo? prompt) => [
-    _agent.status.label,
+  String _semanticLabel(PromptInfo? prompt, BuildContext context) => [
+    _statusLabel(context, _agent.status),
     _agent.title,
     if (_agent.subtitle.isNotEmpty) _agent.subtitle,
-    if (_agent.stale) 'offline',
+    if (_agent.stale) context.l10n.uiOffline,
     if (prompt != null)
-      'Asks: ${prompt.question.replaceAll('\n', ' ')}'
-          '${prompt.subject.isEmpty ? '' : '. ${prompt.subject.replaceAll('\n', ', ')}'}',
+      context.l10n.messageAsks(
+        '${prompt.question.replaceAll('\n', ' ')}'
+        '${prompt.subject.isEmpty ? '' : '. ${prompt.subject.replaceAll('\n', ', ')}'}',
+      ),
   ].join(', ');
 
   /// The card's inner edge: its corner radius, so content sits concentric.
@@ -452,7 +463,7 @@ class StateTime extends StatelessWidget {
         child: Text(text, maxLines: 1, softWrap: false, style: style),
       ),
     );
-    if (agent.stale) return label('offline', 'offline');
+    if (agent.stale) return label(context.l10n.uiOffline, context.l10n.uiOffline);
     if (agent.quietMinutes > 0) {
       // design-lint: allow(raw-duration) a count of minutes the machine measured, not a timer
       final quiet = Duration(minutes: agent.quietMinutes);
@@ -549,7 +560,7 @@ class _PreviewPanel extends StatelessWidget {
     } else if (tail.isEmpty) {
       content = Align(
         alignment: Alignment.bottomLeft,
-        child: Text('No output yet', style: _style.copyWith(color: ds.textMuted)),
+        child: Text(context.l10n.uiNoOutputYet, style: _style.copyWith(color: ds.textMuted)),
       );
     } else {
       content = Column(
@@ -660,7 +671,12 @@ class AgentCompactRow extends StatelessWidget {
             dim: agent.stale,
             // Merged from the glyph and the texts, plus what dimming only implies.
             semanticLabel: agent.stale
-                ? [agent.status.label, agent.title, if (agent.subtitle.isNotEmpty) agent.subtitle, 'offline'].join(', ')
+                ? [
+                    _statusLabel(context, agent.status),
+                    agent.title,
+                    if (agent.subtitle.isNotEmpty) agent.subtitle,
+                    context.l10n.uiOffline,
+                  ].join(', ')
                 : null,
             onTap: sel.active
                 ? pick

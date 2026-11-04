@@ -1,0 +1,2202 @@
+{
+  "@@locale": "en",
+  "uiDetailsTrimmed": "  Details trimmed",
+  "uiIsnTACommand": " isn’t a command.",
+  "uiAMessageToAnAgentThatYouSentAt": "A message to an agent that you sent at least twice becomes a chip. Learned and kept on this phone only.",
+  "uiANewFolderAndBranchNextToThisRepo": "A new folder and branch next to this repo",
+  "uiARunningAgentOpensAsItsTerminal": "A running agent opens as its terminal.",
+  "uiAPISocketPathOptional": "API socket path (optional)",
+  "uiAbout": "About",
+  "uiAccept": "Accept",
+  "uiAddAMachineRunningHerdrAndItsAgentsShow": "Add a machine running herdr and its agents show here.",
+  "uiAddAMachineThatRunsHerdrYouCanConnect": "Add a machine that runs herdr. You can connect as many as you like and see them all together.",
+  "uiAddAPhrase": "Add a phrase",
+  "uiAddMachine": "Add machine",
+  "uiAddWhatISendMost": "Add what I send most",
+  "uiAddYourFirstMachine": "Add your first machine",
+  "uiAdvanced": "Advanced",
+  "uiAgent": "Agent",
+  "uiAgents": "Agents",
+  "uiAlbums": "Albums",
+  "uiAll": "All",
+  "uiAllAgentsOnTheBoard": "All agents on the board",
+  "uiAllowItInThePhoneSSettingsToSee": "Allow it in the phone’s settings to see your photos here.",
+  "uiAlsoWhenAnAgentFinishes": "Also when an agent finishes",
+  "uiAnAgentSessionStartsOnAConnectedMachineCheck": "An agent session starts on a connected machine. Check Machines, then come back.",
+  "uiAndroidCouldnTOpenItUsuallyBecauseOfIts": "Android couldn’t open it, usually because of its format. Share it to open it in a player that can.",
+  "uiAndroidIsBlockingNotificationsForHerdrAllowThemIn": "Android is blocking notifications for herdr. Allow them in the system settings for this app.",
+  "uiAnswerInTheSession": "Answer in the session",
+  "uiApproveThisSignIn": "Approve this sign-in",
+  "uiAsksGithubComAboutTwiceADayWhileYou": "Asks github.com about twice a day while you use the app, with this app’s name and version. A download comes from GitHub’s file servers.",
+  "uiAttach": "Attach",
+  "uiAttachPhotosFromYourPhone": "Attach photos from your phone",
+  "uiAudio": "Audio",
+  "uiAuthentication": "Authentication",
+  "uiBack": "Back",
+  "uiBackToOptions": "Back to options",
+  "uiBackgroundWork": "Background work",
+  "uiBranch": "Branch",
+  "uiBrowseAll": "Browse all…",
+  "uiBrowseFiles": "Browse files",
+  "uiBrowseFolders": "Browse folders",
+  "uiBuildServer": "Build server",
+  "uiCamera": "Camera",
+  "uiCancel": "Cancel",
+  "uiCancelRequest": "Cancel request",
+  "uiChanged": "Changed",
+  "uiChangedInTheLastHour": "Changed in the last hour",
+  "uiChangedOnDisk": "Changed on disk",
+  "uiChangedRecently": "Changed recently",
+  "uiCheckAutomatically": "Check automatically",
+  "uiCheckForUpdates": "Check for updates",
+  "uiCheckout": "Checkout",
+  "uiCheckoutActions": "Checkout actions",
+  "uiChooseThisFolder": "Choose this folder",
+  "uiChooseThisFolderOrGoBack": "Choose this folder, or go back.",
+  "uiClear": "Clear",
+  "uiClearCache": "Clear cache",
+  "uiClearSearch": "Clear search",
+  "uiClose": "Close",
+  "uiClosePage": "Close page",
+  "uiClosePane": "Close pane",
+  "uiCloseThisPane": "Close this pane?",
+  "uiCloseWorkspace": "Close workspace",
+  "uiComponents": "Components",
+  "uiConnecting": "Connecting…",
+  "uiConnection": "Connection",
+  "uiContentThisAppCanTShow": "Content this app can’t show",
+  "uiContinue": "Continue",
+  "uiContinueAConversationAnAgentKept": "Continue a conversation an agent kept",
+  "uiCopied": "Copied",
+  "uiCopiesOfWhatYouLookedAtOnYourMachines": "Copies of what you looked at on your machines, kept so it isn’t downloaded twice. At most 192 MB, the oldest go first.",
+  "uiCopyAsMarkdown": "Copy as Markdown",
+  "uiCopyAsTSV": "Copy as TSV",
+  "uiCopyAuthorizedKeysCommand": "Copy authorized_keys command",
+  "uiCopyCode": "Copy code",
+  "uiCopyCommand": "Copy command",
+  "uiCopyLink": "Copy link",
+  "uiCopyMessage": "Copy message",
+  "uiCopyPath": "Copy path",
+  "uiCopyPublicKey": "Copy public key",
+  "uiCopySessionLink": "Copy session link",
+  "uiCopySource": "Copy source",
+  "uiCopyTable": "Copy table",
+  "uiCopyText": "Copy text",
+  "uiCouldnTCopyTheVideo": "Couldn’t copy the video",
+  "uiCouldnTReadPastSessions": "Couldn’t read past sessions",
+  "uiCouldnTReadTheLogRetry": "Couldn’t read the log. Retry",
+  "uiCouldnTRefresh": "Couldn’t refresh",
+  "uiCreateAWorkspaceInHerdrAndItWillShow": "Create a workspace in herdr and it will show up here.",
+  "uiCropped": "Cropped",
+  "uiDarkTerminal": "Dark terminal",
+  "uiDecline": "Decline",
+  "uiDecreaseFontSize": "Decrease font size",
+  "uiDelete": "Delete",
+  "uiDictate": "Dictate",
+  "uiDictateIn": "Dictate in",
+  "uiDisable": "Disable",
+  "uiDone": "Done",
+  "uiDown": "Down",
+  "uiDownloadProgress": "Download progress",
+  "uiDrawAgain": "Draw again",
+  "uiDuplicate": "Duplicate",
+  "uiEdit": "Edit",
+  "uiEditMachine": "Edit machine",
+  "uiEditQueuedMessage": "Edit queued message",
+  "uiEditQuickPhrase": "Edit quick phrase",
+  "uiEmptyFile": "Empty file",
+  "uiEnable": "Enable",
+  "uiEnter": "Enter",
+  "uiEverythingItWillChange": "Everything it will change",
+  "uiFile": "File",
+  "uiFileOptions": "File options",
+  "uiFiles": "Files",
+  "uiFilesAreUnavailableOnThisMachine": "Files are unavailable on this machine",
+  "uiFitLinesToTheScreenInsteadOfScrollingSideways": "Fit lines to the screen instead of scrolling sideways.",
+  "uiFolder": "Folder",
+  "uiFolderIsEmpty": "Folder is empty",
+  "uiFoldersFirst": "Folders first",
+  "uiForget": "Forget",
+  "uiGenerateKey": "Generate key",
+  "uiHeld": "Held",
+  "uiHideHiddenFiles": "Hide hidden files",
+  "uiHideKeys": "Hide keys",
+  "uiHidePassword": "Hide password",
+  "uiHoldForThePagesOfThisVisit": "Hold for the pages of this visit",
+  "uiHost": "Host",
+  "uiImage": "Image",
+  "uiIncreaseFontSize": "Increase font size",
+  "uiInstallHerdrHook": "Install herdr hook",
+  "uiItIsTheLastPaneInItsWorkspaceSo": "It is the last pane in its workspace, so the workspace closes too. What is running in it stops.",
+  "uiItWonTBeSentItsTextAndAttachments": "It won’t be sent. Its text and attachments are dropped.",
+  "uiJumpToLatest": "Jump to latest",
+  "uiKeepItDarkWhenTheAppIsLight": "Keep it dark when the app is light.",
+  "uiKeyPassphraseIfAny": "Key passphrase (if any)",
+  "uiKit": "Kit",
+  "uiLeaveBlankToKeepTheSavedKey": "Leave blank to keep the saved key",
+  "uiLeaveBlankToKeepTheSavedPassword": "Leave blank to keep the saved password",
+  "uiLicenses": "Licenses",
+  "uiLink": "Link",
+  "uiList": "List",
+  "uiLiveOutputFromTheTerminal": "Live output from the terminal",
+  "uiLoadEarlierMessages": "Load earlier messages",
+  "uiLoadMore": "Load more",
+  "uiLoading": "Loading",
+  "uiLoadingTheSubagentSLog": "Loading the subagent’s log",
+  "uiLook": "Look",
+  "uiMachine": "Machine",
+  "uiMachines": "Machines",
+  "uiMade": "Made",
+  "uiMadeInThisSession": "Made in this session",
+  "uiMainCheckout": "Main checkout",
+  "uiManage": "Manage",
+  "uiManageWhichPhotosHerdrCanSee": "Manage which photos herdr can see",
+  "uiMarkReviewed": "Mark reviewed",
+  "uiMessage": "Message",
+  "uiModeAndModel": "Mode and model",
+  "uiModified": "Modified",
+  "uiName": "Name",
+  "uiNamedByHerdr": "Named by herdr",
+  "uiNeedsYou": "Needs you",
+  "uiNeedsYouInTheTerminal": "Needs you in the terminal",
+  "uiNewAgentSession": "New agent session",
+  "uiNewAgentSessionHere": "New agent session here",
+  "uiNewQuickPhrase": "New quick phrase",
+  "uiNewTabHere": "New tab here",
+  "uiNewWorktree": "New worktree…",
+  "uiNewWorktreeValue": "New worktree",
+  "uiNextAgent": "Next agent",
+  "uiNoAgentInstalled": "No agent installed",
+  "uiNoAgentsRunning": "No agents running",
+  "uiNoFoldersHere": "No folders here",
+  "uiNoHeadline": "No headline",
+  "uiNoMachineIsOnline": "No machine is online",
+  "uiNoMachinesYet": "No machines yet",
+  "uiNoMatches": "No matches",
+  "uiNoPastSessions": "No past sessions",
+  "uiNoPhotosYet": "No photos yet",
+  "uiNoWorkspaces": "No workspaces",
+  "uiNoneYet": "None yet",
+  "uiNotDone": "Not done",
+  "uiNotListed": "Not listed",
+  "uiNothingChangedInTheLastHour": "Nothing changed in the last hour",
+  "uiNothingSaidYet": "Nothing said yet",
+  "uiNotifications": "Notifications",
+  "uiNotifyMeWhenAnAgentNeedsMe": "Notify me when an agent needs me",
+  "uiOneMessageForEveryAgentBelow": "One message for every agent below",
+  "uiOnlyHiddenFiles": "Only hidden files",
+  "uiOnlyThisFolderIsCheckedNotTheFoldersInside": "Only this folder is checked, not the folders inside it.",
+  "uiOpenATerminal": "Open a terminal",
+  "uiOpenAgentsAs": "Open agents as",
+  "uiOpenDiagram": "Open diagram",
+  "uiOpenFull": "Open full",
+  "uiOpenInBrowser": "Open in browser",
+  "uiOpenOnGitHub": "Open on GitHub",
+  "uiOpenPage": "Open page",
+  "uiOpenSignInPage": "Open sign-in page",
+  "uiOpenTerminal": "Open terminal",
+  "uiOpenTheSystemPicker": "Open the system picker",
+  "uiOutputIsStale": "Output is stale",
+  "uiPageOptions": "Page options",
+  "uiPaneOptions": "Pane options",
+  "uiPassword": "Password",
+  "uiPastSessions": "Past sessions",
+  "uiPastSessionsAreReadFromTheMachineThatRan": "Past sessions are read from the machine that ran them. Check Machines, then come back.",
+  "uiPasteFromClipboard": "Paste from clipboard",
+  "uiPath": "Path",
+  "uiPause": "Pause",
+  "uiPermissions": "Permissions",
+  "uiPhotoAccessIsOff": "Photo access is off",
+  "uiPhotoInfo": "Photo info",
+  "uiPhotos": "Photos",
+  "uiPhotosCanTBeListed": "Photos can’t be listed",
+  "uiPhotosStayOnYourPhoneUntilYouAttachThem": "Photos stay on your phone until you attach them.",
+  "uiPhrase": "Phrase",
+  "uiPickAnotherMachineAbove": "Pick another machine above.",
+  "uiPicked": "Picked",
+  "uiPicture": "Picture",
+  "uiPinned": "Pinned",
+  "uiPlan": "Plan",
+  "uiPlay": "Play",
+  "uiPlayAgain": "Play again",
+  "uiPort": "Port",
+  "uiPretty": "Pretty",
+  "uiPreviousAgent": "Previous agent",
+  "uiPreviousPage": "Previous page",
+  "uiPrivateKeyPEMOpenSSH": "Private key (PEM / OpenSSH)",
+  "uiQueued": "Queued",
+  "uiQuickPhrases": "Quick phrases",
+  "uiReadAll": "Read all",
+  "uiReadEarlier": "Read earlier",
+  "uiRecent": "Recent",
+  "uiRemove": "Remove",
+  "uiRemoveQueuedMessage": "Remove queued message",
+  "uiRemoveThisQueuedMessage": "Remove this queued message?",
+  "uiRemoveWorktree": "Remove worktree",
+  "uiRename": "Rename",
+  "uiRenamePane": "Rename pane",
+  "uiRenameWorkspace": "Rename workspace",
+  "uiResume": "Resume",
+  "uiRetry": "Retry",
+  "uiReviewed": "Reviewed",
+  "uiSave": "Save",
+  "uiSaveOrShare": "Save or share",
+  "uiSaveToGallery": "Save to gallery",
+  "uiSaveToPhone": "Save to phone",
+  "uiSearch": "Search",
+  "uiSearchSessions": "Search sessions",
+  "uiSelectThisPhoto": "Select this photo",
+  "uiSend": "Send",
+  "uiSendAnyway": "Send anyway",
+  "uiSendAsMessage": "Send as message",
+  "uiSession": "Session",
+  "uiSessionOptions": "Session options",
+  "uiSessionOverview": "Session overview",
+  "uiSettings": "Settings",
+  "uiShareOrSave": "Share or save…",
+  "uiShare": "Share…",
+  "uiShowAllFiles": "Show all files",
+  "uiShowAnswersAtAnEvenPaceNotInBursts": "Show answers at an even pace, not in bursts.",
+  "uiShowAsPage": "Show as page",
+  "uiShowAsText": "Show as text",
+  "uiShowChat": "Show chat",
+  "uiShowHiddenFiles": "Show hidden files",
+  "uiShowKeys": "Show keys",
+  "uiShowLess": "Show less",
+  "uiShowMore": "Show more",
+  "uiShowPassword": "Show password",
+  "uiShowPublicKey": "Show public key",
+  "uiShowTerminal": "Show terminal",
+  "uiSignIn": "Sign in",
+  "uiSignInOnTheMachine": "Sign in on the machine",
+  "uiSize": "Size",
+  "uiSkipped": "Skipped",
+  "uiSmoothText": "Smooth text",
+  "uiSortBy": "Sort by",
+  "uiSourceCode": "Source code",
+  "uiStart": "Start",
+  "uiStartAndOpen": "Start and open",
+  "uiStartOneInHerdrAndItShowsHere": "Start one in herdr and it shows here.",
+  "uiStarting": "Starting…",
+  "uiStop": "Stop",
+  "uiStopAll": "Stop all",
+  "uiStopDictating": "Stop dictating",
+  "uiStopping": "Stopping…",
+  "uiStorage": "Storage",
+  "uiSubagent": "Subagent",
+  "uiSubagentGone": "Subagent gone",
+  "uiSubagents": "Subagents",
+  "uiTable": "Table",
+  "uiTailscaleNeedsYouToApproveThisSignIn": "Tailscale needs you to approve this sign-in.",
+  "uiTakeAPhoto": "Take a photo",
+  "uiTakeOneWithTheCameraOrPickAFile": "Take one with the camera, or pick a file from the Files tab.",
+  "uiTalksToHerdrOverSSHAndSendsNothingAnywhere": "Talks to herdr over SSH and sends nothing anywhere else. Dictation uses your phone’s own speech service.",
+  "uiTalksToHerdrOverSSHTheOnlyOtherPlace": "Talks to herdr over SSH. The only other place it contacts is GitHub, to look for a new version and, when you tap Download, to fetch it. Dictation uses your phone’s own speech service.",
+  "uiTellTheAgentWhatToDo": "Tell the agent what to do.",
+  "uiTerminalPreview": "Terminal preview",
+  "uiTestConnection": "Test connection",
+  "uiText": "Text",
+  "uiThatMachineWentOffline": "That machine went offline",
+  "uiTheAgentNoLongerListsThisSubagent": "The agent no longer lists this subagent.",
+  "uiTheMachineDidnTAnswer": "The machine didn’t answer.",
+  "uiTheMessagesLearnedFromWhatYouSendAreDeleted": "The messages learned from what you send are deleted from this phone. They can be learned again.",
+  "uiThePlan": "The plan",
+  "uiTheSavedConnectionAndItsCredentialsAreDeletedFrom": "The saved connection and its credentials are deleted from this phone. Agents on the machine keep running.",
+  "uiTheme": "Theme",
+  "uiTheyShowAQuestionTheTextWouldBeTyped": "They show a question. The text would be typed into it.",
+  "uiThinking": "Thinking",
+  "uiThisFolder": "This folder",
+  "uiThisIsTheFirstPageOfThisVisit": "This is the first page of this visit",
+  "uiThisMachineDoesnTAllowBrowsingFiles": "This machine doesn’t allow browsing files.",
+  "uiThisPaneWasClosed": "This pane was closed",
+  "uiThisPhoneCanTPlayThisVideo": "This phone can’t play this video",
+  "uiThisPhoneWouldNotShowItsLibraryToHerdr": "This phone would not show its library to herdr. The system picker still works.",
+  "uiTokens": "Tokens",
+  "uiUp": "Up",
+  "uiUpdateAvailable": "Update available",
+  "uiUserName": "User name",
+  "uiUsername": "Username",
+  "uiWaitingForAnAnswer": "Waiting for an answer",
+  "uiWaitingForAnAnswerSkipped": "Waiting for an answer (skipped)",
+  "uiWhatIsRunningInItStopsThisCanT": "What is running in it stops. This can’t be undone.",
+  "uiWhatSNew": "What’s new",
+  "uiWhere": "Where",
+  "uiWhileAgentsWorkOrAPageFromAMachine": "While agents work, or a page from a machine is open, herdr keeps a quiet “Watching” notice so Android keeps the connection alive. Notifications clear when you open the app.",
+  "uiWholeDiagram": "Whole diagram",
+  "uiWorkspaceActions": "Workspace actions",
+  "uiWrap": "Wrap",
+  "uiWrapLines": "Wrap lines",
+  "uiWrapLongLines": "Wrap long lines",
+  "uiDetached": "detached",
+  "uiEGRunTheTests": "e.g. run the tests",
+  "uiEntries": "entries",
+  "uiEntry": "entry",
+  "uiFailed": "failed",
+  "uiHerdrSession": "herdr session",
+  "uiLine": "line",
+  "uiMoreFile": "more file",
+  "uiNoneChosen": "none chosen",
+  "uiNotOpenInHerdr": "not open in herdr",
+  "uiNotSelected": "not selected",
+  "uiNumber": "number",
+  "uiOff": "off",
+  "uiOffline": "offline",
+  "uiOmpClaudeCodeAndCodexOpenAsAChat": "omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it can’t find, opens as a terminal.",
+  "uiOn": "on",
+  "uiThisMachine": "this machine",
+  "uiWholeNumber": "whole number",
+  "messageMore": "  +{p0} more",
+  "@messageMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOf": "  {p0} of {p1}",
+  "@messageOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTOneOfSCommands": " isn’t one of {p0}’s commands.",
+  "@messageIsnTOneOfSCommands": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHerdr": " · herdr {p0}",
+  "@messageHerdr": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOn": " · {p0}:1 on {p1}",
+  "@messageOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAlbum": "Album: {p0}",
+  "@messageAlbum": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAppOnPort": "App on port {p0}",
+  "@messageAppOnPort": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAttach": "Attach ({p0})",
+  "@messageAttach": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAttachAttached": "Attach, {p0} attached",
+  "@messageAttachAttached": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageBackgroundWork": "Background work · {p0}",
+  "@messageBackgroundWork": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCancelUploadOf": "Cancel upload of {p0}",
+  "@messageCancelUploadOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCheckout": "Checkout, {p0}",
+  "@messageCheckout": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseAtLeast": "Choose at least {p0}",
+  "@messageChooseAtLeast": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseUpTo": "Choose up to {p0}",
+  "@messageChooseUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseTo": "Choose {p0} to {p1}",
+  "@messageChooseTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageClose": "Close {p0}?",
+  "@messageClose": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirmStopAllActivateAgainToConfirm": "Confirm: Stop all {p0}, activate again to confirm",
+  "@messageConfirmStopAllActivateAgainToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirmSwitchToActivateAgainToConfirm": "Confirm: switch to {p0}, activate again to confirm",
+  "@messageConfirmSwitchToActivateAgainToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirm": "Confirm: {p0}",
+  "@messageConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopy": "Copy {p0}",
+  "@messageCopy": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopying": "Copying {p0}",
+  "@messageCopying": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingOf": "Copying {p0} of {p1}",
+  "@messageCopyingOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingToThePhone": "Copying {p0} to the phone",
+  "@messageCopyingToThePhone": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeletesTheFolderOnIfItHasUncommitted": "Deletes the folder {p0} on {p1}. {p2}{p3}{p4}If it has uncommitted changes, git refuses and nothing is deleted.",
+  "@messageDeletesTheFolderOnIfItHasUncommitted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeselectPhoto": "Deselect photo {p0}",
+  "@messageDeselectPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeselect": "Deselect {p0}",
+  "@messageDeselect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDiagram": "Diagram, {p0}",
+  "@messageDiagram": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDownload": "Download {p0}",
+  "@messageDownload": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFindIn": "Find in {p0}",
+  "@messageFindIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageForgetRemembered": "Forget {count} remembered {count, plural, =1{message} other{messages}}",
+  "@messageForgetRemembered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageForgetRemembered30": "Forget {count} remembered {count, plural, =1{message} other{messages}}?",
+  "@messageForgetRemembered30": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageInstall": "Install {p0}",
+  "@messageInstall": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageItsPanesAndWhateverRunsInThemStop": "Its {p0} panes and whatever runs in them stop. This can’t be undone.",
+  "@messageItsPanesAndWhateverRunsInThemStop": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageListIsFull": "List is full ({p0})",
+  "@messageListIsFull": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLoadingPhoto": "Loading photo, {p0}",
+  "@messageLoadingPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMachine": "Machine, {p0}",
+  "@messageMachine": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMade": "Made {p0}+",
+  "@messageMade": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreBelowLines": "More below · {p0} lines",
+  "@messageMoreBelowLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreOptionsFor": "More options for {p0}",
+  "@messageMoreOptionsFor": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNewAgentSessionIn": "New agent session in {p0}",
+  "@messageNewAgentSessionIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNoneOfIsInstalledOn": "None of {p0} is installed on {p1}.",
+  "@messageNoneOfIsInstalledOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInTheSessionsListedMatches": "Nothing in the sessions listed matches “{p0}”.",
+  "@messageNothingInTheSessionsListedMatches": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInMatches": "Nothing in {p0} matches “{p1}”.",
+  "@messageNothingInMatches": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInYet": "Nothing in {p0} yet.{p1}",
+  "@messageNothingInYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingRememberedForHereYet": "Nothing remembered for {p0} here yet.",
+  "@messageNothingRememberedForHereYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingRememberedForInThisFolderYet": "Nothing remembered for {p0} in this folder yet.",
+  "@messageNothingRememberedForInThisFolderYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpenATerminalOn": "Open a terminal on {p0}",
+  "@messageOpenATerminalOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpen": "Open {p0}",
+  "@messageOpen": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpenAtLine": "Open {p0} at line {p1}",
+  "@messageOpenAtLine": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePort": "Port {p0}",
+  "@messagePort": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageReleaseNotesUpTo": "Release notes up to {p0}",
+  "@messageReleaseNotesUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemove": "Remove {p0}",
+  "@messageRemove": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemoveFromRecentFiles": "Remove {p0} from recent files",
+  "@messageRemoveFromRecentFiles": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemove53": "Remove {p0}?",
+  "@messageRemove53": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRetryStopping": "Retry stopping {p0}",
+  "@messageRetryStopping": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRetryUploadOf": "Retry upload of {p0}",
+  "@messageRetryUploadOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSearch": "Search {p0}",
+  "@messageSearch": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectPhoto": "Select photo {p0}",
+  "@messageSelectPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelect": "Select {p0}",
+  "@messageSelect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectedNumberTapToDeselect": "Selected, number {p0}. Tap to deselect",
+  "@messageSelectedNumberTapToDeselect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSetUpChatFor": "Set up chat for {p0}",
+  "@messageSetUpChatFor": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowLessAgents": "Show less {p0} agents",
+  "@messageShowLessAgents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowMore": "Show {p0} more",
+  "@messageShowMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSortBy": "Sort by {p0}",
+  "@messageSortBy": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageStopAllHoldToConfirm": "Stop all {p0}, hold to confirm",
+  "@messageStopAllHoldToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagent": "Subagent · {p0}",
+  "@messageSubagent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagents": "Subagents · {p0}",
+  "@messageSubagents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagents67": "Subagents · {p0}{p1}",
+  "@messageSubagents67": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTerminalOn": "Terminal on {p0}.",
+  "@messageTerminalOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTerminalPreview": "Terminal preview: {p0}",
+  "@messageTerminalPreview": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentSaid": "The agent said: {p0}",
+  "@messageTheAgentSaid": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheChatNeedsHerdrToKnowWhichSession": "The chat needs herdr to know which session this agent runs. This adds herdr’s hook to {p0} on {p1}. It applies to sessions started or resumed afterwards: resume this one in its terminal, when it is idle.{p2}",
+  "@messageTheChatNeedsHerdrToKnowWhichSession": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheNotesOfEveryReleaseUpTo": "The notes of every release up to {p0}",
+  "@messageTheNotesOfEveryReleaseUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisFolder": "This folder, {p0}",
+  "@messageThisFolder": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWhatSNewIn": "What’s new in {p0}",
+  "@messageWhatSNewIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtLeast": "at least {p0}",
+  "@messageAtLeast": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtMost": "at most {p0}",
+  "@messageAtMost": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAgentsFolded": "{p0} agents, folded{p1}",
+  "@messageAgentsFolded": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDoesnTKeepAListThePhoneCan": "{p0} doesn’t keep a list the phone can read.",
+  "@messageDoesnTKeepAListThePhoneCan": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHasNoContent": "{p0} has no content.",
+  "@messageHasNoContent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHas": "{p0} has {p1}.",
+  "@messageHas": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsInPlaces": "{p0} is in {p1} places",
+  "@messageIsInPlaces": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLines": "{p0} lines",
+  "@messageLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMade83": "{p0} made",
+  "@messageMade83": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMadeSoFarEarlierHistoryNotRead": "{p0} made so far, earlier history not read",
+  "@messageMadeSoFarEarlierHistoryNotRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore85": "{p0} more",
+  "@messageMore85": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreLines": "{p0} more lines",
+  "@messageMoreLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreQueued": "{p0} more queued",
+  "@messageMoreQueued": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreRows": "{p0} more rows",
+  "@messageMoreRows": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore89": "{p0} more {p1}",
+  "@messageMore89": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore90": "{p0} more…",
+  "@messageMore90": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNeedsAToken": "{p0} needs a token",
+  "@messageNeedsAToken": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNew": "{p0} new",
+  "@messageNew": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNewJumpToLatest": "{p0} new, jump to latest",
+  "@messageNewJumpToLatest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNotConnected": "{p0} not connected",
+  "@messageNotConnected": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRows": "{p0} rows",
+  "@messageRows": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelected": "{p0} selected",
+  "@messageSelected": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTo": "{p0} to {p1}",
+  "@messageTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorking": "{p0} working",
+  "@messageWorking": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMs": "{p0} {p1} ms",
+  "@messageMs": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageInstalled": "{p0} · Installed",
+  "@messageInstalled": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTopDown": "{p0} · top-down",
+  "@messageTopDown": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCouldnTBeLoadedTapToRetry": "{p0}, couldn’t be loaded, tap to retry",
+  "@messageCouldnTBeLoadedTapToRetry": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDangerousNeedsHoldingOrASecondActivation": "{p0}, dangerous, needs holding or a second activation: {p1}",
+  "@messageDangerousNeedsHoldingOrASecondActivation": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageJumpToLatest": "{p0}, jump to latest",
+  "@messageJumpToLatest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNeedsHoldingOrASecondActivation": "{p0}, needs holding or a second activation",
+  "@messageNeedsHoldingOrASecondActivation": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePlaysHere": "{p0}, plays here",
+  "@messagePlaysHere": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectThem": "{p0}, select them",
+  "@messageSelectThem": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRunning": "{p0}, {p1}, running",
+  "@messageRunning": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDangerous": "{p0}: {p1}, dangerous",
+  "@messageDangerous": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageElevated": "{p0}: {p1}, elevated",
+  "@messageElevated": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOnBg": "{p0}:1 on bg",
+  "@messageOnBg": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiTheAgentAskedYouToOpenAWebPage": "The agent asked you to open a web page. This app doesn’t open links an agent asks for, so you can only decline.",
+  "uiMarkedSecretByTheAgent": "Marked secret by the agent",
+  "uiTheAgentIsGoingOnWithoutAnAnswer": "The agent is going on without an answer.",
+  "uiEarlierMessagesAreNotShownThePhoneReadsThe": "Earlier messages are not shown: the phone reads the last 64 MB of a log.",
+  "uiNothingHasComeUpInThisSessionYet": "Nothing has come up in this session yet.",
+  "uiCouldnTReadTheEarlierPartOfThisChat": "Couldn’t read the earlier part of this chat. These are the newest.",
+  "uiOnlyTheEndOfThisChatHasBeenRead": "Only the end of this chat has been read.",
+  "uiAttachment": "Attachment",
+  "uiLiveFromTerminal": "Live from terminal",
+  "uiAskedTo": "Asked to",
+  "uiCouldnTReadTheLogTapToRetry": "Couldn’t read the log · Tap to retry",
+  "uiNoOutput": "No output.",
+  "uiWaitingForOutput": "Waiting for output…",
+  "uiSubagentsFromEarlierInThisChatAreNotListed": "Subagents from earlier in this chat are not listed.",
+  "uiTheFileWasDeleted": "The file was deleted.",
+  "uiNoChangesToShow": "No changes to show.",
+  "uiOpen": "Open",
+  "uiHere": "Here",
+  "uiNoOutputYet": "No output yet",
+  "uiAllClear": "All clear",
+  "uiLoading24": "Loading…",
+  "uiLetGoToOpen": "Let go to open",
+  "uiHerdrIsReachedOverSSHNothingIsExposedPublicly": "herdr is reached over SSH. Nothing is exposed publicly and no relay is involved.",
+  "uiNothingIsStoredTailscaleAlreadyKnowsThisPhoneSo": "Nothing is stored. Tailscale already knows this phone, so no key or password is needed. If your tailnet asks for an extra check, the app shows a link to approve the sign-in.",
+  "uiPublicKey": "Public key",
+  "uiThisReplacesTheKeyThisMachineUsesNowRun": "This replaces the key this machine uses now. Run the command on the machine first, then Test connection, then Save.",
+  "uiRunTheCommandOnceOnTheMachineThenTest": "Run the command once on the machine, then test the connection. If you keep keys elsewhere (Tailscale, GitHub), paste the public key there instead.",
+  "uiShareItToOpenItInAnAppMade": "Share it to open it in an app made for big files.",
+  "uiItIsCopiedToThePhoneFirstThenIt": "It is copied to the phone first, then it plays from there.",
+  "uiItPlaysWhenTheCopyIsDone": "It plays when the copy is done.",
+  "uiReloading": "Reloading",
+  "uiReload": "Reload",
+  "uiContents": "Contents",
+  "uiNewestFirst": "Newest first",
+  "uiSelected": "Selected",
+  "uiSelect": "Select",
+  "uiFilesYouAttachFromThePhoneAreListedHere": "Files you attach from the phone are listed here.",
+  "uiChooseFiles": "Choose files…",
+  "uiOpensThePhoneSFilePicker": "Opens the phone’s file picker",
+  "uiFontSize": "Font size",
+  "uiOneTapChipsAboveTheMessageBoxWhileIt": "One-tap chips above the message box while it is empty and focused. A tap fills the box; you still press send.",
+  "uiNoPhrasesYetSoNoChips": "No phrases yet, so no chips.",
+  "uiCouldnTPlayTheClipCheckTheConnectionThen": "Couldn’t play the clip. Check the connection, then Retry.",
+  "uiAndroidAsksBeforeItInstalls": "Android asks before it installs.",
+  "uiChecksumMatchedTheFileTheReleaseLists": "Checksum matched: the file the release lists",
+  "uiNoNotesCameWithThisRelease": "No notes came with this release.",
+  "uiTheReleaseNotesCouldnTBeReadOnThis": "The release notes couldn’t be read on this phone.",
+  "uiBlockedByAndroid": "Blocked by Android",
+  "uiOff69": "Off",
+  "uiWhenAnAgentNeedsMeOrFinishes": "When an agent needs me or finishes",
+  "uiWhenAnAgentNeedsMe": "When an agent needs me",
+  "uiCache": "Cache",
+  "uiCacheEmpty": "Cache · empty",
+  "uiChooseAMachine": "Choose a machine",
+  "uiThatMachineWentOfflinePickAnother": "That machine went offline. Pick another.",
+  "uiOpenOnThisMachine": "Open on this machine",
+  "uiCheckingWhatIsInstalled": "Checking what is installed…",
+  "uiOneLanguageAtATimeThePhoneSSpeech": "One language at a time. The phone’s speech service may send what you say to Google, unless an offline language is installed in it.",
+  "uiThisMachineIsNoLongerSaved": "This machine is no longer saved",
+  "uiHold": "Hold",
+  "uiLight": "Light",
+  "uiDark": "Dark",
+  "uiSystem": "System",
+  "uiChat": "Chat",
+  "uiTerminal": "Terminal",
+  "uiOpensAsChat": "Opens as chat",
+  "uiOpensAsTerminal": "Opens as terminal",
+  "uiWorking": "Working",
+  "uiIdle": "Idle",
+  "uiUnknown": "Unknown",
+  "uiToReview": "To review",
+  "uiCouldNotStart": "Could not start",
+  "phraseCount": "{count, plural, =1{1 phrase} other{{count} phrases}}",
+  "@phraseCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "uiNew": "New",
+  "uiEverythingItWillRun": "Everything it will run",
+  "uiNewConversationStartedThePreviousOneIsStillOn": "New conversation started. The previous one is still on the board.",
+  "uiMoreCharacter": "more character",
+  "uiOpenConversation": "Open conversation",
+  "uiOpenSummary": "Open summary",
+  "uiCallDetails": "Call details",
+  "uiMarkedReviewed": "Marked reviewed",
+  "messageReviewedCount": "{count, plural, =1{Marked reviewed} other{Marked {count} reviewed}}",
+  "@messageReviewedCount": {
+    "description": "One or several finished agents marked reviewed, with Undo.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "uiCouldnTOpenOnThisPhoneNoBrowserCould": "Couldn’t open on this phone: no browser could open it.",
+  "uiReplaceTheCurrentKey": "Replace the current key?",
+  "uiThePrivateKeyInThisFormIsReplacedIf": "The private key in this form is replaced. If you haven’t kept a copy elsewhere, it is gone for good.",
+  "uiTheKeySavedForThisMachineIsReplacedWhen": "The key saved for this machine is replaced when you save. If you have not kept a copy elsewhere, it is gone for good.",
+  "uiGenerateNewKey": "Generate new key",
+  "uiDiscardTheNewKey": "Discard the new key?",
+  "uiDiscardYourChanges": "Discard your changes?",
+  "uiThisKeyWasMadeOnThisPhoneAndIs": "This key was made on this phone and is saved nowhere else. If its public key is already on the machine, this phone can’t log in with it.",
+  "uiTheKeyInThisFormAndEverythingElseEntered": "The key in this form and everything else entered here aren’t saved.",
+  "uiWhatYouEnteredHereIsnTSaved": "What you entered here isn’t saved.",
+  "uiDiscard": "Discard",
+  "uiTheNewKeyCouldnTConnect": "The new key couldn’t connect",
+  "uiKeepTheOldKey": "Keep the old key",
+  "uiSaveAnyway": "Save anyway",
+  "uiIfItsPublicKeyIsnTOnTheMachine": "If its public key isn’t on the machine yet, saving now locks this phone out of it, and the old key is gone.",
+  "uiCopyContents": "Copy contents",
+  "uiPhraseDeleted": "Phrase deleted",
+  "uiNothingToClear": "Nothing to clear",
+  "uiThePageComesBackByItselfWhenHerdrIs": "The page comes back by itself when herdr is connected again.",
+  "uiThatLinkIsAFileAndHerdrDoesnT": "That link is a file, and herdr doesn’t download files. Open in browser (⋯) can.",
+  "uiPagesInThisVisit": "Pages in this visit",
+  "uiForAPageThatNeedsYourBrowserSuchAs": "For a page that needs your browser, such as a sign-in. The browser’s copy works only while this screen stays open.",
+  "uiTheBranchStays": "The branch stays. ",
+  "uiReadAsChat": "Read as chat…",
+  "uiCopyTitle": "Copy title",
+  "uiCodexAsksYouToTrustTheHookTheFirst": " Codex asks you to trust the hook the first time.",
+  "uiCouldnTCopyTheClipboardRefusedIt": "Couldn’t copy: the clipboard refused it.",
+  "messageCouldnTDrawThis": "Couldn’t draw this · {p0}",
+  "@messageCouldnTDrawThis": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreWaiting": "{p0} more waiting",
+  "@messageMoreWaiting": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentMarkedAsSecretWhatYouType": "The agent marked {p0} as secret. What you type here goes to the agent in plain text; it isn’t hidden. Don’t enter a password or key unless you accept that.",
+  "@messageTheAgentMarkedAsSecretWhatYouType": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisAppCanTShowAFieldOf": "{p0}: this app can’t show a field of type “{p1}”.",
+  "@messageThisAppCanTShowAFieldOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentGoesOnWithoutAnAnswerWithin": "The agent goes on without an answer within {p0}.",
+  "@messageTheAgentGoesOnWithoutAnAnswerWithin": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtMostAttachmentsPerMessage": "At most {p0} attachments per message.",
+  "@messageAtMostAttachmentsPerMessage": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFromSubagent": "From subagent: {p0}",
+  "@messageFromSubagent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLookClosely": "Look closely: {p0}",
+  "@messageLookClosely": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSignInTo": "Sign in to {p0}",
+  "@messageSignInTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOfTokensOfContext": "{p0} of {p1} tokens · {p2}% of context",
+  "@messageOfTokensOfContext": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSummaryOnlySendsASummaryOfItsSubagents": "Summary only. {p0} sends a summary of its subagents, not their conversation.",
+  "@messageSummaryOnlySendsASummaryOfItsSubagents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsBackIn": "{p0} is back in {p1}",
+  "@messageIsBackIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCanTReopenAPastSessionFromThe": "{p0} can’t reopen a past session from the phone.",
+  "@messageCanTReopenAPastSessionFromThe": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowingTheNewest": "Showing the newest {p0}",
+  "@messageShowingTheNewest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageReplyTo": "Reply to {p0}",
+  "@messageReplyTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOf88": "{p0} of {p1}",
+  "@messageOf88": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowAllPanes": "Show all {p0} panes",
+  "@messageShowAllPanes": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePressScalePanelButtonChipIconTravelDpEnter": "PressScale: panel {p0}, button {p1}, chip {p2}, icon {p3}. Travel {p4} dp, enter scale {p5}, roll {p6} of the font size.",
+  "@messagePressScalePanelButtonChipIconTravelDpEnter": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      },
+      "p5": {
+        "type": "String"
+      },
+      "p6": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingToThePhone104": "Copying to the phone · {p0}",
+  "@messageCopyingToThePhone104": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCouldnTLoadMore": "Couldn’t load more: {p0}",
+  "@messageCouldnTLoadMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowingTheFirstThatIsAsMuchAs": "Showing the first {p0}{p1}. That is as much as the viewer opens.",
+  "@messageShowingTheFirstThatIsAsMuchAs": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowing": "Showing {p0}{p1}",
+  "@messageShowing": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFirstBytes": "First {p0} bytes",
+  "@messageFirstBytes": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageUpdateTo": "Update to {p0}",
+  "@messageUpdateTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDownloadingOf": "Downloading {p0} of {p1}",
+  "@messageDownloadingOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFromGithubComYouHave": "From github.com/{p0} · you have {p1}",
+  "@messageFromGithubComYouHave": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePt": "{p0} · {p1} pt",
+  "@messagePt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCleared": "Cleared {p0}",
+  "@messageCleared": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCache": "Cache · {p0}",
+  "@messageCache": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageVersion": "Version {p0}",
+  "@messageVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisPageOnAsksForAUserName": "This page on {p0} asks for a user name and password.",
+  "@messageThisPageOnAsksForAUserName": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisPageOnAsksForAUserName148": "This page on {p0} asks for a user name and password: {p1}",
+  "@messageThisPageOnAsksForAUserName148": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLostTheConnectionTo": "Lost the connection to {p0}",
+  "@messageLostTheConnectionTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTFrom": "{p0} isn’t from {p1}.",
+  "@messageIsnTFrom": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsAPortOpenItsLinkFromThe": "{p0} is a {p1} port. Open its link from the terminal if you mean to.",
+  "@messageIsAPortOpenItsLinkFromThe": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTOpenOnThisPhone": "{p0} isn’t open on this phone.",
+  "@messageIsnTOpenOnThisPhone": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHerdrDoesnTOpenLinksFromAPage": "herdr doesn’t open {p0}: links from a page.",
+  "@messageHerdrDoesnTOpenLinksFromAPage": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageStartedIn": "{p0} started in {p1} · {p2}",
+  "@messageStartedIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheBranchStays": "The branch {p0} stays. ",
+  "@messageTheBranchStays": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkingThereWillStop": "{count, plural, =1{1 agent working there will stop. } other{{count} agents working there will stop. }}",
+  "@messageWorkingThereWillStop": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageRunningThereWillLoseTheFolder": "{count, plural, =1{1 phone session running there will lose the folder. } other{{count} phone sessions running there will lose the folder. }}",
+  "@messageRunningThereWillLoseTheFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageRemoved": "Removed {p0}",
+  "@messageRemoved": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyPaneId": "Copy pane id {p0}",
+  "@messageCopyPaneId": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageInstalledOnResumeTheSessionToReadIt": "Installed on {p0}. Resume the session to read it as a chat.",
+  "@messageInstalledOnResumeTheSessionToReadIt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisHerdrIsTooOldToInstallIt": "This herdr is too old to install it. Run herdr integration install {p0} on the machine.",
+  "@messageThisHerdrIsTooOldToInstallIt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiPrivateKey": "Private key",
+  "uiRendered": "Rendered",
+  "uiSource": "Source",
+  "uiRequired": "Required",
+  "uiInvalid": "Invalid",
+  "uiPastePrivateKey": "Paste your private key",
+  "uiSessionNameError": "Letters, digits, . _ - only",
+  "uiReply": "Reply…",
+  "machineCount": "{count, plural, =1{1 machine} other{{count} machines}}",
+  "@machineCount": {
+    "description": "A number of machines, in a list header or a quiet status.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentCount": "{count, plural, =1{1 agent} other{{count} agents}}",
+  "@agentCount": {
+    "description": "A number of agents on one machine.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentCountCompact": "{count, plural, =1{1 agent} other{{count} agents}}",
+  "@agentCountCompact": {
+    "description": "A number of agents on one machine, short enough for a narrow row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "machinesHealth": "{online} of {total, plural, =1{1 machine} other{{total} machines}}",
+  "@machinesHealth": {
+    "description": "Connected machines out of the machines that are switched on.",
+    "placeholders": {
+      "online": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "machinesHealthSpoken": "{words} online",
+  "@machinesHealthSpoken": {
+    "description": "The machine health chip read aloud, with its visible words.",
+    "placeholders": {
+      "words": {
+        "type": "String"
+      }
+    }
+  },
+  "allMachinesOff": "All machines off",
+  "@allMachinesOff": {
+    "description": "Every machine is switched off."
+  },
+  "noAgents": "No agents",
+  "@noAgents": {
+    "description": "A machine with no agents, instead of a zero count."
+  },
+  "statusNeedsYou": "{count, plural, =1{1 needs you} other{{count} need you}}",
+  "@statusNeedsYou": {
+    "description": "Agents waiting on the person, the board status line's loud fact.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusToReview": "{count, plural, =1{1 to review} other{{count} to review}}",
+  "@statusToReview": {
+    "description": "Finished agents that can be marked reviewed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusWorking": "{count, plural, =1{1 working} other{{count} working}}",
+  "@statusWorking": {
+    "description": "Agents running now, on the board status line.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusNotConnected": "{count, plural, =1{1 not connected} other{{count} not connected}}",
+  "@statusNotConnected": {
+    "description": "Machines that are not connected, on the board status line.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusOffline": "{count} offline",
+  "@statusOffline": {
+    "description": "Finished agents that are out of reach, after the review count.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusOfflineToReview": "{count} offline to review",
+  "@statusOfflineToReview": {
+    "description": "Finished agents that are out of reach, when none can be marked now.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusNothingRunning": "nothing running",
+  "@statusNothingRunning": {
+    "description": "Agents exist but none is running, on the board status line."
+  },
+  "machinesNotConnected": "{count, plural, =1{1 machine not connected} other{{count} machines not connected}}",
+  "@machinesNotConnected": {
+    "description": "The connection strip summing up several machines that are not connected.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "heardJustNow": "heard just now",
+  "@heardJustNow": {
+    "description": "The board's freshness, when the quietest machine answered within a minute."
+  },
+  "heardAgo": "heard {ago} ago",
+  "@heardAgo": {
+    "description": "The board's freshness, with a compact duration such as 3m or 23h 59m.",
+    "placeholders": {
+      "ago": {
+        "type": "String"
+      }
+    }
+  },
+  "elapsedUnderAMinute": "<1m",
+  "@elapsedUnderAMinute": {
+    "description": "A compact elapsed label under a minute, when seconds are not shown."
+  },
+  "elapsedSeconds": "{count}s",
+  "@elapsedSeconds": {
+    "description": "A compact elapsed label in seconds.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedMinutes": "{count}m",
+  "@elapsedMinutes": {
+    "description": "A compact elapsed label in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedHours": "{hours}h",
+  "@elapsedHours": {
+    "description": "A compact elapsed label in whole hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedHoursMinutes": "{hours}h {paddedMinutes}m",
+  "@elapsedHoursMinutes": {
+    "description": "A compact elapsed label in hours and minutes; the padded minutes keep the label width steady.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "String"
+      },
+      "paddedMinutes": {
+        "type": "String"
+      }
+    }
+  },
+  "elapsedDays": "{count}d",
+  "@elapsedDays": {
+    "description": "A compact elapsed label in days.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "uiUndo": "Undo",
+  "uiSelectedNumber": "selected, number {number}",
+  "@uiSelectedNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "uiTypedIntoEachAgentThenEnter": "Typed into each agent, then Enter.",
+  "uiNotInThisPhoneSSpeechService": "Not in this phone’s speech service",
+  "uiPhoneSLanguage": "Phone’s language",
+  "uiAllowHerdrUnderInstallUnknownAppsOnTheAndroidPageThatOpenedThenComeBackAndTapInstall": "Allow herdr under “Install unknown apps” on the Android page that opened, then come back and tap Install.",
+  "uiNamedSessionsNeedHerdr09OnTheMachine": "Named sessions need herdr 0.9+ on the machine",
+  "uiOnlyUsedWhenHerdrLacksRemoteApiBridge": "Only used when herdr lacks remote-api-bridge",
+  "uiLeaveEmptyToShowTheProgramSOwnTitle": "Leave empty to show the program’s own title",
+  "uiCouldnTSave": "Couldn’t save",
+  "uiCouldnTConnect": "Couldn’t connect",
+  "uiRetryUnderTheMessageOpensItAgain": "Retry, under the message, opens it again.",
+  "uiPathCopied": "Path copied",
+  "uiLinkCopied": "Link copied",
+  "uiHoldOrTapAgain": "Hold or tap again",
+  "messageHoldTo": "Hold to {p0}",
+  "@messageHoldTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiNotFound": "Not found",
+  "uiNoPermission": "No permission",
+  "uiFilesUnavailable": "Files are unavailable",
+  "uiTooLargeToOpen": "Too large to open",
+  "uiCantOpenThis": "Can’t open this",
+  "uiNotAFolder": "Not a folder",
+  "uiNotReachable": "Not reachable",
+  "uiCouldntReadThis": "Couldn’t read this",
+  "messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": "{p0} is no longer there. It may have been moved or deleted.",
+  "@messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageYourLoginOnThisMachineIsntAllowedToRead": "Your login on this machine isn’t allowed to read {p0}.",
+  "@messageYourLoginOnThisMachineIsntAllowedToRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiType": "Type",
+  "uiAToZ": "A to Z",
+  "uiLargestFirst": "Largest first",
+  "uiByExtension": "By extension",
+  "messagePullDownToCheckAgain": " Pull down to check again.",
+  "@messagePullDownToCheckAgain": {
+    "description": "Appended to what an empty folder says, when pulling down checks again."
+  },
+  "messageHiddenItemCount": "{count, plural, =1{1 hidden item} other{{count} hidden items}}",
+  "@messageHiddenItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAgentsWorkingHereAWorktreeKeepsThemApart": "{count, plural, =1{1 agent working here · a worktree keeps them apart} other{{count} agents working here · a worktree keeps them apart}}",
+  "@messageAgentsWorkingHereAWorktreeKeepsThemApart": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageWorkingHereCount": "{count, plural, =1{1 working here} other{{count} working here}}",
+  "@messageWorkingHereCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageBranchesFromCurrentCommit": "Branches from the current commit of this folder",
+  "messageOfNeedsYou": "{total, plural, =1{{index} of 1 needs you} other{{index} of {total} need you}}",
+  "@messageOfNeedsYou": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAsks": "Asks: {p0}",
+  "@messageAsks": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiOnline": "Online",
+  "uiReconnecting": "Reconnecting…",
+  "uiNeedsAttention": "Needs attention",
+  "uiDisabled": "Disabled",
+  "uiOfflineState": "Offline",
+  "uiWaitingForApproval": "Waiting for approval",
+  "uiNotConnecting": "not connecting",
+  "messageConnectedHerdrVersion": "Connected · herdr {p0}",
+  "@messageConnectedHerdrVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkspaceCount": "{count, plural, =1{1 workspace} other{{count} workspaces}}",
+  "@messageWorkspaceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageHostKey": "Host key {p0}",
+  "@messageHostKey": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  }
+}

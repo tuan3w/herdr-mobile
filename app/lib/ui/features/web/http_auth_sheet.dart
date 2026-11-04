@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -55,9 +56,9 @@ class _AuthBodyState extends State<_AuthBody> {
     final ds = context.ds;
     final realm = widget.realm;
     return SheetScaffold(
-      title: 'Sign in',
+      title: context.l10n.uiSignIn,
       kind: SheetKind.form,
-      actions: [AppButton(label: 'Sign in', expand: true, onPressed: _valid ? _submit : null)],
+      actions: [AppButton(label: context.l10n.uiSignIn, expand: true, onPressed: _valid ? _submit : null)],
       child: AutofillGroup(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -65,13 +66,13 @@ class _AuthBodyState extends State<_AuthBody> {
           children: [
             Text(
               realm == null || realm.isEmpty
-                  ? 'This page on ${widget.where} asks for a user name and password.'
-                  : 'This page on ${widget.where} asks for a user name and password: $realm',
+                  ? context.l10n.messageThisPageOnAsksForAUserName(widget.where)
+                  : context.l10n.messageThisPageOnAsksForAUserName148(widget.where, realm),
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             const SizedBox(height: Gap.lg),
             LabeledField(
-              label: 'User name',
+              label: context.l10n.uiUserName,
               controller: _user,
               autofocus: true,
               autofillHints: const [AutofillHints.username],
@@ -79,7 +80,7 @@ class _AuthBodyState extends State<_AuthBody> {
               onChanged: (_) => setState(() {}),
             ),
             LabeledField(
-              label: 'Password',
+              label: context.l10n.uiPassword,
               controller: _password,
               obscure: _obscure,
               autofillHints: const [AutofillHints.password],
@@ -87,7 +88,7 @@ class _AuthBodyState extends State<_AuthBody> {
               onSubmitted: (_) => _submit(),
               suffix: CircleButton(
                 icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
-                tooltip: _obscure ? 'Show password' : 'Hide password',
+                tooltip: _obscure ? context.l10n.uiShowPassword : context.l10n.uiHidePassword,
                 filled: false,
                 size: CircleButton.compact,
                 onPressed: () => setState(() => _obscure = !_obscure),

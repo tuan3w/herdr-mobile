@@ -49,6 +49,76 @@ jobs:
           channel: stable
           flutter-version: 3.47.6
           cache: true
+      # Flutter's Android Gradle plugin wants NDK 28.2.13676358, but the SDK
+      # manager download failed twice with "ZipFile unknown archive" and
+      # blocked the build. Fetch the official archive instead, verify its
+      # published size and SHA-1, and retry once from a fresh URL. The job
+      # still fails if neither attempt verifies: a broken NDK must never reach
+      # the APK check.
+      - name: Install NDK 28.2.13676358
+        shell: bash
+        env:
+          NDK_VERSION: '28.2.13676358'
+          NDK_URL: 'https://dl.google.com/android/repository/android-ndk-r28c-linux.zip'
+          NDK_SIZE: '722261334'
+          NDK_SHA1: 'a7b54a5de87fecd125a17d54f73c446199e72a64'
+        run: |
+          set -euo pipefail
+          target="$ANDROID_HOME/ndk/$NDK_VERSION"
+          if grep -Eq '^Pkg\.Revision[[:space:]]*=[[:space:]]*28\.2\.13676358[[:space:]]*$' \
+            "$target/source.properties" 2>/dev/null \
+            && [ -x "$target/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]; then
+            echo "Reusing NDK $NDK_VERSION at $target"
+            exit 0
+          fi
+
+          work=$(mktemp -d "$RUNNER_TEMP/ndk-$NDK_VERSION.XXXXXX")
+          zip="$work/ndk.zip"
+          for attempt in 1 2; do
+            rm -rf "$work/extracted"
+            url="$NDK_URL?run_id=${GITHUB_RUN_ID:-0}&run_attempt=${GITHUB_RUN_ATTEMPT:-0}&attempt=$attempt"
+            if ! curl -fL --connect-timeout 20 --max-time 120 -o "$zip" "$url"; then
+              echo "NDK download attempt $attempt failed" >&2
+              continue
+            fi
+
+            size=$(stat -c %s "$zip")
+            sha1=$(sha1sum "$zip" | awk '{print $1}')
+            if [ "$size" -ne "$NDK_SIZE" ] || [ "$sha1" != "$NDK_SHA1" ]; then
+              echo "NDK archive attempt $attempt is invalid: size $size, sha1 $sha1" >&2
+              continue
+            fi
+            if ! unzip -tq "$zip"; then
+              echo "NDK archive attempt $attempt failed its integrity test" >&2
+              continue
+            fi
+
+            mkdir -p "$work/extracted"
+            if ! unzip -q "$zip" -d "$work/extracted"; then
+              echo "NDK archive attempt $attempt failed to extract" >&2
+              continue
+            fi
+            root="$work/extracted/android-ndk-r28c"
+            if ! grep -Eq '^Pkg\.Revision[[:space:]]*=[[:space:]]*28\.2\.13676358[[:space:]]*$' \
+              "$root/source.properties" 2>/dev/null \
+              || [ ! -x "$root/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]; then
+              echo "NDK archive attempt $attempt does not contain NDK $NDK_VERSION" >&2
+              continue
+            fi
+
+            # Keep an incomplete target for inspection; never delete it, and
+            # never touch another NDK version.
+            mkdir -p "$ANDROID_HOME/ndk" "$work/replaced"
+            if [ -e "$target" ]; then
+              mv "$target" "$work/replaced/$NDK_VERSION"
+            fi
+            mv "$root" "$target"
+            echo "Installed NDK $NDK_VERSION at $target"
+            exit 0
+          done
+
+          echo "Could not download and verify NDK $NDK_VERSION" >&2
+          exit 1
       - name: Build debug APK
         working-directory: app
         run: flutter build apk --debug

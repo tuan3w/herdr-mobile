@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -16,7 +17,7 @@ class AppBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CircleButton(
     icon: LucideIcons.chevronLeft,
-    tooltip: 'Back',
+    tooltip: context.l10n.uiBack,
     onPressed: onPressed ?? () => Navigator.of(context).maybePop(),
   );
 }

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -98,7 +100,7 @@ class SessionBar extends StatelessWidget {
       actions: [
         CircleButton(
           icon: LucideIcons.ellipsis,
-          tooltip: 'Session options',
+          tooltip: context.l10n.uiSessionOptions,
           onPressed: () => showSessionOptions(context, session),
         ),
       ],
@@ -311,7 +313,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         );
       }
       return SheetScaffold(
-        title: settings.isEmpty ? 'Session' : 'Mode and model',
+        title: settings.isEmpty ? context.l10n.uiSession : context.l10n.uiModeAndModel,
         kind: SheetKind.actions,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -328,12 +330,16 @@ class _OptionsSheetState extends State<_OptionsSheet> {
               else
                 _SettingRow(setting: s, onTap: () => setState(() => _picking = s.id)),
             SheetActionRow(
-              action: SheetAction(label: 'Session overview', icon: LucideIcons.layoutList, onTap: _overview),
+              action: SheetAction(
+                label: context.l10n.uiSessionOverview,
+                icon: LucideIcons.layoutList,
+                onTap: _overview,
+              ),
               onTap: _overview,
             ),
             if (machineSupportsFiles(widget.session.machine))
               SheetActionRow(
-                action: SheetAction(label: 'Files', icon: HerdrIcons.folder, onTap: _files),
+                action: SheetAction(label: context.l10n.uiFiles, icon: HerdrIcons.folder, onTap: _files),
                 onTap: _files,
               ),
             // Always here: the chip under the title only shows once something
@@ -348,7 +354,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
                 final nothing = made == 0 && reach == MadeReach.whole;
                 return SheetActionRow(
                   action: SheetAction(
-                    label: 'Made in this session',
+                    label: context.l10n.uiMadeInThisSession,
                     icon: LucideIcons.globe,
                     onTap: _made,
                     unavailable: nothing ? 'Nothing has come up yet' : null,
@@ -358,7 +364,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
               },
             ),
             SheetActionRow(
-              action: SheetAction(label: 'Copy session link', icon: LucideIcons.link, onTap: _copyLink),
+              action: SheetAction(label: context.l10n.uiCopySessionLink, icon: LucideIcons.link, onTap: _copyLink),
               onTap: _copyLink,
             ),
             if (!widget.session.isObserved)
@@ -368,7 +374,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
                   final machine = widget.session.machine;
                   return SheetActionRow(
                     action: SheetAction(
-                      label: 'Duplicate',
+                      label: context.l10n.uiDuplicate,
                       icon: LucideIcons.copyPlus,
                       onTap: _duplicate,
                       unavailable: machine.isLive ? null : '${machine.profile.label} is offline',
@@ -513,7 +519,7 @@ class _PickerState extends State<_Picker> {
           children: [
             PressBuilder(
               onTap: widget.onBack,
-              semanticLabel: 'Back to options',
+              semanticLabel: context.l10n.uiBackToOptions,
               builder: (context, pressed) => Container(
                 constraints: const BoxConstraints(minHeight: kMinTap),
                 padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
@@ -533,7 +539,7 @@ class _PickerState extends State<_Picker> {
                 padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
                 child: SearchField(
                   controller: _query,
-                  hint: 'Search ${countOf(setting.choices.length, 'choice')}',
+                  hint: context.l10n.messageSearch(countOf(setting.choices.length, 'choice')),
                   onChanged: (_) => setState(() {}),
                 ),
               ),
@@ -580,8 +586,8 @@ class _PickerState extends State<_Picker> {
             hold: true,
             holdVerb: 'Hold to switch to ${choice.name}',
             semanticLabel: primed
-                ? 'Confirm: switch to ${choice.name}, activate again to confirm'
-                : '${choice.name}, dangerous, needs holding or a second activation: ${risk.reason}',
+                ? context.l10n.messageConfirmSwitchToActivateAgainToConfirm(choice.name)
+                : context.l10n.messageDangerousNeedsHoldingOrASecondActivation(choice.name, '${risk.reason}'),
             onTap: () => _activate(choice),
             onHeld: () => widget.onPick(choice),
           );

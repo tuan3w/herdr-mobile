@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -170,15 +172,27 @@ class _ViewerPageState extends State<_ViewerPage> {
         title: stat.name,
         actions: [
           if (ready && vm.isText && vm.document != null && !vm.document!.isEmpty)
-            SheetAction(label: 'Copy contents', icon: LucideIcons.clipboardCopy, onTap: () => _copyContents(vm)),
+            SheetAction(
+              label: context.l10n.uiCopyContents,
+              icon: LucideIcons.clipboardCopy,
+              onTap: () => _copyContents(vm),
+            ),
           if (ready && vm.kind == FileKind.video && typeForName(vm.name).kind == FileKind.video)
-            SheetAction(label: 'Save to gallery', icon: LucideIcons.download, onTap: () => unawaited(_saveVideo(vm))),
+            SheetAction(
+              label: context.l10n.uiSaveToGallery,
+              icon: LucideIcons.download,
+              onTap: () => unawaited(_saveVideo(vm)),
+            ),
           if (stat.isFile && stat.size != null)
-            SheetAction(label: 'Share or save\u2026', icon: LucideIcons.share2, onTap: () => unawaited(_share(vm))),
+            SheetAction(
+              label: context.l10n.uiShareOrSave,
+              icon: LucideIcons.share2,
+              onTap: () => unawaited(_share(vm)),
+            ),
           SheetAction(
-            label: 'Copy path',
+            label: context.l10n.uiCopyPath,
             icon: LucideIcons.link,
-            onTap: () => copyText(context, stat.path, what: 'Path copied'),
+            onTap: () => copyText(context, stat.path, what: context.l10n.uiPathCopied),
           ),
         ],
       ),
@@ -208,12 +222,12 @@ class _ViewerPageState extends State<_ViewerPage> {
               if (ready && canShowAsPage(stat.name))
                 CircleButton(
                   icon: LucideIcons.globe,
-                  tooltip: 'Show as page',
+                  tooltip: context.l10n.uiShowAsPage,
                   onPressed: () => unawaited(_showAsPage(context, stat)),
                 ),
               CircleButton(
                 icon: LucideIcons.ellipsis,
-                tooltip: 'File options',
+                tooltip: context.l10n.uiFileOptions,
                 onPressed: () => _showOptions(vm, ready),
               ),
             ],
@@ -327,18 +341,24 @@ class _Tools extends StatelessWidget {
     final ds = context.ds;
     final chips = <Widget>[];
     if (vm.phase == ViewerPhase.ready) {
-      Widget wrap() =>
-          AppChip(label: 'Wrap', icon: LucideIcons.wrapText, selected: vm.wrap, onTap: () => vm.setWrap(!vm.wrap));
+      Widget wrap() => AppChip(
+        label: context.l10n.uiWrap,
+        icon: LucideIcons.wrapText,
+        selected: vm.wrap,
+        onTap: () => vm.setWrap(!vm.wrap),
+      );
       switch (vm.kind) {
         case FileKind.text:
           if (vm.document != null && !vm.document!.isEmpty) chips.add(wrap());
         case FileKind.json:
-          chips.add(AppChip(label: 'Pretty', icon: LucideIcons.braces, selected: vm.pretty, onTap: onTogglePretty));
+          chips.add(
+            AppChip(label: context.l10n.uiPretty, icon: LucideIcons.braces, selected: vm.pretty, onTap: onTogglePretty),
+          );
           chips.add(wrap());
         case FileKind.markdown:
           chips.add(
             Segmented<bool>(
-              options: const [SegmentOption(false, 'Rendered'), SegmentOption(true, 'Source')],
+              options: [SegmentOption(false, context.l10n.uiRendered), SegmentOption(true, context.l10n.uiSource)],
               value: vm.showSource,
               onChanged: vm.setShowSource,
             ),
@@ -403,10 +423,10 @@ class _Body extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: AppButton(
-                label: 'Copy path',
+                label: context.l10n.uiCopyPath,
                 icon: LucideIcons.copy,
                 kind: AppButtonKind.secondary,
-                onPressed: () => copyText(context, vm.stat.path, what: 'Path copied'),
+                onPressed: () => copyText(context, vm.stat.path, what: context.l10n.uiPathCopied),
               ),
             ),
           ],
@@ -428,7 +448,7 @@ class _Body extends StatelessWidget {
           ),
           FileKind.svg || FileKind.pdf || FileKind.binary => BinaryView(
             model: vm,
-            onCopyPath: () => copyText(context, vm.stat.path, what: 'Path copied'),
+            onCopyPath: () => copyText(context, vm.stat.path, what: context.l10n.uiPathCopied),
             onShare: onShare,
             onViewAsText: vm.canViewAsText ? vm.viewAsText : null,
             onShowAsPage: canShowAsPage(vm.name) ? () => unawaited(_showAsPage(context, vm.stat)) : null,
@@ -456,7 +476,11 @@ class _TextBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     if (doc.isEmpty) {
-      return EmptyState(icon: LucideIcons.fileText, title: 'Empty file', message: '${vm.name} has no content.');
+      return EmptyState(
+        icon: LucideIcons.fileText,
+        title: context.l10n.uiEmptyFile,
+        message: context.l10n.messageHasNoContent(vm.name),
+      );
     }
     final footer = vm.hasMore || vm.loadingMore || vm.truncatedAtLimit || vm.loadMoreError != null;
     final size = vm.stat.size;
@@ -497,10 +521,10 @@ class _TextBody extends StatelessWidget {
                   Expanded(
                     child: Text(
                       vm.loadMoreError != null
-                          ? 'Couldn’t load more: ${vm.loadMoreError!.message}'
+                          ? context.l10n.messageCouldnTLoadMore(vm.loadMoreError!.message)
                           : vm.truncatedAtLimit
-                          ? 'Showing the first $loaded$of. That is as much as the viewer opens.'
-                          : 'Showing $loaded$of',
+                          ? context.l10n.messageShowingTheFirstThatIsAsMuchAs(loaded, of)
+                          : context.l10n.messageShowing(loaded, of),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Type.caption.copyWith(color: vm.loadMoreError != null ? ds.dangerText : ds.textMuted),
@@ -508,7 +532,7 @@ class _TextBody extends StatelessWidget {
                   ),
                   if (vm.hasMore || vm.loadMoreError != null)
                     AppButton(
-                      label: vm.loadMoreError != null ? 'Retry' : 'Load more',
+                      label: vm.loadMoreError != null ? context.l10n.uiRetry : context.l10n.uiLoadMore,
                       kind: AppButtonKind.secondary,
                       compact: true,
                       loading: vm.loadingMore,
@@ -600,8 +624,11 @@ class _ChangedSlot extends StatelessWidget {
         visible: vm.phase == ViewerPhase.ready && vm.changedOnDisk,
         size: FloatingPillSize.compact,
         leading: busy ? const BusySpinner() : Icon(LucideIcons.refreshCw, size: IconSize.inline, color: ds.accentText),
-        label: 'Changed on disk',
-        trailing: Text(busy ? 'Reloading' : 'Reload', style: Type.labelStrong.copyWith(color: ds.accentText)),
+        label: context.l10n.uiChangedOnDisk,
+        trailing: Text(
+          busy ? context.l10n.uiReloading : context.l10n.uiReload,
+          style: Type.labelStrong.copyWith(color: ds.accentText),
+        ),
         onTap: busy ? null : () => unawaited(vm.refresh()),
       ),
     );
@@ -628,9 +655,9 @@ class _CopySlot extends StatelessWidget {
         size: FloatingPillSize.compact,
         leading: const BusySpinner(size: IconSize.inline),
         label: copy.total > 0
-            ? 'Copying ${formatBytes(copy.written)} of ${formatBytes(copy.total)}'
-            : 'Copying ${formatBytes(copy.written)}',
-        trailing: Text('Cancel', style: Type.labelStrong.copyWith(color: ds.accentText)),
+            ? context.l10n.messageCopyingOf(formatBytes(copy.written), formatBytes(copy.total))
+            : context.l10n.messageCopying(formatBytes(copy.written)),
+        trailing: Text(context.l10n.uiCancel, style: Type.labelStrong.copyWith(color: ds.accentText)),
         onTap: copy.cancel,
       ),
     );
@@ -650,11 +677,11 @@ class _RefreshStrip extends StatelessWidget {
       padding: const EdgeInsets.only(left: Gap.gutter, right: Gap.gutter, bottom: Gap.sm),
       child: StatusStrip(
         color: ds.danger,
-        title: 'Couldn’t refresh',
+        title: context.l10n.uiCouldnTRefresh,
         detail: 'Showing the earlier version',
         leading: Icon(LucideIcons.circleAlert, size: IconSize.row, color: ds.dangerText),
         action: AppButton(
-          label: 'Retry',
+          label: context.l10n.uiRetry,
           kind: AppButtonKind.secondary,
           compact: true,
           loading: vm.refreshing,

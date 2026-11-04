@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -40,7 +41,10 @@ class ToolLocationRows extends StatelessWidget {
         if (shown.length > locationsShown)
           Padding(
             padding: const EdgeInsets.only(left: Gap.sm + IconSize.row + Gap.sm, top: Gap.xs),
-            child: Text('${shown.length - locationsShown} more', style: Type.caption.copyWith(color: ds.textMuted)),
+            child: Text(
+              context.l10n.messageMore85('${shown.length - locationsShown}'),
+              style: Type.caption.copyWith(color: ds.textMuted),
+            ),
           ),
       ],
     );
@@ -112,7 +116,7 @@ class _LocationRow extends StatelessWidget {
     }
     return PressRow(
       onTap: onTap,
-      semanticLabel: line == null ? 'Open $path' : 'Open $path at line $line',
+      semanticLabel: line == null ? context.l10n.messageOpen(path) : context.l10n.messageOpenAtLine(path, '$line'),
       minHeight: kMinTap,
       child: row,
     );

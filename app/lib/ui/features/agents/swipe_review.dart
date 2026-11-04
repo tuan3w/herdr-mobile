@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,14 +18,16 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// toast ("Marked 3 reviewed") whose Undo takes all of them back.
 bool markReviewedWithUndo(BuildContext context, MachineConnection machine, String paneId) {
   final toaster = Toaster.maybeOf(context);
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   if (!machine.markReviewed(paneId)) return false;
   toaster?.show(
-    'Marked reviewed',
-    action: ToastAction('Undo', () {
+    l10n.messageReviewedCount(1),
+    action: ToastAction(undoLabel, () {
       if (machine.unmarkReviewed(paneId)) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
   );
   return true;
 }
@@ -36,17 +40,19 @@ bool markReviewedWithUndo(BuildContext context, MachineConnection machine, Strin
 /// again at once.
 bool markSessionReviewedWithUndo(BuildContext context, AgentSessionView session, {VoidCallback? onUndo}) {
   final toaster = Toaster.maybeOf(context);
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   if (!session.unseenDone) return false;
   session.markSeen();
   if (session.unseenDone) return false;
   toaster?.show(
-    'Marked reviewed',
-    action: ToastAction('Undo', () {
+    l10n.messageReviewedCount(1),
+    action: ToastAction(undoLabel, () {
       onUndo?.call();
       if (session.unmarkSeen()) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
   );
   return true;
 }
@@ -61,6 +67,8 @@ int markAllReviewedWithUndo(
   required Iterable<AgentSessionView> sessions,
 }) {
   final toaster = Toaster.maybeOf(context);
+  final l10n = context.l10n;
+  final undoLabel = l10n.uiUndo;
   final undo = <bool Function()>[];
   for (final (:machine, :paneId) in panes) {
     if (machine.markReviewed(paneId)) undo.add(() => machine.unmarkReviewed(paneId));
@@ -72,8 +80,8 @@ int markAllReviewedWithUndo(
   }
   if (undo.isEmpty) return 0;
   toaster?.show(
-    _reviewedMessage(undo.length),
-    action: ToastAction('Undo', () {
+    l10n.messageReviewedCount(undo.length),
+    action: ToastAction(undoLabel, () {
       var restored = false;
       for (final back in undo) {
         restored |= back();
@@ -81,15 +89,13 @@ int markAllReviewedWithUndo(
       if (restored) Haptics.tick();
     }),
     groupKey: _reviewGroup,
-    groupMessage: _reviewedMessage,
+    groupMessage: (count) => l10n.messageReviewedCount(count),
     count: undo.length,
   );
   return undo.length;
 }
 
 const _reviewGroup = 'review.mark';
-
-String _reviewedMessage(int count) => count == 1 ? 'Marked reviewed' : 'Marked $count reviewed';
 
 /// A horizontal swipe to the left on a finished agent: the row follows the
 /// finger 1:1 and a quiet "Reviewed" (a check and the word, no fill) is
@@ -352,7 +358,7 @@ class _SwipeToReviewState extends State<SwipeToReview> with SingleTickerProvider
       children: [
         Icon(LucideIcons.check, size: IconSize.bar, color: color),
         const SizedBox(width: Gap.sm),
-        Text('Reviewed', maxLines: 1, softWrap: false, style: Type.label.copyWith(color: color)),
+        Text(context.l10n.uiReviewed, maxLines: 1, softWrap: false, style: Type.label.copyWith(color: color)),
       ],
     );
     if (fade < 1) label = Opacity(opacity: fade, child: label);
@@ -399,7 +405,7 @@ class ReviewAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MergeSemantics(
     child: Semantics(
-      customSemanticsActions: enabled ? {const CustomSemanticsAction(label: 'Mark reviewed'): _review} : null,
+      customSemanticsActions: enabled ? {CustomSemanticsAction(label: context.l10n.uiMarkReviewed): _review} : null,
       child: child,
     ),
   );

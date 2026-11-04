@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -33,12 +34,12 @@ class LiveOutput extends StatelessWidget {
         child: Panel(
           padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm),
           child: Semantics(
-            label: 'Live output from the terminal',
+            label: context.l10n.uiLiveOutputFromTheTerminal,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ExcludeSemantics(
-                  child: Text('Live from terminal', style: Type.caption.copyWith(color: ds.textMuted)),
+                  child: Text(context.l10n.uiLiveFromTerminal, style: Type.caption.copyWith(color: ds.textMuted)),
                 ),
                 const SizedBox(height: Gap.xs),
                 for (final row in rows)

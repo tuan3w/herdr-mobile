@@ -1,3 +1,7 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+import 'package:herdr_mobile/l10n/app_localizations.dart';
+import 'package:herdr_mobile/l10n/app_localizations_en.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -11,7 +15,6 @@ import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/words/elapsed.dart';
-import '../../../data/words/plural.dart';
 import '../../../data/repositories/attention_set.dart';
 import '../machines/approval_button.dart';
 
@@ -170,9 +173,9 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     builder: (context, _) => CircleButton(
       key: const ValueKey('settings'),
       icon: HerdrIcons.settings,
-      tooltip: 'Settings',
+      tooltip: context.l10n.uiSettings,
       mark: widget.pages.update?.release != null,
-      markLabel: 'update available',
+      markLabel: context.l10n.uiUpdateAvailable.toLowerCase(),
       onPressed: _showSettings,
     ),
   );
@@ -249,16 +252,20 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
         slivers: [
           // Settings stays one tap away before the first machine; there is no
           // fleet yet for the chip to sum up, and nothing to start.
-          SliverLargeTitle(title: 'Agents', actions: [_settingsButton()]),
+          SliverLargeTitle(title: context.l10n.uiAgents, actions: [_settingsButton()]),
           SliverFillRemaining(
             hasScrollBody: false,
             child: Padding(
               padding: EdgeInsets.only(bottom: inset),
               child: EmptyState(
                 mark: const BrandMark(),
-                title: 'No machines yet',
-                message: 'Add a machine running herdr and its agents show here.',
-                action: AppButton(label: 'Add your first machine', icon: LucideIcons.plus, onPressed: _addMachine),
+                title: context.l10n.uiNoMachinesYet,
+                message: context.l10n.uiAddAMachineRunningHerdrAndItsAgentsShow,
+                action: AppButton(
+                  label: context.l10n.uiAddYourFirstMachine,
+                  icon: LucideIcons.plus,
+                  onPressed: _addMachine,
+                ),
               ),
             ),
           ),
@@ -309,8 +316,8 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     // Measured once per build with the longest "heard" the minute can grow
     // into, so the header does not change height (and move the list) as the
     // minutes tick.
-    final heard = heardLabel(context.read<FleetRepository>().connections);
-    final statusLines = status.lines(context, heard: heard == null ? null : _StatusLine.longestHeard);
+    final heard = heardLabel(context.read<FleetRepository>().connections, l10n: context.l10n);
+    final statusLines = status.lines(context, heard: heard == null ? null : _StatusLine.longestHeard(context));
 
     final list = AppRefresh(
       onRefresh: () async {
@@ -321,14 +328,17 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverLargeTitle(
-            title: 'Agents',
+            title: context.l10n.uiAgents,
             // The board's one status line. Steps once a minute, so "heard 3m
             // ago" grows while nothing else changes: a board that went quiet
             // says so instead of looking live. It takes a second line rather
             // than cut its end ("1 not connected") on a narrow phone.
             subtitle: MinuteBuilder(
               builder: (context, _) => Text.rich(
-                status.span(context, heard: heardLabel(context.read<FleetRepository>().connections)),
+                status.span(
+                  context,
+                  heard: heardLabel(context.read<FleetRepository>().connections, l10n: context.l10n),
+                ),
                 maxLines: statusLines,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -349,7 +359,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
             // and Settings. Past sessions is a row of the `+` form, where
             // resuming is one of the ways to start.
             actions: [
-              CircleButton(icon: LucideIcons.plus, tooltip: 'New agent session', onPressed: _newSession),
+              CircleButton(icon: LucideIcons.plus, tooltip: context.l10n.uiNewAgentSession, onPressed: _newSession),
               _settingsButton(),
             ],
           ),
@@ -369,10 +379,10 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               hasScrollBody: false,
               child: Padding(
                 padding: EdgeInsets.only(bottom: inset),
-                child: const EmptyState(
+                child: EmptyState(
                   icon: LucideIcons.moon,
-                  title: 'No agents running',
-                  message: 'Start one in herdr and it shows here.',
+                  title: context.l10n.uiNoAgentsRunning,
+                  message: context.l10n.uiStartOneInHerdrAndItShowsHere,
                 ),
               ),
             )
@@ -383,7 +393,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               itemBuilder: (context, i) => switch (listed[i]) {
                 final AgentHeader h => _SectionHeader(
                   key: h.key,
-                  label: sectionLabel(h.status),
+                  label: sectionLabel(h.status, words: context.l10n),
                   // Needs you, Working and To review are counted by the
                   // status line, so their headers do not say it again.
                   count: _countedAbove(h.status) ? null : h.section.count,
@@ -595,13 +605,13 @@ class _OfflineNote extends StatelessWidget {
 
   final int count;
 
-  static String words(int count) => '$count offline';
+  static String words(BuildContext context, int count) => context.l10n.statusOffline(count);
 
   static TextStyle style(Ds ds) => Type.label.copyWith(color: ds.textMuted, fontFeatures: Type.tabular);
 
   @override
   Widget build(BuildContext context) =>
-      Text(words(count), maxLines: 1, overflow: TextOverflow.ellipsis, style: style(context.ds));
+      Text(words(context, count), maxLines: 1, overflow: TextOverflow.ellipsis, style: style(context.ds));
 }
 
 /// One ghost button on a section header, as data, so the header can measure
@@ -631,7 +641,7 @@ class _HeaderActions {
       if (holdsFor case final held? when !actions.any((a) => a.label == held)) held,
     ];
     final parts = [
-      if (offline > 0) _textWidth(_OfflineNote.words(offline), _OfflineNote.style(ds), scaler),
+      if (offline > 0) _textWidth(_OfflineNote.words(context, offline), _OfflineNote.style(ds), scaler),
       for (final l in labels) _textWidth(l, Type.labelStrong, scaler),
     ];
     final gaps = offline > 0 && labels.isNotEmpty
@@ -758,7 +768,7 @@ class _BackLeavesSelection extends StatelessWidget {
 /// How fresh the board is: the connected machine heard from longest ago, so
 /// one that stopped answering shows before it is declared offline. Null when
 /// no connected machine has answered yet.
-String? heardLabel(List<MachineConnection> connections) {
+String? heardLabel(List<MachineConnection> connections, {AppLocalizations? l10n}) {
   Duration? oldest;
   for (final c in connections) {
     if (c.state != LinkState.online) continue;
@@ -766,10 +776,11 @@ String? heardLabel(List<MachineConnection> connections) {
     if (ago != null && (oldest == null || ago > oldest)) oldest = ago;
   }
   if (oldest == null) return null;
+  final words = l10n ?? AppLocalizationsEn();
   // design-lint: allow(raw-duration) the label's own resolution, not a timer
   return oldest < const Duration(minutes: 1)
-      ? 'heard just now'
-      : 'heard ${Elapsed.compact(oldest, seconds: false)} ago';
+      ? words.heardJustNow
+      : words.heardAgo(Elapsed.compact(oldest, seconds: false, l10n: l10n));
 }
 
 /// The board's one status line: `2 need you · 3 to review · 3 working ·
@@ -805,26 +816,34 @@ class _StatusLine {
   final int troubled;
 
   /// The longest [heardLabel] in practice (`Elapsed.compact` past an hour),
-  /// for measuring.
-  static const longestHeard = 'heard 23h 59m ago';
+  /// for measuring, in the current language.
+  static String longestHeard(BuildContext context) {
+    final l10n = context.l10n;
+    return l10n.heardAgo(Elapsed.compact(const Duration(hours: 23, minutes: 59), seconds: false, l10n: l10n));
+  }
 
   /// The facts in order; the needs-you count is the loud one, the review
   /// count the button.
-  List<_Fact> _facts(String? heard) {
+  List<_Fact> _facts(BuildContext context, String? heard) {
+    final l10n = context.l10n;
     final quiet = [
-      if (working > 0) '$working working' else if (waiting == 0 && agents > 0) 'nothing running',
+      if (working > 0) l10n.statusWorking(working) else if (waiting == 0 && agents > 0) l10n.statusNothingRunning,
       ?heard,
-      if (troubled > 0) '$troubled not connected',
+      if (troubled > 0) l10n.statusNotConnected(troubled),
     ];
-    if (waiting == 0 && review + reviewOffline == 0 && quiet.isEmpty) quiet.add(countOf(machines, 'machine'));
+    if (waiting == 0 && review + reviewOffline == 0 && quiet.isEmpty) quiet.add(l10n.machineCount(machines));
     return [
-      if (waiting > 0) (text: needYou(waiting), kind: _FactKind.loud, tail: ''),
+      if (waiting > 0) (text: l10n.statusNeedsYou(waiting), kind: _FactKind.loud, tail: ''),
       // Offline ones are said, not counted: `3 to review, 1 offline`, or
       // `2 offline to review` when none can be marked now.
       if (review > 0)
-        (text: '$review to review', kind: _FactKind.review, tail: reviewOffline > 0 ? ', $reviewOffline offline' : '')
+        (
+          text: l10n.statusToReview(review),
+          kind: _FactKind.review,
+          tail: reviewOffline > 0 ? ', ${l10n.statusOffline(reviewOffline)}' : '',
+        )
       else if (reviewOffline > 0)
-        (text: '$reviewOffline offline to review', kind: _FactKind.quiet, tail: ''),
+        (text: l10n.statusOfflineToReview(reviewOffline), kind: _FactKind.quiet, tail: ''),
       for (final q in quiet) (text: q, kind: _FactKind.quiet, tail: ''),
     ];
   }
@@ -862,7 +881,7 @@ class _StatusLine {
   /// read as two broken facts.
   TextSpan span(BuildContext context, {required String? heard}) {
     final ds = context.ds;
-    final facts = _facts(heard);
+    final facts = _facts(context, heard);
     if (_fits(context, _join(ds, facts))) return _join(ds, facts, onReview: onReview);
     var at = facts.length - 1;
     while (at > 1 && !_fits(context, _join(ds, facts.sublist(0, at)))) {
@@ -872,7 +891,8 @@ class _StatusLine {
   }
 
   /// 1, or 2 when the line does not fit the large title's width.
-  int lines(BuildContext context, {required String? heard}) => _fits(context, _join(context.ds, _facts(heard))) ? 1 : 2;
+  int lines(BuildContext context, {required String? heard}) =>
+      _fits(context, _join(context.ds, _facts(context, heard))) ? 1 : 2;
 
   /// Whether [text] fits one line of the large title (with the header's own
   /// text-scale cap, [kBarTextScale]).
@@ -924,7 +944,7 @@ class _ReviewCount extends StatelessWidget {
       onTap: onTap,
       haptic: true,
       button: true,
-      semanticLabel: '$text, select them',
+      semanticLabel: context.l10n.messageSelectThem(text),
       // The line scales an inline widget by its text scale itself.
       builder: (context, pressed) => MediaQuery.withNoTextScaling(
         child: Text(text, maxLines: 1, style: style(context.ds, pressed: pressed)),
@@ -950,7 +970,7 @@ class _ConnectionStrip extends StatelessWidget {
       return StatusStrip(
         color: state.color(ds),
         leading: LinkDot(state: state),
-        title: '${countOf(troubled.length, 'machine')} not connected',
+        title: context.l10n.machinesNotConnected(troubled.length),
         action: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textSecondary),
         onTap: onShowMachines,
       );
@@ -961,10 +981,15 @@ class _ConnectionStrip extends StatelessWidget {
       color: t.state.color(ds),
       leading: LinkDot(state: t.state),
       title: t.label,
-      detail: t.state.label,
+      detail: t.state.labelFor(context.l10n),
       action: switch (t.approvalUrl) {
         final url? => ApprovalButton(url: url),
-        null => AppButton(label: 'Retry', compact: true, kind: AppButtonKind.secondary, onPressed: t.machine.retry),
+        null => AppButton(
+          label: context.l10n.uiRetry,
+          compact: true,
+          kind: AppButtonKind.secondary,
+          onPressed: t.machine.retry,
+        ),
       },
     );
   }
@@ -1018,8 +1043,9 @@ class _MachineHealth extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final state = worst ?? (enabled == 0 ? LinkState.disabled : LinkState.online);
-    final words = enabled == 0 ? 'All machines off' : '$online of ${countOf(enabled, 'machine')}';
-    final spoken = enabled == 0 ? words : '$words online';
+    final l10n = context.l10n;
+    final words = enabled == 0 ? l10n.allMachinesOff : l10n.machinesHealth(online, enabled);
+    final spoken = enabled == 0 ? words : l10n.machinesHealthSpoken(words);
     return PressBuilder(
       key: const ValueKey('machine-health'),
       onTap: onTap,

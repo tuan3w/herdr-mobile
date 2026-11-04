@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -6,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../../data/models/machine_profile.dart';
 import '../../../data/repositories/machine_repository.dart';
 import '../../../data/services/key_generator.dart';
-import '../../../data/words/plural.dart';
 import 'approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -15,9 +15,9 @@ import 'machine_form_view_model.dart';
 
 final _sessionName = RegExp(r'^[A-Za-z0-9._-]+$');
 
-String? _sessionError(String? v) {
+String? _sessionError(String? v, [String error = 'Letters, digits, . _ - only']) {
   final t = v?.trim() ?? '';
-  return t.isNotEmpty && !_sessionName.hasMatch(t) ? 'Letters, digits, . _ - only' : null;
+  return t.isNotEmpty && !_sessionName.hasMatch(t) ? error : null;
 }
 
 /// Opens the add form, or the edit form for [existing].
@@ -203,13 +203,11 @@ class _FormState extends State<_Form> with RestorationMixin {
     if (typed || vm.hasSavedKey) {
       final ok = await showConfirmSheet(
         context,
-        title: 'Replace the current key?',
+        title: context.l10n.uiReplaceTheCurrentKey,
         message: typed
-            ? 'The private key in this form is replaced. If you haven’t kept a copy '
-                  'elsewhere, it is gone for good.'
-            : 'The key saved for this machine is replaced when you save. If you have not '
-                  'kept a copy elsewhere, it is gone for good.',
-        confirmLabel: 'Generate new key',
+            ? context.l10n.uiThePrivateKeyInThisFormIsReplacedIf
+            : context.l10n.uiTheKeySavedForThisMachineIsReplacedWhen,
+        confirmLabel: context.l10n.uiGenerateNewKey,
       );
       if (!ok || !mounted) return;
     }
@@ -366,15 +364,13 @@ class _FormState extends State<_Form> with RestorationMixin {
     final generated = context.read<MachineFormViewModel>().publicKeyGenerated;
     final discard = await showConfirmSheet(
       context,
-      title: hasKey ? 'Discard the new key?' : 'Discard your changes?',
+      title: hasKey ? context.l10n.uiDiscardTheNewKey : context.l10n.uiDiscardYourChanges,
       message: switch ((hasKey, generated)) {
-        (true, true) =>
-          'This key was made on this phone and is saved nowhere else. If its '
-              'public key is already on the machine, this phone can’t log in with it.',
-        (true, false) => 'The key in this form and everything else entered here aren’t saved.',
-        _ => 'What you entered here isn’t saved.',
+        (true, true) => context.l10n.uiThisKeyWasMadeOnThisPhoneAndIs,
+        (true, false) => context.l10n.uiTheKeyInThisFormAndEverythingElseEntered,
+        _ => context.l10n.uiWhatYouEnteredHereIsnTSaved,
       },
-      confirmLabel: 'Discard',
+      confirmLabel: context.l10n.uiDiscard,
     );
     if (discard && mounted) nav.pop();
   }
@@ -384,12 +380,12 @@ class _FormState extends State<_Form> with RestorationMixin {
   Future<bool?> _askAfterFailedTest(String? why) => showAppSheet<bool>(
     context,
     builder: (ctx) => SheetScaffold(
-      title: 'The new key couldn’t connect',
+      title: context.l10n.uiTheNewKeyCouldnTConnect,
       kind: SheetKind.message,
       actions: [
-        AppButton(label: 'Keep the old key', expand: true, onPressed: () => Navigator.of(ctx).pop(false)),
+        AppButton(label: context.l10n.uiKeepTheOldKey, expand: true, onPressed: () => Navigator.of(ctx).pop(false)),
         AppButton(
-          label: 'Save anyway',
+          label: context.l10n.uiSaveAnyway,
           kind: AppButtonKind.danger,
           expand: true,
           onPressed: () => Navigator.of(ctx).pop(true),
@@ -404,8 +400,7 @@ class _FormState extends State<_Form> with RestorationMixin {
             const SizedBox(height: Gap.sm),
           ],
           Text(
-            'If its public key isn’t on the machine yet, saving now locks this phone out '
-            'of it, and the old key is gone.',
+            context.l10n.uiIfItsPublicKeyIsnTOnTheMachine,
             style: Type.compact.copyWith(color: ctx.ds.textSecondary),
           ),
         ],
@@ -413,13 +408,13 @@ class _FormState extends State<_Form> with RestorationMixin {
     ),
   );
 
-  String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Required' : null;
+  String? _required(String? v) => (v == null || v.trim().isEmpty) ? context.l10n.uiRequired : null;
 
   /// Host and port side by side; one under the other with large system text,
   /// where a quarter-width port field would clip its own number.
   List<Widget> _hostAndPort(BuildContext context) {
     final host = LabeledField(
-      label: 'Host',
+      label: context.l10n.uiHost,
       controller: _host,
       hint: 'workbox.local or 100.64.0.5',
       validator: _required,
@@ -427,14 +422,14 @@ class _FormState extends State<_Form> with RestorationMixin {
       textInputAction: TextInputAction.next,
     );
     final port = LabeledField(
-      label: 'Port',
+      label: context.l10n.uiPort,
       controller: _port,
       keyboardType: TextInputType.number,
       textInputAction: TextInputAction.next,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
       validator: (v) {
         final p = int.tryParse(v?.trim() ?? '');
-        return (p == null || p < 1 || p > 65535) ? 'Invalid' : null;
+        return (p == null || p < 1 || p > 65535) ? context.l10n.uiInvalid : null;
       },
     );
     if (MediaQuery.textScalerOf(context).scale(16) > 21) return [host, port];
@@ -452,7 +447,7 @@ class _FormState extends State<_Form> with RestorationMixin {
 
   Widget _toggle() => CircleButton(
     icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
-    tooltip: _obscure ? 'Show password' : 'Hide password',
+    tooltip: _obscure ? context.l10n.uiShowPassword : context.l10n.uiHidePassword,
     filled: false,
     size: CircleButton.compact,
     onPressed: () => setState(() => _obscure = !_obscure),
@@ -477,7 +472,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                   child: CustomScrollView(
                     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                     slivers: [
-                      SliverLargeTitle.back(title: _editing ? 'Edit machine' : 'Add machine'),
+                      SliverLargeTitle.back(title: _editing ? context.l10n.uiEditMachine : context.l10n.uiAddMachine),
                       SliverToBoxAdapter(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -485,24 +480,23 @@ class _FormState extends State<_Form> with RestorationMixin {
                             Padding(
                               padding: gutter,
                               child: Text(
-                                'herdr is reached over SSH. Nothing is exposed publicly and no '
-                                'relay is involved.',
+                                context.l10n.uiHerdrIsReachedOverSSHNothingIsExposedPublicly,
                                 style: Type.compact.copyWith(color: ds.textSecondary),
                               ),
                             ),
                             FormSection(
-                              label: 'Machine',
+                              label: context.l10n.uiMachine,
                               children: [
                                 LabeledField(
-                                  label: 'Name',
+                                  label: context.l10n.uiName,
                                   prose: true,
                                   controller: _label,
-                                  hint: 'Build server',
+                                  hint: context.l10n.uiBuildServer,
                                   textInputAction: TextInputAction.next,
                                 ),
                                 ..._hostAndPort(context),
                                 LabeledField(
-                                  label: 'Username',
+                                  label: context.l10n.uiUsername,
                                   autofillHints: const [AutofillHints.username],
                                   controller: _user,
                                   validator: _required,
@@ -511,7 +505,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                               ],
                             ),
                             FormSection(
-                              label: 'Authentication',
+                              label: context.l10n.uiAuthentication,
                               endsWithField: _auth != SshAuth.none,
                               children: [
                                 Padding(
@@ -526,9 +520,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                                 ),
                                 if (_auth == SshAuth.none)
                                   Text(
-                                    'Nothing is stored. Tailscale already knows this phone, so no key '
-                                    'or password is needed. If your tailnet asks for an extra check, '
-                                    'the app shows a link to approve the sign-in.',
+                                    context.l10n.uiNothingIsStoredTailscaleAlreadyKnowsThisPhoneSo,
                                     style: Type.secondary.copyWith(color: ds.textSecondary),
                                   ),
                                 if (_auth == SshAuth.key) ...[
@@ -539,17 +531,18 @@ class _FormState extends State<_Form> with RestorationMixin {
                                     onShowPublic: () => vm.showSavedPublicKey(_passphrase.text),
                                   ),
                                   LabeledField(
-                                    label: 'Private key (PEM / OpenSSH)',
+                                    label: context.l10n.uiPrivateKeyPEMOpenSSH,
                                     controller: _key,
                                     mono: true,
                                     minLines: 4,
                                     maxLines: 6,
                                     onChanged: (_) => _keyEdited(),
                                     hint: _editing
-                                        ? 'Leave blank to keep the saved key'
+                                        ? context.l10n.uiLeaveBlankToKeepTheSavedKey
                                         : '-----BEGIN OPENSSH PRIVATE KEY-----',
-                                    validator: (v) =>
-                                        !_editing && (v == null || v.trim().isEmpty) ? 'Paste your private key' : null,
+                                    validator: (v) => !_editing && (v == null || v.trim().isEmpty)
+                                        ? context.l10n.uiPastePrivateKey
+                                        : null,
                                     suffix: Align(
                                       widthFactor: 1,
                                       heightFactor: 1,
@@ -558,7 +551,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                                         padding: const EdgeInsets.only(top: Gap.xs),
                                         child: CircleButton(
                                           icon: LucideIcons.clipboardPaste,
-                                          tooltip: 'Paste from clipboard',
+                                          tooltip: context.l10n.uiPasteFromClipboard,
                                           filled: false,
                                           size: CircleButton.compact,
                                           onPressed: _paste,
@@ -576,7 +569,7 @@ class _FormState extends State<_Form> with RestorationMixin {
                                           _copy(KeyGenerator.authorizedKeysCommand(vm.publicKey!), 'Command copied'),
                                     ),
                                   LabeledField(
-                                    label: 'Key passphrase (if any)',
+                                    label: context.l10n.uiKeyPassphraseIfAny,
                                     autofillHints: const [AutofillHints.password],
                                     controller: _passphrase,
                                     obscure: _obscure,
@@ -585,18 +578,19 @@ class _FormState extends State<_Form> with RestorationMixin {
                                 ],
                                 if (_auth == SshAuth.password)
                                   LabeledField(
-                                    label: 'Password',
+                                    label: context.l10n.uiPassword,
                                     autofillHints: const [AutofillHints.password],
                                     controller: _password,
                                     obscure: _obscure,
-                                    hint: _editing ? 'Leave blank to keep the saved password' : null,
-                                    validator: (v) => !_editing && (v == null || v.isEmpty) ? 'Required' : null,
+                                    hint: _editing ? context.l10n.uiLeaveBlankToKeepTheSavedPassword : null,
+                                    validator: (v) =>
+                                        !_editing && (v == null || v.isEmpty) ? context.l10n.uiRequired : null,
                                     suffix: _toggle(),
                                   ),
                               ],
                             ),
                             SectionLabel(
-                              label: 'Advanced',
+                              label: context.l10n.uiAdvanced,
                               expanded: _advanced,
                               onTap: () => setState(() => _advancedR.value = !_advanced),
                             ),
@@ -606,16 +600,16 @@ class _FormState extends State<_Form> with RestorationMixin {
                                 children: [
                                   LabeledField(
                                     key: _sessionKey,
-                                    label: 'herdr session',
+                                    label: context.l10n.uiHerdrSession,
                                     controller: _session,
-                                    helper: 'Named sessions need herdr 0.9+ on the machine',
-                                    validator: _sessionError,
+                                    helper: context.l10n.uiNamedSessionsNeedHerdr09OnTheMachine,
+                                    validator: (v) => _sessionError(v, context.l10n.uiSessionNameError),
                                   ),
                                   LabeledField(
-                                    label: 'API socket path (optional)',
+                                    label: context.l10n.uiAPISocketPathOptional,
                                     controller: _socket,
                                     hint: '~/.config/herdr/herdr.sock',
-                                    helper: 'Only used when herdr lacks remote-api-bridge',
+                                    helper: context.l10n.uiOnlyUsedWhenHerdrLacksRemoteApiBridge,
                                   ),
                                 ],
                               ),
@@ -656,7 +650,7 @@ class _ActionBar extends StatelessWidget {
     final sideBySide = MediaQuery.sizeOf(context).width >= 360 && MediaQuery.textScalerOf(context).scale(15) <= 17;
 
     final test = AppButton(
-      label: testing ? 'Connecting…' : 'Test connection',
+      label: testing ? context.l10n.uiConnecting : context.l10n.uiTestConnection,
       icon: sideBySide ? null : LucideIcons.zap,
       kind: AppButtonKind.secondary,
       expand: true,
@@ -665,7 +659,7 @@ class _ActionBar extends StatelessWidget {
       onPressed: vm.saving ? null : onTest,
     );
     final save = AppButton(
-      label: editing ? 'Save' : 'Add machine',
+      label: editing ? context.l10n.uiSave : context.l10n.uiAddMachine,
       expand: true,
       loading: vm.saving,
       onPressed: testing ? null : onSave,
@@ -711,8 +705,8 @@ class _AuthPicker extends StatelessWidget {
       value: value,
       onChanged: onChanged,
       options: [
-        SegmentOption(SshAuth.key, 'Private key', icon: LucideIcons.keyRound),
-        SegmentOption(SshAuth.password, 'Password', icon: LucideIcons.lock),
+        SegmentOption(SshAuth.key, context.l10n.uiPrivateKey, icon: LucideIcons.keyRound),
+        SegmentOption(SshAuth.password, context.l10n.uiPassword, icon: LucideIcons.lock),
         SegmentOption(SshAuth.none, 'Tailscale', icon: LucideIcons.globe),
       ],
     );
@@ -732,7 +726,7 @@ class _TestResult extends StatelessWidget {
     final approval = vm.testState == TestState.testing ? vm.approvalUrl : null;
     final saveError = vm.saveError;
     final (Color color, IconData icon, String title, String? detail)? view = saveError != null
-        ? (ds.danger, LucideIcons.circleAlert, 'Couldn’t save', saveError)
+        ? (ds.danger, LucideIcons.circleAlert, context.l10n.uiCouldnTSave, saveError)
         : approval != null
         ? (
             ds.blocked,
@@ -745,11 +739,11 @@ class _TestResult extends StatelessWidget {
             TestState.ok => (
               ds.done,
               LucideIcons.circleCheck,
-              'Connected · herdr ${vm.version}',
-              '${countOf(vm.workspaceCount, 'workspace')}'
-                  '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
+              context.l10n.messageConnectedHerdrVersion('${vm.version}'),
+              '${context.l10n.messageWorkspaceCount(vm.workspaceCount)}'
+                  '${vm.fingerprint == null ? '' : '\n${context.l10n.messageHostKey(vm.fingerprint!)}'}',
             ),
-            TestState.failed => (ds.danger, LucideIcons.circleAlert, 'Couldn’t connect', vm.message),
+            TestState.failed => (ds.danger, LucideIcons.circleAlert, context.l10n.uiCouldnTConnect, vm.message),
             _ => null,
           };
     return AnimatedSize(
@@ -856,7 +850,7 @@ class _KeyActions extends StatelessWidget {
     runSpacing: Gap.xs,
     children: [
       AppButton(
-        label: 'Generate key',
+        label: context.l10n.uiGenerateKey,
         icon: LucideIcons.keyRound,
         kind: AppButtonKind.secondary,
         compact: true,
@@ -864,7 +858,7 @@ class _KeyActions extends StatelessWidget {
       ),
       if (showPublic)
         AppButton(
-          label: 'Show public key',
+          label: context.l10n.uiShowPublicKey,
           icon: LucideIcons.eye,
           kind: AppButtonKind.ghost,
           compact: true,
@@ -907,25 +901,23 @@ class _PublicKeyPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Public key', style: Type.label.copyWith(color: ds.textSecondary)),
+            Text(context.l10n.uiPublicKey, style: Type.label.copyWith(color: ds.textSecondary)),
             const SizedBox(height: Gap.xs),
             Text(key, style: Mono.base.copyWith(color: ds.text)),
             const SizedBox(height: Gap.sm),
-            _CopyRow(icon: LucideIcons.copy, label: 'Copy public key', onTap: onCopyKey),
+            _CopyRow(icon: LucideIcons.copy, label: context.l10n.uiCopyPublicKey, onTap: onCopyKey),
             const Hairline(),
-            _CopyRow(icon: LucideIcons.terminal, label: 'Copy authorized_keys command', onTap: onCopyCommand),
+            _CopyRow(icon: LucideIcons.terminal, label: context.l10n.uiCopyAuthorizedKeysCommand, onTap: onCopyCommand),
             const SizedBox(height: Gap.xs),
             if (replacesSaved) ...[
               Text(
-                'This replaces the key this machine uses now. Run the command on the machine first, '
-                'then Test connection, then Save.',
+                context.l10n.uiThisReplacesTheKeyThisMachineUsesNowRun,
                 style: Type.secondary.copyWith(color: ds.text),
               ),
               const SizedBox(height: Gap.xs),
             ],
             Text(
-              'Run the command once on the machine, then test the connection. If you keep keys '
-              'elsewhere (Tailscale, GitHub), paste the public key there instead.',
+              context.l10n.uiRunTheCommandOnceOnTheMachineThenTest,
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             const SizedBox(height: Gap.xs),

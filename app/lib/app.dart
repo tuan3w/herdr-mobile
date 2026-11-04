@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/app_localizations.dart';
+
 import 'data/repositories/agent_screens.dart';
 import 'data/repositories/app_settings.dart';
 import 'data/repositories/agent_session.dart' show AgentSessions;
@@ -304,6 +306,8 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
       listenable: widget.appSettings,
       builder: (context, _) => MaterialApp(
         title: 'herdr',
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(terminal: widget.appSettings.darkTerminal ? TerminalPalette.dark : null),
         darkTheme: AppTheme.dark(),

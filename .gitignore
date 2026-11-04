@@ -15,3 +15,5 @@ __pycache__/
 
 # Private writing the keyboard-prediction eval collects (tool/predict-eval)
 tool/predict-eval/corpus/
+# Generated from the tracked English and Japanese ARB resources by Flutter.
+app/lib/l10n/app_localizations*.dart

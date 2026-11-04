@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -98,10 +99,10 @@ class _ContentSelectionAreaState extends State<ContentSelectionArea> {
       // (Share and Select all can wait there).
       final after = items.indexWhere((i) => i.type == ContextMenuButtonType.copy) + 1;
       items.insertAll(after, [
-        ContextMenuButtonItem(label: 'Copy message', onPressed: () => run((c) => copyMessage(c, message))),
+        ContextMenuButtonItem(label: context.l10n.uiCopyMessage, onPressed: () => run((c) => copyMessage(c, message))),
         if (messageHasMarkdown(message))
           ContextMenuButtonItem(
-            label: 'Copy as Markdown',
+            label: context.l10n.uiCopyAsMarkdown,
             onPressed: () => run((c) => copyMessageMarkdown(c, message)),
           ),
       ]);
@@ -130,10 +131,10 @@ void copyMessageMarkdown(BuildContext context, TranscriptMessage message) =>
 /// source for an answer.
 Future<void> showMessageCopySheet(BuildContext context, TranscriptMessage message) => showActionSheet(
   context,
-  title: 'Message',
+  title: context.l10n.uiMessage,
   actions: [
     SheetAction(
-      label: 'Copy text',
+      label: context.l10n.uiCopyText,
       icon: LucideIcons.copy,
       onTap: () {
         if (context.mounted) copyMessage(context, message);
@@ -141,7 +142,7 @@ Future<void> showMessageCopySheet(BuildContext context, TranscriptMessage messag
     ),
     if (messageHasMarkdown(message))
       SheetAction(
-        label: 'Copy as Markdown',
+        label: context.l10n.uiCopyAsMarkdown,
         icon: LucideIcons.fileCode,
         onTap: () {
           if (context.mounted) copyMessageMarkdown(context, message);
@@ -172,7 +173,7 @@ class MessageCopyTarget extends StatelessWidget {
         container: true,
         explicitChildNodes: true,
         customSemanticsActions: {
-          const CustomSemanticsAction(label: 'Copy message'): () => showMessageCopySheet(context, message),
+          CustomSemanticsAction(label: context.l10n.uiCopyMessage): () => showMessageCopySheet(context, message),
         },
         child: child,
       ),

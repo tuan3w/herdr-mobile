@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -8,7 +9,6 @@ import '../../../data/repositories/attention_set.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/machine_repository.dart';
-import '../../../data/words/plural.dart';
 import 'approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -40,15 +40,15 @@ class MachinesScreen extends StatelessWidget {
               slivers: [
                 // A page over home, opened from its header: Back returns there.
                 SliverLargeTitle.back(
-                  title: 'Machines',
+                  title: context.l10n.uiMachines,
                   subtitle: Text(
-                    count == 0 ? 'None yet' : countOf(count, 'machine'),
+                    count == 0 ? context.l10n.uiNoneYet : context.l10n.machineCount(count),
                     style: Type.secondary.copyWith(color: ds.textSecondary),
                   ),
                   actions: [
                     CircleButton(
                       icon: LucideIcons.plus,
-                      tooltip: 'Add machine',
+                      tooltip: context.l10n.uiAddMachine,
                       onPressed: () => openMachineForm(context),
                     ),
                   ],
@@ -60,12 +60,10 @@ class MachinesScreen extends StatelessWidget {
                       padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
                       child: EmptyState(
                         icon: HerdrIcons.machines,
-                        title: 'No machines yet',
-                        message:
-                            'Add a machine that runs herdr. You can connect as many as '
-                            'you like and see them all together.',
+                        title: context.l10n.uiNoMachinesYet,
+                        message: context.l10n.uiAddAMachineThatRunsHerdrYouCanConnect,
                         action: AppButton(
-                          label: 'Add machine',
+                          label: context.l10n.uiAddMachine,
                           icon: LucideIcons.plus,
                           onPressed: () => openMachineForm(context),
                         ),
@@ -92,6 +90,7 @@ class MachinesScreen extends StatelessWidget {
 /// One machine: a flat row with the same metrics as [ListRow]. It is a local
 /// row because the status line needs a [LinkDot] and the problem panel sits
 /// under the text, neither of which [ListRow] can express.
+
 class _MachineRow extends StatelessWidget {
   const _MachineRow({super.key, required this.machine});
 
@@ -108,11 +107,9 @@ class _MachineRow extends StatelessWidget {
     final p = machine.profile;
     final ok = await showConfirmSheet(
       context,
-      title: 'Remove ${p.label}?',
-      message:
-          'The saved connection and its credentials are deleted from this '
-          'phone. Agents on the machine keep running.',
-      confirmLabel: 'Remove',
+      title: context.l10n.messageRemove53(p.label),
+      message: context.l10n.uiTheSavedConnectionAndItsCredentialsAreDeletedFrom,
+      confirmLabel: context.l10n.uiRemove,
       // Credentials are deleted and cannot be brought back: a hold, not a tap.
       hold: true,
     );
@@ -127,16 +124,21 @@ class _MachineRow extends StatelessWidget {
       title: p.label,
       actions: [
         SheetAction(
-          label: 'Edit',
+          label: context.l10n.uiEdit,
           icon: LucideIcons.pencil,
           onTap: () => openMachineForm(context, existing: p),
         ),
         SheetAction(
-          label: p.enabled ? 'Disable' : 'Enable',
+          label: p.enabled ? context.l10n.uiDisable : context.l10n.uiEnable,
           icon: p.enabled ? LucideIcons.powerOff : LucideIcons.power,
           onTap: () => repo.save(p.copyWith(enabled: !p.enabled)),
         ),
-        SheetAction(label: 'Remove', icon: LucideIcons.trash2, destructive: true, onTap: () => _remove(context, repo)),
+        SheetAction(
+          label: context.l10n.uiRemove,
+          icon: LucideIcons.trash2,
+          destructive: true,
+          onTap: () => _remove(context, repo),
+        ),
       ],
     );
   }
@@ -157,13 +159,17 @@ class _MachineRow extends StatelessWidget {
     final approval = machine.approvalUrl;
     final indent = Gap.gutter + _tile + _gap;
 
-    final semantic = [p.label, state.label, if (waiting > 0) needYou(waiting)].join(', ');
+    final semantic = [
+      p.label,
+      state.labelFor(context.l10n),
+      if (waiting > 0) context.l10n.statusNeedsYou(waiting),
+    ].join(', ');
 
     // "Enable" sits beside the text when there is room, under it on a narrow
     // phone or with large system text (it would squeeze the name to nothing).
     final roomy = MediaQuery.sizeOf(context).width >= 340 && MediaQuery.textScalerOf(context).scale(14) <= 18;
     final enable = AppButton(
-      label: 'Enable',
+      label: context.l10n.uiEnable,
       kind: AppButtonKind.secondary,
       compact: true,
       onPressed: () => context.read<MachineRepository>().save(p.copyWith(enabled: true)),
@@ -220,7 +226,7 @@ class _MachineRow extends StatelessWidget {
               const SizedBox(width: Gap.xs),
               CircleButton(
                 icon: LucideIcons.ellipsis,
-                tooltip: 'More options for ${p.label}',
+                tooltip: context.l10n.messageMoreOptionsFor(p.label),
                 filled: false,
                 size: CircleButton.compact,
                 onPressed: () => _menu(context),
@@ -241,7 +247,7 @@ class _MachineRow extends StatelessWidget {
               message: machine.error,
               messageMaxLines: 3,
               trailing: AppButton(
-                label: 'Retry',
+                label: context.l10n.uiRetry,
                 kind: AppButtonKind.secondary,
                 compact: true,
                 onPressed: machine.retry,
@@ -253,7 +259,7 @@ class _MachineRow extends StatelessWidget {
             padding: EdgeInsets.only(left: indent, right: Gap.gutter, bottom: Gap.md),
             child: StatusPanel(
               color: ds.blocked,
-              message: 'Tailscale needs you to approve this sign-in.',
+              message: context.l10n.uiTailscaleNeedsYouToApproveThisSignIn,
               footer: Align(
                 alignment: Alignment.centerLeft,
                 child: ApprovalButton(url: approval),
@@ -283,20 +289,28 @@ class _Subtitle extends StatelessWidget {
     final p = machine.profile;
     final state = machine.state;
     final agents = machine.agentPanes.length;
+    final stateWords = state.labelFor(context.l10n);
     // Only the states that need the person are tinted (with the AA text tone,
     // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;
-    final lead = state == LinkState.online
-        ? (agents == 0 ? 'No agents' : countOf(agents, 'agent'))
+    final fullLead = state == LinkState.online
+        ? (agents == 0 ? context.l10n.noAgents : context.l10n.agentCount(agents))
         : p.enabled
-        ? state.label
-        : '${state.label} · not connecting';
+        ? stateWords
+        : '$stateWords · ${context.l10n.uiNotConnecting}';
+    final compactLead = context.l10n.agentCountCompact(agents);
+    final canCompact = state == LinkState.online && agents > 0;
     final address = '${p.username}@${p.host}${p.port == 22 ? '' : ':${p.port}'}';
     final style = Type.secondary.copyWith(color: ds.textMuted);
     final leadStyle = loud ? Type.secondaryStrong.copyWith(color: ds.blockedText) : style;
     final scaler = MediaQuery.textScalerOf(context);
     return LayoutBuilder(
       builder: (context, box) {
+        // A narrow row cannot hold "エージェント3件"; show only the number
+        // there, so the count the person needs is never the part that is cut.
+        // The same string is measured and drawn, and the address gives way to
+        // it.
+        final lead = canCompact && _width(fullLead, leadStyle, scaler) > box.maxWidth ? compactLead : fullLead;
         // The count or state comes first and is cut last; the address gives
         // way from its middle, and goes when even its end has no room.
         final room = box.maxWidth - _width('$lead · ', leadStyle, scaler);
@@ -311,6 +325,9 @@ class _Subtitle extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           overflow: TextOverflow.ellipsis,
+          // Spoken, the count keeps its full meaning even when the row shows
+          // only the number.
+          semanticsLabel: shown == null ? fullLead : '$fullLead · $shown',
         );
       },
     );

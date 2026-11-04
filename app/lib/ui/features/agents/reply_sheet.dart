@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -14,7 +16,6 @@ import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/pane_previews.dart';
 import '../../../data/words/agent_names.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -295,7 +296,7 @@ class _SessionAsk extends StatelessWidget {
         ],
         const SizedBox(height: Gap.md),
         AppButton(
-          label: 'Answer in the session',
+          label: context.l10n.uiAnswerInTheSession,
           icon: HerdrIcons.message,
           onPressed: () {
             onOpen();
@@ -324,7 +325,7 @@ class _AllClear extends StatelessWidget {
           children: [
             DrawCheck(color: ds.done, size: IconSize.lead),
             const SizedBox(width: Gap.md),
-            Text('All clear', style: Type.row.copyWith(color: ds.text)),
+            Text(context.l10n.uiAllClear, style: Type.row.copyWith(color: ds.text)),
           ],
         ),
       ),
@@ -345,18 +346,28 @@ class _TriageBar extends StatelessWidget {
     final ds = context.ds;
     return Row(
       children: [
-        CircleButton(icon: LucideIcons.chevronLeft, tooltip: 'Previous agent', onPressed: onPrev, filled: false),
+        CircleButton(
+          icon: LucideIcons.chevronLeft,
+          tooltip: context.l10n.uiPreviousAgent,
+          onPressed: onPrev,
+          filled: false,
+        ),
         Expanded(
           child: Semantics(
             liveRegion: true,
             child: Text(
-              '${index + 1} of ${needYou(total)}',
+              context.l10n.messageOfNeedsYou(total, index + 1),
               textAlign: TextAlign.center,
               style: Type.labelStrong.copyWith(color: ds.blockedText, fontFeatures: Type.tabular),
             ),
           ),
         ),
-        CircleButton(icon: LucideIcons.chevronRight, tooltip: 'Next agent', onPressed: onNext, filled: false),
+        CircleButton(
+          icon: LucideIcons.chevronRight,
+          tooltip: context.l10n.uiNextAgent,
+          onPressed: onNext,
+          filled: false,
+        ),
       ],
     );
   }
@@ -550,7 +561,7 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
             builder: (context, _) {
               final busy = _reply.busy;
               return ComposerRoundButton(
-                label: 'Send',
+                label: context.l10n.uiSend,
                 icon: LucideIcons.arrowUp,
                 iconSize: IconSize.bar,
                 ready: live && !busy && _input.text.trim().isNotEmpty,
@@ -581,17 +592,17 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
                       ),
                       KeyCap(
                         icon: LucideIcons.arrowUp,
-                        semanticLabel: 'Up',
+                        semanticLabel: context.l10n.uiUp,
                         onTap: enabled ? () => _reply.sendKey('up') : null,
                       ),
                       KeyCap(
                         icon: LucideIcons.arrowDown,
-                        semanticLabel: 'Down',
+                        semanticLabel: context.l10n.uiDown,
                         onTap: enabled ? () => _reply.sendKey('down') : null,
                       ),
                       KeyCap(
                         icon: LucideIcons.cornerDownLeft,
-                        semanticLabel: 'Enter',
+                        semanticLabel: context.l10n.uiEnter,
                         onTap: enabled ? () => _reply.sendKey('enter') : null,
                       ),
                     ],
@@ -599,7 +610,7 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
                 ),
                 const SizedBox(width: Gap.sm),
                 AppButton(
-                  label: 'Open full',
+                  label: context.l10n.uiOpenFull,
                   icon: LucideIcons.maximize2,
                   kind: AppButtonKind.ghost,
                   compact: true,
@@ -675,12 +686,12 @@ class _SheetPreview extends StatelessWidget {
     if (tail == null) {
       content = Align(
         alignment: Alignment.bottomLeft,
-        child: Text('Loading…', style: style.copyWith(color: ds.textMuted)),
+        child: Text(context.l10n.uiLoading24, style: style.copyWith(color: ds.textMuted)),
       );
     } else if (tail.isEmpty) {
       content = Align(
         alignment: Alignment.bottomLeft,
-        child: Text('No output yet', style: style.copyWith(color: ds.textMuted)),
+        child: Text(context.l10n.uiNoOutputYet, style: style.copyWith(color: ds.textMuted)),
       );
     } else {
       content = SingleChildScrollView(
@@ -711,7 +722,9 @@ class _SheetPreview extends StatelessWidget {
       ),
     );
     return Semantics(
-      label: tail == null || tail.isEmpty ? 'Terminal preview' : 'Terminal preview: ${tail.last.text}',
+      label: tail == null || tail.isEmpty
+          ? context.l10n.uiTerminalPreview
+          : context.l10n.messageTerminalPreview(tail.last.text),
       excludeSemantics: true,
       child: dim ? Opacity(opacity: 0.55, child: panel) : panel,
     );

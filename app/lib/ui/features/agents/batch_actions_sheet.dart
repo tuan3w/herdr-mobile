@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -148,7 +150,7 @@ class _BatchSheetState extends State<BatchSheet> {
           onPressed: canConfirm ? () => _confirm(plan) : null,
         ),
         AppButton(
-          label: 'Cancel',
+          label: context.l10n.uiCancel,
           kind: AppButtonKind.secondary,
           expand: true,
           onPressed: () => Navigator.of(context).pop(),
@@ -167,10 +169,10 @@ class _BatchSheetState extends State<BatchSheet> {
             Padding(
               padding: const EdgeInsets.only(left: Gap.gutter, top: Gap.lg, right: Gap.gutter),
               child: LabeledField(
-                label: 'Message',
+                label: context.l10n.uiMessage,
                 controller: _text,
-                hint: 'One message for every agent below',
-                helper: 'Typed into each agent, then Enter.',
+                hint: context.l10n.uiOneMessageForEveryAgentBelow,
+                helper: context.l10n.uiTypedIntoEachAgentThenEnter,
                 minLines: 2,
                 maxLines: 6,
                 autofocus: true,
@@ -196,15 +198,17 @@ class _BatchSheetState extends State<BatchSheet> {
                     ),
                   if (message && (waiting.isNotEmpty || waitingTerminals.isNotEmpty)) ...[
                     SectionLabel(
-                      label: waiting.isEmpty ? 'Waiting for an answer' : 'Waiting for an answer (skipped)',
+                      label: waiting.isEmpty
+                          ? context.l10n.uiWaitingForAnAnswer
+                          : context.l10n.uiWaitingForAnAnswerSkipped,
                       count: waiting.length,
                     ),
                     if (waitingTerminals.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Gap.gutter),
                         child: SwitchRow(
-                          title: 'Send anyway',
-                          subtitle: 'They show a question. The text would be typed into it.',
+                          title: context.l10n.uiSendAnyway,
+                          subtitle: context.l10n.uiTheyShowAQuestionTheTextWouldBeTyped,
                           value: sendAnyway,
                           onChanged: (on) => setState(() => _anyway = on ? waitingTerminals : null),
                         ),
@@ -213,7 +217,7 @@ class _BatchSheetState extends State<BatchSheet> {
                       _TargetRow(target: s.target, note: _sentence(s.reason), noteColor: ds.blockedText),
                   ],
                   if (skipped.isNotEmpty) ...[
-                    SectionLabel(label: 'Skipped', count: skipped.length),
+                    SectionLabel(label: context.l10n.uiSkipped, count: skipped.length),
                     for (final s in skipped)
                       _TargetRow(
                         target: s.target,

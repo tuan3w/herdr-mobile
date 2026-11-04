@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -88,7 +89,7 @@ class _InfoBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SheetScaffold(
-      title: 'Photo info',
+      title: context.l10n.uiPhotoInfo,
       kind: SheetKind.message,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -139,7 +140,7 @@ class _Row extends StatelessWidget {
               ),
               CircleButton(
                 icon: LucideIcons.copy,
-                tooltip: 'Copy ${row.label.toLowerCase()}',
+                tooltip: context.l10n.messageCopy(row.label.toLowerCase()),
                 size: CircleButton.compact,
                 onPressed: () => copyText(context, copy, what: '${row.label} copied'),
               ),

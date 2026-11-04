@@ -9,6 +9,36 @@ when updating Flutter or plugins; `targetSdk` follows Flutter independently.
 The Android CI job builds a debug APK and checks its merged manifest's minimum
 SDK. Installation, SSH and Japanese rendering on API 24 still require device
 or emulator verification; a successful build alone does not prove those flows.
+CI installs NDK 28.2.13676358 itself instead of letting the Android Gradle
+plugin fetch it through the SDK manager: that download failed twice with
+`ZipFile unknown archive` and blocked the APK job. The step downloads the
+official archive, checks its published size and SHA-1 and its zip integrity,
+and installs it under `$ANDROID_HOME/ndk/`; it fails the job rather than
+building against a broken toolchain.
+
+## Translations
+
+App-owned UI labels live in `app/lib/l10n/app_en.arb` and `app_ja.arb`.
+Flutter generates the Dart accessors during `flutter pub get`; English remains
+the fallback and Japanese follows the device language. Keep command text,
+remote agent output, hostnames, paths and protocol values in their original form.
+Widgets use `context.l10n` from `l10n_context.dart`; standalone widget tests
+without the app delegate still use their enclosing locale (English by default).
+
+The localization boundaries and count/freshness design are in
+`docs/DESIGN.md`, "Japanese localization contract". Generate code with
+`flutter gen-l10n`; never edit the generated accessors. Focused checks:
+
+```bash
+cd app
+flutter test test/ui/japanese_localization_test.dart
+HERDR_JA_SHOTS=1 flutter test test/ui/japanese_localization_test.dart
+flutter test screenshot_test/japanese_screens_shots_test.dart
+```
+
+The last two commands write review images under `/tmp/herdr-ja-shots` and
+`/tmp/herdr-ja-screens`. Inspect the images; passing screenshot tests alone
+does not establish translated-text coverage or visual correctness.
 
 ## Commands
 

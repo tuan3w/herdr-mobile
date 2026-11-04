@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -112,7 +114,10 @@ class _SwitcherSheet extends StatelessWidget {
           // names it (`repo · branch · agent`, and the machine when there are
           // several).
           for (final section in layout.sections) ...[
-            SectionLabel(label: sectionLabel(section.status), count: section.count),
+            SectionLabel(
+              label: sectionLabel(section.status, words: context.l10n),
+              count: section.count,
+            ),
             for (final item in section.items) _row(context, ds, item, whereOfItem(item, showMachine: several)),
           ],
           const SizedBox(height: Gap.sm),
@@ -120,7 +125,7 @@ class _SwitcherSheet extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
             child: SheetActionRow(
               action: SheetAction(
-                label: 'All agents on the board',
+                label: context.l10n.uiAllAgentsOnTheBoard,
                 icon: HerdrIcons.agents,
                 onTap: () => _board(context),
               ),
@@ -149,7 +154,7 @@ class _SwitcherSheet extends StatelessWidget {
       subtitle: subtitle,
       leading: StatusGlyph(status: statusOfItem(item), size: IconSize.lead),
       dim: stale,
-      trailing: here ? Text('Here', style: Type.label.copyWith(color: ds.textMuted)) : null,
+      trailing: here ? Text(context.l10n.uiHere, style: Type.label.copyWith(color: ds.textMuted)) : null,
       onTap: here ? null : () => _go(context, item.agent),
     );
   }

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -357,7 +359,7 @@ class _SheetFrameState extends State<SheetFrame> with SingleTickerProviderStateM
                         (1 - ((_position.offset.value - restHalf) / math.max(1, full - restHalf)).clamp(0.0, 1.0));
                     final alpha = _enter() * drop;
                     return Semantics(
-                      label: 'Close',
+                      label: context.l10n.uiClose,
                       button: true,
                       onTap: _tapScrim,
                       child: GestureDetector(

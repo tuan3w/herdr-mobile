@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -209,13 +211,13 @@ class _HostTabState extends State<HostTab> {
           padding: EdgeInsets.only(bottom: clearance),
           // Top-aligned, not centred: at half height the lower part of the
           // tab is below the screen.
-          sliver: const SliverToBoxAdapter(
+          sliver: SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.only(top: Gap.xl),
               child: EmptyState(
                 icon: HerdrIcons.machinesOff,
-                title: 'Files are unavailable on this machine',
-                message: 'This machine doesn’t allow browsing files.',
+                title: context.l10n.uiFilesAreUnavailableOnThisMachine,
+                message: context.l10n.uiThisMachineDoesnTAllowBrowsingFiles,
               ),
             ),
           ),
@@ -238,7 +240,7 @@ class _HostTabState extends State<HostTab> {
               child: SearchField(
                 controller: _search,
                 focusNode: _focus,
-                hint: 'Find in ${visibleText(vm.name)}',
+                hint: context.l10n.messageFindIn(visibleText(vm.name)),
                 onChanged: vm.setQuery,
                 onPointerDown: _expand,
               ),
@@ -252,13 +254,17 @@ class _HostTabState extends State<HostTab> {
                   padding: const EdgeInsets.symmetric(horizontal: Gap.gutter),
                   children: [
                     AppChip(
-                      label: 'Changed recently',
+                      label: context.l10n.uiChangedRecently,
                       icon: LucideIcons.clock,
                       selected: _options.recentOnly,
                       onTap: () => _options.setRecentOnly(!_options.recentOnly),
                     ),
                     const SizedBox(width: Gap.sm),
-                    AppChip(label: 'Browse all…', icon: LucideIcons.folderTree, onTap: () => unawaited(_browseAll())),
+                    AppChip(
+                      label: context.l10n.uiBrowseAll,
+                      icon: LucideIcons.folderTree,
+                      onTap: () => unawaited(_browseAll()),
+                    ),
                   ],
                 ),
               ),
@@ -446,7 +452,7 @@ class _HostRowState extends State<_HostRow> {
                 child: SelectionCircle(
                   number: _number,
                   onTap: widget.onToggle,
-                  label: _number == null ? 'Select $name' : 'Deselect $name',
+                  label: _number == null ? context.l10n.messageSelect(name) : context.l10n.messageDeselect(name),
                 ),
               ),
             )

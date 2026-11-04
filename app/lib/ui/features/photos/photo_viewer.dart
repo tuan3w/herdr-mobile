@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -189,20 +191,20 @@ class PhotoViewerState extends State<PhotoViewer> with SingleTickerProviderState
       context,
       actions: [
         SheetAction(
-          label: 'Save to phone',
+          label: context.l10n.uiSaveToPhone,
           icon: LucideIcons.download,
           unavailable: entry.bytes == null ? 'Available once the picture has loaded' : null,
           onTap: () => unawaited(_run(context, model.save)),
         ),
         SheetAction(
-          label: 'Share…',
+          label: context.l10n.uiShare,
           icon: LucideIcons.share2,
           unavailable: entry.bytes == null ? 'Available once the picture has loaded' : null,
           onTap: () => unawaited(_run(context, model.share)),
         ),
         if (entry.item.path != null)
           SheetAction(
-            label: 'Copy path',
+            label: context.l10n.uiCopyPath,
             icon: LucideIcons.link,
             onTap: () => copyText(context, entry.item.path!, what: 'Path copied'),
           ),
@@ -357,8 +359,16 @@ class _TopBar extends StatelessWidget {
       leading: AppBackButton(onPressed: onBack),
       title: title,
       actions: [
-        CircleButton(icon: LucideIcons.info, tooltip: 'Photo info', onPressed: entry == null ? null : onInfo),
-        CircleButton(icon: LucideIcons.share2, tooltip: 'Save or share', onPressed: entry == null ? null : onShare),
+        CircleButton(
+          icon: LucideIcons.info,
+          tooltip: context.l10n.uiPhotoInfo,
+          onPressed: entry == null ? null : onInfo,
+        ),
+        CircleButton(
+          icon: LucideIcons.share2,
+          tooltip: context.l10n.uiSaveOrShare,
+          onPressed: entry == null ? null : onShare,
+        ),
       ],
     );
   }
@@ -506,7 +516,7 @@ class _FailureView extends StatelessWidget {
                 if (large) ...[
                   const SizedBox(height: Gap.sm),
                   Text(
-                    'Share it to open it in an app made for big files.',
+                    context.l10n.uiShareItToOpenItInAnAppMade,
                     textAlign: TextAlign.center,
                     style: Type.compact.copyWith(color: ds.textSecondary),
                   ),
@@ -518,21 +528,21 @@ class _FailureView extends StatelessWidget {
                   runSpacing: Gap.sm,
                   children: [
                     if (failure.retryable)
-                      AppButton(label: 'Retry', icon: LucideIcons.refreshCw, onPressed: model.retry),
+                      AppButton(label: context.l10n.uiRetry, icon: LucideIcons.refreshCw, onPressed: model.retry),
                     if (large)
                       AppButton(
                         label: exporting == null
-                            ? 'Share…'
-                            : 'Copying ${formatBytes(exporting.done)} of ${formatBytes(exporting.total)}',
+                            ? context.l10n.uiShare
+                            : context.l10n.messageCopyingOf(formatBytes(exporting.done), formatBytes(exporting.total)),
                         icon: LucideIcons.share2,
                         loading: exporting != null,
                         onPressed: exporting == null ? () => run(context, model.shareLarge) : null,
                       ),
                     if (failure.kind == PhotoFailureKind.notAnImage && onViewAsText != null)
-                      AppButton(label: 'Show as text', icon: LucideIcons.fileText, onPressed: onViewAsText),
+                      AppButton(label: context.l10n.uiShowAsText, icon: LucideIcons.fileText, onPressed: onViewAsText),
                     if (entry.item.path != null)
                       AppButton(
-                        label: 'Copy path',
+                        label: context.l10n.uiCopyPath,
                         icon: LucideIcons.copy,
                         kind: AppButtonKind.secondary,
                         onPressed: () => copyText(context, entry.item.path!, what: 'Path copied'),

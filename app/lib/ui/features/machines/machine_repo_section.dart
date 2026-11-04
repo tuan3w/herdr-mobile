@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -54,7 +56,7 @@ class MachineRepoSection extends StatelessWidget {
             offset: const Offset(machineDotsNudge, 0),
             child: CircleButton(
               icon: LucideIcons.plus,
-              tooltip: 'New agent session in ${group.repoName}',
+              tooltip: context.l10n.messageNewAgentSessionIn(group.repoName),
               filled: false,
               size: CircleButton.compact,
               onPressed: live
@@ -164,7 +166,7 @@ class _CheckoutBlockView extends StatelessWidget {
                 offset: const Offset(machineDotsNudge, 0),
                 child: CircleButton(
                   icon: LucideIcons.ellipsis,
-                  tooltip: 'Checkout actions',
+                  tooltip: context.l10n.uiCheckoutActions,
                   filled: false,
                   size: CircleButton.compact,
                   onPressed: live ? () => showWorkspaceActions(context, machine, block.workspace) : null,

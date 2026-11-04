@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -56,7 +57,7 @@ class _RenameBodyState extends State<_RenameBody> {
   Widget build(BuildContext context) => SheetScaffold(
     title: widget.title,
     kind: SheetKind.form,
-    actions: [AppButton(label: 'Save', expand: true, onPressed: _valid ? _save : null)],
+    actions: [AppButton(label: context.l10n.uiSave, expand: true, onPressed: _valid ? _save : null)],
     child: Padding(
       padding: const EdgeInsets.only(top: Gap.sm),
       child: LabeledField(

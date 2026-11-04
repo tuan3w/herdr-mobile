@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -54,5 +56,5 @@ class _ContinueButtonState extends State<ContinueButton> {
 
   @override
   Widget build(BuildContext context) =>
-      AppButton(label: 'Continue', compact: true, loading: _busy, onPressed: _continue);
+      AppButton(label: context.l10n.uiContinue, compact: true, loading: _busy, onPressed: _continue);
 }

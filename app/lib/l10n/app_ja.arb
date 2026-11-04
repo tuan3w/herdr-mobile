@@ -1,0 +1,2016 @@
+{
+  "@@locale": "ja",
+  "uiDetailsTrimmed": "  詳細を省略",
+  "uiIsnTACommand": " はコマンドではありません。",
+  "uiAMessageToAnAgentThatYouSentAt": "2回以上送ったメッセージを候補として表示します。学習内容はこの端末だけに保存されます。",
+  "uiANewFolderAndBranchNextToThisRepo": "このリポジトリの隣に新しいフォルダーとブランチを作成",
+  "uiARunningAgentOpensAsItsTerminal": "実行中のエージェントはターミナルで開きます。",
+  "uiAPISocketPathOptional": "APIソケットのパス（任意）",
+  "uiAbout": "このアプリについて",
+  "uiAccept": "許可",
+  "uiAddAMachineRunningHerdrAndItsAgentsShow": "herdrが動いているマシンを追加すると、エージェントがここに表示されます。",
+  "uiAddAMachineThatRunsHerdrYouCanConnect": "herdrが動いているマシンを追加してください。複数のマシンに接続し、まとめて確認できます。",
+  "uiAddAPhrase": "定型文を追加",
+  "uiAddMachine": "マシンを追加",
+  "uiAddWhatISendMost": "よく送るメッセージを追加",
+  "uiAddYourFirstMachine": "最初のマシンを追加",
+  "uiAdvanced": "詳細設定",
+  "uiAgent": "エージェント",
+  "uiAgents": "エージェント",
+  "uiAlbums": "アルバム",
+  "uiAll": "すべて",
+  "uiAllAgentsOnTheBoard": "ボード上の全エージェント",
+  "uiAllowItInThePhoneSSettingsToSee": "端末の設定で写真へのアクセスを許可してください。",
+  "uiAlsoWhenAnAgentFinishes": "エージェントの完了時も通知",
+  "uiAnAgentSessionStartsOnAConnectedMachineCheck": "接続中のマシンでセッションを開始します。「マシン」で接続を確認してください。",
+  "uiAndroidCouldnTOpenItUsuallyBecauseOfIts": "Androidで開けませんでした。対応していない形式の可能性があります。共有して対応するプレーヤーで開いてください。",
+  "uiAndroidIsBlockingNotificationsForHerdrAllowThemIn": "Androidでherdrの通知が無効になっています。端末のアプリ設定で通知を許可してください。",
+  "uiAnswerInTheSession": "セッションで回答",
+  "uiApproveThisSignIn": "ログインを承認",
+  "uiAsksGithubComAboutTwiceADayWhileYou": "アプリの使用中、1日約2回、アプリ名とバージョンを添えてgithub.comに確認します。ファイルはGitHubの配信サーバーからダウンロードします。",
+  "uiAttach": "添付",
+  "uiAttachPhotosFromYourPhone": "端末の写真を添付",
+  "uiAudio": "音声",
+  "uiAuthentication": "認証",
+  "uiBack": "戻る",
+  "uiBackToOptions": "選択肢に戻る",
+  "uiBackgroundWork": "バックグラウンドの処理",
+  "uiBranch": "ブランチ",
+  "uiBrowseAll": "すべて表示…",
+  "uiBrowseFiles": "ファイルを見る",
+  "uiBrowseFolders": "フォルダーを見る",
+  "uiBuildServer": "ビルドサーバー",
+  "uiCamera": "カメラ",
+  "uiCancel": "キャンセル",
+  "uiCancelRequest": "要求をキャンセル",
+  "uiChanged": "変更あり",
+  "uiChangedInTheLastHour": "直近1時間の変更",
+  "uiChangedOnDisk": "ディスク上で変更されました",
+  "uiChangedRecently": "最近の変更",
+  "uiCheckAutomatically": "自動で確認",
+  "uiCheckForUpdates": "更新を確認",
+  "uiCheckout": "チェックアウト",
+  "uiCheckoutActions": "チェックアウトの操作",
+  "uiChooseThisFolder": "このフォルダーを選択",
+  "uiChooseThisFolderOrGoBack": "このフォルダーを選ぶか、戻ってください。",
+  "uiClear": "消去",
+  "uiClearCache": "キャッシュを消去",
+  "uiClearSearch": "検索をクリア",
+  "uiClose": "閉じる",
+  "uiClosePage": "ページを閉じる",
+  "uiClosePane": "ペインを閉じる",
+  "uiCloseThisPane": "このペインを閉じますか？",
+  "uiCloseWorkspace": "ワークスペースを閉じる",
+  "uiComponents": "コンポーネント",
+  "uiConnecting": "接続中…",
+  "uiConnection": "接続",
+  "uiContentThisAppCanTShow": "このアプリでは表示できない内容",
+  "uiContinue": "続ける",
+  "uiContinueAConversationAnAgentKept": "保存された会話を再開",
+  "uiCopied": "コピーしました",
+  "uiCopiesOfWhatYouLookedAtOnYourMachines": "マシンで閲覧した内容を保存し、再ダウンロードを減らします。上限は192 MBで、古いものから削除します。",
+  "uiCopyAsMarkdown": "Markdownとしてコピー",
+  "uiCopyAsTSV": "TSVとしてコピー",
+  "uiCopyAuthorizedKeysCommand": "authorized_keysの登録コマンドをコピー",
+  "uiCopyCode": "コードをコピー",
+  "uiCopyCommand": "コマンドをコピー",
+  "uiCopyLink": "リンクをコピー",
+  "uiCopyMessage": "メッセージをコピー",
+  "uiCopyPath": "パスをコピー",
+  "uiCopyPublicKey": "公開鍵をコピー",
+  "uiCopySessionLink": "セッションのリンクをコピー",
+  "uiCopySource": "ソースをコピー",
+  "uiCopyTable": "表をコピー",
+  "uiCopyText": "テキストをコピー",
+  "uiCouldnTCopyTheVideo": "動画をコピーできませんでした",
+  "uiCouldnTReadPastSessions": "過去のセッションを読み込めませんでした",
+  "uiCouldnTReadTheLogRetry": "ログを読み込めませんでした。再試行してください",
+  "uiCouldnTRefresh": "更新できませんでした",
+  "uiCreateAWorkspaceInHerdrAndItWillShow": "herdrでワークスペースを作ると、ここに表示されます。",
+  "uiCropped": "切り抜き済み",
+  "uiDarkTerminal": "ターミナルを暗くする",
+  "uiDecline": "拒否",
+  "uiDecreaseFontSize": "文字を小さく",
+  "uiDelete": "削除",
+  "uiDictate": "音声入力",
+  "uiDictateIn": "音声入力の言語",
+  "uiDisable": "無効にする",
+  "uiDone": "完了",
+  "uiDown": "下へ",
+  "uiDownloadProgress": "ダウンロードの進捗",
+  "uiDrawAgain": "再描画",
+  "uiDuplicate": "複製",
+  "uiEdit": "編集",
+  "uiEditMachine": "マシンを編集",
+  "uiEditQueuedMessage": "送信待ちのメッセージを編集",
+  "uiEditQuickPhrase": "定型文を編集",
+  "uiEmptyFile": "空のファイル",
+  "uiEnable": "有効にする",
+  "uiEnter": "入力",
+  "uiEverythingItWillChange": "変更される内容",
+  "uiFile": "ファイル",
+  "uiFileOptions": "ファイルの操作",
+  "uiFiles": "ファイル",
+  "uiFilesAreUnavailableOnThisMachine": "このマシンのファイルは利用できません",
+  "uiFitLinesToTheScreenInsteadOfScrollingSideways": "横スクロールの代わりに画面幅で折り返します。",
+  "uiFolder": "フォルダー",
+  "uiFolderIsEmpty": "フォルダーは空です",
+  "uiFoldersFirst": "フォルダーを先に表示",
+  "uiForget": "削除",
+  "uiGenerateKey": "鍵を生成",
+  "uiHeld": "保留中",
+  "uiHideHiddenFiles": "隠しファイルを非表示",
+  "uiHideKeys": "キーを隠す",
+  "uiHidePassword": "パスワードを隠す",
+  "uiHoldForThePagesOfThisVisit": "長押しして今回開いたページを表示",
+  "uiHost": "ホスト",
+  "uiImage": "画像",
+  "uiIncreaseFontSize": "文字を大きく",
+  "uiInstallHerdrHook": "herdrフックをインストール",
+  "uiItIsTheLastPaneInItsWorkspaceSo": "最後のペインのため、ワークスペースも閉じます。実行中の処理は停止します。",
+  "uiItWonTBeSentItsTextAndAttachments": "送信せず、本文と添付ファイルを破棄します。",
+  "uiJumpToLatest": "最新へ移動",
+  "uiKeepItDarkWhenTheAppIsLight": "アプリがライト表示でもターミナルは暗くします。",
+  "uiKeyPassphraseIfAny": "鍵のパスフレーズ（設定している場合）",
+  "uiKit": "UIキット",
+  "uiLeaveBlankToKeepTheSavedKey": "保存済みの鍵を使う場合は空欄",
+  "uiLeaveBlankToKeepTheSavedPassword": "保存済みのパスワードを使う場合は空欄",
+  "uiLicenses": "ライセンス",
+  "uiLink": "リンク",
+  "uiList": "一覧",
+  "uiLiveOutputFromTheTerminal": "ターミナルの最新出力",
+  "uiLoadEarlierMessages": "以前のメッセージを読み込む",
+  "uiLoadMore": "さらに読み込む",
+  "uiLoading": "読み込み中",
+  "uiLoadingTheSubagentSLog": "サブエージェントのログを読み込み中",
+  "uiLook": "外観",
+  "uiMachine": "マシン",
+  "uiMachines": "マシン",
+  "uiMade": "作成",
+  "uiMadeInThisSession": "このセッションで作成",
+  "uiMainCheckout": "メインのチェックアウト",
+  "uiManage": "管理",
+  "uiManageWhichPhotosHerdrCanSee": "herdrに許可する写真を管理",
+  "uiMarkReviewed": "確認済みにする",
+  "uiMessage": "メッセージ",
+  "uiModeAndModel": "モードとモデル",
+  "uiModified": "更新日時",
+  "uiName": "名前",
+  "uiNamedByHerdr": "herdrが設定した名前",
+  "uiNeedsYou": "対応待ち",
+  "uiNeedsYouInTheTerminal": "ターミナルでの対応待ち",
+  "uiNewAgentSession": "新しいエージェントセッション",
+  "uiNewAgentSessionHere": "ここでエージェントセッションを開始",
+  "uiNewQuickPhrase": "新しい定型文",
+  "uiNewTabHere": "ここに新しいタブ",
+  "uiNewWorktree": "新しいworktree…",
+  "uiNewWorktreeValue": "新しいworktree",
+  "uiNextAgent": "次のエージェント",
+  "uiNoAgentInstalled": "エージェントがインストールされていません",
+  "uiNoAgentsRunning": "実行中のエージェントはありません",
+  "uiNoFoldersHere": "フォルダーはありません",
+  "uiNoHeadline": "見出しなし",
+  "uiNoMachineIsOnline": "接続中のマシンがありません",
+  "uiNoMachinesYet": "マシンがありません",
+  "uiNoMatches": "一致する項目がありません",
+  "uiNoPastSessions": "過去のセッションがありません",
+  "uiNoPhotosYet": "写真がありません",
+  "uiNoWorkspaces": "ワークスペースがありません",
+  "uiNoneYet": "まだありません",
+  "uiNotDone": "未完了",
+  "uiNotListed": "一覧にありません",
+  "uiNothingChangedInTheLastHour": "直近1時間の変更はありません",
+  "uiNothingSaidYet": "メッセージはまだありません",
+  "uiNotifications": "通知",
+  "uiNotifyMeWhenAnAgentNeedsMe": "エージェントの対応待ちを通知",
+  "uiOneMessageForEveryAgentBelow": "以下の全エージェントに同じメッセージを送信",
+  "uiOnlyHiddenFiles": "隠しファイルのみ",
+  "uiOnlyThisFolderIsCheckedNotTheFoldersInside": "このフォルダーだけを確認します。子フォルダーは対象外です。",
+  "uiOpenATerminal": "ターミナルを開く",
+  "uiOpenAgentsAs": "エージェントの表示形式",
+  "uiOpenDiagram": "図を開く",
+  "uiOpenFull": "全体を開く",
+  "uiOpenInBrowser": "ブラウザーで開く",
+  "uiOpenOnGitHub": "GitHubで開く",
+  "uiOpenPage": "ページを開く",
+  "uiOpenSignInPage": "ログインページを開く",
+  "uiOpenTerminal": "ターミナルを開く",
+  "uiOpenTheSystemPicker": "端末の選択画面を開く",
+  "uiOutputIsStale": "出力が最新ではありません",
+  "uiPageOptions": "ページの操作",
+  "uiPaneOptions": "ペインの操作",
+  "uiPassword": "パスワード",
+  "uiPastSessions": "過去のセッション",
+  "uiPastSessionsAreReadFromTheMachineThatRan": "過去のセッションは実行元のマシンから読み込みます。「マシン」で接続を確認してください。",
+  "uiPasteFromClipboard": "クリップボードから貼り付け",
+  "uiPath": "パス",
+  "uiPause": "一時停止",
+  "uiPermissions": "権限",
+  "uiPhotoAccessIsOff": "写真へのアクセスが無効です",
+  "uiPhotoInfo": "写真の情報",
+  "uiPhotos": "写真",
+  "uiPhotosCanTBeListed": "写真の一覧を取得できません",
+  "uiPhotosStayOnYourPhoneUntilYouAttachThem": "添付するまで写真は端末内に保持されます。",
+  "uiPhrase": "定型文",
+  "uiPickAnotherMachineAbove": "上で別のマシンを選んでください。",
+  "uiPicked": "選択済み",
+  "uiPicture": "画像",
+  "uiPinned": "固定済み",
+  "uiPlan": "計画",
+  "uiPlay": "再生",
+  "uiPlayAgain": "もう一度再生",
+  "uiPort": "ポート",
+  "uiPretty": "整形表示",
+  "uiPreviousAgent": "前のエージェント",
+  "uiPreviousPage": "前のページ",
+  "uiPrivateKeyPEMOpenSSH": "秘密鍵（PEM / OpenSSH）",
+  "uiQueued": "送信待ち",
+  "uiQuickPhrases": "定型文",
+  "uiReadAll": "すべて読む",
+  "uiReadEarlier": "以前の内容を読む",
+  "uiRecent": "最近",
+  "uiRemove": "削除",
+  "uiRemoveQueuedMessage": "送信待ちのメッセージを削除",
+  "uiRemoveThisQueuedMessage": "この送信待ちのメッセージを削除しますか？",
+  "uiRemoveWorktree": "worktreeを削除",
+  "uiRename": "名前を変更",
+  "uiRenamePane": "ペイン名を変更",
+  "uiRenameWorkspace": "ワークスペース名を変更",
+  "uiResume": "再開",
+  "uiRetry": "再試行",
+  "uiReviewed": "確認済み",
+  "uiSave": "保存",
+  "uiSaveOrShare": "保存または共有",
+  "uiSaveToGallery": "ギャラリーに保存",
+  "uiSaveToPhone": "端末に保存",
+  "uiSearch": "検索",
+  "uiSearchSessions": "セッションを検索",
+  "uiSelectThisPhoto": "この写真を選択",
+  "uiSend": "送信",
+  "uiSendAnyway": "このまま送信",
+  "uiSendAsMessage": "メッセージとして送信",
+  "uiSession": "セッション",
+  "uiSessionOptions": "セッションの操作",
+  "uiSessionOverview": "セッションの概要",
+  "uiSettings": "設定",
+  "uiShareOrSave": "共有または保存…",
+  "uiShare": "共有…",
+  "uiShowAllFiles": "すべてのファイルを表示",
+  "uiShowAnswersAtAnEvenPaceNotInBursts": "回答のテキストを滑らかに表示します。",
+  "uiShowAsPage": "ページとして表示",
+  "uiShowAsText": "テキストとして表示",
+  "uiShowChat": "チャットを表示",
+  "uiShowHiddenFiles": "隠しファイルを表示",
+  "uiShowKeys": "キーを表示",
+  "uiShowLess": "表示を減らす",
+  "uiShowMore": "さらに表示",
+  "uiShowPassword": "パスワードを表示",
+  "uiShowPublicKey": "公開鍵を表示",
+  "uiShowTerminal": "ターミナルを表示",
+  "uiSignIn": "ログイン",
+  "uiSignInOnTheMachine": "マシン上でログイン",
+  "uiSize": "サイズ",
+  "uiSkipped": "スキップ済み",
+  "uiSmoothText": "テキストを滑らかに表示",
+  "uiSortBy": "並び順",
+  "uiSourceCode": "ソースコード",
+  "uiStart": "開始",
+  "uiStartAndOpen": "開始して開く",
+  "uiStartOneInHerdrAndItShowsHere": "herdrで開始すると、ここに表示されます。",
+  "uiStarting": "開始中…",
+  "uiStop": "停止",
+  "uiStopAll": "すべて停止",
+  "uiStopDictating": "音声入力を停止",
+  "uiStopping": "停止中…",
+  "uiStorage": "ストレージ",
+  "uiSubagent": "サブエージェント",
+  "uiSubagentGone": "サブエージェントは終了しました",
+  "uiSubagents": "サブエージェント",
+  "uiTable": "表",
+  "uiTailscaleNeedsYouToApproveThisSignIn": "Tailscaleでログインの承認が必要です。",
+  "uiTakeAPhoto": "写真を撮る",
+  "uiTakeOneWithTheCameraOrPickAFile": "カメラで撮影するか、「ファイル」から選択してください。",
+  "uiTalksToHerdrOverSSHAndSendsNothingAnywhere": "SSHでherdrに接続し、それ以外の場所には送信しません。音声入力は端末の音声サービスを使用します。",
+  "uiTalksToHerdrOverSSHTheOnlyOtherPlace": "SSHでherdrに接続します。それ以外の通信先は、更新の確認とダウンロードに使うGitHubだけです。音声入力は端末の音声サービスを使用します。",
+  "uiTellTheAgentWhatToDo": "エージェントへの指示を入力",
+  "uiTerminalPreview": "ターミナルのプレビュー",
+  "uiTestConnection": "接続を確認",
+  "uiText": "テキスト",
+  "uiThatMachineWentOffline": "マシンの接続が切れました",
+  "uiTheAgentNoLongerListsThisSubagent": "このサブエージェントはエージェントの一覧から外れました。",
+  "uiTheMachineDidnTAnswer": "マシンから応答がありませんでした。",
+  "uiTheMessagesLearnedFromWhatYouSendAreDeleted": "送信履歴から学習したメッセージを、この端末から削除します。再び学習できます。",
+  "uiThePlan": "計画",
+  "uiTheSavedConnectionAndItsCredentialsAreDeletedFrom": "保存済みの接続と認証情報を、この端末から削除します。マシン上のエージェントは動き続けます。",
+  "uiTheme": "テーマ",
+  "uiTheyShowAQuestionTheTextWouldBeTyped": "質問が表示されています。このテキストは質問への入力になります。",
+  "uiThinking": "思考中",
+  "uiThisFolder": "このフォルダー",
+  "uiThisIsTheFirstPageOfThisVisit": "最初のページです",
+  "uiThisMachineDoesnTAllowBrowsingFiles": "このマシンではファイルの閲覧が許可されていません。",
+  "uiThisPaneWasClosed": "このペインは閉じられました",
+  "uiThisPhoneCanTPlayThisVideo": "この端末ではこの動画を再生できません",
+  "uiThisPhoneWouldNotShowItsLibraryToHerdr": "端末のライブラリーをherdrで表示できません。端末の選択画面は利用できます。",
+  "uiTokens": "トークン",
+  "uiUp": "上へ",
+  "uiUpdateAvailable": "更新があります",
+  "uiUserName": "ユーザー名",
+  "uiUsername": "ユーザー名",
+  "uiWaitingForAnAnswer": "回答待ち",
+  "uiWaitingForAnAnswerSkipped": "回答待ち（スキップ済み）",
+  "uiWhatIsRunningInItStopsThisCanT": "実行中の処理は停止します。この操作は取り消せません。",
+  "uiWhatSNew": "更新内容",
+  "uiWhere": "場所",
+  "uiWhileAgentsWorkOrAPageFromAMachine": "エージェントの実行中やマシンのページを開いている間は、「監視中」の通知で接続を維持します。通知はアプリを開くと消えます。",
+  "uiWholeDiagram": "図全体",
+  "uiWorkspaceActions": "ワークスペースの操作",
+  "uiWrap": "折り返し",
+  "uiWrapLines": "行を折り返す",
+  "uiWrapLongLines": "長い行を折り返す",
+  "uiDetached": "ブランチ未接続",
+  "uiEGRunTheTests": "例：テストを実行して",
+  "uiEntries": "項目",
+  "uiEntry": "項目",
+  "uiFailed": "失敗",
+  "uiHerdrSession": "herdrセッション",
+  "uiLine": "行",
+  "uiMoreFile": "ほかのファイル",
+  "uiNoneChosen": "未選択",
+  "uiNotOpenInHerdr": "herdrで開かれていません",
+  "uiNotSelected": "未選択",
+  "uiNumber": "数値",
+  "uiOff": "オフ",
+  "uiOffline": "オフライン",
+  "uiOmpClaudeCodeAndCodexOpenAsAChat": "omp、Claude Code、Codexは、セッションのログが見つかればチャットで開きます。ターミナルにもワンタップで切り替えられます。それ以外のエージェントやログが見つからない場合は、ターミナルで開きます。",
+  "uiOn": "オン",
+  "uiThisMachine": "このマシン",
+  "uiWholeNumber": "整数",
+  "messageMore": "  ほか{p0}件",
+  "@messageMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOf": "  {p1}件中{p0}件",
+  "@messageOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTOneOfSCommands": " は{p0}のコマンドではありません。",
+  "@messageIsnTOneOfSCommands": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHerdr": " · herdr {p0}",
+  "@messageHerdr": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOn": " · {p1}上で{p0}:1",
+  "@messageOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAlbum": "アルバム：{p0}",
+  "@messageAlbum": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAppOnPort": "ポート{p0}のアプリ",
+  "@messageAppOnPort": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAttach": "添付（{p0}）",
+  "@messageAttach": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAttachAttached": "添付、{p0}件を添付済み",
+  "@messageAttachAttached": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageBackgroundWork": "バックグラウンドの処理 · {p0}",
+  "@messageBackgroundWork": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCancelUploadOf": "{p0}のアップロードをキャンセル",
+  "@messageCancelUploadOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCheckout": "チェックアウト、{p0}",
+  "@messageCheckout": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseAtLeast": "{p0}件以上を選択",
+  "@messageChooseAtLeast": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseUpTo": "{p0}件まで選択",
+  "@messageChooseUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageChooseTo": "{p0}〜{p1}件を選択",
+  "@messageChooseTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageClose": "{p0}を閉じますか？",
+  "@messageClose": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirmStopAllActivateAgainToConfirm": "確認：{p0}をすべて停止。もう一度操作すると確定します",
+  "@messageConfirmStopAllActivateAgainToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirmSwitchToActivateAgainToConfirm": "確認：{p0}に切り替え。もう一度操作すると確定します",
+  "@messageConfirmSwitchToActivateAgainToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageConfirm": "確認：{p0}",
+  "@messageConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopy": "{p0}をコピー",
+  "@messageCopy": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopying": "{p0}をコピー中",
+  "@messageCopying": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingOf": "{p1}件中{p0}件をコピー中",
+  "@messageCopyingOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingToThePhone": "{p0}を端末にコピー中",
+  "@messageCopyingToThePhone": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeletesTheFolderOnIfItHasUncommitted": "{p1}上のフォルダー{p0}を削除します。{p2}{p3}{p4}未コミットの変更がある場合はgitが拒否し、何も削除しません。",
+  "@messageDeletesTheFolderOnIfItHasUncommitted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeselectPhoto": "写真{p0}の選択を解除",
+  "@messageDeselectPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDeselect": "{p0}の選択を解除",
+  "@messageDeselect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDiagram": "図、{p0}",
+  "@messageDiagram": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDownload": "{p0}をダウンロード",
+  "@messageDownload": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFindIn": "{p0}内を検索",
+  "@messageFindIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageForgetRemembered": "保存済みのメッセージ{count}件を削除",
+  "@messageForgetRemembered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageForgetRemembered30": "保存済みのメッセージ{count}件を削除しますか？",
+  "@messageForgetRemembered30": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageInstall": "{p0}をインストール",
+  "@messageInstall": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageItsPanesAndWhateverRunsInThemStop": "{p0}個のペインと、その中の処理を停止します。この操作は取り消せません。",
+  "@messageItsPanesAndWhateverRunsInThemStop": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageListIsFull": "一覧は上限に達しています（{p0}件）",
+  "@messageListIsFull": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLoadingPhoto": "写真を読み込み中、{p0}",
+  "@messageLoadingPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMachine": "マシン、{p0}",
+  "@messageMachine": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMade": "{p0}件以上を作成",
+  "@messageMade": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreBelowLines": "下に続きます · {p0}行",
+  "@messageMoreBelowLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreOptionsFor": "{p0}のその他の操作",
+  "@messageMoreOptionsFor": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNewAgentSessionIn": "{p0}でエージェントセッションを開始",
+  "@messageNewAgentSessionIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNoneOfIsInstalledOn": "{p1}に{p0}はインストールされていません。",
+  "@messageNoneOfIsInstalledOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInTheSessionsListedMatches": "一覧のセッションに「{p0}」と一致するものはありません。",
+  "@messageNothingInTheSessionsListedMatches": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInMatches": "{p0}内に「{p1}」と一致するものはありません。",
+  "@messageNothingInMatches": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingInYet": "{p0}にはまだありません。{p1}",
+  "@messageNothingInYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingRememberedForHereYet": "ここに{p0}の保存履歴はまだありません。",
+  "@messageNothingRememberedForHereYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNothingRememberedForInThisFolderYet": "このフォルダーに{p0}の保存履歴はまだありません。",
+  "@messageNothingRememberedForInThisFolderYet": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpenATerminalOn": "{p0}でターミナルを開く",
+  "@messageOpenATerminalOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpen": "{p0}を開く",
+  "@messageOpen": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOpenAtLine": "{p0}の{p1}行目を開く",
+  "@messageOpenAtLine": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePort": "ポート{p0}",
+  "@messagePort": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageReleaseNotesUpTo": "{p0}までのリリースノート",
+  "@messageReleaseNotesUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemove": "{p0}を削除",
+  "@messageRemove": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemoveFromRecentFiles": "最近のファイルから{p0}を削除",
+  "@messageRemoveFromRecentFiles": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRemove53": "{p0}を削除しますか？",
+  "@messageRemove53": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRetryStopping": "{p0}の停止を再試行",
+  "@messageRetryStopping": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRetryUploadOf": "{p0}のアップロードを再試行",
+  "@messageRetryUploadOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSearch": "{p0}を検索",
+  "@messageSearch": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectPhoto": "写真{p0}を選択",
+  "@messageSelectPhoto": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelect": "{p0}を選択",
+  "@messageSelect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectedNumberTapToDeselect": "{p0}番を選択済み。タップで選択を解除",
+  "@messageSelectedNumberTapToDeselect": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSetUpChatFor": "{p0}のチャットを設定",
+  "@messageSetUpChatFor": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowLessAgents": "{p0}のエージェント表示を減らす",
+  "@messageShowLessAgents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowMore": "さらに{p0}件を表示",
+  "@messageShowMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSortBy": "並び順：{p0}",
+  "@messageSortBy": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageStopAllHoldToConfirm": "{p0}をすべて停止。長押しで確定",
+  "@messageStopAllHoldToConfirm": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagent": "サブエージェント · {p0}",
+  "@messageSubagent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagents": "サブエージェント · {p0}",
+  "@messageSubagents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSubagents67": "サブエージェント · {p0}{p1}",
+  "@messageSubagents67": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTerminalOn": "{p0}上のターミナル。",
+  "@messageTerminalOn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTerminalPreview": "ターミナルのプレビュー：{p0}",
+  "@messageTerminalPreview": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentSaid": "エージェントからの情報：{p0}",
+  "@messageTheAgentSaid": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheChatNeedsHerdrToKnowWhichSession": "チャットにはエージェントのセッション情報が必要です。{p1}上の{p0}にherdrのフックを追加します。設定は次に開始・再開するセッションから有効です。処理が止まっているときに、ターミナルでこのセッションを再開してください。{p2}",
+  "@messageTheChatNeedsHerdrToKnowWhichSession": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheNotesOfEveryReleaseUpTo": "{p0}までの全リリースの変更内容",
+  "@messageTheNotesOfEveryReleaseUpTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisFolder": "このフォルダー、{p0}",
+  "@messageThisFolder": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWhatSNewIn": "{p0}の更新内容",
+  "@messageWhatSNewIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtLeast": "{p0}件以上",
+  "@messageAtLeast": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtMost": "{p0}件以下",
+  "@messageAtMost": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAgentsFolded": "{p0}エージェント、折りたたみ中{p1}",
+  "@messageAgentsFolded": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDoesnTKeepAListThePhoneCan": "{p0}には端末で読み込める履歴がありません。",
+  "@messageDoesnTKeepAListThePhoneCan": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHasNoContent": "{p0}の内容は空です。",
+  "@messageHasNoContent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHas": "{p0}：{p1}。",
+  "@messageHas": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsInPlaces": "{p0}は{p1}か所にあります",
+  "@messageIsInPlaces": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLines": "{p0}行",
+  "@messageLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMade83": "{p0}件を作成",
+  "@messageMade83": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMadeSoFarEarlierHistoryNotRead": "読み込み済みの履歴で{p0}件を作成。以前の履歴は未読です",
+  "@messageMadeSoFarEarlierHistoryNotRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore85": "ほか{p0}件",
+  "@messageMore85": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreLines": "ほか{p0}行",
+  "@messageMoreLines": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreQueued": "ほか{p0}件が送信待ち",
+  "@messageMoreQueued": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreRows": "ほか{p0}行",
+  "@messageMoreRows": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore89": "ほか{p0}件の{p1}",
+  "@messageMore89": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMore90": "ほか{p0}件…",
+  "@messageMore90": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNeedsAToken": "{p0}にはトークンが必要です",
+  "@messageNeedsAToken": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNew": "新着{p0}件",
+  "@messageNew": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNewJumpToLatest": "新着{p0}件。最新へ移動",
+  "@messageNewJumpToLatest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNotConnected": "未接続：{p0}",
+  "@messageNotConnected": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRows": "{p0}行",
+  "@messageRows": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelected": "{p0}件を選択済み",
+  "@messageSelected": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTo": "{p0}〜{p1}",
+  "@messageTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorking": "{p0}件が実行中",
+  "@messageWorking": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMs": "{p0} {p1} ms",
+  "@messageMs": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageInstalled": "{p0} · インストール済み",
+  "@messageInstalled": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTopDown": "{p0} · 上から下",
+  "@messageTopDown": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCouldnTBeLoadedTapToRetry": "{p0}、読み込めませんでした。タップで再試行",
+  "@messageCouldnTBeLoadedTapToRetry": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDangerousNeedsHoldingOrASecondActivation": "{p0}、危険な操作。長押し、またはもう一度操作して確定：{p1}",
+  "@messageDangerousNeedsHoldingOrASecondActivation": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageJumpToLatest": "{p0}、最新へ移動",
+  "@messageJumpToLatest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageNeedsHoldingOrASecondActivation": "{p0}、長押し、またはもう一度操作して確定",
+  "@messageNeedsHoldingOrASecondActivation": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePlaysHere": "{p0}、ここで再生",
+  "@messagePlaysHere": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSelectThem": "{p0}、選択する",
+  "@messageSelectThem": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageRunning": "{p0}、{p1}、実行中",
+  "@messageRunning": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDangerous": "{p0}：{p1}、危険な操作",
+  "@messageDangerous": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageElevated": "{p0}：{p1}、権限の昇格あり",
+  "@messageElevated": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOnBg": "背景上で{p0}:1",
+  "@messageOnBg": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiTheAgentAskedYouToOpenAWebPage": "エージェントがWebページを開くよう要求しています。このアプリではエージェントの要求するリンクは開けないため、拒否のみ選択できます。",
+  "uiMarkedSecretByTheAgent": "エージェントが機密情報に指定",
+  "uiTheAgentIsGoingOnWithoutAnAnswer": "エージェントは回答を待たずに続行しています。",
+  "uiEarlierMessagesAreNotShownThePhoneReadsThe": "以前のメッセージは表示していません。ログの末尾64 MBを読み込みます。",
+  "uiNothingHasComeUpInThisSessionYet": "このセッションにはまだ内容がありません。",
+  "uiCouldnTReadTheEarlierPartOfThisChat": "以前の会話を読み込めませんでした。最新の部分を表示しています。",
+  "uiOnlyTheEndOfThisChatHasBeenRead": "この会話の末尾だけを読み込んでいます。",
+  "uiAttachment": "添付ファイル",
+  "uiLiveFromTerminal": "ターミナルからの最新出力",
+  "uiAskedTo": "要求内容",
+  "uiCouldnTReadTheLogTapToRetry": "ログを読み込めませんでした · タップで再試行",
+  "uiNoOutput": "出力はありません。",
+  "uiWaitingForOutput": "出力を待っています…",
+  "uiSubagentsFromEarlierInThisChatAreNotListed": "この会話の以前のサブエージェントは一覧に表示していません。",
+  "uiTheFileWasDeleted": "ファイルは削除されました。",
+  "uiNoChangesToShow": "表示する変更はありません。",
+  "uiOpen": "開く",
+  "uiHere": "ここ",
+  "uiNoOutputYet": "出力はまだありません",
+  "uiAllClear": "対応待ちはありません",
+  "uiLoading24": "読み込み中…",
+  "uiLetGoToOpen": "指を離すと開きます",
+  "uiHerdrIsReachedOverSSHNothingIsExposedPublicly": "SSHでherdrに接続します。外部への公開や中継サーバーは不要です。",
+  "uiNothingIsStoredTailscaleAlreadyKnowsThisPhoneSo": "認証情報は保存しません。この端末はTailscaleに登録済みなので、鍵やパスワードは不要です。追加確認が必要な場合は、ログインを承認するリンクを表示します。",
+  "uiPublicKey": "公開鍵",
+  "uiThisReplacesTheKeyThisMachineUsesNowRun": "このマシンの現在の鍵を置き換えます。まずマシンでコマンドを実行し、接続を確認してから保存してください。",
+  "uiRunTheCommandOnceOnTheMachineThenTest": "マシンでコマンドを一度実行し、接続を確認してください。TailscaleやGitHubで鍵を管理している場合は、そちらに公開鍵を登録してください。",
+  "uiShareItToOpenItInAnAppMade": "共有して、大きなファイルに対応したアプリで開いてください。",
+  "uiItIsCopiedToThePhoneFirstThenIt": "端末にコピーしてから再生します。",
+  "uiItPlaysWhenTheCopyIsDone": "コピーが完了すると再生します。",
+  "uiReloading": "再読み込み中",
+  "uiReload": "再読み込み",
+  "uiContents": "内容",
+  "uiNewestFirst": "新しい順",
+  "uiSelected": "選択済み",
+  "uiSelect": "選択",
+  "uiFilesYouAttachFromThePhoneAreListedHere": "端末から添付したファイルがここに表示されます。",
+  "uiChooseFiles": "ファイルを選択…",
+  "uiOpensThePhoneSFilePicker": "端末のファイル選択画面を開きます",
+  "uiFontSize": "文字サイズ",
+  "uiOneTapChipsAboveTheMessageBoxWhileIt": "入力欄が空で選択されているときに候補を表示します。タップすると入力欄に入り、送信ボタンを押すまで送信しません。",
+  "uiNoPhrasesYetSoNoChips": "定型文がないため、候補は表示されません。",
+  "uiCouldnTPlayTheClipCheckTheConnectionThen": "動画を再生できませんでした。接続を確認して再試行してください。",
+  "uiAndroidAsksBeforeItInstalls": "インストール前にAndroidの確認画面が表示されます。",
+  "uiChecksumMatchedTheFileTheReleaseLists": "チェックサムがリリースのファイルと一致しました",
+  "uiNoNotesCameWithThisRelease": "このリリースに変更内容はありません。",
+  "uiTheReleaseNotesCouldnTBeReadOnThis": "この端末でリリースノートを読み込めませんでした。",
+  "uiBlockedByAndroid": "Androidで無効になっています",
+  "uiOff69": "オフ",
+  "uiWhenAnAgentNeedsMeOrFinishes": "エージェントの対応待ち・完了時",
+  "uiWhenAnAgentNeedsMe": "エージェントの対応待ち時",
+  "uiCache": "キャッシュ",
+  "uiCacheEmpty": "キャッシュ · 空",
+  "uiChooseAMachine": "マシンを選択",
+  "uiThatMachineWentOfflinePickAnother": "マシンの接続が切れました。別のマシンを選んでください。",
+  "uiOpenOnThisMachine": "このマシンで開く",
+  "uiCheckingWhatIsInstalled": "インストール状況を確認中…",
+  "uiOneLanguageAtATimeThePhoneSSpeech": "一度に使える言語は1つです。オフライン言語がインストールされていない場合、端末の音声サービスが発話をGoogleへ送信することがあります。",
+  "uiThisMachineIsNoLongerSaved": "このマシンの接続設定は削除されています",
+  "uiHold": "長押し",
+  "uiLight": "ライト",
+  "uiDark": "ダーク",
+  "uiSystem": "自動",
+  "uiChat": "チャット",
+  "uiTerminal": "ターミナル",
+  "uiOpensAsChat": "チャットで開く",
+  "uiOpensAsTerminal": "ターミナルで開く",
+  "uiWorking": "実行中",
+  "uiIdle": "待機中",
+  "uiUnknown": "状態不明",
+  "uiToReview": "確認待ち",
+  "uiCouldNotStart": "起動できませんでした",
+  "phraseCount": "定型文{count}件",
+  "@phraseCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "uiNew": "新規",
+  "uiEverythingItWillRun": "実行される内容",
+  "uiNewConversationStartedThePreviousOneIsStillOn": "新しい会話を開始しました。以前の会話はボードに残っています。",
+  "uiMoreCharacter": "ほかの文字",
+  "uiOpenConversation": "会話を開く",
+  "uiOpenSummary": "概要を開く",
+  "uiCallDetails": "呼び出しの詳細",
+  "uiMarkedReviewed": "確認済みにしました",
+  "messageReviewedCount": "{count, plural, =1{確認済みにしました} other{{count}件を確認済みにしました}}",
+  "uiCouldnTOpenOnThisPhoneNoBrowserCould": "この端末のブラウザーでは開けませんでした。",
+  "uiReplaceTheCurrentKey": "現在の鍵を置き換えますか？",
+  "uiThePrivateKeyInThisFormIsReplacedIf": "この画面の秘密鍵を置き換えます。別の場所にコピーがなければ、以前の鍵は復元できません。",
+  "uiTheKeySavedForThisMachineIsReplacedWhen": "保存すると、このマシンの鍵が置き換わります。別の場所にコピーがなければ、以前の鍵は復元できません。",
+  "uiGenerateNewKey": "新しい鍵を生成",
+  "uiDiscardTheNewKey": "新しい鍵を破棄しますか？",
+  "uiDiscardYourChanges": "変更を破棄しますか？",
+  "uiThisKeyWasMadeOnThisPhoneAndIs": "この鍵は端末上で生成され、ほかには保存されていません。公開鍵をマシンに登録済みの場合、破棄するとこの鍵でログインできなくなります。",
+  "uiTheKeyInThisFormAndEverythingElseEntered": "この画面の鍵と入力内容は保存されません。",
+  "uiWhatYouEnteredHereIsnTSaved": "ここで入力した内容は保存されません。",
+  "uiDiscard": "破棄",
+  "uiTheNewKeyCouldnTConnect": "新しい鍵では接続できませんでした",
+  "uiKeepTheOldKey": "以前の鍵を保持",
+  "uiSaveAnyway": "このまま保存",
+  "uiIfItsPublicKeyIsnTOnTheMachine": "公開鍵をまだマシンに登録していない場合、保存するとこの端末から接続できなくなり、以前の鍵も失われます。",
+  "uiCopyContents": "内容をコピー",
+  "uiPhraseDeleted": "定型文を削除しました",
+  "uiNothingToClear": "消去する内容はありません",
+  "uiThePageComesBackByItselfWhenHerdrIs": "herdrに再接続すると、ページは自動で復帰します。",
+  "uiThatLinkIsAFileAndHerdrDoesnT": "このリンクはファイルです。herdrではダウンロードできません。メニューの「ブラウザーで開く」を使用してください。",
+  "uiPagesInThisVisit": "今回開いたページ",
+  "uiForAPageThatNeedsYourBrowserSuchAs": "ログインなど、ブラウザーが必要なページに使います。ブラウザー側のページは、この画面を開いている間だけ利用できます。",
+  "uiTheBranchStays": "ブランチは残ります。",
+  "uiReadAsChat": "チャットとして読む…",
+  "uiCopyTitle": "タイトルをコピー",
+  "uiCodexAsksYouToTrustTheHookTheFirst": " 初回はCodexでフックを信頼するか確認されます。",
+  "uiCouldnTCopyTheClipboardRefusedIt": "コピーできませんでした。クリップボードへの保存が拒否されました。",
+  "messageCouldnTDrawThis": "描画できませんでした · {p0}",
+  "@messageCouldnTDrawThis": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageMoreWaiting": "ほか{p0}件が対応待ち",
+  "@messageMoreWaiting": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentMarkedAsSecretWhatYouType": "エージェントが{p0}を機密情報に指定しました。ここに入力した内容は隠されず、平文でエージェントに送信されます。了承できない場合はパスワードや鍵を入力しないでください。",
+  "@messageTheAgentMarkedAsSecretWhatYouType": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisAppCanTShowAFieldOf": "{p0}：このアプリでは「{p1}」型の項目を表示できません。",
+  "@messageThisAppCanTShowAFieldOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheAgentGoesOnWithoutAnAnswerWithin": "{p0}以内に回答がなければ、エージェントは続行します。",
+  "@messageTheAgentGoesOnWithoutAnAnswerWithin": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAtMostAttachmentsPerMessage": "1メッセージに添付できるのは{p0}件までです。",
+  "@messageAtMostAttachmentsPerMessage": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFromSubagent": "サブエージェントから：{p0}",
+  "@messageFromSubagent": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLookClosely": "詳細を確認：{p0}",
+  "@messageLookClosely": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSignInTo": "{p0}にログイン",
+  "@messageSignInTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOfTokensOfContext": "{p1}トークン中{p0} · コンテキストの{p2}%",
+  "@messageOfTokensOfContext": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageSummaryOnlySendsASummaryOfItsSubagents": "概要のみです。{p0}はサブエージェントの会話ではなく、概要を送信します。",
+  "@messageSummaryOnlySendsASummaryOfItsSubagents": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsBackIn": "{p0}が{p1}に戻りました",
+  "@messageIsBackIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCanTReopenAPastSessionFromThe": "{p0}は端末から過去のセッションを再開できません。",
+  "@messageCanTReopenAPastSessionFromThe": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowingTheNewest": "最新の{p0}を表示しています",
+  "@messageShowingTheNewest": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageReplyTo": "{p0}に返信",
+  "@messageReplyTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageOf88": "{p1}中{p0}",
+  "@messageOf88": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowAllPanes": "{p0}個のペインをすべて表示",
+  "@messageShowAllPanes": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePressScalePanelButtonChipIconTravelDpEnter": "押下時の縮小率：パネル{p0}、ボタン{p1}、チップ{p2}、アイコン{p3}。移動量{p4} dp、開始時の倍率{p5}、文字サイズに対する移動量{p6}。",
+  "@messagePressScalePanelButtonChipIconTravelDpEnter": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      },
+      "p5": {
+        "type": "String"
+      },
+      "p6": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyingToThePhone104": "端末にコピー中 · {p0}",
+  "@messageCopyingToThePhone104": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCouldnTLoadMore": "続きを読み込めませんでした：{p0}",
+  "@messageCouldnTLoadMore": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowingTheFirstThatIsAsMuchAs": "先頭{p0}{p1}を表示しています。これがビューアーで開ける上限です。",
+  "@messageShowingTheFirstThatIsAsMuchAs": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageShowing": "{p0}{p1}を表示しています",
+  "@messageShowing": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFirstBytes": "先頭{p0}バイト",
+  "@messageFirstBytes": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageUpdateTo": "{p0}に更新",
+  "@messageUpdateTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageDownloadingOf": "{p1}中{p0}をダウンロード中",
+  "@messageDownloadingOf": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageFromGithubComYouHave": "github.com/{p0}から取得 · 現在のバージョン：{p1}",
+  "@messageFromGithubComYouHave": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messagePt": "{p0} · {p1} pt",
+  "@messagePt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCleared": "{p0}を消去しました",
+  "@messageCleared": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCache": "キャッシュ · {p0}",
+  "@messageCache": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageVersion": "バージョン{p0}",
+  "@messageVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisPageOnAsksForAUserName": "{p0}のページがユーザー名とパスワードを要求しています。",
+  "@messageThisPageOnAsksForAUserName": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisPageOnAsksForAUserName148": "{p0}のページがユーザー名とパスワードを要求しています：{p1}",
+  "@messageThisPageOnAsksForAUserName148": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLostTheConnectionTo": "{p0}との接続が切れました",
+  "@messageLostTheConnectionTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTFrom": "{p0}は{p1}のアドレスではありません。",
+  "@messageIsnTFrom": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsAPortOpenItsLinkFromThe": "{p0}は{p1}のポートです。開く場合はターミナル内のリンクを使用してください。",
+  "@messageIsAPortOpenItsLinkFromThe": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "messageIsnTOpenOnThisPhone": "{p0}はこの端末で開かれていません。",
+  "@messageIsnTOpenOnThisPhone": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageHerdrDoesnTOpenLinksFromAPage": "herdrはページ内の{p0}:リンクを開きません。",
+  "@messageHerdrDoesnTOpenLinksFromAPage": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageStartedIn": "{p1}で{p0}を開始 · {p2}",
+  "@messageStartedIn": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "messageTheBranchStays": "ブランチ{p0}は残ります。",
+  "@messageTheBranchStays": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkingThereWillStop": "ここで実行中のエージェント{count}体は停止します。",
+  "@messageWorkingThereWillStop": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageRunningThereWillLoseTheFolder": "ここで実行中の携帯セッション{count}件はフォルダーを失います。",
+  "@messageRunningThereWillLoseTheFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageRemoved": "{p0}を削除しました",
+  "@messageRemoved": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCopyPaneId": "ペインID {p0}をコピー",
+  "@messageCopyPaneId": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageInstalledOnResumeTheSessionToReadIt": "{p0}にインストールしました。チャットで読むにはセッションを再開してください。",
+  "@messageInstalledOnResumeTheSessionToReadIt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageThisHerdrIsTooOldToInstallIt": "herdrが古いためインストールできません。マシンで herdr integration install {p0} を実行してください。",
+  "@messageThisHerdrIsTooOldToInstallIt": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiPrivateKey": "秘密鍵",
+  "uiRendered": "表示",
+  "uiSource": "ソース",
+  "uiRequired": "必須です",
+  "uiInvalid": "入力が正しくありません",
+  "uiPastePrivateKey": "秘密鍵を貼り付けてください",
+  "uiSessionNameError": "半角英数字と . _ - のみ使用できます",
+  "uiReply": "返信…",
+  "machineCount": "マシン{count}台",
+  "agentCount": "エージェント{count}件",
+  "agentCountCompact": "{count}件",
+  "machinesHealth": "{total}台中{online}台",
+  "machinesHealthSpoken": "{words}オンライン",
+  "allMachinesOff": "全マシン停止",
+  "noAgents": "エージェントなし",
+  "statusNeedsYou": "対応待ち{count}件",
+  "statusToReview": "確認待ち{count}件",
+  "statusWorking": "実行中{count}件",
+  "statusNotConnected": "未接続{count}件",
+  "statusOffline": "オフライン{count}件",
+  "statusOfflineToReview": "オフラインで確認待ち{count}件",
+  "statusNothingRunning": "実行中なし",
+  "machinesNotConnected": "未接続{count}台",
+  "heardJustNow": "たった今応答",
+  "heardAgo": "最終応答：{ago}前",
+  "elapsedUnderAMinute": "1分未満",
+  "elapsedSeconds": "{count}秒",
+  "elapsedMinutes": "{count}分",
+  "elapsedHours": "{hours}時間",
+  "elapsedHoursMinutes": "{hours}時間{minutes}分",
+  "elapsedDays": "{count}日",
+  "uiUndo": "元に戻す",
+  "uiSelectedNumber": "{number}番を選択済み",
+  "uiTypedIntoEachAgentThenEnter": "各エージェントに入力してからEnterを押します。",
+  "uiNotInThisPhoneSSpeechService": "この端末の音声サービスにありません",
+  "uiPhoneSLanguage": "端末の言語",
+  "uiAllowHerdrUnderInstallUnknownAppsOnTheAndroidPageThatOpenedThenComeBackAndTapInstall": "開いたAndroidの画面でherdrに「不明なアプリのインストール」を許可し、戻ってから「インストール」をタップしてください。",
+  "uiNamedSessionsNeedHerdr09OnTheMachine": "名前付きセッションにはマシン上のherdr 0.9+が必要です",
+  "uiOnlyUsedWhenHerdrLacksRemoteApiBridge": "herdrにremote-api-bridgeがない場合のみ使います",
+  "uiLeaveEmptyToShowTheProgramSOwnTitle": "空欄にするとプログラム本来のタイトルを表示します",
+  "uiCouldnTSave": "保存できませんでした",
+  "uiCouldnTConnect": "接続できませんでした",
+  "uiRetryUnderTheMessageOpensItAgain": "メッセージの下の「再試行」で開き直します。",
+  "uiPathCopied": "パスをコピーしました",
+  "uiLinkCopied": "リンクをコピーしました",
+  "uiHoldOrTapAgain": "長押し、またはもう一度タップ",
+  "messageHoldTo": "{p0}には長押し",
+  "@messageHoldTo": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiNotFound": "見つかりません",
+  "uiNoPermission": "権限がありません",
+  "uiFilesUnavailable": "ファイルを利用できません",
+  "uiTooLargeToOpen": "開くには大きすぎます",
+  "uiCantOpenThis": "これを開けません",
+  "uiNotAFolder": "フォルダーではありません",
+  "uiNotReachable": "接続できません",
+  "uiCouldntReadThis": "これを読み取れませんでした",
+  "messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": "{p0}はもうありません。移動または削除された可能性があります。",
+  "@messageNameIsNoLongerThereItMayHaveBeenMovedOrDeleted": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageYourLoginOnThisMachineIsntAllowedToRead": "このマシンへのログインには{p0}を読み取る権限がありません。",
+  "@messageYourLoginOnThisMachineIsntAllowedToRead": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiType": "種類",
+  "uiAToZ": "A→Z",
+  "uiLargestFirst": "大きい順",
+  "uiByExtension": "拡張子順",
+  "messagePullDownToCheckAgain": " 下に引いて再確認してください。",
+  "messageHiddenItemCount": "非表示の項目{count}件",
+  "@messageHiddenItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAgentsWorkingHereAWorktreeKeepsThemApart": "ここでエージェント{count}体が作業中 · worktreeなら分けて実行できます",
+  "@messageAgentsWorkingHereAWorktreeKeepsThemApart": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageWorkingHereCount": "ここで{count}件作業中",
+  "@messageWorkingHereCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageBranchesFromCurrentCommit": "このフォルダーの現在のコミットからブランチを作成します",
+  "messageOfNeedsYou": "{total, plural, =1{対応待ち{total}件中{index}件目} other{対応待ち{total}件中{index}件目}}",
+  "@messageOfNeedsYou": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "messageAsks": "質問: {p0}",
+  "@messageAsks": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "uiOnline": "オンライン",
+  "uiReconnecting": "再接続中…",
+  "uiNeedsAttention": "対応が必要",
+  "uiDisabled": "無効",
+  "uiOfflineState": "オフライン",
+  "uiWaitingForApproval": "承認待ち",
+  "uiNotConnecting": "接続していません",
+  "messageConnectedHerdrVersion": "接続済み · herdr {p0}",
+  "@messageConnectedHerdrVersion": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "messageWorkspaceCount": "ワークスペース{count}件",
+  "@messageWorkspaceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messageHostKey": "ホスト鍵 {p0}",
+  "@messageHostKey": {
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  }
+}

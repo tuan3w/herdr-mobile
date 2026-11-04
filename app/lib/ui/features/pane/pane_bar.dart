@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -85,8 +87,8 @@ class PaneTopBar extends StatelessWidget {
     final machine = this.machine;
     final files = machine != null && machineSupportsFiles(machine) && onOpenFiles != null;
     final actions = [
-      if (files) CircleButton(icon: HerdrIcons.folder, tooltip: 'Browse files', onPressed: onOpenFiles),
-      CircleButton(icon: LucideIcons.ellipsis, tooltip: 'Pane options', onPressed: onMore),
+      if (files) CircleButton(icon: HerdrIcons.folder, tooltip: context.l10n.uiBrowseFiles, onPressed: onOpenFiles),
+      CircleButton(icon: LucideIcons.ellipsis, tooltip: context.l10n.uiPaneOptions, onPressed: onMore),
     ];
     // Rebuilds the bar only when the count changes.
     final others = othersNeedingYou(context, agent);

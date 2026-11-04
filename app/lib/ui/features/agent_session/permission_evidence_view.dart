@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -56,7 +58,7 @@ class EvidenceIntent extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.hair),
       child: Semantics(
-        label: 'The agent said: $said',
+        label: context.l10n.messageTheAgentSaid(said),
         excludeSemantics: true,
         child: Text(
           '\u201c$said\u201d',
@@ -155,7 +157,10 @@ class ReadAllCue extends StatelessWidget {
                   child: Text(text!, style: Type.captionStrong.copyWith(color: ds.blockedText)),
                 ),
         ),
-        if (onOpen case final open?) ...[const SizedBox(width: Gap.md), TextAction(label: 'Read all', onTap: open)],
+        if (onOpen case final open?) ...[
+          const SizedBox(width: Gap.md),
+          TextAction(label: context.l10n.uiReadAll, onTap: open),
+        ],
       ],
     );
   }
@@ -257,7 +262,7 @@ Future<void> showPlanSheet(BuildContext context, MdDocument document, {bool prev
   final blocks = document.blocks;
   return showEvidenceSheet(
     context,
-    title: 'The plan',
+    title: context.l10n.uiThePlan,
     note: preview ? planPreviewNote : null,
     count: blocks.length,
     itemBuilder: (context, i) => planBlock(blocks, i),
@@ -336,7 +341,9 @@ class _PlanEvidenceState extends State<PlanEvidence> {
           ),
         ),
         ReadAllCue(
-          text: preview ? planPreviewNote : (_overflows && !_atEnd ? 'More below · $_lines lines' : null),
+          text: preview
+              ? planPreviewNote
+              : (_overflows && !_atEnd ? context.l10n.messageMoreBelowLines('$_lines') : null),
           onOpen: _overflows ? () => unawaited(showPlanSheet(context, _document, preview: preview)) : null,
         ),
       ],
@@ -462,7 +469,7 @@ Widget diffRowView(BuildContext context, DiffRow row) {
 
 Future<void> showDiffSheet(BuildContext context, List<DiffRow> rows) => showEvidenceSheet(
   context,
-  title: 'Everything it will change',
+  title: context.l10n.uiEverythingItWillChange,
   count: rows.length,
   itemBuilder: (context, i) => diffRowView(context, rows[i]),
 );
@@ -534,7 +541,7 @@ class _DiffEvidenceState extends State<DiffEvidence> {
           ),
         ),
         ReadAllCue(
-          text: _overflows && !_atEnd ? 'More below · ${rows.length} lines' : null,
+          text: _overflows && !_atEnd ? context.l10n.messageMoreBelowLines('${rows.length}') : null,
           onOpen: _overflows ? () => unawaited(showDiffSheet(context, rows)) : null,
         ),
       ],

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -31,16 +33,19 @@ class KitScreen extends StatelessWidget {
       backgroundColor: ds.bg,
       body: Column(
         children: [
-          AppTopBar(title: 'Kit', subtitle: countOf(kitCatalog.length, 'entry', 'entries')),
+          AppTopBar(
+            title: context.l10n.uiKit,
+            subtitle: countOf(kitCatalog.length, context.l10n.uiEntry, context.l10n.uiEntries),
+          ),
           Expanded(
             child: CustomScrollView(
               slivers: [
                 RowList(
                   rows: [
-                    HeaderRow(id: 'tokens', label: 'Tokens', count: tokens.length),
+                    HeaderRow(id: 'tokens', label: context.l10n.uiTokens, count: tokens.length),
                     for (final e in tokens) row(e),
                     const GapRow(id: 'gap'),
-                    HeaderRow(id: 'components', label: 'Components', count: components.length),
+                    HeaderRow(id: 'components', label: context.l10n.uiComponents, count: components.length),
                     for (final e in components) row(e),
                   ],
                 ),

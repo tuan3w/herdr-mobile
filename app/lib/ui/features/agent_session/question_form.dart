@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -247,7 +248,7 @@ class _QuestionPanelState extends State<QuestionPanel> with TapGuardState<Questi
             if (schema == null) ...[
               const SizedBox(height: Gap.sm),
               Text(
-                'The agent asked you to open a web page. This app doesn’t open links an agent asks for, so you can only decline.',
+                context.l10n.uiTheAgentAskedYouToOpenAWebPage,
                 style: Type.secondary.copyWith(color: ds.textSecondary),
               ),
             ] else ...[
@@ -292,7 +293,7 @@ class _QuestionPanelState extends State<QuestionPanel> with TapGuardState<Questi
               children: [
                 Expanded(
                   child: AppButton(
-                    label: 'Decline',
+                    label: context.l10n.uiDecline,
                     kind: AppButtonKind.secondary,
                     expand: true,
                     onPressed: _sent || !settled ? null : _decline,
@@ -302,7 +303,7 @@ class _QuestionPanelState extends State<QuestionPanel> with TapGuardState<Questi
                   const SizedBox(width: Gap.sm),
                   Expanded(
                     child: AppButton(
-                      label: 'Accept',
+                      label: context.l10n.uiAccept,
                       expand: true,
                       loading: _sent,
                       onPressed: _sent || !settled ? null : _accept,
@@ -313,7 +314,10 @@ class _QuestionPanelState extends State<QuestionPanel> with TapGuardState<Questi
             ),
             if (widget.more > 0) ...[
               const SizedBox(height: Gap.sm),
-              Text('${widget.more} more waiting', style: Type.labelStrong.copyWith(color: ds.blockedText)),
+              Text(
+                context.l10n.messageMoreWaiting('${widget.more}'),
+                style: Type.labelStrong.copyWith(color: ds.blockedText),
+              ),
             ],
           ],
         ),
@@ -340,7 +344,7 @@ class _SecretWarning extends StatelessWidget {
         const SizedBox(width: Gap.sm),
         Expanded(
           child: Text(
-            'The agent marked ${fields.join(', ')} as secret. What you type here goes to the agent in plain text; it isn’t hidden. Don’t enter a password or key unless you accept that.',
+            context.l10n.messageTheAgentMarkedAsSecretWhatYouType(fields.join(', ')),
             style: Type.secondary.copyWith(color: ds.dangerText),
           ),
         ),
@@ -393,7 +397,8 @@ class _FieldBlock extends StatelessWidget {
               children: [
                 if (description != null && description.isNotEmpty)
                   Text(description, style: Type.secondary.copyWith(color: ds.textSecondary)),
-                if (secret) Text('Marked secret by the agent', style: Type.caption.copyWith(color: ds.dangerText)),
+                if (secret)
+                  Text(context.l10n.uiMarkedSecretByTheAgent, style: Type.caption.copyWith(color: ds.dangerText)),
               ],
             ),
           )
@@ -421,10 +426,10 @@ class _FieldBlock extends StatelessWidget {
         multiline: false,
         keyboard: TextInputType.numberWithOptions(decimal: !f.integer, signed: (f.minimum ?? 0) < 0),
         hint: switch ((f.minimum, f.maximum)) {
-          (final lo?, final hi?) => '$lo to $hi',
-          (final lo?, null) => 'at least $lo',
-          (null, final hi?) => 'at most $hi',
-          _ => f.integer ? 'whole number' : 'number',
+          (final lo?, final hi?) => context.l10n.messageTo('$lo', '$hi'),
+          (final lo?, null) => context.l10n.messageAtLeast('$lo'),
+          (null, final hi?) => context.l10n.messageAtMost('$hi'),
+          _ => f.integer ? context.l10n.uiWholeNumber : context.l10n.uiNumber,
         },
         onChanged: onText,
         details: details,
@@ -446,14 +451,14 @@ class _FieldBlock extends StatelessWidget {
         onToggle: onMulti,
         details: details,
         hint: switch ((f.minItems, f.maxItems)) {
-          (final lo?, final hi?) => 'Choose $lo to $hi',
-          (final lo?, null) => 'Choose at least $lo',
-          (null, final hi?) => 'Choose up to $hi',
+          (final lo?, final hi?) => context.l10n.messageChooseTo('$lo', '$hi'),
+          (final lo?, null) => context.l10n.messageChooseAtLeast('$lo'),
+          (null, final hi?) => context.l10n.messageChooseUpTo('$hi'),
           _ => null,
         },
       ),
       UnknownField() => Text(
-        '${f.label}: this app can’t show a field of type “${f.type}”.',
+        context.l10n.messageThisAppCanTShowAFieldOf(f.label, f.type),
         style: Type.secondary.copyWith(color: ds.textMuted),
       ),
     };
@@ -669,9 +674,9 @@ class _AutoResolveLabelState extends State<AutoResolveLabel> with StepClockLease
       }
       return Text(
         left <= Duration.zero
-            ? 'The agent is going on without an answer.'
+            ? context.l10n.uiTheAgentIsGoingOnWithoutAnAnswer
             // Whole seconds, rounded up, so the last second reads `1 second`, not `0 seconds`.
-            : 'The agent goes on without an answer within ${Elapsed.words(_roundedUp(left))}.',
+            : context.l10n.messageTheAgentGoesOnWithoutAnAnswerWithin(Elapsed.words(_roundedUp(left))),
         style: Type.secondary.copyWith(color: context.ds.textSecondary),
       );
     },

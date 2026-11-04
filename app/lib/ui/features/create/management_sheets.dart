@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,7 +9,6 @@ import '../../../data/models/herdr_models.dart';
 import '../../../data/models/machine_layout.dart';
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/machine_connection.dart';
-import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -42,8 +43,8 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
   Future<void> rename() async {
     final label = await showRenameSheet(
       navigator.context,
-      title: 'Rename workspace',
-      label: 'Name',
+      title: context.l10n.uiRenameWorkspace,
+      label: context.l10n.uiName,
       initial: workspace.label,
     );
     if (label == null || label == workspace.label) return;
@@ -54,11 +55,11 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
     final panes = workspace.paneCount;
     final ok = await showConfirmSheet(
       navigator.context,
-      title: 'Close $name?',
+      title: context.l10n.messageClose(name),
       message: panes <= 1
-          ? 'What is running in it stops. This can’t be undone.'
-          : 'Its $panes panes and whatever runs in them stop. This can’t be undone.',
-      confirmLabel: 'Close workspace',
+          ? context.l10n.uiWhatIsRunningInItStopsThisCanT
+          : context.l10n.messageItsPanesAndWhateverRunsInThemStop('$panes'),
+      confirmLabel: context.l10n.uiCloseWorkspace,
     );
     if (!ok) return;
     if (await actions.closeWorkspace(workspace.id) case final error?) toast(error);
@@ -76,25 +77,27 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
   }
 
   Future<void> removeWorktree(WorkspaceWorktree worktree) async {
+    final words = context.l10n;
     final folder = worktree.checkoutPath;
     final worktreeName = machine.places.ofWorkspace(workspace.id)?.checkoutName ?? name;
     final branch = machine.branchOf(folder);
     final working = _agentsWorkingIn(machine, workspace.id);
     final ok = await showConfirmSheet(
       navigator.context,
-      title: 'Remove $worktreeName?',
-      confirmLabel: 'Remove worktree',
+      title: context.l10n.messageRemove53(worktreeName),
+      confirmLabel: context.l10n.uiRemoveWorktree,
       hold: true,
-      message:
-          'Deletes the folder ${shortPath(folder)} on ${machine.profile.label}. '
-          '${branch == null ? 'The branch stays. ' : 'The branch $branch stays. '}'
-          '${working.stop > 0 ? '${countOf(working.stop, 'agent')} working there will stop. ' : ''}'
-          '${working.lose > 0 ? '${countOf(working.lose, 'phone session')} running there will lose the folder. ' : ''}'
-          'If it has uncommitted changes, git refuses and nothing is deleted.',
+      message: context.l10n.messageDeletesTheFolderOnIfItHasUncommitted(
+        shortPath(folder),
+        machine.profile.label,
+        branch == null ? context.l10n.uiTheBranchStays : context.l10n.messageTheBranchStays(branch),
+        working.stop > 0 ? context.l10n.messageWorkingThereWillStop(working.stop) : '',
+        working.lose > 0 ? context.l10n.messageRunningThereWillLoseTheFolder(working.lose) : '',
+      ),
     );
     if (!ok) return;
     if (await actions.removeWorktree(workspace) case final error?) return toast(error);
-    toaster.show('Removed $worktreeName');
+    toaster.show(words.messageRemoved(worktreeName));
   }
 
   final worktree = workspace.worktree;
@@ -117,18 +120,22 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
     title: name,
     actions: [
       if (worktree != null)
-        SheetAction(label: 'New agent session here', icon: LucideIcons.plus, onTap: () => newSessionHere(worktree)),
-      SheetAction(label: 'New tab here', icon: LucideIcons.plus, onTap: newTab),
-      SheetAction(label: 'Rename', icon: LucideIcons.pencil, onTap: rename),
+        SheetAction(
+          label: context.l10n.uiNewAgentSessionHere,
+          icon: LucideIcons.plus,
+          onTap: () => newSessionHere(worktree),
+        ),
+      SheetAction(label: context.l10n.uiNewTabHere, icon: LucideIcons.plus, onTap: newTab),
+      SheetAction(label: context.l10n.uiRename, icon: LucideIcons.pencil, onTap: rename),
       if (worktree != null && worktree.isLinked)
         SheetAction(
-          label: 'Remove worktree',
+          label: context.l10n.uiRemoveWorktree,
           icon: LucideIcons.gitBranchMinus,
           destructive: true,
           onTap: () => removeWorktree(worktree),
         ),
       SheetAction(
-        label: 'Close workspace',
+        label: context.l10n.uiCloseWorkspace,
         icon: LucideIcons.trash2,
         destructive: true,
         onTap: close,
@@ -180,10 +187,10 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
   Future<void> rename() async {
     final label = await showRenameSheet(
       navigator.context,
-      title: 'Rename pane',
-      label: 'Name',
+      title: context.l10n.uiRenamePane,
+      label: context.l10n.uiName,
       initial: pane.label ?? '',
-      helper: 'Leave empty to show the program’s own title',
+      helper: context.l10n.uiLeaveEmptyToShowTheProgramSOwnTitle,
       allowEmpty: true,
     );
     if (label == null || label == (pane.label ?? '')) return;
@@ -194,12 +201,9 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
     final last = (machine.snapshot.workspace(pane.workspaceId)?.paneCount ?? 2) <= 1;
     final ok = await showConfirmSheet(
       navigator.context,
-      title: 'Close this pane?',
-      message: last
-          ? 'It is the last pane in its workspace, so the workspace closes too. '
-                'What is running in it stops.'
-          : 'What is running in it stops. This can’t be undone.',
-      confirmLabel: 'Close pane',
+      title: context.l10n.uiCloseThisPane,
+      message: last ? context.l10n.uiItIsTheLastPaneInItsWorkspaceSo : context.l10n.uiWhatIsRunningInItStopsThisCanT,
+      confirmLabel: context.l10n.uiClosePane,
     );
     if (!ok) return;
     if (await actions.closePane(pane.id) case final error?) toast(error);
@@ -209,8 +213,8 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
     context,
     title: title,
     actions: [
-      SheetAction(label: 'Rename', icon: LucideIcons.pencil, onTap: rename),
-      SheetAction(label: 'Close pane', icon: LucideIcons.trash2, destructive: true, onTap: close),
+      SheetAction(label: context.l10n.uiRename, icon: LucideIcons.pencil, onTap: rename),
+      SheetAction(label: context.l10n.uiClosePane, icon: LucideIcons.trash2, destructive: true, onTap: close),
     ],
   );
 }

@@ -1,3 +1,5 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -231,7 +233,7 @@ class ComposerAttachButton extends StatelessWidget {
         children: [
           CircleButton(
             icon: LucideIcons.paperclip,
-            tooltip: count == 0 ? 'Attach' : 'Attach, $count attached',
+            tooltip: count == 0 ? context.l10n.uiAttach : context.l10n.messageAttachAttached('$count'),
             size: composerButtonSize,
             onPressed: enabled ? onPressed : null,
           ),

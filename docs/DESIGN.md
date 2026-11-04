@@ -496,6 +496,37 @@ One word per concept, everywhere. The layer that builds them is
   cuteness; curly apostrophes (`Couldn’t`); `…` only for something in progress
   or a menu item that opens more, and `N more` for overflow.
 
+### Japanese localization contract
+
+The English vocabulary above remains the fallback. App-owned labels follow
+the device locale through `app/lib/l10n/app_en.arb`, `app_ja.arb` and
+`context.l10n`; do not translate a final string by matching arbitrary output.
+Machine names, hostnames, paths, commands, agent questions and their answer
+options retain their original text. Japanese chrome around them is localized.
+
+Fleet counts and freshness are part of that chrome, including the health chip,
+board summary and machine-list subtitles. Use typed message parameters and ICU
+plurals, preserving English singular/plural forms. Japanese uses units such as
+`マシン5台`, `エージェント3件`, `対応待ち1件` and `確認待ち2件`.
+The same localized string must feed both width measurement and painting. In
+particular, the board's reserved freshness width must use a localized longest
+label, and reply-label width caches must include the label or locale.
+
+Keep time formatting centralized: preserve English output such as `1h 05m`
+exactly, and provide Japanese units for the freshness sentence. Helpers used
+outside the widget tree retain their English default; pass localization
+explicitly where the UI needs it. Resolve localized toast text before an async
+gap rather than reading an unmounted context afterwards.
+
+Japanese UI uses IBM Plex Sans JP and the explicit Japanese fallback described
+under Type. Android's baseline stays API 24. A successful APK build and manifest
+check do not prove API 24 device behavior. Language switching must retain app
+settings, and layouts are checked in both themes at 320/412 dp and 1/1.6 text
+scale. The remaining implementation and acceptance evidence live in
+[GitHub Issue #1](https://github.com/hogehonya/herdr-mobile/issues/1),
+[Issue #2](https://github.com/hogehonya/herdr-mobile/issues/2) and
+[Issue #3](https://github.com/hogehonya/herdr-mobile/issues/3).
+
 ## Touch targets
 
 44 x 44 minimum, always. `PressBuilder(minTapSize: kMinTap)` enlarges the hit

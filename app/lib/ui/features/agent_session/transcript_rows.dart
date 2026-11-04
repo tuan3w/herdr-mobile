@@ -1,3 +1,4 @@
+import 'package:herdr_mobile/l10n/l10n_context.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -93,7 +94,11 @@ class UserRow extends StatelessWidget {
                   const SizedBox(height: Gap.xs),
                   ContentBlockView(block: block, expanded: all, onToggle: () => onToggle(allKey(rowKey))),
                 ],
-              if (collapsible) TextAction(label: open ? 'Show less' : 'Show more', onTap: () => onToggle(rowKey)),
+              if (collapsible)
+                TextAction(
+                  label: open ? context.l10n.uiShowLess : context.l10n.uiShowMore,
+                  onTap: () => onToggle(rowKey),
+                ),
             ],
           ),
         ),
