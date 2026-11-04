@@ -17,6 +17,7 @@ import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/composer/composer_frame.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
+import 'package:herdr_mobile/ui/features/files/file_format.dart';
 import 'package:herdr_mobile/ui/features/files/file_thumb.dart';
 import 'package:herdr_mobile/ui/features/files/file_widgets.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
@@ -450,17 +451,42 @@ void main() {
       expect(formatAgo(DateTime(2025, 10, 3, 9), now, l10n: ja), '2025年10月3日');
     });
 
+    test('every month is spelled once, in both languages', () {
+      const english = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final now = DateTime(2026, 12, 31, 12);
+      for (var m = 1; m <= 12; m++) {
+        // The date parts come from the phone; a month is never spelled by the
+        // code, so a wrong month name in either language fails here.
+        expect(formatAgo(DateTime(2026, m, 3, 9), now, l10n: ja), '$m月3日');
+        expect(formatAgo(DateTime(2026, m, 3, 9), now, l10n: en), '3 ${english[m - 1]}');
+      }
+      expect(formatAgo(DateTime(2025, 12, 31, 9), now, l10n: ja), '2025年12月31日');
+      expect(formatAgo(DateTime(2025, 12, 31, 9), now, l10n: en), '31 Dec 2025');
+    });
+
+    test('a size the host did not give is said in the phone\'s language', () {
+      expect(formatBytes(null), 'Unknown size');
+      expect(formatBytes(null, l10n: ja), 'サイズ不明');
+      expect(formatBytes(1234, l10n: ja), '1.2 KB');
+    });
+
     testWidgets('a file row says its size, age, permission and link in Japanese', (tester) async {
       const root = '/home/dev/notes';
       final fs = FakeFs()
-        ..addFile('$root/日本語のメモ.txt', 'x' * 9, modified: DateTime.utc(2026, 5, 20, 10))
+        // Two minutes before the browser's clock, so the row says the same
+        // thing whatever the host's time zone makes of the hour.
+        ..addFile(
+          '$root/日本語のメモ.txt',
+          'x' * 9,
+          modified: DateTime.utc(2026, 5, 20, 12).subtract(const Duration(minutes: 2)),
+        )
         ..addDir('$root/secret')
         ..deny.add('$root/secret')
         ..addLink('$root/old', 'nowhere');
       final session = FileBrowserSession()..options.denied.add('$root/secret');
       await pumpBrowser(tester, fs, root, session: session);
 
-      expect(find.text('9 B · 2時間前'), findsOneWidget);
+      expect(find.text('9 B · 2分前'), findsOneWidget);
       expect(find.text('権限がありません'), findsOneWidget);
       expect(find.text('リンク切れ → nowhere'), findsOneWidget);
       expect(find.textContaining(' ago', findRichText: true), findsNothing);
