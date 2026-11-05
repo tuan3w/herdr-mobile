@@ -4,13 +4,30 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.51] - 2026-11-05
 
-- A message you send into a terminal agent's running turn is no longer
-  invisible until the agent reads it: it shows above the box as `Sent to the
-  terminal · not read yet`, and goes when the chat shows the message. It
-  cannot be edited or removed there; hold `Send` for a message you may want
-  to change.
+### See what you sent into a terminal agent
+
+A message you send into a terminal agent's running turn now shows above the
+box as `Sent to the terminal · not read yet`, until the agent reads it and the
+chat shows it. Before, it left the box and showed nothing, which for omp can
+be minutes behind a long tool call.
+
+> [!TIP]
+> Try it: while an agent in a terminal works, type a message and tap `Send`.
+> It shows above the box until the chat has it.
+
+- Several messages sent in a row show in the order you sent them, and each
+  goes when its own message reaches the chat.
+- That row cannot be edited or removed: the message is already in the
+  agent's own queue in the terminal. To keep a message you may want to
+  change, hold `Send`: it waits on the phone, where you can edit or remove it.
+- If the turn ends and the chat still has no sign of the message, the row
+  goes and a strip says it is not in the agent's log yet.
+- Not checked with a real agent: how long each of Claude Code, omp and Codex
+  takes to show a message sent mid-turn.
+
+![The chat of a working agent with a sent message and a queued one above the box](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.51/0.1.51-sent-to-terminal.png)
 
 ## [0.1.50] - 2026-11-05
 
