@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.52] - 2026-11-05
+
+### A stopped omp subagent no longer shows as done
+
+An omp subagent that failed, or that its parent stopped, shows as `failed` in
+the subagents chip and list. It used to show `done`.
+
+- The app now reads the result of every background-job report from omp, not
+  only `wait`, so a stop is seen. A subagent that had already failed stays
+  `failed`.
+
+**Fixed**
+
+- Three subagents that failed because their model server was down, and were
+  then stopped by the parent, all showed `done`. Checked on the recorded log
+  of that session; not measured on a phone.
+
 ## [0.1.51] - 2026-11-05
 
 ### See what you sent into a terminal agent
