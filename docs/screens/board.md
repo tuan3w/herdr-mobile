@@ -203,7 +203,7 @@ stays visible.
 Nothing moves or appears under the thumb and takes a tap at once. `tapGuard`
 (450 ms, `Dwell.tapGuard`, `ui/support/tap_guard.dart`) is the one guard: a permission request, a
 question, the triage sheet's next agent and the session composer's Stop (which
-takes Send's place) take no tap for that long, and their answers are dimmed
+sits beside Send) take no tap for that long, and their answers are dimmed
 (`TapGuardState`). On the board, `SettleGate` closes the same way for every
 card's answers when a card above the last answerable one came, went or was
 re-ordered (a card appended below moves nothing). In the triage sheet an

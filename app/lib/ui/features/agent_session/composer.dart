@@ -46,8 +46,8 @@ String? composerReason(AgentLink link, {AppLocalizations? l10n}) => switch (link
 /// and what waits shows above it ([QueuedMessages]). Send never moves: Stop is
 /// its own round button to its left, drawn when a turn runs and deaf for
 /// [Dwell.tapGuard] after it appears, so the tap that sent a message cannot land on
-/// it. An observed session (an agent in a terminal) has no queue: Stop takes
-/// the place of Send.
+/// it. An agent in a terminal takes a message while it works too: Send goes
+/// into the turn, a hold on Send keeps it on the phone until the turn ends.
 ///
 /// Pictures and files wait as chips above the field ([AttachmentChips]) and
 /// go out with the text; the message cannot be sent while one is still being
@@ -113,9 +113,7 @@ class Composer extends StatelessWidget {
           // Waiting on background work the turn is over: Send, not Stop (Stop
           // would end nothing, and an agent in a terminal still says `working`).
           final working = live && phase != AgentPhase.idle && relay == null && !waiting;
-          final observed = session.isObserved;
           final attaches = session.attachMode != AttachMode.none;
-          final queuing = working && !observed;
           final hint = composerHint(
             session.agentLabel,
             linkWord: reason ?? blocked ?? (relay != null ? '$relay…' : null),
@@ -176,36 +174,32 @@ class Composer extends StatelessWidget {
                           onStop?.call();
                           session.cancel();
                         },
-                        // Beside Send it is the secondary action; alone (a
-                        // terminal agent) it is the only one.
-                        quiet: queuing,
                       ),
-                    if (!working || queuing)
-                      if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
-                        // The mic is Send's place while there is nothing to send;
-                        // a long press picks the language.
-                        ComposerRoundButton(
-                          key: const ValueKey('mic'),
-                          label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
-                          icon: LucideIcons.mic,
-                          iconSize: IconSize.bar,
-                          ready: true,
-                          quiet: !dictate.listening,
-                          onPressed: () => unawaited(dictate.toggle()),
-                          onLongPress: dictate.listening
-                              ? null
-                              : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
-                        )
-                      else
-                        ComposerRoundButton(
-                          key: const ValueKey('send'),
-                          label: sendLabel,
-                          icon: sendIcon,
-                          iconSize: IconSize.bar,
-                          ready: typing && hasContent && attachments.canSend,
-                          onPressed: onSubmit,
-                          onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
-                        ),
+                    if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
+                      // The mic is Send's place while there is nothing to send;
+                      // a long press picks the language.
+                      ComposerRoundButton(
+                        key: const ValueKey('mic'),
+                        label: dictate.listening ? context.l10n.uiStopDictating : context.l10n.uiDictate,
+                        icon: LucideIcons.mic,
+                        iconSize: IconSize.bar,
+                        ready: true,
+                        quiet: !dictate.listening,
+                        onPressed: () => unawaited(dictate.toggle()),
+                        onLongPress: dictate.listening
+                            ? null
+                            : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                      )
+                    else
+                      ComposerRoundButton(
+                        key: const ValueKey('send'),
+                        label: sendLabel,
+                        icon: sendIcon,
+                        iconSize: IconSize.bar,
+                        ready: typing && hasContent && attachments.canSend,
+                        onPressed: onSubmit,
+                        onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
+                      ),
                   ],
                 );
               },
@@ -245,7 +239,7 @@ class Composer extends StatelessWidget {
                   child: ListenableBuilder(
                     listenable: Listenable.merge([focusNode, controller]),
                     builder: (context, _) => DeliveryHint(
-                      delivery: queuing && typing && (focusNode.hasFocus || controller.text.isNotEmpty)
+                      delivery: working && typing && (focusNode.hasFocus || controller.text.isNotEmpty)
                           ? delivery
                           : null,
                     ),
@@ -312,16 +306,14 @@ class _HideWhenCompactState extends State<HideWhenCompact> with WidgetsBindingOb
   Widget build(BuildContext context) => _compact ? widget.compact : widget.child;
 }
 
-/// Stop is its own button, left of Send (or alone, in Send's place, for an
-/// agent in a terminal). It takes no tap for [Dwell.tapGuard] after it appears: the
-/// tap that started the turn, or its second half, must not cancel it. Beside
-/// Send (`quiet`) it is a neutral button; alone it is the primary one.
+/// Stop is its own button, left of Send. It takes no tap for [Dwell.tapGuard]
+/// after it appears: the tap that started the turn, or its second half, must
+/// not cancel it. It is a neutral button: Send is the primary one.
 class _StopButton extends StatefulWidget {
-  const _StopButton({super.key, required this.stopping, required this.onPressed, this.quiet = false});
+  const _StopButton({super.key, required this.stopping, required this.onPressed});
 
   final bool stopping;
   final VoidCallback onPressed;
-  final bool quiet;
 
   @override
   State<_StopButton> createState() => _StopButtonState();
@@ -335,7 +327,7 @@ class _StopButtonState extends State<_StopButton> with TapGuardState<_StopButton
     iconSize: IconSize.row,
     busy: widget.stopping,
     ready: settled && !widget.stopping,
-    quiet: widget.quiet,
+    quiet: true,
     onPressed: widget.onPressed,
   );
 }

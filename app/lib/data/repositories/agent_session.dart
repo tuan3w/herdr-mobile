@@ -213,9 +213,10 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   SendDelivery get delivery;
 
   /// The agent takes messages into a running turn (`_session/steering`: Claude
-  /// Code, Codex). omp and pi do not: their messages are queued here, because
-  /// a prompt sent to omp during a turn cancels it, and pi's own queue cannot
-  /// be shown or edited. False while no attach has told.
+  /// Code, Codex; an agent in a terminal, where typing and Enter steer it).
+  /// omp over ACP and pi do not: their messages are queued here, because a
+  /// prompt sent to omp during a turn cancels it, and pi's own queue cannot be
+  /// shown or edited. False while no attach has told.
   bool get canSteer;
 
   /// The agent takes pictures in a prompt (`promptCapabilities.image`). Codex

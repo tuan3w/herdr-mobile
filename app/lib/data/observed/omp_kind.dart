@@ -102,12 +102,15 @@ class OmpSubagentLogs implements SubagentLogs {
       final files = names[s.name];
       if (files == null) continue;
       if (files.containsKey('md') || files.containsKey('json')) {
+        // omp writes the result file when the subagent ends: the one proof.
         refined[s.name] = SubagentState.finished;
       } else if (files.containsKey('jsonl')) {
+        // A quiet log proves nothing: a subagent that backgrounds a long job and
+        // calls `wait` writes nothing until it returns (a 50-minute GPU run
+        // showed as done after 32 s). Only a recent write is a fact; otherwise
+        // the parent log's own status (`wait`, `async-result`) decides.
         final at = files['jsonl'];
-        refined[s.name] = at != null && now.difference(at.toUtc()) <= running
-            ? SubagentState.running
-            : SubagentState.finished;
+        if (at != null && now.difference(at.toUtc()) <= running) refined[s.name] = SubagentState.running;
       }
     }
     return refined;

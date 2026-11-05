@@ -71,8 +71,8 @@ line above the field says what will happen to the message
 (`AgentSessionView.delivery`): `Will be queued until the turn ends` (pi, omp
 before it takes steering, or anything already waits: the order is kept) or
 `Goes into the turn. Hold Send to send it after.`
-(Claude Code, Codex, omp with steering); nothing when it would go out at once,
-and nothing for an agent in a terminal. The two intents of a mid-turn message
+(Claude Code, Codex, omp with steering, and every agent in a terminal);
+nothing when it would go out at once. The two intents of a mid-turn message
 are therefore a tap (now: into the turn) and a hold on Send (after: it waits on
 the phone, where it can be edited or taken back, like any queued message). The
 hold is only offered where a tap would steer; where a message waits anyway a
@@ -81,7 +81,7 @@ send for the steering agents) and Stop is its own round, neutral button to its
 left, drawn while a turn runs and deaf for `tapGuard` (450 ms) from the moment
 it appears, so the tap that started the turn, or the second tap of a double
 tap on Send/Queue, cannot cancel it (it cannot reach it either: a different
-place). A terminal agent has no queue: Stop takes Send's place, primary. What
+place). What
 waits shows above the field as soft rows, oldest first, text cut to two lines
 (through `visibleText()`), three at most and `N more queued` for the rest. A
 tap opens a row in a sheet (edit, Save, Remove; it says `Already sent` when
@@ -91,12 +91,40 @@ attachments), the cross (44 dp) removes it. The queue goes out one message at
 a time when the turn ends; after the person's own Stop it goes out as soon as
 the turn has stopped, all of it as one message (text joined by a blank line, in
 the order sent, then attachments), because stopping a turn is going on with
-what was queued behind it. A failed turn, a turn stopped from elsewhere or a
-refusal holds the messages: one line (quiet tone; the refusal itself is already
+what was queued behind it. A failed turn, a turn stopped from elsewhere (not
+for an agent in a terminal, see below) or a refusal holds the messages: one line (quiet tone; the refusal itself is already
 in the link strip) says why, with `Resume`. Steered messages just appear as the
 user's row. Haptics: `sent` when the session took the message (sent, steered,
 queued or held), `failed` when it did not or an attachment cannot be made; see
 "Send haptics follow the outcome".
+
+**An agent in a terminal** (`ObservedAgentSession`) takes the same composer:
+Send types the message into the pane at once, as the agent's own Enter does
+(omp steers it; Claude Code and Codex read it after the current tool call),
+and a hold on Send keeps it on the phone, in the same rows, to edit or remove,
+until the pane has stopped working. Three differences, each with its reason.
+(1) Before anything is typed into a pane that is working, the screen is read
+(`_screenAsks`: omp's approval and plan review, the generic prompt detector, the
+question tool): a dialog that opened since herdr last said `working` would take
+the text and the Enter as its answer, and `1. Yes` is the default of most. It
+refuses with `The terminal is asking something. Answer it first; the message
+wasn’t sent.`, and the text goes back to the field. (2) A message typed in
+goes to the agent's own queue or steer buffer, where the phone can neither
+edit nor take it back, and the chat shows it only when the agent writes it to
+its log (Claude at once, as `queue-operation`; omp when it injects it, after
+the tool batch; Codex: UNVERIFIED), so it is not called lost while the turn
+runs (`_confirmSent` keeps waiting until the turn ends). The hold on Send is
+the way to a message the person can still change. (3) What waits goes out when
+the pane stops working, whatever stopped it: the phone cannot tell a turn
+stopped in the terminal from one that finished, so it never holds the queue
+for that (an ACP session does). After the person's own Stop the messages go
+together as one, as there. A pane that needs the person (`blocked`) takes
+nothing; the messages wait. The session is not dropped for being unused while
+messages wait in it, and the queue is in memory only, like any other. It is
+not sent while the app has no connection to the machine (the background
+profile): it goes when the phone is back. That Enter steers in omp, Claude
+Code and Codex is the owner's check on a device; the phone's reading of a
+screen for a dialog is covered by tests, not measured on a real agent.
 
 **Attachments** (`attach_*.dart`, the sheet is in `ui/features/attach/`, see
 "Attach sheet" below). A paperclip (44 dp, bare icon) at the field's left opens

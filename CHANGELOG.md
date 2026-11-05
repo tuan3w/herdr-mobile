@@ -4,6 +4,33 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- Message an agent that runs in a terminal while it works. `Send` puts the
+  message into the turn; hold `Send` to keep it above the box until the turn
+  ends, where you can edit or remove it. If the terminal is asking something,
+  nothing is typed and the text stays in the box.
+
+## [0.1.49] - 2026-11-04
+
+### A waiting omp subagent no longer shows as done
+
+A subagent that started a long background job and waits for it stays
+`running` in the subagents chip and list. It used to turn `done` after about
+30 seconds of silence, while omp still listed it as running.
+
+- A subagent is `done` when omp says so: it reports the end and writes its
+  result file. A quiet log no longer ends it; a recent write still marks it
+  running.
+- Claude Code and Codex subagents still go by the old 30-second rule.
+
+**Fixed**
+
+- With three subagents, one waiting on a 50-minute job, the chip said `1
+  running` while the background strip said `2 running in background`. They
+  agree now. Checked on the recorded files of that session; not measured on
+  a phone.
+
 ## [0.1.48] - 2026-10-30
 
 ### The board says what to look at again

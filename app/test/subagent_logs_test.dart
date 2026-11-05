@@ -7,6 +7,7 @@ import 'package:herdr_mobile/data/observed/claude_subagent_logs.dart';
 import 'package:herdr_mobile/data/observed/codex_kind.dart';
 import 'package:herdr_mobile/data/observed/codex_locator.dart';
 import 'package:herdr_mobile/data/observed/observed_contracts.dart';
+import 'package:herdr_mobile/data/observed/omp_kind.dart' show OmpSubagentLogs;
 import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink, SubagentState;
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
 
@@ -166,6 +167,34 @@ void main() {
 
       expect(await logs.pathOf(rig.machine, '/x.jsonl', const SubagentInfo(name: 'a')), isNull);
       expect(await logs.pathOf(rig.machine, '/x.jsonl', const SubagentInfo(name: 'a', logId: child)), isNull);
+    });
+  });
+
+  group('omp', () {
+    const parent = '/home/u/.omp/agent/sessions/--x--/2026-11-03T13-40-37-892Z_01a1a1a3.jsonl';
+    const dir = '/home/u/.omp/agent/sessions/--x--/2026-11-03T13-40-37-892Z_01a1a1a3';
+    const logs = OmpSubagentLogs();
+    const window = Duration(seconds: 32);
+    DateTime ago(Duration d) => DateTime.now().toUtc().subtract(d);
+
+    // Recorded on 2026-11-04: StartupLimits backgrounded a 50-minute job and
+    // called `wait`; its file stayed quiet for minutes while omp still listed it
+    // as running, and the roster said done.
+    test('a quiet log does not end a subagent: only a recent write or the result file says anything', () async {
+      final fs = FakeFs()
+        ..addFile('$dir/Waiting.jsonl', '{}\n', modified: ago(const Duration(minutes: 5)))
+        ..addFile('$dir/Writing.jsonl', '{}\n', modified: DateTime.now().toUtc())
+        ..addFile('$dir/Ended.jsonl', '{}\n', modified: DateTime.now().toUtc())
+        ..addFile('$dir/Ended.md', 'done', modified: DateTime.now().toUtc());
+      final rig = await _rig(fs, agent: 'omp');
+
+      final states = await logs.refine(rig.machine, parent, const [
+        SubagentInfo(name: 'Waiting', status: 'running'),
+        SubagentInfo(name: 'Writing', status: 'pending'),
+        SubagentInfo(name: 'Ended', status: 'running'),
+      ], running: window);
+
+      expect(states, {'Writing': SubagentState.running, 'Ended': SubagentState.finished});
     });
   });
 }

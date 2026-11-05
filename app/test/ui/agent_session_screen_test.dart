@@ -590,17 +590,16 @@ void main() {
       expect(session.sent, isEmpty);
     });
 
-    testWidgets('the keyboard Send on an agent in a terminal that is mid-turn says why and keeps the text', (
-      tester,
-    ) async {
-      final session = FakeAgentSession(state: stateWith(turnActive: true))..observed = true;
+    testWidgets('the keyboard Send on an agent in a terminal that is mid-turn sends it into the turn', (tester) async {
+      final session = FakeAgentSession(state: stateWith(turnActive: true))
+        ..observed = true
+        ..steerable = true;
       await pumpScreen(tester, session);
       await tester.enterText(find.byType(TextField), 'fix the build');
       await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pump();
-      expect(session.sent, isEmpty);
-      expect(find.textContaining('working'), findsOneWidget, reason: 'a toast says why nothing went');
-      expect(composerField(tester).controller!.text, 'fix the build');
+      expect(session.steeredBlocks, hasLength(1));
+      expect(composerField(tester).controller!.text, isEmpty, reason: 'it went: the field is free');
     });
 
     testWidgets('while the agent works the button stops it, once, and the keyboard cannot send', (tester) async {
