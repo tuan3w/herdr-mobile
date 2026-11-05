@@ -19,7 +19,8 @@ const queuedRowsShown = 3;
 /// first. A tap opens it to edit or remove; the cross removes it. A message
 /// the agent could not take now ([QueuedState.waiting]) goes out by itself
 /// when the turn ends (after the person's own Stop, together as one message);
-/// after a failed turn, a stop from elsewhere or a refusal the messages are
+/// after a failed turn, a stop from elsewhere (not for an agent in a terminal:
+/// the phone cannot tell it from a finished turn) or a refusal the messages are
 /// held, and one bar says why and offers Resume. Takes no room when nothing
 /// waits.
 class QueuedMessages extends StatefulWidget {

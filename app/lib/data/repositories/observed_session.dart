@@ -760,8 +760,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
 
   bool get _paneWorking => !_isSub && machine.isLive && _pane?.status == AgentStatus.working;
 
-  /// The pane can take a prompt of its own now: no turn runs and nothing asks.
-  bool get _takesPrompt => !_isSub && machine.isLive && _pane != null && !_blocked && _pending == null && !_turnRuns;
+  /// The pane can take a prompt of its own now: an agent runs in it, no turn
+  /// runs and nothing asks.
+  bool get _takesPrompt =>
+      !_isSub && machine.isLive && _pane != null && !_exited && !_blocked && _pending == null && !_turnRuns;
 
   @override
   bool get acceptsImages => false;
@@ -812,6 +814,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       _stopSendsQueue = false;
       return;
     }
+    // The agent left the pane: a shell takes the keys now, and a message
+    // typed into it would run as a command.
+    if (_exited) {
+      if (_queue.holdAll('$agentLabel is not running in this pane any more. Resume to send it when it is.')) {
+        _changed();
+      }
+      return;
+    }
     if (_turnRuns) return;
     if (_stopSendsQueue) {
       _stopSendsQueue = false;
@@ -827,34 +837,39 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     unawaited(_dispatch(next));
   }
 
-  /// Types [next] into the pane. It leaves the queue once the pane took it, and
-  /// is held, with the reason, when it did not. The next waits until this one
-  /// has been read (the log shows it, or a turn runs), so two never overlap.
+  /// Types [next] into the pane. It is out of the queue while it goes (the
+  /// person cannot edit or remove what is already being typed, and a Stop's
+  /// merge does not take it) and comes back, first and held, with the reason,
+  /// when the pane did not take it or the log did not show it. What waits
+  /// behind it is held too, so the order is kept. The next goes only once this
+  /// one has been read (the log shows it, or a turn runs): two never overlap.
   Future<void> _dispatch(QueuedMessage next) async {
     _dispatching = true;
+    _queue.remove(next.id);
+    _queueChanged();
     try {
       final prompt = terminalPrompt(next.blocks);
       final before = _userMessages();
       final sent = prompt != null && await _sendNow(next.blocks, prompt);
       if (_disposed) return;
       if (!sent) {
-        final why = prompt == null ? terminalAttachmentRefusal : (error ?? 'The agent did not take it.');
-        if (_queue.hold(next.id, why)) _changed();
+        _putBack(next, prompt == null ? terminalAttachmentRefusal : (error ?? 'The agent did not take it.'));
         return;
       }
-      _queue.remove(next.id);
-      _queueChanged();
       final taken = await _waitFor(() => _turnRuns || _userMessages() > before, confirmWithin);
-      if (!taken &&
-          !_disposed &&
-          _following &&
-          _queue.holdAll('The last message did not reach the agent’s log. Check the terminal, then resume.')) {
-        _changed();
+      if (!taken && !_disposed && _following) {
+        _putBack(next, 'It is not in the agent’s log yet. Check the terminal, then resume.');
       }
     } finally {
       _dispatching = false;
     }
     if (!_disposed) _pump();
+  }
+
+  void _putBack(QueuedMessage message, String why) {
+    _queue.add(message.blocks, at: message.at, state: QueuedState.held, heldReason: why, first: true);
+    _queue.holdAll('Waiting behind a message that was not sent. Resume to send them in order.');
+    _queueChanged();
   }
 
   @override
@@ -1968,6 +1983,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (!_isSub && (_queue.hasWaiting || (queue && _turnRuns))) {
       markSeen();
       _setProblem(null);
+      _stopSendsQueue = false;
       _queue.add(blocks, at: _clock());
       _changed();
       _pump();
@@ -2027,6 +2043,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Future<String?> _deliver(Future<void> Function() go, {String? failure}) async {
     if (_disposed) return 'This session is closed.';
     if (!machine.isLive || _pane == null) return 'Not connected. The message was not sent.';
+    if (_exited) return '$agentLabel is not running in this pane any more. The message was not sent.';
     if (_blocked || _pending != null) {
       return _pending is PendingQuestion
           ? 'The agent is waiting for an answer. Answer it first; the message was not sent.'

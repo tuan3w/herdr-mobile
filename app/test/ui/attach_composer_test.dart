@@ -231,15 +231,21 @@ void main() {
       },
     );
 
-    testWidgets('nothing is said when the message would go out at once, or the agent is in a terminal', (tester) async {
+    testWidgets('nothing is said when the message would go out at once', (tester) async {
       final idle = FakeAgentSession();
       await pump(tester, idle);
       expect(find.textContaining('queued'), findsNothing);
       expect(find.textContaining('running turn'), findsNothing);
+    });
 
-      final terminal = working()..observed = true;
+    testWidgets('an agent in a terminal says where the message goes, like any agent that steers', (tester) async {
+      final terminal = working()
+        ..observed = true
+        ..steerable = true;
       await pump(tester, terminal);
-      expect(find.text('Will be queued until the turn ends'), findsNothing);
+      await tester.tap(find.byType(TextField).last);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('Goes into the turn'), findsOneWidget);
     });
 
     testWidgets('the turn ending takes the hint away', (tester) async {

@@ -91,8 +91,8 @@ attachments), the cross (44 dp) removes it. The queue goes out one message at
 a time when the turn ends; after the person's own Stop it goes out as soon as
 the turn has stopped, all of it as one message (text joined by a blank line, in
 the order sent, then attachments), because stopping a turn is going on with
-what was queued behind it. A failed turn, a turn stopped from elsewhere or a
-refusal holds the messages: one line (quiet tone; the refusal itself is already
+what was queued behind it. A failed turn, a turn stopped from elsewhere (not
+for an agent in a terminal, see below) or a refusal holds the messages: one line (quiet tone; the refusal itself is already
 in the link strip) says why, with `Resume`. Steered messages just appear as the
 user's row. Haptics: `sent` when the session took the message (sent, steered,
 queued or held), `failed` when it did not or an attachment cannot be made; see

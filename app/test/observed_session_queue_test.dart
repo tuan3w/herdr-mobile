@@ -134,22 +134,53 @@ void main() {
     expect(_typed(rig), ['wait for me']);
   });
 
-  test('a message the pane did not take is held with the reason, and Resume sends it', () async {
+  test(
+    'a message the pane did not take is held first with the reason, what is behind it waits, Resume keeps the order',
+    () async {
+      final (rig, session) = await _open();
+      await session.sendBlocks([const TextBlock('first')], queue: true);
+      await session.sendBlocks([const TextBlock('second')], queue: true);
+      var fail = true;
+      rig.transport.onInput = (_) {
+        if (fail) throw const HerdrTransportException('The link dropped.');
+      };
+
+      await rig.setStatus('idle');
+      await eventually(() => session.queued.length == 2 && session.queued.every((m) => m.held), reason: 'both held');
+      expect(session.queued.map((m) => m.text), ['first', 'second'], reason: 'the one that failed stays first');
+      expect(session.queued.first.heldReason, 'The link dropped.');
+      expect(_typed(rig), isEmpty, reason: 'the second must not overtake the first');
+
+      fail = false;
+      session.resumeQueue();
+      await eventually(() => _typed(rig).isNotEmpty, reason: 'resumed');
+      expect(_typed(rig), ['first']);
+    },
+  );
+
+  test('an agent that left the pane takes nothing: the shell would run it', () async {
     final (rig, session) = await _open();
-    await session.sendBlocks([const TextBlock('wait for me')], queue: true);
-    var fail = true;
-    rig.transport.onInput = (_) {
-      if (fail) throw const HerdrTransportException('The link dropped.');
-    };
+    await session.sendBlocks([const TextBlock('make the tests pass')], queue: true);
+
+    ((rig.transport.snapshot['panes'] as List).first as Map<String, dynamic>).remove('agent');
+    await rig.setStatus('idle');
+
+    await eventually(() => session.queued.any((m) => m.held), reason: 'held: no agent runs here');
+    expect(_typed(rig), isEmpty);
+    expect(session.queued.single.heldReason, contains('not running in this pane'));
+    expect(await session.sendBlocks([const TextBlock('git push')]), isFalse, reason: 'nor a direct send');
+    expect(_typed(rig), isEmpty);
+  });
+
+  test('a Stop that did not stop the turn does not merge what is queued after it', () async {
+    final (rig, session) = await _open();
+    await session.sendBlocks([const TextBlock('A')], queue: true);
+    session.cancel();
+    await session.sendBlocks([const TextBlock('B')], queue: true);
 
     await rig.setStatus('idle');
-    await eventually(() => session.queued.any((m) => m.held), reason: 'held');
-    expect(session.queued.single.heldReason, 'The link dropped.');
-
-    fail = false;
-    session.resumeQueue();
-    await eventually(() => session.queued.isEmpty, reason: 'resumed and sent');
-    expect(_typed(rig), ['wait for me']);
+    await eventually(() => _typed(rig).isNotEmpty, reason: 'the first goes');
+    expect(_typed(rig), ['A'], reason: 'B was queued after the Stop: its own message, after the next turn');
   });
 
   test('an edited message goes out as edited, and a removed one never does', () async {
@@ -170,6 +201,12 @@ void main() {
     await session.sendBlocks([const TextBlock('later')], queue: true);
 
     session.release();
+    // Absence has to be waited for: the drop timer is 30 ms, so five times that
+    // is long enough to see it did not fire. A slow machine only delays the
+    // timer, it can never make this pass when the guard is gone.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(idled, 0, reason: 'a message waits in it: dropping would lose it without a word');
+
     session.removeQueued(session.queued.single.id);
     await eventually(() => idled == 1, reason: 'unused and empty: dropped');
   });
