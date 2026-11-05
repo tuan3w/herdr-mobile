@@ -24,6 +24,12 @@ enum QueuedState {
   /// failed, or the agent refused the message. The person edits it, removes
   /// it, or resumes the queue.
   held,
+
+  /// Typed into the agent's own terminal while its turn runs, and not read by
+  /// the agent yet (an agent in a terminal only; never in a [PromptQueue]). It
+  /// can be neither edited nor taken back from the phone: it is in the
+  /// terminal's own queue. It goes when the transcript shows the message.
+  sent,
 }
 
 /// A message that has not been sent yet. Immutable; an edit makes a new one
@@ -52,6 +58,9 @@ class QueuedMessage {
   final String? heldReason;
 
   bool get held => state == QueuedState.held;
+
+  /// Typed into the terminal, not read yet ([QueuedState.sent]).
+  bool get sent => state == QueuedState.sent;
 
   /// The typed text.
   String get text => [

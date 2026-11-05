@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/acp/prompt_queue.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -266,6 +267,30 @@ void main() {
     await settle(tester, 300);
     expect(session.steeredBlocks, hasLength(1));
     expect(session.queued, isEmpty);
+  });
+
+  testWidgets('a message already sent into the terminal is a quiet row with nothing to tap or remove', (tester) async {
+    final session = working()
+      ..observed = true
+      ..steerable = true
+      ..sentRows = [
+        QueuedMessage(
+          id: 's1',
+          blocks: const [TextBlock('use the staging db')],
+          at: DateTime(2026),
+          state: QueuedState.sent,
+        ),
+      ];
+    await pump(tester, session);
+    await session.sendBlocks([const TextBlock('then run the tests')], queue: true);
+    await settle(tester, 300);
+
+    expect(find.text('use the staging db'), findsOneWidget);
+    expect(find.textContaining('Sent to the terminal'), findsOneWidget);
+    expect(find.byTooltip('Remove queued message'), findsOneWidget, reason: 'only the queued one has a cross');
+    await tester.tap(find.text('use the staging db'));
+    await settle(tester);
+    expect(find.text('Save'), findsNothing, reason: 'no edit sheet for what is in the terminal already');
   });
 
   testWidgets('more than three waiting: three show, the rest are one tap away', (tester) async {
