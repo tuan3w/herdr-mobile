@@ -344,6 +344,15 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// The person asked to stop the turn while messages waited: when it has
   /// stopped they go out together, as one message (see [_driveQueue]).
   bool _stopSendsQueue = false;
+
+  /// Messages typed into the pane while a turn runs that the log does not show
+  /// yet, oldest first: the person sees them (as [QueuedState.sent] rows) until
+  /// the agent reads them. Replaced on every change.
+  List<QueuedMessage> _sent = const [];
+  var _nextSent = 1;
+  List<QueuedMessage>? _queuedView;
+  List<QueuedMessage>? _viewQueue;
+  List<QueuedMessage>? _viewSent;
   final _waiters = <_Waiter>[];
 
   // Preview watch, live output.
@@ -776,7 +785,31 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   AttachMode get attachMode => _isSub ? AttachMode.none : AttachMode.paths;
 
   @override
-  List<QueuedMessage> get queued => _queue.entries;
+  List<QueuedMessage> get queued {
+    if (_sent.isEmpty) return _queue.entries;
+    if (!identical(_viewQueue, _queue.entries) || !identical(_viewSent, _sent)) {
+      _viewQueue = _queue.entries;
+      _viewSent = _sent;
+      _queuedView = [..._sent, ..._queue.entries];
+    }
+    return _queuedView!;
+  }
+
+  QueuedMessage _addSent(List<ContentBlock> blocks) {
+    final message = QueuedMessage(id: 's${_nextSent++}', blocks: blocks, at: _clock(), state: QueuedState.sent);
+    _sent = [..._sent, message];
+    _changed();
+    return message;
+  }
+
+  void _removeSent(String id) {
+    if (!_sent.any((m) => m.id == id)) return;
+    _sent = [
+      for (final m in _sent)
+        if (m.id != id) m,
+    ];
+    _changed();
+  }
 
   @override
   void editQueued(String id, String text) {
@@ -1934,6 +1967,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       _setProblem(failure);
       return failure == null;
     }
+    final steered = _turnRuns;
     final before = _userMessages();
     final failure = await _sendPrompt(trimmed);
     // `/clear` and `/new` open another log and are never a message in it.
@@ -1943,7 +1977,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       unawaited(_followNewLog());
       return true;
     }
-    return _afterSend(before, failure);
+    return _afterSend(before, failure, blocks: [TextBlock(trimmed)], steered: steered);
   }
 
   /// Commands that start another conversation, and with it another log file.
@@ -1995,17 +2029,24 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// Types [blocks] into the pane now, whatever the agent is doing.
   Future<bool> _sendNow(List<ContentBlock> blocks, TerminalPrompt prompt) async {
     if (prompt.pastes.isEmpty) return send(prompt.line);
+    final steered = _turnRuns;
     final before = _userMessages();
-    return _afterSend(before, await _sendTerminal(prompt));
+    return _afterSend(before, await _sendTerminal(prompt), blocks: blocks, steered: steered);
   }
 
   /// What every send ends with: the problem (or none), the session seen, and
   /// the log checked for the message.
-  bool _afterSend(int before, String? failure) {
+  bool _afterSend(int before, String? failure, {List<ContentBlock> blocks = const [], bool steered = false}) {
     _setProblem(failure);
     if (failure != null) return false;
     markSeen();
-    unawaited(_confirmSent(before));
+    // Into a running turn it is read later (after the agent's current tool
+    // call): until the log shows it, it is a row of its own, so a message that
+    // left the field is never nowhere. Another one still on its way counts
+    // before this one in the log.
+    final ahead = _sent.length;
+    final row = steered ? _addSent(blocks) : null;
+    unawaited(_confirmSent(before + ahead, row));
     return true;
   }
 
@@ -2014,13 +2055,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// The agent writes the message to its log when it takes it: no entry in
   /// [confirmWithin] means the pane did not take it (the log is the truth, so
   /// nothing is echoed locally).
-  Future<void> _confirmSent(int before) async {
+  Future<void> _confirmSent(int before, QueuedMessage? row) async {
     // Into a running turn the agent reads it when its current tool call ends,
     // which can be minutes away: it is not lost while the turn goes on.
     bool seen;
     do {
       seen = await _waitFor(() => _userMessages() > before, confirmWithin);
     } while (!seen && _turnRuns && !_disposed);
+    if (row != null) _removeSent(row.id);
     if (!seen && !_disposed && _logLink == AgentLink.live) {
       _setProblem('The message isn’t in the agent’s log yet. Check the terminal.');
     }

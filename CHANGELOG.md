@@ -4,6 +4,14 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- A message you send into a terminal agent's running turn is no longer
+  invisible until the agent reads it: it shows above the box as `Sent to the
+  terminal · not read yet`, and goes when the chat shows the message. It
+  cannot be edited or removed there; hold `Send` for a message you may want
+  to change.
+
 ## [0.1.50] - 2026-11-05
 
 ### Message an agent in a terminal while it works

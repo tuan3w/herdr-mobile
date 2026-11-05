@@ -19,6 +19,7 @@ import 'package:flutter/rendering.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/acp/prompt_queue.dart';
 import 'package:herdr_mobile/data/acp/auth_needed.dart';
 import 'package:herdr_mobile/ui/features/attach/attach_bars.dart';
 import 'package:herdr_mobile/ui/features/attach/attach_kit.dart';
@@ -357,6 +358,33 @@ void main() {
             await tester.pump();
             await tester.pump(const Duration(milliseconds: 300));
           }
+          await tester.enterText(find.byType(TextField).last, 'A draft I am still typing');
+        },
+      );
+    },
+    'terminal-sent': (tester, b, size, scale, kb) {
+      final session = working()
+        ..observed = true
+        ..steerable = true
+        ..sentRows = [
+          QueuedMessage(
+            id: 's1',
+            blocks: const [TextBlock('Use the staging database, not prod')],
+            at: DateTime(2026),
+            state: QueuedState.sent,
+          ),
+        ];
+      return shoot(
+        tester,
+        'terminal-sent',
+        session,
+        size,
+        b,
+        scale: scale,
+        keyboard: kb,
+        then: () async {
+          await session.sendBlocks([const TextBlock('And update the changelog, then tag it')], queue: true);
+          await tester.pump();
           await tester.enterText(find.byType(TextField).last, 'A draft I am still typing');
         },
       );

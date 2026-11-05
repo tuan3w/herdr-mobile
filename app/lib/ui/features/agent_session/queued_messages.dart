@@ -16,7 +16,10 @@ import '../../render/visible_text.dart';
 const queuedRowsShown = 3;
 
 /// What waits to be sent, above the composer: one soft row per message, oldest
-/// first. A tap opens it to edit or remove; the cross removes it. A message
+/// first. A tap opens it to edit or remove; the cross removes it. A message an
+/// agent in a terminal has been sent while its turn runs, and has not read
+/// yet, is a row above them with nothing to tap: it is in the terminal's own
+/// queue, out of the phone's hands, and goes when the chat shows it. A message
 /// the agent could not take now ([QueuedState.waiting]) goes out by itself
 /// when the turn ends (after the person's own Stop, together as one message);
 /// after a failed turn, a stop from elsewhere (not for an agent in a terminal:
@@ -51,11 +54,21 @@ class _QueuedMessagesState extends State<QueuedMessages> {
 
   Widget _list(BuildContext context, List<QueuedMessage> queued) {
     final ds = context.ds;
-    final held = [
+    // What the phone typed into a running terminal turn comes first (it is the
+    // oldest) and is not counted as queued: it is out of the phone's hands.
+    final sent = [
       for (final m in queued)
+        if (m.sent) m,
+    ];
+    final waiting = [
+      for (final m in queued)
+        if (!m.sent) m,
+    ];
+    final held = [
+      for (final m in waiting)
         if (m.held) m,
     ];
-    final shown = _all || queued.length <= queuedRowsShown ? queued : queued.take(queuedRowsShown).toList();
+    final shown = _all || waiting.length <= queuedRowsShown ? waiting : waiting.take(queuedRowsShown).toList();
     final reason = held.isEmpty ? null : visibleText(held.first.heldReason ?? 'Held. Resume to send.');
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.sm),
@@ -87,6 +100,11 @@ class _QueuedMessagesState extends State<QueuedMessages> {
                 ],
               ),
             ),
+          for (final m in sent)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.xs),
+              child: _QueuedRow(key: ValueKey(m.id), message: m, reason: null, onEdit: null, onRemove: null),
+            ),
           for (final m in shown)
             Padding(
               padding: const EdgeInsets.only(bottom: Gap.xs),
@@ -101,13 +119,13 @@ class _QueuedMessagesState extends State<QueuedMessages> {
                 onRemove: () => unawaited(_confirmRemove(context, widget.session, m.id)),
               ),
             ),
-          if (queued.length > queuedRowsShown)
+          if (waiting.length > queuedRowsShown)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.md),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: TextAction(
-                  label: _all ? 'Show less' : '${queued.length - shown.length} more queued',
+                  label: _all ? 'Show less' : '${waiting.length - shown.length} more queued',
                   tone: TextActionTone.quiet,
                   onTap: () => setState(() => _all = !_all),
                 ),
@@ -130,14 +148,21 @@ class _QueuedRow extends StatelessWidget {
 
   final QueuedMessage message;
   final String? reason;
-  final VoidCallback onEdit;
-  final VoidCallback onRemove;
+
+  /// Null for a message already typed into the terminal: it can be neither
+  /// edited nor taken back from the phone.
+  final VoidCallback? onEdit;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
     final attachments = message.attachments.length;
-    final note = [if (attachments > 0) '+ ${countOf(attachments, 'attachment')}', ?reason].join(' · ');
+    final note = [
+      if (message.sent) 'Sent to the terminal · not read yet',
+      if (attachments > 0) '+ ${countOf(attachments, 'attachment')}',
+      ?reason,
+    ].join(' · ');
     return Panel(
       padding: const EdgeInsets.symmetric(vertical: Gap.xs),
       child: Row(
@@ -151,10 +176,18 @@ class _QueuedRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Icon(
-                    message.held ? LucideIcons.pause : LucideIcons.clock,
+                    message.sent
+                        ? LucideIcons.cornerDownRight
+                        : message.held
+                        ? LucideIcons.pause
+                        : LucideIcons.clock,
                     size: IconSize.inline,
                     color: ds.textSecondary,
-                    semanticLabel: message.held ? 'Held' : 'Queued',
+                    semanticLabel: message.sent
+                        ? 'Sent'
+                        : message.held
+                        ? 'Held'
+                        : 'Queued',
                   ),
                   const SizedBox(width: Gap.sm),
                   Expanded(
@@ -182,13 +215,14 @@ class _QueuedRow extends StatelessWidget {
               ),
             ),
           ),
-          CircleButton(
-            icon: LucideIcons.x,
-            tooltip: 'Remove queued message',
-            size: kMinTap - Gap.md,
-            filled: false,
-            onPressed: onRemove,
-          ),
+          if (onRemove case final remove?)
+            CircleButton(
+              icon: LucideIcons.x,
+              tooltip: 'Remove queued message',
+              size: kMinTap - Gap.md,
+              filled: false,
+              onPressed: remove,
+            ),
         ],
       ),
     );

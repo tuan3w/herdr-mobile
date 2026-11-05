@@ -112,9 +112,14 @@ wasn’t sent.`, and the text goes back to the field. (2) A message typed in
 goes to the agent's own queue or steer buffer, where the phone can neither
 edit nor take it back, and the chat shows it only when the agent writes it to
 its log (Claude at once, as `queue-operation`; omp when it injects it, after
-the tool batch; Codex: UNVERIFIED), so it is not called lost while the turn
-runs (`_confirmSent` keeps waiting until the turn ends). The hold on Send is
-the way to a message the person can still change. (3) What waits goes out when
+the tool batch; Codex: UNVERIFIED). Until then it is a quiet row at the top of
+the queue list (`QueuedState.sent`: arrow glyph, `Sent to the terminal · not
+read yet`, no cross, no edit sheet, not counted in `N more queued`), so a
+message that left the field is never nowhere. The row goes when the log shows
+the message (each row counts the ones still ahead of it), or when the turn has
+ended without it, and then the link strip says it is not in the log
+(`_confirmSent` keeps waiting while the turn runs). The hold on Send is the way
+to a message the person can still change. (3) What waits goes out when
 the pane stops working, whatever stopped it: the phone cannot tell a turn
 stopped in the terminal from one that finished, so it never holds the queue
 for that (an ACP session does). After the person's own Stop the messages go

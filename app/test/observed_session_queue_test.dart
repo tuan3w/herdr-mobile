@@ -59,6 +59,31 @@ void main() {
     expect(await session.sendBlocks([const TextBlock('use postgres')]), isTrue);
 
     expect(_typed(rig), ['use postgres']);
+    expect(session.queued.where((m) => !m.sent), isEmpty, reason: 'nothing waits on the phone');
+  });
+
+  test('a message sent into the turn is a row until the agent has read it, and the order is kept', () async {
+    final (rig, session) = await _open();
+
+    expect(await session.sendBlocks([const TextBlock('use postgres')]), isTrue);
+    expect(await session.sendBlocks([const TextBlock('and sqlite for tests')]), isTrue);
+    expect(session.queued.map((m) => (m.text, m.sent)), [('use postgres', true), ('and sqlite for tests', true)]);
+
+    // The agent reads the first one: its row goes, the second one stays.
+    rig.source.push([userLine('u2', 'use postgres')]);
+    await eventually(() => session.queued.length == 1, reason: 'the first one was read');
+    expect(session.queued.single.text, 'and sqlite for tests');
+
+    rig.source.push([userLine('u3', 'and sqlite for tests')]);
+    await eventually(() => session.queued.isEmpty, reason: 'both were read');
+  });
+
+  test('a message that goes out at once, with no turn running, is not shown as waiting', () async {
+    final (rig, session) = await _open(status: 'idle');
+
+    expect(await session.sendBlocks([const TextBlock('hello')]), isTrue);
+
+    expect(_typed(rig), ['hello']);
     expect(session.queued, isEmpty);
   });
 

@@ -491,8 +491,9 @@ and pi started from the app queue it until the turn ends (the button says
 `Queue`). Hold `Send` to keep the message on the phone until the turn ends.
 Queued messages show above the box; tap one to edit or remove it. If the
 terminal is asking something, nothing is typed: answer it first. A message sent
-into a terminal agent shows in the chat when the agent reads it, which for omp
-can be after its current tool call.
+into a terminal agent sits above the box as `Sent to the terminal · not read
+yet` until the agent reads it (for omp, after its current tool call); you
+cannot edit or remove it there, so hold `Send` when you may want to change it.
 
 **Stop.** While a turn runs, `Stop` sits next to the send button. It ends the
 turn only. Messages waiting in the queue go out together, as one message, as

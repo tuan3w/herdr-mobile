@@ -315,8 +315,12 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   @override
   AttachMode get attachMode => mode;
 
+  /// Messages an agent in a terminal was sent mid-turn and has not read yet
+  /// (set by a test; the real session makes them).
+  List<QueuedMessage> sentRows = const [];
+
   @override
-  List<QueuedMessage> get queued => _queue.entries;
+  List<QueuedMessage> get queued => sentRows.isEmpty ? _queue.entries : [...sentRows, ..._queue.entries];
 
   @override
   void editQueued(String id, String text) {
