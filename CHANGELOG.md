@@ -4,12 +4,38 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.50] - 2026-11-05
 
-- Message an agent that runs in a terminal while it works. `Send` puts the
-  message into the turn; hold `Send` to keep it above the box until the turn
-  ends, where you can edit or remove it. If the terminal is asking something,
-  nothing is typed and the text stays in the box.
+### Message an agent in a terminal while it works
+
+Claude Code, Codex and omp running in a terminal now take a message while
+they work. `Send` puts it into the turn; hold `Send` to keep it on the phone
+until the turn ends.
+
+> [!TIP]
+> Try it: open an agent that runs in a terminal while it works, type a
+> message and tap `Send`. Hold `Send` instead to queue it above the box; tap
+> a queued message to edit it, or its cross to remove it.
+
+- A queued message goes out when the agent stops working, one at a time.
+  `Stop` sends what waits together, as one message. A stop in the terminal
+  cannot be told from a finished turn, so what waits goes out then too.
+- If the terminal is asking something (an approval, a plan, a question),
+  nothing is typed: the text stays in the box and a strip at the top says why.
+- If the agent has left the pane, or a message does not go through, what
+  waits is held with `Resume`, in the order you sent it.
+- A message sent into the turn shows in the chat when the agent reads it; for
+  omp that can be after its current tool call.
+- Not checked on a real phone with each agent: that Enter takes the message
+  into a running turn in omp, Claude Code and Codex, and when Codex shows it
+  in the chat.
+
+![A chat with two messages queued above the box and a draft being typed](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.50/0.1.50-terminal-queue.png)
+
+**Fixed**
+
+- Pressing Send on the keyboard while an agent in a terminal works no longer
+  shows a toast that it is working and sends nothing: it sends the message.
 
 ## [0.1.49] - 2026-11-04
 
