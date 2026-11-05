@@ -530,8 +530,8 @@ class OmpLogMapper implements SessionLogMapper {
       // The roster says more than "Spawned agent ... NEVER poll".
       final roster = _roster(_taskResultNames(details) ?? open?.names ?? const <String>[]);
       if (!isError && roster.isNotEmpty) text = roster;
-    } else if (name == 'wait') {
-      _noteWait(details);
+    } else {
+      _noteJobs(details);
     }
     if (text.isNotEmpty) content.add(ToolContentBlock(TextBlock(capText(text))));
 
@@ -838,16 +838,38 @@ class OmpLogMapper implements SessionLogMapper {
     return out.length <= 5 ? out : out.sublist(out.length - 5);
   }
 
-  /// `wait` reports the state of background jobs, subagents among them.
-  void _noteWait(Json? details) {
-    final jobs = details?['jobs'];
-    if (jobs is! List) return;
-    for (final j in jobs) {
-      if (j is! Map<String, dynamic>) continue;
-      final id = j['id'];
-      final status = j['status'];
-      if (id is! String || status is! String) continue;
-      if (_subagents.containsKey(id) || j['type'] == 'task') _setStatus(id, status);
+  /// A background-jobs snapshot reports the state of jobs, subagents among
+  /// them: `wait` lists them under `jobs`, a `write` to `proc://<id>/kill`
+  /// under `proc.jobs` and `proc.cancelled`. Recorded on 2026-11-05: three
+  /// scouts failed, were killed with `proc://…/kill`, and the roster said
+  /// done, because only `wait` was read and their empty result file counted
+  /// as success.
+  void _noteJobs(Json? details) {
+    if (details == null) return;
+    final proc = details['proc'];
+    for (final root in [details, if (proc is Map<String, dynamic>) proc]) {
+      final jobs = root['jobs'];
+      if (jobs is List) {
+        for (final j in jobs) {
+          if (j is! Map<String, dynamic>) continue;
+          final id = j['id'];
+          final status = j['status'];
+          if (id is! String || status is! String) continue;
+          if (_subagents.containsKey(id) || j['type'] == 'task') _setStatus(id, status);
+        }
+      }
+      // A kill of a subagent that had already failed or finished keeps that
+      // ending: the snapshot's `jobs` said it first, and it says why.
+      final cancelled = root['cancelled'];
+      if (cancelled is List) {
+        for (final c in cancelled) {
+          if (c is! Map<String, dynamic> || c['status'] != 'cancelled') continue;
+          final id = c['id'];
+          final old = id is String ? _subagents[id] : null;
+          if (old == null || old.status == 'failed' || old.status == 'completed') continue;
+          _setStatus(id as String, 'aborted');
+        }
+      }
     }
   }
 

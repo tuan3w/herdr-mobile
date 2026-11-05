@@ -356,6 +356,55 @@ void main() {
       expect(m.subagents.single.assignment.length, lessThanOrEqualTo(400));
       expect(m.subagents.single.assignment, endsWith('…'));
     });
+
+    // Recorded on 2026-11-05: four scouts failed (their model server was down),
+    // the parent killed three with `write proc://<id>/kill`, and the roster
+    // said done for those three: the kill's snapshot was not read, and omp
+    // leaves an empty result file behind a killed subagent.
+    test('a kill reports the subagents it touched: a failed one stays failed, a running one ends cancelled', () {
+      final m = OmpLogMapper();
+      _feed(m, [
+        _assistant('a1', [
+          _call('c1', 'task', {
+            'tasks': [
+              {'name': 'Dead', 'task': 'x'},
+              {'name': 'Live', 'task': 'y'},
+            ],
+          }),
+        ], stop: 'toolUse'),
+        _result(
+          'r1',
+          'c1',
+          'task',
+          'Spawned 2 background agents.',
+          details: {
+            'progress': [
+              {'id': 'Dead', 'status': 'pending'},
+              {'id': 'Live', 'status': 'pending'},
+            ],
+          },
+        ),
+        for (final (id, status) in [('Dead', 'failed'), ('Live', 'running')])
+          _result(
+            'k$id',
+            'kill$id',
+            'write',
+            '## Cancelled (1)',
+            details: {
+              'proc': {
+                'op': 'cancel',
+                'jobs': [
+                  {'id': id, 'type': 'task', 'status': status},
+                ],
+                'cancelled': [
+                  {'id': id, 'status': 'cancelled'},
+                ],
+              },
+            },
+          ),
+      ]);
+      expect({for (final s in m.subagents) s.name: s.status}, {'Dead': 'failed', 'Live': 'aborted'});
+    });
   });
 
   group('the question tool', () {
