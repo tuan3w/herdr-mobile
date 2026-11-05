@@ -30,6 +30,8 @@ import 'package:herdr_mobile/ui/features/agent_session/attach_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:herdr_mobile/data/repositories/agent_session.dart' show AgentLink;
+
 import '../support/attach_fakes.dart';
 import '../support/fake_agent_session.dart';
 import '../support/files_support.dart';
@@ -312,6 +314,72 @@ void main() {
           // shots' business; here the chips are what is looked at.
           if (scale == 1) await attachHostFile(tester, size);
           await tester.enterText(find.byType(TextField).last, 'What do these have in common?');
+        },
+      );
+    },
+    // An agent in a terminal: Send goes into the turn, a hold keeps it here.
+    'terminal-working': (tester, b, size, scale, kb) => shoot(
+      tester,
+      'terminal-working',
+      working()
+        ..observed = true
+        ..steerable = true,
+      size,
+      b,
+      scale: scale,
+      keyboard: kb,
+      then: () async => tester.enterText(find.byType(TextField).last, 'Use the staging database, not prod'),
+    ),
+    'terminal-queued': (tester, b, size, scale, kb) {
+      final session = working()
+        ..observed = true
+        ..steerable = true;
+      return shoot(
+        tester,
+        'terminal-queued',
+        session,
+        size,
+        b,
+        scale: scale,
+        keyboard: kb,
+        then: () async {
+          for (final text in [
+            'Sau đó chạy toàn bộ test và gửi cho tôi kết quả, kèm theo cả những test bị bỏ qua nữa nhé',
+            'And update the changelog, then tag it',
+          ]) {
+            await tester.enterText(find.byType(TextField).last, text);
+            await tester.pump();
+            // The first is a hold (Send); behind what waits, Send says Queue and a tap is enough.
+            final send = find.byIcon(LucideIcons.arrowUp);
+            send.evaluate().isNotEmpty
+                ? await tester.longPress(send)
+                : await tester.tap(find.byIcon(LucideIcons.listPlus));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 300));
+          }
+          await tester.enterText(find.byType(TextField).last, 'A draft I am still typing');
+        },
+      );
+    },
+    'terminal-refused': (tester, b, size, scale, kb) {
+      final session = working()
+        ..observed = true
+        ..steerable = true;
+      return shoot(
+        tester,
+        'terminal-refused',
+        session,
+        size,
+        b,
+        scale: scale,
+        keyboard: kb,
+        then: () async {
+          session.setLink(
+            AgentLink.live,
+            error: 'The terminal is asking something. Answer it first; the message was not sent.',
+          );
+          await tester.pump();
+          await tester.enterText(find.byType(TextField).last, 'Use the staging database, not prod');
         },
       );
     },

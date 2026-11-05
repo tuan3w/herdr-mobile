@@ -4,6 +4,13 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- Message an agent that runs in a terminal while it works. `Send` puts the
+  message into the turn; hold `Send` to keep it above the box until the turn
+  ends, where you can edit or remove it. If the terminal is asking something,
+  nothing is typed and the text stays in the box.
+
 ## [0.1.44] - 2026-10-29
 
 ### Queue messages while the agent works
