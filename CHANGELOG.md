@@ -4,6 +4,15 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+### dsh is one of the agents the app knows
+
+`dsh` now has its name everywhere the app names an agent, next to omp, Codex,
+Claude Code and pi, and Settings says where it opens: dsh runs in a terminal,
+because the app reads no dsh session log yet. Nothing about the other four
+changes.
+
 ## [0.1.50] - 2026-11-05
 
 ### Message an agent in a terminal while it works

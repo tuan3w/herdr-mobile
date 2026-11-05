@@ -77,9 +77,20 @@ void main() {
       expect(agentName('claude'), 'Claude Code');
       expect(agentName('codex'), 'Codex');
       expect(agentName('omp'), 'omp');
+      expect(agentName('pi'), 'pi');
+      expect(agentName('dsh'), 'dsh');
       expect(agentName('aider'), 'aider', reason: 'an unknown kind is shown as it came');
       expect(agentName(null), 'Shell');
       expect(agentName(' '), 'Shell');
+    });
+
+    test('the known agents are omp, Codex, Claude Code, pi and dsh', () {
+      expect(knownAgents.map((a) => a.id), ['omp', 'codex', 'claude', 'pi', 'dsh']);
+      expect(knownAgents.map((a) => a.label), ['omp', 'Codex', 'Claude Code', 'pi', 'dsh']);
+      for (final agent in knownAgents) {
+        expect(agentName(agent.id), agent.label, reason: '${agent.id} keeps its name');
+      }
+      expect(knownAgentLabel('aider'), isNull, reason: 'an unknown kind has no label of its own');
     });
   });
 

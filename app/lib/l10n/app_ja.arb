@@ -341,7 +341,7 @@
   "uiNumber": "数値",
   "uiOff": "オフ",
   "uiOffline": "オフライン",
-  "uiOmpClaudeCodeAndCodexOpenAsAChat": "omp、Claude Code、Codexは、セッションのログが見つかればチャットで開きます。ターミナルにもワンタップで切り替えられます。それ以外のエージェントやログが見つからない場合は、ターミナルで開きます。",
+  "uiAgentsOpenAsAChatHint": "omp、Codex、Claude Code、pi は、セッションのログが見つかればチャットで開きます。dsh はターミナルで開きます。ターミナルへはワンタップで切り替えられます。それ以外のエージェントやログが見つからない場合もターミナルで開きます。",
   "uiOn": "オン",
   "uiThisMachine": "このマシン",
   "uiWholeNumber": "整数",

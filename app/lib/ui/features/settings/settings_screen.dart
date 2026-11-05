@@ -218,7 +218,7 @@ class _AgentsGroup extends StatelessWidget {
           child: SettingsField(
             title: context.l10n.uiOpenAgentsAs,
             hint: openAs == OpenAgentsAs.chat
-                ? context.l10n.uiOmpClaudeCodeAndCodexOpenAsAChat
+                ? context.l10n.uiAgentsOpenAsAChatHint
                 : context.l10n.uiARunningAgentOpensAsItsTerminal,
             child: Segmented<OpenAgentsAs>(
               options: [

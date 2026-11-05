@@ -341,7 +341,7 @@
   "uiNumber": "number",
   "uiOff": "off",
   "uiOffline": "offline",
-  "uiOmpClaudeCodeAndCodexOpenAsAChat": "omp, Claude Code and Codex open as a chat when the app can find their session log; the terminal is one tap away. Any other agent, or one it can’t find, opens as a terminal.",
+  "uiAgentsOpenAsAChatHint": "omp, Codex, Claude Code and pi open as a chat when the app can find their session log; dsh opens in the terminal. The terminal is one tap away. Any other agent, or one it can’t find, opens as a terminal.",
   "uiOn": "on",
   "uiThisMachine": "this machine",
   "uiWholeNumber": "whole number",

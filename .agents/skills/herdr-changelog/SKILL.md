@@ -60,7 +60,7 @@ when a case doesn't fit.
   `Copy link`. The person looks for those letters on screen; a paraphrase
   ("the open button") sends them hunting. Grep the label as a quoted string and
   read the widget that shows it, so you name the place too.
-- **Agent names:** Claude Code, Codex, omp, pi. Never `claude`, never "the AI".
+- **Agent names:** Claude Code, Codex, omp, pi, dsh. Never `claude`, never "the AI".
 - **Times** look like the app shows them: `4m`, `1h 05m`, `4m ago`.
 - **A fix says what went wrong in the person's terms, then "no longer…"**:
   "A picture in a chat larger than about 100 KB no longer vanishes when the
