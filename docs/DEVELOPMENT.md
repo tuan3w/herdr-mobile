@@ -359,6 +359,25 @@ What keeps the APK small (0.1.11 was 51.5 MB; the same code built this way is
 - **No x86 libraries in a release**: a plugin ships them, the release variant
   excludes them (an x86 emulator's debug build keeps them).
 
+### Building beside the real app
+
+A build with an `appIdSuffix` installs beside the real app instead of over it,
+and `appLabel` renames what the launcher shows, so several builds can sit on
+one phone and still be told apart:
+
+```bash
+cd app
+flutter build apk --release --target-platform android-arm64 \
+  --android-project-arg=allowDebugSigning=true \
+  --android-project-arg=appIdSuffix=.ja "--android-project-arg=appLabel=herdr JA"
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+```
+
+The default label is `herdr`, so a build without `appLabel` is unchanged. A
+suffixed build has its own package data: it starts with no machines and no
+settings, and an update to it only keeps that data when it is signed with the
+same key as the build already installed.
+
 Release signing reads `app/android/key.properties` (git-ignored):
 
 ```properties

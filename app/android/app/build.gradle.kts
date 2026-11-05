@@ -54,6 +54,10 @@ android {
         // `--android-project-arg=appIdSuffix=.kbbench` installs a benchmark build
         // beside the real app (own data, own icon) instead of over it.
         applicationId = "dev.herdrmobile.herdr_mobile" + (project.findProperty("appIdSuffix") as String? ?: "")
+        // `--android-project-arg=appLabel="herdr JA"` renames the launcher label so
+        // several builds (the real app, a language build, a benchmark) can sit
+        // side by side and still be told apart on the home screen.
+        manifestPlaceholders["appLabel"] = (project.findProperty("appLabel") as String?) ?: "herdr"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // Android 7.0+ is the fork's supported baseline (Issue #3).
