@@ -117,7 +117,7 @@ class _MachineViewState extends State<_MachineView> {
               actions: [
                 if (machineSupportsFiles(machine))
                   CircleButton(
-                    icon: LucideIcons.folderOpen,
+                    icon: HerdrIcons.folder,
                     tooltip: 'Browse files',
                     onPressed: () => openFileBrowser(context, machine),
                   ),

@@ -156,7 +156,7 @@ class _UpdateSheet extends StatelessWidget {
         if (update.problem case final problem?) _Note(problem, failed: true),
         AppButton(
           label: update.problem != null ? 'Retry' : 'Download ${megabytes(release.size)}',
-          icon: LucideIcons.download,
+          icon: HerdrIcons.update,
           expand: true,
           // A check that runs meanwhile (after a failed download) keeps the
           // button until it is back.

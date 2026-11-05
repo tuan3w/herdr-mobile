@@ -84,11 +84,11 @@ class DevicePhotoExport implements PhotoExport {
       throw PhotoExportException(switch (e.type) {
         GalExceptionType.accessDenied => 'Saving needs access to your photos. Allow it in the phone\u2019s settings.',
         GalExceptionType.notEnoughSpace => 'The phone is out of space.',
-        GalExceptionType.notSupportedFormat => 'The gallery cannot keep this kind of $thing.',
-        GalExceptionType.unexpected => 'The $thing could not be saved.',
+        GalExceptionType.notSupportedFormat => 'The gallery can’t keep this kind of $thing.',
+        GalExceptionType.unexpected => 'The $thing couldn’t be saved.',
       });
     } on Object {
-      throw PhotoExportException('The $thing could not be saved.');
+      throw PhotoExportException('The $thing couldn’t be saved.');
     }
   }
 
@@ -97,7 +97,7 @@ class DevicePhotoExport implements PhotoExport {
     try {
       await _send(file);
     } on Object {
-      throw const PhotoExportException('The share sheet could not be opened.');
+      throw const PhotoExportException('The share sheet couldn’t be opened.');
     }
   }
 
@@ -110,7 +110,7 @@ class DevicePhotoExport implements PhotoExport {
     } on PhotoExportException {
       rethrow;
     } on Object {
-      throw const PhotoExportException('The share sheet could not be opened.');
+      throw const PhotoExportException('The share sheet couldn’t be opened.');
     }
   }
 
@@ -147,7 +147,7 @@ class DevicePhotoExport implements PhotoExport {
     } on FileSystemException {
       throw const PhotoExportException('The phone is out of space for a copy.');
     } on Object {
-      throw const PhotoExportException('The file could not be copied to the phone.');
+      throw const PhotoExportException('The file couldn’t be copied to the phone.');
     }
   }
 

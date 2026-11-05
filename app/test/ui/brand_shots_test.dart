@@ -117,29 +117,21 @@ Widget _home(CustomPainter p, Color text) => Column(
   ],
 );
 
-Widget _firstRun({int badge = 0}) => Stack(
-  children: [
-    EmptyState(
-      mark: const BrandMark(animate: false),
-      title: 'Your agents, in your pocket',
-      message:
-          'Connect a machine running herdr to see every coding '
-          'agent, know the moment one needs you, and reply from anywhere.',
-      action: AppButton(label: 'Add your first machine', icon: LucideIcons.plus, onPressed: () {}),
+/// The first run as home draws it: the title with Settings one tap away, and
+/// the mark over the one thing to do. (There is no tab bar under it.)
+Widget _firstRun() => CustomScrollView(
+  slivers: [
+    SliverLargeTitle(
+      title: 'Agents',
+      actions: [CircleButton(icon: HerdrIcons.settings, tooltip: 'Settings', onPressed: () {})],
     ),
-    Align(
-      alignment: Alignment.bottomCenter,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 28),
-        child: FloatingTabBar(
-          tabs: [
-            TabSpec(icon: HerdrIcons.agents, label: 'Agents', badge: badge),
-            const TabSpec(icon: HerdrIcons.machines, label: 'Machines'),
-            const TabSpec(icon: HerdrIcons.settings, label: 'Settings'),
-          ],
-          index: badge == 0 ? 0 : 1,
-          onChanged: (_) {},
-        ),
+    SliverFillRemaining(
+      hasScrollBody: false,
+      child: EmptyState(
+        mark: const BrandMark(animate: false),
+        title: 'No machines yet',
+        message: 'Add a machine running herdr and its agents show here.',
+        action: AppButton(label: 'Add your first machine', icon: LucideIcons.plus, onPressed: () {}),
       ),
     ),
   ],
@@ -258,15 +250,13 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    for (final badge in const [0, 1]) {
-      testWidgets('first run · ${brightness.name} · badge $badge', (tester) async {
-        await shoot(
-          tester,
-          Material(child: _firstRun(badge: badge)),
-          '$out/first_run_${brightness.name}_$badge.png',
-          brightness: brightness,
-        );
-      });
-    }
+    testWidgets('first run · ${brightness.name}', (tester) async {
+      await shoot(
+        tester,
+        Material(child: _firstRun()),
+        '$out/first_run_${brightness.name}.png',
+        brightness: brightness,
+      );
+    });
   }
 }

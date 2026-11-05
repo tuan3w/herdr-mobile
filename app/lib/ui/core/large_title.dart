@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'press.dart';
 import 'chips.dart';
@@ -25,6 +26,8 @@ class SliverLargeTitle extends StatelessWidget {
     this.actions = const [],
     this.bottom,
     this.bottomHeight = 0,
+    this.compactTitle = true,
+    this.subtitleLines = 1,
   });
 
   /// A pushed screen's header: [AppBackButton] leads.
@@ -35,14 +38,24 @@ class SliverLargeTitle extends StatelessWidget {
     this.actions = const [],
     this.bottom,
     this.bottomHeight = 0,
-  }) : leading = const AppBackButton();
+    this.subtitleLines = 1,
+  }) : leading = const AppBackButton(),
+       compactTitle = true;
 
   final String title;
 
-  /// One quiet line under the big title.
+  /// One quiet line under the big title, or [subtitleLines] of them. A
+  /// control in it (home's `3 to review`) is hit from a [kMinTap] band: its
+  /// words, the title block's bottom above them and the gap under the line,
+  /// each touch taken into the nearest line.
   final Widget? subtitle;
 
-  /// The root tabs have none; pushed screens use [SliverLargeTitle.back].
+  /// How many lines [subtitle] is given (1 or 2). Home's status line takes a
+  /// second line rather than cut its end on a narrow phone: the end says how
+  /// many machines are not connected, the part that matters most.
+  final int subtitleLines;
+
+  /// Pushed screens use [SliverLargeTitle.back]; home has its machines chip.
   final Widget? leading;
   final List<Widget> actions;
 
@@ -52,19 +65,29 @@ class SliverLargeTitle extends StatelessWidget {
   /// Height reserved for [bottom]; [AppChip.height] (44) for a chip row.
   final double bottomHeight;
 
+  /// Whether the title fades into the bar once the large title has scrolled
+  /// away. Home turns it off: its leading chip says the fleet's health where
+  /// a centred `Agents` would collide with it on a narrow phone, and home
+  /// needs no name to say where the person is.
+  final bool compactTitle;
+
   static const _barHeight = 56.0;
   static const _titleBlock = 50.0;
   static const _subtitleBlock = 22.0;
   static const _gap = 8.0;
 
   /// Height of the part that scrolls away.
-  static double _large(bool hasSubtitle, double bottomHeight) =>
-      _titleBlock + (hasSubtitle ? _subtitleBlock : 0) + bottomHeight + _gap;
+  static double _large(bool hasSubtitle, double bottomHeight, [int subtitleLines = 1]) =>
+      _titleBlock + (hasSubtitle ? _subtitleBlock * subtitleLines : 0) + bottomHeight + _gap;
 
   /// The pinned header's full (unscrolled) height: where the list content
   /// starts. Use it as the `edgeOffset` of a pull-to-refresh indicator.
-  static double extent(BuildContext context, {bool hasSubtitle = false, double bottomHeight = 0}) =>
-      MediaQuery.paddingOf(context).top + _barHeight + _large(hasSubtitle, bottomHeight);
+  static double extent(
+    BuildContext context, {
+    bool hasSubtitle = false,
+    double bottomHeight = 0,
+    int subtitleLines = 1,
+  }) => MediaQuery.paddingOf(context).top + _barHeight + _large(hasSubtitle, bottomHeight, subtitleLines);
 
   /// The pinned bar's height once the large title has scrolled away: the part
   /// of the screen's top that content scrolled under is hidden by.
@@ -77,10 +100,12 @@ class SliverLargeTitle extends StatelessWidget {
       topInset: MediaQuery.paddingOf(context).top,
       title: title,
       subtitle: subtitle,
+      subtitleLines: subtitleLines,
       leading: leading,
       actions: actions,
       bottom: bottom,
       bottomHeight: bottomHeight,
+      compactTitle: compactTitle,
       ds: context.ds,
       reduced: Motion.reduced(context),
     ),
@@ -92,10 +117,12 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
     required this.topInset,
     required this.title,
     required this.subtitle,
+    required this.subtitleLines,
     required this.leading,
     required this.actions,
     required this.bottom,
     required this.bottomHeight,
+    required this.compactTitle,
     required this.ds,
     required this.reduced,
   });
@@ -103,10 +130,12 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
   final double topInset;
   final String title;
   final Widget? subtitle;
+  final int subtitleLines;
   final Widget? leading;
   final List<Widget> actions;
   final Widget? bottom;
   final double bottomHeight;
+  final bool compactTitle;
   final Ds ds;
   final bool reduced;
 
@@ -114,7 +143,9 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
   static const _titleBlock = SliverLargeTitle._titleBlock;
   static const _subtitleBlock = SliverLargeTitle._subtitleBlock;
 
-  double get _large => SliverLargeTitle._large(subtitle != null, bottomHeight);
+  double get _large => SliverLargeTitle._large(subtitle != null, bottomHeight, subtitleLines);
+
+  double get _subtitleHeight => _subtitleBlock * subtitleLines;
 
   @override
   double get minExtent => topInset + _bar;
@@ -147,13 +178,26 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
             ),
           ),
         ),
-        if (subtitle != null) SizedBox(height: _subtitleBlock, child: subtitle),
+        if (subtitle != null)
+          _HitBand(
+            // Up into the title block (which takes no tap): a whole touch
+            // target above the first line's middle, so a control there is
+            // one even with a second line under it. Down through the gap
+            // under the line, when nothing sits there.
+            above: kMinTap - _subtitleBlock / 2,
+            below: bottom == null ? SliverLargeTitle._gap : 0,
+            child: SizedBox(height: _subtitleHeight, child: subtitle),
+          ),
+        // The gap under the line is the band's to hit (it paints nothing).
+        if (subtitle != null && bottom == null) const SizedBox(height: SliverLargeTitle._gap),
       ],
     );
     // No layer at rest (opacity 1); the title is simply absent once it is gone.
     if (big < 1) titles = Opacity(opacity: big, child: titles);
     if (big == 0) {
-      titles = SizedBox(height: _titleBlock + (subtitle != null ? _subtitleBlock : 0));
+      titles = SizedBox(
+        height: _titleBlock + (subtitle != null ? _subtitleHeight + (bottom == null ? SliverLargeTitle._gap : 0) : 0),
+      );
     }
 
     // Bars clamp text scale like iOS navigation bars: their blocks are fixed
@@ -203,7 +247,7 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      if (compact > 0)
+                      if (compactTitle && compact > 0)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 64),
                           child: Semantics(
@@ -225,8 +269,12 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
                         padding: const EdgeInsets.symmetric(horizontal: AppTopBar.edge),
                         child: Row(
                           children: [
-                            ?leading,
-                            const Spacer(),
+                            // The leading control takes what the actions
+                            // leave, so a wide one (home's machines chip)
+                            // shrinks and ellipsizes instead of overflowing.
+                            Expanded(
+                              child: Align(alignment: AlignmentDirectional.centerStart, child: leading),
+                            ),
                             for (final (i, a) in actions.indexed) ...[if (i > 0) const SizedBox(width: 4), a],
                           ],
                         ),
@@ -263,8 +311,53 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
       old.ds != ds ||
       old.topInset != topInset ||
       old.bottomHeight != bottomHeight ||
+      old.compactTitle != compactTitle ||
       old.leading != leading ||
       old.subtitle != subtitle ||
+      old.subtitleLines != subtitleLines ||
       old.bottom != bottom ||
       old.actions != actions;
+}
+
+/// Takes a touch up to [above] dp over its child and [below] dp under it to
+/// the nearest point well inside the child, so a control on a line shorter than
+/// [kMinTap] is still a [kMinTap] target. Only where its parents reach: a
+/// parent hit-tests within its own size first.
+class _HitBand extends SingleChildRenderObjectWidget {
+  const _HitBand({required this.above, required this.below, required super.child});
+
+  final double above;
+  final double below;
+
+  @override
+  _RenderHitBand createRenderObject(BuildContext context) => _RenderHitBand(above, below);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderHitBand renderObject) => renderObject
+    ..above = above
+    ..below = below;
+}
+
+class _RenderHitBand extends RenderProxyBox {
+  _RenderHitBand(this.above, this.below);
+
+  static const _edge = 8.0;
+
+  double above;
+  double below;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final band = Rect.fromLTRB(0, -above, size.width, size.height + below);
+    if (!band.contains(position)) return false;
+    // Well inside the line, not on its edge: the words sit a little inside
+    // their line box.
+    final inset = size.height / 2 < _edge ? size.height / 2 : _edge;
+    final inside = Offset(position.dx, position.dy.clamp(inset, size.height - inset));
+    if (hitTestChildren(result, position: inside)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
 }

@@ -381,13 +381,16 @@ void main() {
       await e.tearDown(tester);
     });
 
-    testWidgets('the Agents board reaches it from its own header button', (tester) async {
+    testWidgets('the Agents board reaches it through its one +, where resuming is a way to start', (tester) async {
       final e = await historyEnv();
       await pumpUnder(tester, e, const HomeShell());
-      await tester.tap(find.byTooltip('Past sessions'));
+      expect(find.byTooltip('Past sessions'), findsNothing, reason: 'not a header button of its own');
+      await tester.tap(find.byTooltip('New agent session'));
+      await settleHistory(tester, 8);
+      await tester.ensureVisible(find.text('Past sessions'));
+      await tester.tap(find.text('Past sessions'));
       await settleHistory(tester, 8);
       expect(find.byType(PastSessionsScreen), findsOneWidget);
-      expect(e.sessions.historyCalls.single.cwd, isNull);
       await e.tearDown(tester);
     });
   });

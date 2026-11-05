@@ -90,9 +90,9 @@ class _SettingsGroupState extends State<SettingsGroup> {
     }
   }
 
-  /// Brings the open group between the pinned bar and the tab bar: the least
-  /// movement when it fits (often none), and its row at the top when it is
-  /// taller than the space, so the first control is never under the tab bar.
+  /// Brings the open group between the pinned bar and the page's end: the
+  /// least movement when it fits (often none), and its row at the top when it
+  /// is taller than the space, so the first control is never cut off.
   /// Why: at a large text size the rows below the first sit at the bottom of
   /// the screen, and a tap that only turns a caret reads as nothing happening.
   void _scrollIntoView({required bool jump}) {
@@ -104,7 +104,7 @@ class _SettingsGroupState extends State<SettingsGroup> {
     if (viewport == null) return;
     final position = scrollable.position;
     final atTop = viewport.getOffsetToReveal(box, 0).offset - SliverLargeTitle.collapsedExtent(context);
-    final atEnd = viewport.getOffsetToReveal(box, 1).offset + FloatingBar.clearance(context);
+    final atEnd = viewport.getOffsetToReveal(box, 1).offset + MediaQuery.paddingOf(context).bottom + Gap.xl;
     final target = (atEnd <= atTop ? position.pixels.clamp(atEnd, atTop) : atTop).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,

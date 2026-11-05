@@ -336,7 +336,7 @@ void main() {
       await e.tearDown(tester);
     });
 
-    testWidgets('the toast is read once and stays clear of the tab bar pill', (tester) async {
+    testWidgets('the toast is read once and stands clear of the bottom edge', (tester) async {
       final semantics = tester.ensureSemantics();
       final e = await _AgentEnv.create();
       await e.pump(tester, const HomeShell());
@@ -345,12 +345,13 @@ void main() {
       await _tap(tester, _button('Start'));
 
       expect(find.bySemanticsLabel(RegExp('started in api')), findsOneWidget);
-      final pill = tester.getRect(find.byType(FloatingTabBar));
+      // Home has no bar: the toast stands one margin above the bottom inset.
+      final bottom = tester.view.physicalSize.height / tester.view.devicePixelRatio - FloatingBar.margin;
       for (final part in [
         find.textContaining('started in'),
         find.descendant(of: find.byKey(toastActionKey), matching: find.text('Open')),
       ]) {
-        expect(tester.getRect(part).overlaps(pill), isFalse);
+        expect(tester.getRect(part).bottom, lessThanOrEqualTo(bottom));
       }
       semantics.dispose();
       await e.tearDown(tester);

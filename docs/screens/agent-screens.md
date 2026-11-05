@@ -17,32 +17,45 @@ always pushed screens), so they were a second, partial list of agents beside
 the board, with its own count and order. The board is the
 one scan surface; an agent screen is for one agent.
 
-- **A swipe goes to the next agent.** Inside an agent screen (over the
-  terminal panel, or the chat's transcript) a sideways swipe goes to the
-  next agent in the board's order (swipe left; right for the previous one):
-  its sections in turn, Needs you and Done longest waiting first, panes and
-  sessions mixed as the board mixes them. The board's filter and collapsed
-  sections are a way of looking, not an order, and are not applied. Why: fast
-  switching without a second list, in the order that answers "does anything
-  need me" first. The same steps are the screen's `Next agent` and `Previous
-  agent` accessibility actions.
+- **A swipe walks what wants the person** (the triage walk,
+  `agent_navigation.dart`). Inside an agent screen (over the terminal panel,
+  or the chat's transcript) a swipe left goes to the next stop of the walk,
+  a swipe right retraces it. The walk is the agent in front, then the board's
+  Needs you and then its Done, in the board's own order (`AttentionSet`:
+  what can be reached first, longest waiting first, panes and sessions
+  mixed). Working and idle agents are not on it; the title's switcher
+  reaches them. The order is frozen at the first swipe (or the first `Next
+  agent` / `Previous agent`, the screen's accessibility actions, which walk
+  the same stops) and kept with the navigator, since every step replaces the
+  route; opening an agent any other way, or Back to the board, ends it. An
+  agent that stopped needing the person meanwhile stays on the walk (its
+  card shows what it is now); one the board no longer lists is skipped. Why
+  frozen: the order used to be read from the board at every swipe, so
+  answering the agent in front moved it from Needs you to Working and a
+  swipe back did not return where the person came from; and walking every
+  agent took many swipes to reach the one that needed them.
 - **The swipe shows who is next before it goes** (`AgentPeekCard`,
   `agent_peek.dart`). While the finger moves, a card with the agent as the
-  board's row shows it (status glyph, title, `agent · machine · folder`, time
-  in state) comes in from the side the finger moves toward, driven by the
+  board's row shows it (status glyph, title, one line of what it asks or last
+  said, `agent · machine · folder`, time in state, and its place in the walk,
+  `2 of 4`) comes in from the side the finger moves toward, driven by the
   finger and fully in by 96 dp (1.5x the commit distance: it is a reveal at
   the edge, not an object under the finger, so at 64 dp two thirds of it
   already show), centred on the content's height. It leads with the glyph and the
   title on the side it enters from (the previous agent's card is laid out
-  right to left). The screen under it does not move. Past 64 dp the card
-  takes a faint accent tint and a `tick` says letting go will go there;
-  coming back under it ticks again. Letting go goes if the travel, with the
+  right to left). The screen under it does not move. The line is the
+  question it waits on (a pane's prompt, a session's request), else its last
+  terminal row or last sentence, only from what is already in memory
+  (`PanePreviews.known`, the session's transcript), else nothing: nothing is
+  read for a peek (battery and radio). On a short content area it drops
+  lines, least needed first. Past 64 dp the card takes a faint accent tint
+  and the armed edge (`Ds.armedEdge`), its place reads `Let go to open`, and
+  a `tick` says letting go will go there; coming back under it ticks again. Letting go goes if the travel, with the
   fling's speed projected (`Springs.projectSheet`), passes 64 dp, so a quick
   flick is still instant; otherwise the card springs back
   (`Springs.settle`, from where it is, with the finger's speed) and nothing
-  happens. It goes to the agent the card showed, even if the order changed
-  while the finger moved; one the board no longer lists is not opened (a
-  `tick`). The card fades as the next screen slides in. Under reduced motion
+  happens. It goes to the agent the card showed; one the board no longer
+  lists is not opened (a `tick`). The card fades as the next screen slides in. Under reduced motion
   the card does not slide: it sits in its place and fades in with the
   finger's travel. Why: an instant switch felt great, but nobody knew what
   came next, and there was no way to back out.
@@ -65,14 +78,14 @@ one scan surface; an agent screen is for one agent.
   with is a scroll: the card goes back, or never shows. The detector listens to raw pointers and never joins the
   gesture arena, so scrolling, link taps, selection and pinch zoom behave
   exactly as without it.
-- **The ends.** At either end of the order, or for an agent the board does
-  not list, a quiet card says `No next agent` / `No previous agent` (`Not on
-  the board` for an agent the board does not list); it
-  comes in against resistance and never arms, and letting go springs it
-  back with a `tick`. The `Next agent` / `Previous agent` accessibility
-  actions tick and say the same words out loud. Why: the order does not wrap round, so the person
-  feels where the list ends instead of landing back on the first agent
-  without noticing.
+- **The ends.** Past the walk's last stop a quiet card says `All caught up`
+  and how many agents work on without the person (`All caught up · 3
+  working`); before its first, `No previous agent`. It comes in against
+  resistance and never arms, and letting go springs it back with a `tick`.
+  The `Next agent` / `Previous agent` accessibility actions tick and say the
+  same words out loud. Why: the walk does not wrap round, so the person
+  feels where it ends instead of landing back on the first agent without
+  noticing, and its end is the answer to "does anything need me".
 - **Chat and Terminal are one agent's two views, switched from its menu.** An
   agent with both (a pane the app can follow through its log) has `Show terminal` in the
   chat's `Session options` and `Show chat` in the terminal's `Pane options`.
@@ -88,12 +101,34 @@ one scan surface; an agent screen is for one agent.
   terminal led back to it. It then became a
   two-icon toggle in every bar, 88 dp that the title needed, for something
   done a few times a day; the menu costs one more tap and gives the bar back.
+- **The title is the agent switcher** (`agents/agent_switcher.dart`), in the
+  chat's bar and the terminal's alike. A small chevron follows the title and,
+  while other agents need the person, their count (`CountBadge`, the board's
+  Needs you less the agent in front; nothing at 0, nothing moves). A tap opens
+  one sheet (`showAppSheet`) listing every agent the board lists, in the
+  board's sections and order, each row its status glyph, task title and a line
+  naming where it runs: the folder, or for agents on one machine whose folders
+  share a name (worktrees of one repo) the folder and branch
+  (`web-app · fix/login-redirect`, `agent_identity.dart`), then the agent kind
+  (and the machine with several). The agent in front says `Here` and does
+  nothing; another row replaces the screen, as the board opens it, so Back
+  still lands on the board; the last row, `All agents on the board`, goes
+  back. The screen reader hears `Switch agent, <title>, 2 other agents need
+  you`. It reads only what is in memory: the board's lists and the branches a
+  machine already read (`MachineConnection.branchOf`); a branch never read
+  leaves the folder alone, and nothing is fetched for the sheet (battery). The
+  bar rebuilds only when the count changes. Why: the swipe reaches one agent at
+  a time and only the ones that want the person; from inside a chat the person
+  needs "does anything else need me" and a way to any agent, without giving
+  the title's room to a second bar. The session overview, which the chat's
+  title used to open, stays in `Session options`.
 - **Drafts are kept per agent** for the app run (`AgentScreens.keepDraft`),
   shared by the agent's chat and terminal. Why: a swipe and the view switch replace
   the screen, so what is typed must live outside it; with tabs, a draft in a
   hidden tab was lost past six live panes and closing a tab dropped it.
-- **Back always goes to the board** (where the person came from). A swipe and
-  the view switch replace the screen in front instead of pushing, and a
+- **Back always goes to the board** (where the person came from). A swipe,
+  the switcher and the view switch replace the screen in front instead of
+  pushing, and a
   notification or a link replaces the agent screen in front, if one is. Why:
   walking ten agents must not leave ten screens to back out of.
 - **Motion.** A swipe replaces the route: the new screen slides a short way
@@ -111,7 +146,8 @@ One bar of about 56 dp (`AppTopBar`): back, status glyph and title over
 actions. Why: a third circle cut the title. The options are the one way to the
 pane's actions: `Show chat` (for an agent with both views), `Wrap lines`,
 `Duplicate`, `Copy title`, `Copy pane id <id>` (the raw id lives there, not in the bar). The title
-is not a button, and nothing else hides behind it: no long press, no pull-down.
+is the agent switcher (above), and nothing else hides behind it: no long press,
+no pull-down.
 Where a blocked pane's prompt is
 understood, the question and up to three answers plus `N more` dock above the
 key row (`AnswerDock`). The dock is hidden in the compact and short layouts.

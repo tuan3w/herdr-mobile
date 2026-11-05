@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart' show AgentStatus;
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/ui/features/agents/agent_card.dart';
 
@@ -242,7 +241,6 @@ void main() {
 
   testWidgets('the compact list swipes too', (tester) async {
     final h = await _board([_pane(1, 'done')]);
-    await h.appSettings.setDensity(BoardDensity.compact);
     await pumpBoard(tester, h, height: _tall);
     expect(find.byType(AgentCompactRow), findsOneWidget);
 

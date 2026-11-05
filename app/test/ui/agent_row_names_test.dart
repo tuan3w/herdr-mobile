@@ -79,7 +79,7 @@ void main() {
   test('a title that is only the folder is replaced by the session title', () {
     final r = row(name: const PaneName.title('Fix the retry test'));
     expect(r.title, 'Fix the retry test');
-    expect(r.subtitle, 'omp · payments-api', reason: 'the agent still leads the second line');
+    expect(r.subtitle, 'payments-api · omp', reason: 'the folder, now not the title, is said on the second line');
   });
 
   test('a name taken from the last message is shown in quotes: it is what was asked', () {

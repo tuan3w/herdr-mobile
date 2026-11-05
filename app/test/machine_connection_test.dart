@@ -204,7 +204,7 @@ void main() {
     t.failure = const HerdrTransportException('network down');
     t.dropEvents(const HerdrTransportException('network down'));
     await eventually(() => c.state == LinkState.reconnecting, reason: 'reconnecting');
-    expect(c.error, 'network down');
+    expect(c.error, contains('No connection to'));
     expect(c.snapshot.agentPanes, hasLength(1), reason: 'stale state kept');
 
     t.failure = null;
@@ -281,10 +281,10 @@ void main() {
         expect(c.state, LinkState.reconnecting);
         final afterFirstFailure = notified;
 
-        t.failure = const HerdrTransportException('still down');
+        t.failure = const HerdrApiException('invalid_request', 'herdr refused that');
         async.elapse(const Duration(seconds: 30));
         expect(notified, afterFirstFailure + 1, reason: 'error text changed');
-        t.failure = const HerdrTransportException('still down');
+        t.failure = const HerdrApiException('invalid_request', 'herdr refused that');
         async.elapse(const Duration(seconds: 30));
         expect(notified, afterFirstFailure + 1, reason: 'same state and error');
         c.dispose();

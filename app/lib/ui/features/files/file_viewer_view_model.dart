@@ -158,7 +158,7 @@ class FileViewerViewModel extends ChangeNotifier {
       if (stat.kind == RemoteEntryKind.other) {
         throw RemoteFileException(
           RemoteFileErrorKind.notAFile,
-          'Special files (sockets, devices, pipes) cannot be opened',
+          'Special files (sockets, devices, pipes) can’t be opened',
           path: stat.path,
         );
       }
@@ -264,7 +264,7 @@ class FileViewerViewModel extends ChangeNotifier {
       if (!fresh.isFile) {
         throw RemoteFileException(
           RemoteFileErrorKind.notAFile,
-          '${fresh.name} is not a file any more',
+          '${fresh.name} isn’t a file any more',
           path: fresh.path,
         );
       }

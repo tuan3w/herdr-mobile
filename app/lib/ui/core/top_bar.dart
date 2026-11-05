@@ -26,7 +26,9 @@ class AppBackButton extends StatelessWidget {
 /// [actions] (⋯ included). It pads itself below the status bar.
 ///
 /// [onTitleTap] makes the whole title block a button (a pressed tint, no
-/// scale). [bottom] sits under the row, lined up with the title.
+/// scale); [titleTapLabel] then names what it does for a screen reader.
+/// [titleTrailing] sits right after the title text (the agent switcher's
+/// chevron and count). [bottom] sits under the row, lined up with the title.
 /// [overlay] draws the bar over a photo: a scrim gradient and light marks.
 /// Text is clamped at [kBarTextScale] so large text never pushes the actions
 /// off the bar.
@@ -41,6 +43,8 @@ class AppTopBar extends StatelessWidget {
     this.glyph,
     this.actions = const [],
     this.onTitleTap,
+    this.titleTapLabel,
+    this.titleTrailing,
     this.bottom,
     this.overlay = false,
     this.announceTitle = false,
@@ -63,6 +67,13 @@ class AppTopBar extends StatelessWidget {
   final Widget? glyph;
   final List<Widget> actions;
   final VoidCallback? onTitleTap;
+
+  /// What the title button does, said before the texts inside it (`Switch
+  /// agent`, then the status, the title and the subtitle).
+  final String? titleTapLabel;
+
+  /// Drawn after the title text on its line, never cut: the title yields.
+  final Widget? titleTrailing;
   final Widget? bottom;
   final bool overlay;
 
@@ -128,6 +139,17 @@ class AppTopBar extends StatelessWidget {
             );
     }
 
+    final titleText = Semantics(
+      header: true,
+      liveRegion: announceTitle,
+      child: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Type.barTitle.copyWith(color: fg),
+      ),
+    );
+
     Widget titleBlock(bool pressed) => AnimatedContainer(
       duration: Motion.pressing(pressed),
       curve: Motion.easeOut,
@@ -145,16 +167,16 @@ class AppTopBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Semantics(
-                  header: true,
-                  liveRegion: announceTitle,
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Type.barTitle.copyWith(color: fg),
-                  ),
-                ),
+                if (titleTrailing case final trailing?)
+                  Row(
+                    children: [
+                      Flexible(child: titleText),
+                      const SizedBox(width: Gap.xs),
+                      trailing,
+                    ],
+                  )
+                else
+                  titleText,
                 ?second,
               ],
             ),
@@ -166,7 +188,13 @@ class AppTopBar extends StatelessWidget {
     final onTitleTap = this.onTitleTap;
     final titleArea = onTitleTap == null
         ? MergeSemantics(child: titleBlock(false))
-        : PressBuilder(onTap: onTitleTap, minTapSize: kMinTap, builder: (context, pressed) => titleBlock(pressed));
+        : PressBuilder(
+            onTap: onTitleTap,
+            minTapSize: kMinTap,
+            builder: (context, pressed) => titleTapLabel == null
+                ? titleBlock(pressed)
+                : Semantics(label: titleTapLabel, child: titleBlock(pressed)),
+          );
 
     final bottom = this.bottom;
     Widget bar = Padding(

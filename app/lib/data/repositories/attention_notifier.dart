@@ -95,7 +95,7 @@ final _summaryIds = {
 /// posted or cancelled while the setting is off.
 ///
 /// "Blocked and reachable" and "done and not reviewed" are the
-/// [AttentionSet]'s rules, the same as the badge, the board and the triage:
+/// [AttentionSet]'s rules, the same as the board and the triage:
 /// [FleetAgent.needsYou] for a pane; for an agent session a blocked phase with
 /// its machine and its link live ([AttentionSet.sessionReachable]). The
 /// notice's "need you" number is that set's count, not one of its own.
@@ -333,7 +333,7 @@ class AttentionNotifier {
   /// Agents to watch (working or blocked, terminal and session, on a machine
   /// whose link is up or coming back; a session reconnecting there is still
   /// worth keeping the connection for), and how many need the person: the [AttentionSet]'s
-  /// count, the number the badge and the pill show.
+  /// count, the number the board's status line shows.
   _Glance _countWatching() {
     var n = 0;
     for (final c in _fleet.connections) {
@@ -630,7 +630,7 @@ class AttentionNotifier {
           title: answerNotSentTitle,
           body: outcome == AnswerOutcome.changed
               ? 'The question changed, so nothing was sent. Tap to see it.'
-              : 'Could not reach ${machine ?? 'the machine'}, so nothing was sent. Tap to open the agent.',
+              : 'Couldn’t reach ${machine ?? 'the machine'}, so nothing was sent. Tap to open the agent.',
           link: agentLinkFor(answer.machineId, answer.paneId),
         );
         unawaited(_safe(() => _notifier.show(notification)));

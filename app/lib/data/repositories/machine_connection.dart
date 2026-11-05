@@ -13,6 +13,7 @@ import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart';
 import '../services/remote_files.dart';
 import '../services/snapshot_cache.dart';
+import '../words/error_words.dart';
 import 'reviewed_state.dart';
 import 'screen_waits.dart';
 import 'web_preview.dart';
@@ -146,6 +147,11 @@ class MachineConnection extends ChangeNotifier {
   Snapshot _snapshot = Snapshot.empty;
   ReviewedState? _reviewed;
   DateTime? _lastSync;
+
+  /// When the machine last said anything: a snapshot answered or an event
+  /// arrived. Not a notifier: events come many times a second, and the board
+  /// reads it on its own minute step ([heardAgo]).
+  DateTime? _lastHeard;
   bool _disposed = false;
   bool _forgotten = false;
   bool _seeding = false;
@@ -254,6 +260,30 @@ class MachineConnection extends ChangeNotifier {
     noteBranches([for (final l in lists) ...l]);
   }
 
+  bool _branchesAsked = false;
+
+  /// Whether [loadBranchesOnce] has asked already.
+  bool get branchesAsked => _branchesAsked;
+
+  /// [loadBranches] at most once for this connection's life (an app run): the
+  /// board names a repo's agents by branch without the person opening the
+  /// machine, and a board that rebuilds on every event must not ask again.
+  /// One `worktree.list` per repo with several open checkouts, the first time
+  /// the board shows them; a checkout opened later is named by its folder
+  /// until the machine screen or the start form reads it. Not counted as asked
+  /// while the link is down or no repo has several checkouts, so it is asked
+  /// when they come.
+  void loadBranchesOnce() {
+    if (_branchesAsked || !isLive || places.repos.isEmpty) return;
+    _branchesAsked = true;
+    unawaited(loadBranches());
+  }
+
+  /// Bumped whenever a branch is learnt or forgotten, so a summary of the
+  /// fleet (the board's) can tell that the names it shows changed.
+  int get branchesVersion => _branchesVersion;
+  int _branchesVersion = 0;
+
   /// Remembers the branches in [worktrees]; repaints only when one changed.
   void noteBranches(List<WorktreeInfo> worktrees) {
     var changed = false;
@@ -266,10 +296,19 @@ class MachineConnection extends ChangeNotifier {
         changed = true;
       }
     }
+    if (changed) _branchesVersion++;
     if (changed && !_disposed) notifyListeners();
   }
 
   DateTime? get lastSync => _lastSync;
+
+  /// How long ago the machine last said anything, on this connection's own
+  /// clock; null before it first has. In the background profile only status
+  /// changes and a slow poll arrive, so this can honestly be minutes.
+  Duration? heardAgo() => switch (_lastHeard) {
+    final at? => _clock().difference(at),
+    null => null,
+  };
   bool get isLive => _state == LinkState.online;
 
   bool _background = false;
@@ -586,7 +625,7 @@ class MachineConnection extends ChangeNotifier {
             _set(LinkState.attention, error: e.message);
             return;
           }
-          error = e.message;
+          error = describeError(e, machine: profile.label);
         } on HerdrApiException catch (e) {
           if (!alive()) return;
           // The status-only subscription named a pane that closed after the
@@ -594,14 +633,14 @@ class MachineConnection extends ChangeNotifier {
           if (e.code == 'pane_not_found' && _background && raced++ < 2) {
             continue;
           }
-          error = e.toString();
+          error = describeError(e, machine: profile.label);
         } on Object catch (e) {
           // A reply this app cannot read (a field of another type, a shape it
           // does not know): the same as a failed attempt. Left alone it would
           // end the loop with the link still shown as online or connecting,
           // and nothing would ever retry.
           if (!alive()) return;
-          error = 'Unexpected reply from the machine (${e.runtimeType})';
+          error = describeError(e, machine: profile.label);
         }
         _set(LinkState.reconnecting, error: error);
         await _sleep(_retryDelay(attempt++));
@@ -624,8 +663,9 @@ class MachineConnection extends ChangeNotifier {
   Future<void> _refresh() async {
     final s = await _api.snapshot();
     if (_disposed) return;
-    _lastSync = DateTime.now();
     final now = _clock();
+    _lastSync = now;
+    _lastHeard = now;
     final rawChanged = s != _raw;
     _trackStatuses(s, now);
     _raw = s;
@@ -837,6 +877,7 @@ class MachineConnection extends ChangeNotifier {
   ///  * anything else (title, cwd)                            -> throttled.
   void _onEvent(Map<String, dynamic> event, _RefreshScheduler refresher) {
     _events++;
+    _lastHeard = _clock();
     if (event['event'] != 'pane_updated') {
       refresher.schedule(urgent: true);
       return;

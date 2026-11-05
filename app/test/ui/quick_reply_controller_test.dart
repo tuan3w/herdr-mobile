@@ -164,7 +164,7 @@ void main() {
       transport.failure = const HerdrTransportException('Connection reset');
       expect(await reply.choose(_yes, asked: _asked), isFalse);
       expect(reply.phase, ReplyPhase.failed);
-      expect(reply.error, 'Connection reset');
+      expect(reply.error, contains('No connection to'));
       expect(reply.subject, _yes);
 
       transport.failure = null;
@@ -243,7 +243,7 @@ void main() {
       screen.failure = const HerdrTransportException('Connection reset');
       expect(await reply.choose(_yes, asked: _asked), isFalse);
       expect(reply.phase, ReplyPhase.failed);
-      expect(reply.error, 'Connection reset');
+      expect(reply.error, contains('No connection to'));
       expect(sent('pane.send_keys'), isEmpty);
     });
   });

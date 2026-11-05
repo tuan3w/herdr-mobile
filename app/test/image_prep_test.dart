@@ -98,7 +98,7 @@ void main() {
       expect(p.b, greaterThan(240));
     });
 
-    test('metadata does not survive: no EXIF block (and so no GPS position)', () async {
+    test('metadata doesn’t survive: no EXIF block (and so no GPS position)', () async {
       final source = _noise(300, 200);
       source.exif.imageIfd.make = 'SecretPhone';
       source.exif.imageIfd.software = 'where-I-live';
@@ -148,7 +148,7 @@ void main() {
     test('bytes that are no picture, and no bytes, are refused', () async {
       await expectLater(
         prepareImage(Uint8List.fromList(utf8.encode('this is a text file, not a picture'))),
-        throwsA(isA<ImagePrepException>().having((e) => e.message, 'message', contains('Could not read'))),
+        throwsA(isA<ImagePrepException>().having((e) => e.message, 'message', contains('Couldn’t read'))),
       );
       await expectLater(prepareImage(Uint8List(0)), throwsA(isA<ImagePrepException>()));
     });

@@ -88,7 +88,7 @@ class SshAgentHost implements AgentHost {
       command = keeperStartCommand(agent: agent, cwd: cwd);
     } on ArgumentError catch (e) {
       throw AgentHostException(
-        e.name == 'cwd' ? 'That folder name cannot be used.' : 'That agent is not known.',
+        e.name == 'cwd' ? 'That folder name can’t be used.' : 'That agent isn’t known.',
         fatal: true,
       );
     }
@@ -110,7 +110,7 @@ class SshAgentHost implements AgentHost {
       command = keeperHistoryCommand(agent: agent, cwd: cwd);
     } on ArgumentError catch (e) {
       throw AgentHostException(
-        e.name == 'cwd' ? 'That folder name cannot be used.' : 'That agent is not known.',
+        e.name == 'cwd' ? 'That folder name can’t be used.' : 'That agent isn’t known.',
         fatal: true,
       );
     }
@@ -153,7 +153,7 @@ class SshAgentHost implements AgentHost {
     try {
       return joined.length > _blobIsolateFromChars ? await _decodeOffThread(joined) : base64.decode(joined);
     } on FormatException {
-      throw const AgentHostException('That is not a picture.', fatal: true);
+      throw const AgentHostException('That isn’t a picture.', fatal: true);
     }
   }
 
@@ -246,7 +246,7 @@ class SshAgentHost implements AgentHost {
     try {
       out = await _run(keeperInstallCommand(), installTimeout, 'set up agent sessions', input: keeperInstallPayload());
     } on _NotInstalled {
-      throw const AgentHostException('The machine could not set up agent sessions.');
+      throw const AgentHostException('The machine couldn’t set up agent sessions.');
     }
     final Map<Object?, Object?> answer;
     try {
@@ -273,7 +273,7 @@ class SshAgentHost implements AgentHost {
     } on TimeoutException {
       // The channel may still arrive; it must not stay open.
       unawaited(opening.then((c) => c.close(), onError: (Object _) {}));
-      throw AgentHostException('The machine did not answer in time ($what).');
+      throw AgentHostException('The machine didn’t answer in time ($what).');
     } on HerdrTransportException catch (e) {
       throw AgentHostException(e.message, fatal: e.fatal);
     }
@@ -290,7 +290,7 @@ class SshAgentHost implements AgentHost {
       try {
         code = await Future.wait<Object?>([ended.future, channel.exitCode]).then((r) => r[1] as int?).timeout(timeout);
       } on TimeoutException {
-        throw AgentHostException('The machine did not answer in time ($what).');
+        throw AgentHostException('The machine didn’t answer in time ($what).');
       }
       final out = _Output(lines, channel.stderrTail);
       if (code == _notInstalledExit) throw const _NotInstalled();
@@ -351,15 +351,15 @@ AgentHostException _failure(int? code, String stderr, String what) {
   String or(String fallback) => said.isEmpty ? fallback : said;
   return switch (code) {
     null => const AgentHostException('The connection to the machine dropped.'),
-    66 => AgentHostException(or('That folder or session does not exist on the machine.'), fatal: true),
+    66 => AgentHostException(or('That folder or session doesn’t exist on the machine.'), fatal: true),
     67 => AgentHostException(or('The agent of this session has exited.'), fatal: true),
-    69 => AgentHostException(or('That agent is not installed on the machine.'), fatal: true),
-    65 => AgentHostException(or('The agent helper is not installed on the machine.')),
+    69 => AgentHostException(or('That agent isn’t installed on the machine.'), fatal: true),
+    65 => AgentHostException(or('The agent helper isn’t installed on the machine.')),
     70 => AgentHostException(or('The agent exited while starting.')),
     78 => AgentHostException(or('Agent sessions need python3 on this machine.'), fatal: true),
-    64 => AgentHostException(or('The app asked the machine something it did not understand.'), fatal: true),
-    126 || 127 => AgentHostException(or('The machine could not run the command (command not found).'), fatal: true),
-    _ => AgentHostException(or('Could not $what (exit status $code).')),
+    64 => AgentHostException(or('The app asked the machine something it didn’t understand.'), fatal: true),
+    126 || 127 => AgentHostException(or('The machine couldn’t run the command (command not found).'), fatal: true),
+    _ => AgentHostException(or('Couldn’t $what (exit status $code).')),
   };
 }
 

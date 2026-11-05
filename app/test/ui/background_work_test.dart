@@ -114,7 +114,7 @@ void main() {
       expect(find.text('1 running in background'), findsOneWidget);
       expect(find.text('omp continues by itself when it finishes'), findsOneWidget);
       expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget, reason: 'Send');
-      expect(find.byIcon(LucideIcons.square), findsNothing, reason: 'there is no turn to stop');
+      expect(find.byIcon(HerdrIcons.stopMark), findsNothing, reason: 'there is no turn to stop');
     });
 
     testWidgets('idle with a terminal job that does not wake: one line', (tester) async {
@@ -276,7 +276,7 @@ void main() {
       final session = waitingTerminal();
       session.backgroundWork = work([task('bg_6')]);
       await pump(tester, session);
-      expect(find.byIcon(LucideIcons.square), findsOneWidget);
+      expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
       expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'status?');
       await tester.testTextInput.receiveAction(TextInputAction.send);
@@ -287,7 +287,7 @@ void main() {
     testWidgets('Stop stays a plain tap', (tester) async {
       final session = working();
       await pump(tester, session);
-      await tester.tap(find.byIcon(LucideIcons.square));
+      await tester.tap(find.byIcon(HerdrIcons.stopMark));
       await tester.pump();
       expect(session.cancelCount, 1);
     });
@@ -650,7 +650,7 @@ void main() {
 
   group('the toast after Stop', () {
     Future<void> stopAndEnd(WidgetTester tester, FakeAgentSession session) async {
-      await tester.tap(find.byIcon(LucideIcons.square));
+      await tester.tap(find.byIcon(HerdrIcons.stopMark));
       await tester.pump();
       session.update((s) => s.withTurnEnded(StopReason.cancelled));
       await tester.pump();
@@ -661,7 +661,7 @@ void main() {
       final session = working();
       session.backgroundWork = work([task('bg_6')]);
       await pump(tester, session);
-      await tester.tap(find.byIcon(LucideIcons.square));
+      await tester.tap(find.byIcon(HerdrIcons.stopMark));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(toastKey), findsNothing, reason: 'the turn has not ended yet');
@@ -712,7 +712,7 @@ void main() {
       final session = waitingTerminal();
       session.backgroundWork = work([task('bg_6')], wakes: true, label: 'omp');
       await pump(tester, session);
-      await tester.tap(find.byIcon(LucideIcons.square));
+      await tester.tap(find.byIcon(HerdrIcons.stopMark));
       await tester.pump();
       session
         ..update((s) => s.withTurnEnded(StopReason.cancelled))

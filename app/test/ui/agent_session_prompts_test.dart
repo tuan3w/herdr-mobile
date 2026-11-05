@@ -436,7 +436,9 @@ void main() {
       await tester.tap(find.text('Read all'));
       await tester.pumpAndSettle();
       expect(find.text('Everything it will run'), findsOneWidget);
-      await tester.tapAt(const Offset(20, 20));
+      // The command is set larger now, so a long one can fill the sheet to the
+      // top: close it with Back rather than a tap on scrim that may not be there.
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.tap(find.text('Allow once'));
       await tester.pump();

@@ -296,7 +296,7 @@ class _SessionAsk extends StatelessWidget {
         const SizedBox(height: Gap.md),
         AppButton(
           label: 'Answer in the session',
-          icon: LucideIcons.messageSquare,
+          icon: HerdrIcons.message,
           onPressed: () {
             onOpen();
             unawaited(openAgent(context, SessionAgent(session.key)));

@@ -497,7 +497,7 @@ abstract interface class AgentSessions implements Listenable {
   /// elsewhere and drops the ones the host forgot. Never throws.
   Future<void> refresh();
 
-  /// The Agents tab is on screen (or not). While it is, the hosts are listed
+  /// The board is on screen (or not: a page is over it, or the app is away). While it is, the hosts are listed
   /// every 60 s; otherwise no timer runs at all.
   void setBoardVisible(bool visible);
 

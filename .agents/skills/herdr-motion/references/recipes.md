@@ -10,8 +10,8 @@ changed, update this file.
 ## Press feedback
 
 `PressBuilder(scale: PressScale.chip, builder: (context, pressed) => ...)`. The tint or
-scale goes in on pointer-down after the scroll-intent delay
-(`Motion.press`, 100 ms) and comes out on release (`Motion.release`, 180 ms). A
+scale goes in on pointer-down, at once (`Motion.press`, 100 ms; a scroll that
+takes over cancels it) and comes out on release (`Motion.release`, 180 ms). A
 drag away cancels it. Rows use a tint, not a scale. No ripple anywhere.
 
 ## Something appears or leaves in place (a pill, a badge, a chip)
@@ -20,9 +20,9 @@ drag away cancels it. Rows use a tint, not a scale. No ripple anywhere.
 `Motion.enterScale` over `Motion.release`, with `Motion.easeOut` in and
 `Motion.easeOutExit` out. While it fades out it keeps its old words, so the
 text never changes mid-fade. Exemplars: the jump pill
-(`ui/render/terminal/terminal_jump.dart`) and the triage pill. Remove the
+(`ui/render/terminal/terminal_jump.dart`). Remove the
 opacity wrapper once it is fully visible if it sits on a resting screen.
-Something in the bottom stack (the triage pill, the attach action bar) uses
+Something in the bottom stack (the batch bar, the attach action bar) uses
 `BottomStackTransition` instead: a slide of `Motion.travel` plus a fade.
 
 ## Expand and collapse
@@ -43,8 +43,9 @@ motion the gap is skipped. Taps on items that moved are guarded (`SettleGate`,
 
 Fade the old shape and draw the new one once over `Motion.settle`, then stop
 the ticker. A glyph built with its status never animates (`StatusGlyph`,
-`ui/core/glyphs.dart`). A card that changed section gets a wash that fades over
-`Motion.arrival`: a highlight decaying, not a movement.
+`ui/core/glyphs.dart`). The glyph is the one mark of a status change: the
+board's card is only ever the waiting agent in front, so it never changes
+status in place (the arrival wash it had went with the Cards density).
 
 ## A count that changes
 

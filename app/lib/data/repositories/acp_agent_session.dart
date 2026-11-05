@@ -1124,7 +1124,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     if (_disposed || _detached || epoch != _epoch) return;
     if (_attempt >= maxAttempts) {
       _fail(
-        'Could not reach the session on ${machine.profile.label} after $maxAttempts tries. '
+        'Couldn’t reach the session on ${machine.profile.label} after $maxAttempts tries. '
         'The agent keeps running there.',
       );
       return;
@@ -1414,7 +1414,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         _changed();
         return true;
       }
-      _setProblem('Not connected. The message was not sent.');
+      _setProblem('Not connected. The message wasn’t sent.');
       return false;
     }
     markSeen();
@@ -1711,7 +1711,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     } on AgentHostException {
       rethrow;
     } on Exception catch (e) {
-      throw AgentHostException('Could not end the session: ${_words(e)}');
+      throw AgentHostException('Couldn’t end the session: ${_words(e)}');
     }
     if (_disposed) return;
     _ended('Ended from this phone.');
@@ -1932,7 +1932,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     JsonRpcException(:final message) => message,
     AgentHostException(:final message) => message,
     JsonRpcClosedException() => 'The connection dropped.',
-    TimeoutException() => 'The agent did not answer in time.',
+    TimeoutException() => 'The agent didn’t answer in time.',
     _ => '$e',
   };
 

@@ -47,7 +47,6 @@ const _viShort = 'Cần bạn xử lý';
 
 void _noop() {}
 void _noopBool(bool _) {}
-void _noopIndex(int _) {}
 
 /// Every kit component and token sheet, in the order the Kit screen lists them.
 final List<KitEntry> kitCatalog = [
@@ -66,18 +65,6 @@ final List<KitEntry> kitCatalog = [
   KitEntry('HerdrIcons', KitStatus.beta, [
     KitState('The drawn set at nav size', (c) => const _HerdrIconSheet(size: IconSize.nav)),
     KitState('At row size', (c) => const _HerdrIconSheet(size: IconSize.row)),
-    KitState(
-      'As the tab bar',
-      (c) => const FloatingTabBar(
-        tabs: [
-          TabSpec(icon: HerdrIcons.agents, label: 'Agents', badge: 2),
-          TabSpec(icon: HerdrIcons.machines, label: 'Machines'),
-          TabSpec(icon: HerdrIcons.settings, label: 'Settings', mark: true, markLabel: 'update available'),
-        ],
-        index: 0,
-        onChanged: _noopIndex,
-      ),
-    ),
   ], tokens: true),
   KitEntry('Gap', KitStatus.stable, [KitState('The spacing scale', (c) => const _GapSheet())], tokens: true),
   KitEntry('Motion', KitStatus.stable, [
@@ -112,8 +99,18 @@ final List<KitEntry> kitCatalog = [
           CircleButton(icon: LucideIcons.plus, tooltip: 'Add', onPressed: _noop),
           CircleButton(icon: LucideIcons.textWrap, tooltip: 'Wrap lines', active: true, onPressed: _noop),
           CircleButton(icon: LucideIcons.ellipsis, tooltip: 'More', filled: false, onPressed: _noop),
-          CircleButton(icon: LucideIcons.folder, tooltip: 'Files', onPressed: null),
+          CircleButton(icon: HerdrIcons.folder, tooltip: 'Files', onPressed: null),
         ],
+      ),
+    ),
+    KitState(
+      'with a mark (an update behind Settings)',
+      (c) => const CircleButton(
+        icon: HerdrIcons.settings,
+        tooltip: 'Settings',
+        mark: true,
+        markLabel: 'update available',
+        onPressed: _noop,
       ),
     ),
   ]),
@@ -514,7 +511,7 @@ final List<KitEntry> kitCatalog = [
       (c) => const SectionLabel(
         label: _viShort,
         count: 3,
-        trailing: TextAction(label: 'Mark all reviewed', onTap: _noop),
+        trailing: TextAction(label: 'Mark reviewed', onTap: _noop),
       ),
       bleed: true,
     ),
@@ -527,8 +524,8 @@ final List<KitEntry> kitCatalog = [
       'icon, message, action',
       (c) => const EmptyState(
         icon: LucideIcons.bot,
-        title: 'No agents yet',
-        message: 'Start one on a machine and it shows here, with what it needs from you.',
+        title: 'No agents running',
+        message: 'Start one in herdr and it shows here.',
         action: AppButton(label: 'Add machine', onPressed: _noop),
       ),
     ),
@@ -770,7 +767,7 @@ final List<KitEntry> kitCatalog = [
         subtitle: 'omp · máy chủ',
         glyph: StatusGlyph(status: AgentStatus.working, size: IconSize.row),
         actions: [
-          CircleButton(icon: LucideIcons.folder, tooltip: 'Files', onPressed: _noop),
+          CircleButton(icon: HerdrIcons.folder, tooltip: 'Files', onPressed: _noop),
           CircleButton(icon: LucideIcons.ellipsis, tooltip: 'More', onPressed: _noop),
         ],
       ),
@@ -820,7 +817,7 @@ final List<KitEntry> kitCatalog = [
               SheetActionRow(
                 action: SheetAction(
                   label: 'Open files',
-                  icon: LucideIcons.folder,
+                  icon: HerdrIcons.folder,
                   unavailable: 'The machine is offline.',
                   onTap: _noop,
                 ),
@@ -880,40 +877,6 @@ final List<KitEntry> kitCatalog = [
           kind: SheetKind.form,
           actions: [AppButton(label: 'Save', expand: true, onPressed: _noop)],
           child: LabeledField(label: 'Name', hint: 'Fix flaky retry test'),
-        ),
-      ),
-      bleed: true,
-    ),
-  ]),
-  KitEntry('FloatingTabBar', KitStatus.stable, [
-    KitState(
-      'badge and mark',
-      (c) => _Live<int>(
-        0,
-        (c, v, set) => FloatingTabBar(
-          index: v,
-          onChanged: set,
-          tabs: const [
-            TabSpec(icon: LucideIcons.bot, label: 'Agents', badge: 3),
-            TabSpec(icon: LucideIcons.server, label: 'Machines'),
-            TabSpec(icon: LucideIcons.settings, label: 'Settings', mark: true, markLabel: 'update available'),
-          ],
-        ),
-      ),
-      bleed: true,
-    ),
-    KitState(
-      'badge 99+',
-      (c) => _Live<int>(
-        1,
-        (c, v, set) => FloatingTabBar(
-          index: v,
-          onChanged: set,
-          tabs: const [
-            TabSpec(icon: LucideIcons.bot, label: 'Agents', badge: 120),
-            TabSpec(icon: LucideIcons.server, label: 'Machines'),
-            TabSpec(icon: LucideIcons.settings, label: 'Settings'),
-          ],
         ),
       ),
       bleed: true,
@@ -1293,8 +1256,10 @@ class _HerdrIconSheet extends StatelessWidget {
           ('machinesOff', HerdrIcons.machinesOff),
           ('settings', HerdrIcons.settings),
           ('stop', HerdrIcons.stop),
+          ('stopMark', HerdrIcons.stopMark),
           ('message', HerdrIcons.message),
           ('close', HerdrIcons.close),
+          ('folder', HerdrIcons.folder),
         ])
           Column(
             mainAxisSize: MainAxisSize.min,
@@ -1361,7 +1326,6 @@ class _MotionSheet extends StatelessWidget {
     ('sheetOut', Motion.sheetOut),
     ('page', Motion.page),
     ('draw', Motion.draw),
-    ('arrival', Motion.arrival),
     ('brand', Motion.brand),
     ('holdFill', Motion.holdFill),
     ('holdSnapBack', Motion.holdSnapBack),

@@ -2,7 +2,7 @@
 // 320x640, text scale 1 and 2): the board at rest (the tab bar and the triage
 // pill over it), the board picking (the batch actions in the tab bar's slot),
 // the agent session's bar with its subagents chip, and the session overview
-// sheet it opens (tall: it must stop below the status bar). Off by default; it
+// sheet its options open (tall: it must stop below the status bar). Off by default; it
 // writes files:
 //
 //   BARS_SHOTS=1 flutter test test/ui/bottom_bars_shots_test.dart
@@ -187,8 +187,11 @@ void main() {
             size,
             brightness,
             scale: scale,
+            // The overview is in the options (the title switches agent).
             then: () async {
-              await tester.tap(find.text('payments-api'));
+              await tester.tap(find.byTooltip('Session options'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text('Session overview'));
               await tester.pumpAndSettle();
             },
           );

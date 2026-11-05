@@ -548,7 +548,7 @@ coming from its side.
 5. **The phone does not show that pane twice.** The keeper records the pane id
    `view` announces; `list` carries it (`pane_id`), and the phone leaves that
    pane out of everything that counts terminal agents (board rows, `Needs
-   you`/`Done`, the badge, triage, pane notifications, the Machines count:
+   you`/`Done`, the status line, triage, pane notifications, the Machines count:
    `MachineConnection.agentPanes`). Right after the phone starts a keeper, a
    new agent pane on that machine triggers one `list`, so the pane is not
    shown twice until the next 30 s listing. The machine screen still lists
@@ -618,7 +618,7 @@ session per keeper of every online machine.
   `MaxSessions` (10 by default) is shared with the mux, the events and SFTP,
   so sessions are NOT all attached. The board is built from ONE `list` per
   machine (on connect, on resume, on pull to refresh, and every 30 s while the
-  Agents tab is visible): `pending > 0` is blocked, `turnActive` is working,
+  board is visible): `pending > 0` is blocked, `turnActive` is working,
   `unseenDone` is a review. A session nobody has attached shows that and
   never a stale transcript (`link` is `live`: healthy, not watched). Per
   machine the repository attaches at most 4 sessions by its own choice: those
@@ -672,8 +672,8 @@ session per keeper of every online machine.
 - **Background.** 90 s after `hidden`/`paused` the transport is closed (the
   keeper keeps the agent); nothing runs, no timer, until `resumed`, which
   attaches what is wanted at once and lists the hosts. The repository lists
-  the hosts on connect, on resume and every 30 s only while the Agents tab is
-  visible.
+  the hosts on connect, on resume and every 30 s only while the board is
+  visible (not under a pushed page).
 - **Notifications.** A session notifies once per flush (one per frame; see
   "The streaming fast path") however many updates came; the repository only
   when something the board shows changes (phase, link, title, the waiting

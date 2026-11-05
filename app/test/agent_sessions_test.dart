@@ -216,7 +216,7 @@ void main() {
       expect(r.host.attachCalls, 0);
     }, seed: (h) => h.add(state: KeeperState.exited, exitCode: 2));
 
-    _rigTest('the session title is the agent\'s, else the folder\'s name', (r) {
+    _rigTest('the session title is the agent’s, else the folder’s name', (r) {
       r.connect();
       expect(r.session.title, 'bảng điều khiển');
 
@@ -249,7 +249,7 @@ void main() {
       expect(r.session.phase, AgentPhase.idle);
     });
 
-    _rigTest('an option the request did not offer is not an allow', (r) {
+    _rigTest('an option the request didn’t offer isn’t an allow', (r) {
       r.connect();
       final request = r.keeper.askPermission();
       r.pump();
@@ -275,7 +275,7 @@ void main() {
       r.keeper.dropLink();
       r.async.flushMicrotasks();
       expect(r.session.state.pending, isEmpty, reason: 'nobody can answer on a dead link');
-      expect(request.answered, isFalse, reason: 'the keeper keeps the request; it was not answered');
+      expect(request.answered, isFalse, reason: 'the keeper keeps the request; it wasn’t answered');
 
       // The next attach brings it back, still unanswered.
       r.async.elapse(const Duration(seconds: 2));
@@ -341,7 +341,7 @@ void main() {
       expect(r.session.phase, AgentPhase.idle);
     });
 
-    _rigTest('an answer for a request that is not waiting does nothing', (r) {
+    _rigTest('an answer for a request that isn’t waiting does nothing', (r) {
       r.connect();
       r.session.answerPermission(99, const PermissionSelected('allow'));
       r.session.answerQuestion(99, const ElicitationCancel());
@@ -355,7 +355,7 @@ void main() {
     _rigTest('reconnects with 1, 2, 4, 8, 15, 30, 30 s backoff and keeps the transcript', (r) {
       r.connect();
       expect(r.session.state.items, hasLength(1));
-      r.host.attachFailures.addAll([for (var i = 0; i < 7; i++) const AgentHostException('The host did not answer.')]);
+      r.host.attachFailures.addAll([for (var i = 0; i < 7; i++) const AgentHostException('The host didn’t answer.')]);
 
       r.keeper.dropLink();
       r.async.flushMicrotasks();
@@ -368,7 +368,7 @@ void main() {
       expect(r.host.attachCalls, 1, reason: 'the first retry waits a full second');
       r.async.elapse(const Duration(milliseconds: 1));
       expect(r.host.attachCalls, 2);
-      expect(r.session.error, 'The host did not answer.');
+      expect(r.session.error, 'The host didn’t answer.');
       expect(r.session.state.items, hasLength(1));
 
       r.async.elapse(const Duration(minutes: 5));
@@ -395,7 +395,7 @@ void main() {
       expect(text, ['hello', 'written while the phone was away']);
     }, seed: (h) => h.add(sessionId: 's1')..log.add(agentChunk('hello')));
 
-    _rigTest('the keeper exited meanwhile: the session ends with the reason and does not retry', (r) {
+    _rigTest('the keeper exited meanwhile: the session ends with the reason and doesn’t retry', (r) {
       r.connect();
       r.keeper.exit(code: 1, reason: 'The agent exited with code 1. out of credit');
       r.async.flushMicrotasks();
@@ -419,7 +419,7 @@ void main() {
       expect(r.session.error, 'The session is gone from studio-mac.');
     });
 
-    _rigTest('a refusal that retrying cannot cure fails the session for good', (r) {
+    _rigTest('a refusal that retrying can’t cure fails the session for good', (r) {
       r.host.attachFailures.add(const AgentHostException('Not allowed to attach.', fatal: true));
       r.connect();
 
@@ -439,7 +439,7 @@ void main() {
       expect(r.session.link, AgentLink.live);
     });
 
-    _rigTest('an agent that refuses the session fails it with the agent\'s words', (r) {
+    _rigTest('an agent that refuses the session fails it with the agent’s words', (r) {
       // The keeper's info names a session the agent no longer knows.
       r.keeper.sessionId = 'other';
       r.connect();
@@ -494,7 +494,7 @@ void main() {
       expect(r.session.link, AgentLink.live);
     });
 
-    _rigTest('hidden then paused does not restart the clock; inactive is not backgrounding', (r) {
+    _rigTest('hidden then paused doesn’t restart the clock; inactive isn’t backgrounding', (r) {
       r.connect();
       r.session.onLifecycleState(AppLifecycleState.inactive);
       r.async.elapse(const Duration(minutes: 5));
@@ -509,7 +509,7 @@ void main() {
       expect(r.session.link, AgentLink.reconnecting);
     });
 
-    _rigTest('a retry in the grace period stops at the detach and does not start again by itself', (r) {
+    _rigTest('a retry in the grace period stops at the detach and doesn’t start again by itself', (r) {
       r.connect();
       r.host.attachFailures.addAll([for (var i = 0; i < 50; i++) const AgentHostException('down')]);
       r.session.onLifecycleState(AppLifecycleState.paused);
@@ -559,7 +559,7 @@ void main() {
       expect(r.session.link, AgentLink.reconnecting);
     });
 
-    _rigTest('turned on after the app left but inside the grace period it is not detached', (r) {
+    _rigTest('turned on after the app left but inside the grace period it isn’t detached', (r) {
       r.connect();
       r.session.onLifecycleState(AppLifecycleState.paused);
       r.async.elapse(const Duration(seconds: 60));
@@ -591,7 +591,7 @@ void main() {
         r.async.elapse(const Duration(milliseconds: 40));
       }
       expect(r.notifications - before, inInclusiveRange(1, 3), reason: '4 s of text');
-      expect(r.session.state.items, isNotEmpty, reason: 'the text is not lost, only the telling is slower');
+      expect(r.session.state.items, isNotEmpty, reason: 'the text isn’t lost, only the telling is slower');
 
       final n = r.notifications;
       r.keeper.askPermission();
@@ -655,7 +655,7 @@ void main() {
         expect(a.listCalls, listsA + 1);
         async.elapse(const Duration(minutes: 9));
         expect(a.listCalls, listsA + 3, reason: 'two more grid points in 9 minutes');
-        expect(b.listCalls, listsB, reason: 'an offline machine is not asked');
+        expect(b.listCalls, listsB, reason: 'an offline machine isn’t asked');
 
         expect(a.attachCalls, attaches, reason: 'nothing is attached again, nothing let go');
         expect(h.repo.byKey('a/k1')!.link, AgentLink.live);
@@ -756,7 +756,7 @@ void main() {
     });
   });
 
-  group('the keeper\'s notices', () {
+  group('the keeper’s notices', () {
     _rigTest(
       'a keeper from before shared sessions: another device attaching ends the session, retries stop, Take over comes back',
       (r) {
@@ -785,7 +785,7 @@ void main() {
       seed: (h) => h.add(sessionId: 's1')..log.add(agentChunk('hello')),
     );
 
-    _rigTest('its own re-attach after a half-dead channel is not mistaken for another device', (r) {
+    _rigTest('its own re-attach after a half-dead channel isn’t mistaken for another device', (r) {
       r.connect();
       for (var i = 0; i < 3; i++) {
         r.keeper.halfDie(); // the keeper evicts the dead channel when the new one attaches
@@ -796,7 +796,7 @@ void main() {
       expect(r.host.attachCalls, 4);
     });
 
-    _rigTest('coming back from the background does not take a session that another device holds', (r) {
+    _rigTest('coming back from the background doesn’t take a session that another device holds', (r) {
       r.connect();
       r.keeper.attach();
       r.async.flushMicrotasks();
@@ -876,7 +876,7 @@ void main() {
       expect(r.keeper.linkOpen, isFalse);
     });
 
-    _rigTest('phaseSince follows the listing\'s phase, and a repeat of it changes nothing', (r) {
+    _rigTest('phaseSince follows the listing’s phase, and a repeat of it changes nothing', (r) {
       r.async.elapse(const Duration(minutes: 1));
       r.listed(turnActive: true);
       expect(r.session.phaseSince, r.now);
@@ -904,7 +904,7 @@ void main() {
       expect(r.session.unseenDone, isFalse, reason: 'it is working again, not waiting for a look');
     });
 
-    _rigTest('a turn that ended unseen stays a review here after the load clears the keeper\'s, so an Undo holds', (r) {
+    _rigTest('a turn that ended unseen stays a review here after the load clears the keeper’s, so an Undo holds', (r) {
       final ended = _t0.add(const Duration(minutes: 1));
       r.listed(unseenDone: true, lastEventAt: ended);
       r.session.acquire();
@@ -915,7 +915,7 @@ void main() {
       expect(r.session.unseenDone, isFalse);
       expect(r.session.unmarkSeen(), isTrue); // and took it back
       r.listed(lastEventAt: ended); // the keeper forgot it when it was loaded
-      expect(r.session.unseenDone, isTrue, reason: 'the Undo is not lost to the next listing');
+      expect(r.session.unseenDone, isTrue, reason: 'the Undo isn’t lost to the next listing');
     }, seed: (h) => h.add(sessionId: 's1')..log.add(agentChunk('done')));
 
     _rigTest('a person opening it attaches it; the link says connecting until the replay is done', (r) {
@@ -936,7 +936,7 @@ void main() {
       expect(r.keeper.linkOpen, isTrue);
 
       r.session.release();
-      expect(r.keeper.linkOpen, isFalse, reason: 'the host\'s channel is free again');
+      expect(r.keeper.linkOpen, isFalse, reason: 'the host’s channel is free again');
       r.pump();
       expect(r.session.attached, isFalse);
       expect(r.session.link, AgentLink.live);
@@ -950,7 +950,7 @@ void main() {
       expect(r.session.state.items, hasLength(1), reason: 'replayed, not doubled');
     }, seed: (h) => h.add(sessionId: 's1')..log.add(agentChunk('hello')));
 
-    _rigTest('what the repository wants keeps it attached after the screen goes; a held one is not let go', (r) {
+    _rigTest('what the repository wants keeps it attached after the screen goes; a held one isn’t let go', (r) {
       r.session.want(true);
       r.pump();
       expect(r.session.attached, isTrue);
@@ -1009,7 +1009,7 @@ void main() {
   });
 
   group('retries', () {
-    _rigTest('an offline machine is not asked: the session waits for it, without a timer, then tries once', (r) {
+    _rigTest('an offline machine isn’t asked: the session waits for it, without a timer, then tries once', (r) {
       r.connect();
       r.machine.goOffline();
       r.keeper.dropLink();
@@ -1020,7 +1020,7 @@ void main() {
       final timers = _timers(r.async);
 
       r.async.elapse(const Duration(hours: 3));
-      expect(r.host.listCalls, lists, reason: 'no questions to a machine that is not there');
+      expect(r.host.listCalls, lists, reason: 'no questions to a machine that isn’t there');
       expect(r.host.attachCalls, attaches);
       expect(_timers(r.async), timers, reason: 'waiting for the machine costs no timer');
 
@@ -1119,7 +1119,7 @@ void main() {
       r.async.elapse(const Duration(minutes: 5));
       r.keeper.say('streaming', messageId: 'a1');
       r.pump();
-      expect(r.session.phaseSince, started, reason: 'streaming text is not a phase change');
+      expect(r.session.phaseSince, started, reason: 'streaming text isn’t a phase change');
 
       r.keeper.askPermission();
       r.async.flushMicrotasks();
@@ -1170,7 +1170,7 @@ void main() {
         r.keeper.update(calls[2]);
         r.pump();
         expect(r.session.subagentRun(id)!.status, SubagentStatus.finished);
-        expect(r.session.subagentRun(id)!.hasTranscript, isTrue, reason: 'the client\'s next state did not drop it');
+        expect(r.session.subagentRun(id)!.hasTranscript, isTrue, reason: 'the client’s next state didn’t drop it');
 
         r.session.watchSubagentLog(id, false);
         expect(_timers(r.async), timers);
@@ -1277,7 +1277,7 @@ void main() {
       expect(r.session.phase, AgentPhase.idle);
     });
 
-    _rigTest('an answer, a tool call or a plan is not silence', (r) {
+    _rigTest('an answer, a tool call or a plan isn’t silence', (r) {
       r.connect();
       unawaited(r.session.send('hello'));
       r.pump();
@@ -1345,7 +1345,7 @@ void main() {
       expect(r.session.error, 'model overloaded');
       expect(r.session.link, AgentLink.live);
       expect(r.session.phase, AgentPhase.idle);
-      expect(r.session.unseenDone, isFalse, reason: 'a failure is not a result to review');
+      expect(r.session.unseenDone, isFalse, reason: 'a failure isn’t a result to review');
     });
 
     _rigTest('send without a link says so and sends nothing', (r) {
@@ -1354,7 +1354,7 @@ void main() {
 
       expect(sent.done, isTrue);
       expect(sent.error, isNull);
-      expect(r.session.error, 'Not connected. The message was not sent.');
+      expect(r.session.error, 'Not connected. The message wasn’t sent.');
       expect(r.keeper.prompts, isEmpty);
     });
 
@@ -1405,7 +1405,7 @@ void main() {
       expect(r.session.title, startsWith('word word'));
     });
 
-    _rigTest("the agent's own title replaces it", (r) {
+    _rigTest("the agent’s own title replaces it", (r) {
       answers(r);
       r.connect();
       r.pump(1100);
@@ -1511,7 +1511,7 @@ void main() {
       expect(r.session.unseenDone, isTrue);
     });
 
-    _rigTest('history replayed on attach is not news', (r) {
+    _rigTest('history replayed on attach isn’t news', (r) {
       r.connect();
       expect(r.session.state.lastStopReason, StopReason.endTurn);
       expect(r.session.unseenDone, isFalse);
@@ -1532,7 +1532,7 @@ void main() {
   });
 
   group('end', () {
-    _rigTest('a host that cannot kill the keeper throws and leaves the session alone', (r) {
+    _rigTest('a host that can’t kill the keeper throws and leaves the session alone', (r) {
       r.connect();
       r.host.killFailure = const AgentHostException('permission denied');
       final ended = _Outcome(r.session.end());
@@ -1780,7 +1780,7 @@ void main() {
     _rigTest('with no link at all (never attached, not being attached) a send says so and queues nothing', (r) {
       unawaited(r.session.send('hello'));
       r.pump();
-      expect(r.session.error, 'Not connected. The message was not sent.');
+      expect(r.session.error, 'Not connected. The message wasn’t sent.');
       expect(r.session.queued, isEmpty);
     });
 
@@ -1792,7 +1792,7 @@ void main() {
 
       expect(sent.done, isTrue);
       expect(sent.error, isNull);
-      expect(r.session.state.items.whereType<TranscriptMessage>(), isEmpty, reason: 'it was not delivered');
+      expect(r.session.state.items.whereType<TranscriptMessage>(), isEmpty, reason: 'it wasn’t delivered');
       expect(r.session.phase, AgentPhase.idle);
       expect(r.session.queued.single.text, 'hello');
       expect(r.session.queued.single.held, isTrue);
@@ -1890,7 +1890,7 @@ void main() {
       unawaited(r.session.send('too late for the turn'));
       r.pump();
       expect(queuedText(r), ['too late for the turn']);
-      expect(r.keeper.prompts, ['first'], reason: 'the first turn has not been answered yet: one prompt at a time');
+      expect(r.keeper.prompts, ['first'], reason: 'the first turn hasn’t been answered yet: one prompt at a time');
 
       r.keeper.finishTurn();
       r.pump();
@@ -2060,7 +2060,7 @@ void main() {
       expect(need.terminalHint, isTrue);
       expect(need.methods.single.terminalLabel, 'Launch pi');
       expect(r.session.error, need.message);
-      expect(r.session.link, AgentLink.live, reason: 'the link is fine, the login is not');
+      expect(r.session.link, AgentLink.live, reason: 'the link is fine, the login isn’t');
 
       r.keeper.onPrompt = null;
       unawaited(r.session.send('again'));
@@ -2092,7 +2092,7 @@ void main() {
       expect(need.message, isNot(contains('on the machine to continue')));
     }, seed: (h) => h.add(agent: 'claude', loginInKeychain: true));
 
-    _rigTest('another -32000 is not an auth failure', (r) {
+    _rigTest('another -32000 isn’t an auth failure', (r) {
       r.connect();
       r.keeper.onPrompt = (_) => throw const JsonRpcException(-32000, 'The client went away before it answered.');
       unawaited(r.session.send('hello'));
@@ -2131,7 +2131,7 @@ void main() {
         h.addMachine('a', 'alpha');
 
         expect(h.repo.sessions, hasLength(3));
-        expect(host.attachCalls, 2, reason: 'the exited keeper is not attached');
+        expect(host.attachCalls, 2, reason: 'the exited keeper isn’t attached');
         expect(h.repo.byKey('a/k1')!.link, AgentLink.live);
         expect(h.repo.byKey('a/k1')!.title, 'Fix login');
         expect(h.repo.byKey('a/k2')!.agentLabel, 'Claude Code');
@@ -2198,7 +2198,7 @@ void main() {
           keeper.say('line $i ', messageId: 'a1');
           async.elapse(const Duration(milliseconds: 40));
         }
-        expect(heard, 0, reason: 'text is the session screen\'s business');
+        expect(heard, 0, reason: 'text is the session screen’s business');
 
         final request = keeper.askPermission();
         async.elapse(const Duration(milliseconds: 40));
@@ -2232,7 +2232,7 @@ void main() {
       });
     });
 
-    test('a listing that fails changes nothing and does not throw', () {
+    test('a listing that fails changes nothing and doesn’t throw', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         final host = h.host('a')..add(id: 'k1');
@@ -2541,7 +2541,7 @@ void main() {
   });
 
   group('start racing a listing', () {
-    test('a listing that finds the new keeper before start() returns does not make a second session', () {
+    test('a listing that finds the new keeper before start() returns doesn’t make a second session', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         final host = h.host('a');
@@ -2626,7 +2626,7 @@ void main() {
         async.elapse(const Duration(seconds: 1));
 
         final error = started.error! as AgentHostException;
-        expect(error.message, 'Claude Code is not installed on studio-mac.');
+        expect(error.message, 'Claude Code isn’t installed on studio-mac.');
         expect(error.fatal, isTrue);
         expect(host.startCalls, 0);
         expect(h.repo.sessions, isEmpty);
@@ -2648,7 +2648,7 @@ void main() {
       });
     });
 
-    test('a host that cannot be asked or cannot start the keeper says why', () {
+    test('a host that can’t be asked or can’t start the keeper says why', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         final host = h.host('a');
@@ -2660,16 +2660,16 @@ void main() {
         expect((started.error! as AgentHostException).message, 'python3 is missing on alpha.');
 
         host.availableFailure = null;
-        host.startFailure = const AgentHostException('/work does not exist on alpha.', fatal: true);
+        host.startFailure = const AgentHostException('/work doesn’t exist on alpha.', fatal: true);
         started = _Outcome(h.repo.start(machine: h.conn('a'), agent: 'omp', cwd: '/work'));
         async.elapse(const Duration(seconds: 1));
-        expect((started.error! as AgentHostException).message, '/work does not exist on alpha.');
+        expect((started.error! as AgentHostException).message, '/work doesn’t exist on alpha.');
         expect(h.repo.sessions, isEmpty);
         h.dispose();
       });
     });
 
-    test('a keeper that cannot be attached is killed and the start fails', () {
+    test('a keeper that can’t be attached is killed and the start fails', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         final host = h.host('a');
@@ -2685,7 +2685,7 @@ void main() {
         expect(host.killed, hasLength(1), reason: 'no orphan keeper');
         expect(h.repo.sessions, isEmpty);
         async.elapse(const Duration(minutes: 5));
-        expect(host.attachCalls, 1, reason: 'the abandoned session does not retry');
+        expect(host.attachCalls, 1, reason: 'the abandoned session doesn’t retry');
         h.dispose();
       });
     });
@@ -2707,7 +2707,7 @@ void main() {
       });
     });
 
-    test('available asks the machine\'s host', () {
+    test('available asks the machine’s host', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         h.host('a').installed = {'omp', 'pi'};

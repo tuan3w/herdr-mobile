@@ -104,7 +104,7 @@ Future<void> showLinkSheet(BuildContext context, String url, {MachineConnection?
             else if (local)
               note(HerdrIcons.machines, 'This address is on the machine, not your phone.')
             else if (plain)
-              note(LucideIcons.triangleAlert, 'This link is not encrypted.'),
+              note(LucideIcons.triangleAlert, 'This link isn’t encrypted.'),
           ],
         ),
       );

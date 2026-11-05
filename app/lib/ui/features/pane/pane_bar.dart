@@ -1,14 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/herdr_models.dart';
+import '../../../data/repositories/agent_screens.dart' show PaneAgent;
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/where_line.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
+import '../agents/agent_switcher.dart' show AgentSwitchMark, othersNeedingYou, showAgentSwitcher, switchAgentLabel;
 import '../files/files_navigation.dart';
 import 'pane_view_model.dart';
 
@@ -49,12 +53,14 @@ PaneTitle paneTitle(MachineConnection? machine, String machineId, String paneId,
 /// The one bar above the pane ([AppTopBar]): back, the status glyph beside
 /// the task title over where it lives, a button for the machine's files and
 /// the options (the other view, Duplicate, wrap lines, copy the title or the
-/// pane id). The title is not a button: the options have one way in. No
-/// bottom border: the terminal panel below anchors it. The raw pane id is not
-/// shown (the options have it).
+/// pane id). The title is the agent switcher, as in the chat's bar: a
+/// chevron, the count of other agents that need the person, and a tap that
+/// lists them ([showAgentSwitcher]). No bottom border: the terminal panel
+/// below anchors it. The raw pane id is not shown (the options have it).
 class PaneTopBar extends StatelessWidget {
   const PaneTopBar({
     super.key,
+    required this.agent,
     required this.title,
     required this.viewModel,
     required this.machine,
@@ -62,6 +68,8 @@ class PaneTopBar extends StatelessWidget {
     required this.onMore,
   });
 
+  /// The pane this bar is for: the switcher's `Here`.
+  final PaneAgent agent;
   final ValueListenable<PaneTitle?> title;
   final PaneViewModel? viewModel;
   final MachineConnection? machine;
@@ -77,15 +85,20 @@ class PaneTopBar extends StatelessWidget {
     final machine = this.machine;
     final files = machine != null && machineSupportsFiles(machine) && onOpenFiles != null;
     final actions = [
-      if (files) CircleButton(icon: LucideIcons.folderOpen, tooltip: 'Browse files', onPressed: onOpenFiles),
+      if (files) CircleButton(icon: HerdrIcons.folder, tooltip: 'Browse files', onPressed: onOpenFiles),
       CircleButton(icon: LucideIcons.ellipsis, tooltip: 'Pane options', onPressed: onMore),
     ];
+    // Rebuilds the bar only when the count changes.
+    final others = othersNeedingYou(context, agent);
     return ValueListenableBuilder<PaneTitle?>(
       valueListenable: title,
       builder: (context, info, _) {
         final status = info?.status;
         return AppTopBar(
           title: info?.title ?? '',
+          onTitleTap: () => unawaited(showAgentSwitcher(context, agent)),
+          titleTapLabel: switchAgentLabel,
+          titleTrailing: AgentSwitchMark(othersNeedYou: others),
           subtitle: info?.where,
           // The glyph names the status for screen readers; no text repeats it.
           glyph: info == null

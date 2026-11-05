@@ -8,6 +8,7 @@ import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/terminal_prompt.dart';
 import '../../../data/services/herdr_api.dart' show ReadSource;
+import '../../../data/words/error_words.dart';
 import '../../../data/services/herdr_transport.dart';
 import '../../render/terminal/terminal_view.dart' show TerminalTop;
 import 'scrollback_history.dart';
@@ -53,6 +54,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     this.fallbackInterval = Dwell.paneFallback,
     this._wrap = false,
     this.clock = DateTime.now,
+    this.machineName,
   }) {
     WidgetsBinding.instance.addObserver(this);
     // The fallback poll covers a failed activity stream.
@@ -70,9 +72,13 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     sendPrompt: (p) => sendTerminalPrompt(machine.api, paneId, p),
     sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
     wrap: wrap,
+    machineName: machine.profile.label,
   );
 
   final String paneId;
+
+  /// The machine's name, for a failure that says it could not be reached.
+  final String? machineName;
   final PaneReader _read;
   final Future<void> Function(String text) _sendLine;
   final Future<void> Function(TerminalPrompt prompt) _sendPrompt;
@@ -241,11 +247,11 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
       // setWrap already queued a read of the right one.
       if (wrap == _wrap) _apply(read: read, error: null, stale: false);
     } on HerdrApiException catch (e) {
-      if (wrap == _wrap) _apply(error: e.toString(), stale: true);
+      if (wrap == _wrap) _apply(error: describeError(e, machine: machineName), stale: true);
     } on HerdrTransportException catch (e) {
       if (wrap == _wrap) {
         _fatal = e.fatal;
-        _apply(error: e.message, stale: true);
+        _apply(error: describeError(e, machine: machineName), stale: true);
       }
     } finally {
       _inFlight = false;
@@ -336,12 +342,12 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
       refresh();
       return true;
     } on HerdrApiException catch (e) {
-      _error = failure ?? e.toString();
+      _error = failure ?? describeError(e, machine: machineName);
       _sendFailed = true;
       failed = true;
       return false;
     } on HerdrTransportException catch (e) {
-      _error = failure ?? e.message;
+      _error = failure ?? describeError(e, machine: machineName);
       _sendFailed = true;
       failed = true;
       return false;

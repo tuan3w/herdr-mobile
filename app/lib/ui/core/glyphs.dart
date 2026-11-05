@@ -31,11 +31,14 @@ extension AgentStatusColor on AgentStatus {
   };
 }
 
-/// Colour per connection state. [color] is for the dot; [textColor] is for the
-/// status line (only states that need the person are tinted).
+/// Colour per connection state. [color] is for the dot and a state's panel;
+/// [textColor] is for the status line (only states that need the person are
+/// tinted). Online has no colour: a green dot on every healthy machine was
+/// decoration that competed with what needs the person, and the absence of
+/// a problem is not news.
 extension LinkStateColor on LinkState {
   Color color(Ds ds) => switch (this) {
-    LinkState.online => ds.done,
+    LinkState.online => ds.textTertiary,
     LinkState.connecting || LinkState.reconnecting => ds.working,
     LinkState.attention || LinkState.approval => ds.blocked,
     LinkState.disabled || LinkState.offline => ds.textTertiary,
@@ -333,19 +336,92 @@ class _GlyphPainter extends CustomPainter {
       old.progress != progress;
 }
 
-/// Small solid dot for connection state.
+/// A machine's connection as a small shape, readable without colour:
+///
+/// - online: a small filled dot in [Ds.textTertiary]. Quiet, because nothing
+///   is wrong; still there, so a row keeps its leading mark and the fleet's
+///   health reads the same everywhere.
+/// - connecting, reconnecting: a ring in the working colour (not there yet).
+/// - offline, disabled: a ring in [Ds.textTertiary] (not there, nothing to do
+///   here: the words say why).
+/// - attention, approval: a ring with a dot in it, in the blocked colour: the
+///   person is needed, and the shape says so apart from the colour.
+///
+/// [LinkDot.live] is the one exception: a filled dot in the done colour for
+/// something that runs right now (a server an agent started), where the dot
+/// is the only sign of it.
 class LinkDot extends StatelessWidget {
-  const LinkDot({super.key, required this.state, this.size = 8});
+  const LinkDot({super.key, required LinkState this.state, this.size = 8});
 
-  final LinkState state;
+  /// Something running now, not a machine's link: the done colour, filled.
+  const LinkDot.live({super.key, this.size = 8}) : state = null;
+
+  /// The link drawn; null for [LinkDot.live].
+  final LinkState? state;
   final double size;
 
+  /// The shape drawn.
+  LinkMark get mark => switch (state) {
+    final s? => LinkMark.of(s),
+    null => LinkMark.dot,
+  };
+
+  /// The colour drawn.
+  Color colorIn(Ds ds) => state?.color(ds) ?? ds.done;
+
   @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(color: state.color(context.ds), shape: BoxShape.circle),
-  );
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: _LinkDotPainter(mark, colorIn(context.ds)));
+}
+
+/// The shapes of [LinkDot]: a filled dot (online, live), a ring (not
+/// connected: on its way, or not), a ring with a dot in it (needs the person).
+enum LinkMark {
+  dot,
+  ring,
+  target;
+
+  static LinkMark of(LinkState s) => switch (s) {
+    LinkState.online => dot,
+    LinkState.attention || LinkState.approval => target,
+    LinkState.connecting || LinkState.reconnecting || LinkState.offline || LinkState.disabled => ring,
+  };
+}
+
+class _LinkDotPainter extends CustomPainter {
+  const _LinkDotPainter(this.shape, this.color);
+
+  final LinkMark shape;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final outer = size.shortestSide / 2;
+    final fill = Paint()
+      ..color = color
+      ..isAntiAlias = true;
+    if (shape == LinkMark.dot) {
+      canvas.drawCircle(c, outer, fill);
+      return;
+    }
+    // A quarter of the size reads as a ring at 8 dp (2 dp, the health
+    // chip's ring); the target's ring is thinner to leave air round its dot.
+    final stroke = size.shortestSide / (shape == LinkMark.ring ? 4 : 5.5);
+    canvas.drawCircle(
+      c,
+      outer - stroke / 2,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..color = color
+        ..isAntiAlias = true,
+    );
+    if (shape == LinkMark.target) canvas.drawCircle(c, outer * 0.32, fill);
+  }
+
+  @override
+  bool shouldRepaint(_LinkDotPainter old) => old.shape != shape || old.color != color;
 }
 
 /// Notion-style icon tile: a glyph on a softly tinted rounded square.

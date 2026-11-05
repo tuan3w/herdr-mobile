@@ -370,7 +370,7 @@ class NewAgentSessionViewModel extends ChangeNotifier {
           } on HerdrTransportException catch (e) {
             return _fail(await _createUnanswered(m, path, e.message));
           } on TimeoutException {
-            return _fail(await _createUnanswered(m, path, 'The machine did not answer in time.'));
+            return _fail(await _createUnanswered(m, path, 'The machine didn’t answer in time.'));
           }
           final worktree = created.worktree;
           made = worktree;

@@ -11,6 +11,171 @@ release.
   ends, where you can edit or remove it. If the terminal is asking something,
   nothing is typed and the text stays in the box.
 
+## [0.1.49] - 2026-11-04
+
+### A waiting omp subagent no longer shows as done
+
+A subagent that started a long background job and waits for it stays
+`running` in the subagents chip and list. It used to turn `done` after about
+30 seconds of silence, while omp still listed it as running.
+
+- A subagent is `done` when omp says so: it reports the end and writes its
+  result file. A quiet log no longer ends it; a recent write still marks it
+  running.
+- Claude Code and Codex subagents still go by the old 30-second rule.
+
+**Fixed**
+
+- With three subagents, one waiting on a 50-minute job, the chip said `1
+  running` while the background strip said `2 running in background`. They
+  agree now. Checked on the recorded files of that session; not measured on
+  a phone.
+
+## [0.1.48] - 2026-10-30
+
+### The board says what to look at again
+
+The board is back in sections by what each agent needs: `Needs you`, then
+`Working`, then `To review`, then `Idle`, with the newest on top in each, so
+the agent that just finished or just stopped is the first you see.
+
+> [!TIP]
+> Try it: tap a section's name, like `Idle`, to fold it; the fold is kept.
+
+- Every agent is one row, except the first one that needs you, which keeps
+  its card with the answers. Under each title, the row says which feature it
+  is: the repo, the branch and the agent (`herdr-mobile · fix/login · omp`),
+  and the machine when you have several.
+- In `Needs you`, the agent waiting longest still leads, so its card does not
+  change under your thumb when another agent starts waiting.
+- The `Agent list` setting (`Compact` or `Cards`) is gone from Settings,
+  `Look`: the board is always rows.
+- `Idle` shows its five newest and folds the rest behind `N more idle`; an
+  agent you saw while looking stays in view until you next open the board.
+- The dotted "to review" count at the top still selects the finished agents,
+  and `Reviewed` in the bar still marks them all with one `Undo`.
+
+**Fixed**
+
+- Idle agents no longer show as cards with `Reply…`, and one repo is no
+  longer split into a group per machine.
+
+## [0.1.47] - 2026-10-30
+
+### Your agents, by project, in a board that holds still
+
+What needs you stays on top. Below it, each repo is one group with all its
+worktrees together, and each agent shows its task with its branch under it,
+so the features of one repo sit side by side. Nothing moves unless you move
+it: projects are in name order, agents in the order they were started, and
+an agent that finishes only changes its mark.
+
+> [!TIP]
+> Try it: tap the dotted "to review" count at the top to select the finished
+> agents, then `Reviewed` in the bar to mark them all; Undo brings them back.
+
+- A project's line under its name sums it up, like
+  `2 working · 1 done · 4 worktrees`; a project with one agent, or the only
+  project, has no such line. Tap a project's name to fold it.
+- Branch names are read once per machine each time the app starts, never on
+  a timer. Until they arrive, a row shows its checkout's folder.
+- The `N more idle` line keeps what it held while you look: an agent that
+  goes idle stays in view until you next open the board.
+- Swiping between chats and the agent list at the top of a chat follow the
+  same order as the board.
+
+**Fixed**
+
+- 0.1.46 already grouped the board by project, in an order that moved
+  whenever an agent started or finished; its notes did not say so.
+
+## [0.1.46] - 2026-10-30
+
+### A calmer home: the board is the whole app
+
+The tab bar is gone and the board runs to the bottom of the screen. It says
+how many agents need you once, at the top, and puts one question in front
+with the command it wants to run as the largest text.
+
+> [!TIP]
+> Try it: tap the machine count at the top left to open Machines, and the
+> gear at the top right (`Settings`) for Settings; Back returns to the board.
+
+- The top line reads like `1 needs you · 4 working · heard just now`; on a
+  narrow phone or with large text it takes a second line instead of cutting
+  off how many machines are not connected.
+- The first agent that needs you keeps its card; the others are rows under
+  it, and `Answer one by one` walks them. Needs you can no longer be folded
+  away.
+- On a question, the answers that allow come first and `No` sits apart
+  below them with a ✕. A "don't ask again" answer is in the full list
+  behind `more…`, still held. The card's reply is a quiet `Reply…`.
+- The filter chips and the floating pill are gone. `Past sessions` moved to
+  the new-session form behind `+`, and the agent list density to Settings.
+  A newer version puts a small dot on the gear.
+- On Machines, a machine that is fine has a quiet grey dot; one connecting
+  has a ring, one that needs you a ring with a dot, so it stands out even
+  without colour.
+- In Session overview, red marks only a failed command; a nearly full
+  context turns amber.
+
+Nothing in this release was measured on a phone.
+
+**Fixed**
+
+- Symbols agents draw in their terminals, such as Claude Code's
+  `⏵⏵ auto mode on`, `⏺`, `⎿`, spinner stars and braille spinners, no
+  longer show as empty boxes on the card and in the pane.
+- A long machine address no longer leaves a gap in the middle of the cut.
+- `Mark reviewed` (was `Mark all reviewed`) no longer squeezes the Done
+  heading to `Do…` at large text.
+
+## [0.1.45] - 2026-10-29
+
+### Switch to the agent that needs you, from any chat
+
+Tap an agent's title to reach any other agent without going back to the
+board, and swipe sideways to walk only the agents that need you.
+
+> [!TIP]
+> Try it: in an agent's chat, tap its title (`Switch agent`); the last row,
+> `All agents on the board`, goes back to the board.
+
+- A small count beside the title says how many other agents need you. It
+  never moves and adds no row to the chat.
+- Swiping sideways now walks the agents that need you, then the finished
+  ones, and swiping back always returns where you were, even after you
+  answered one. At the end it says `All caught up`. The card that peeks in
+  shows what the agent asks or did last, and where it is in the walk.
+- Agents in several worktrees of one folder are told apart by their branch.
+- The Agents board says when it last heard from your machines (heard just
+  now, heard 3m ago), so a board that went quiet no longer looks live.
+- In a page from your machine, the `✕` at the top (`Close page`) returns
+  from any depth. The arrow (`Previous page`) goes back one page, and holding
+  it lists the `Pages in this visit`. `Reload` moved into the `⋯` options.
+- Tapping a row or card answers the instant your finger lands, and switching
+  tabs is instant.
+- An answer that needs a hold says Hold on its chip before you try a tap.
+- An offline agent keeps readable text; only its status mark dims. Text
+  fields have a clearer edge, and the floating bars lift in dark mode.
+- Messages you type to an agent get suggestions and capital letters, and a
+  password manager can fill machine passwords.
+- Removing a machine needs a hold. Removing a queued message or remembered
+  messages asks first, and a deleted quick phrase can be undone.
+- Errors read as a plain sentence with what to do next.
+
+Nothing in this release was measured on a phone.
+
+**Fixed**
+
+- A toast, pill or sheet dismissed while it was still arriving no longer
+  jumps before it leaves.
+- Pressing Send on the keyboard while the agent can't take a message no
+  longer does nothing silently: it says why.
+- The machine form's `Test connection` and Save no longer run at once, and
+  the port field takes digits only.
+- Errors no longer show internal codes or type names.
+
 ## [0.1.44] - 2026-10-29
 
 ### Queue messages while the agent works

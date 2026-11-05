@@ -75,6 +75,7 @@ class Toaster {
   /// the `MaterialApp`).
   factory Toaster.of(BuildContext context) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    // design-lint: allow(voice) a developer assertion, never shown to a person
     assert(overlay != null, 'showToast needs a context under the app\'s Navigator.');
     return Toaster(overlay!);
   }
@@ -232,7 +233,7 @@ class _ToastSlot {
   }
 }
 
-/// Wrap a bar that sits over the page's bottom edge (the tab bar, the batch
+/// Wrap a bar that sits over the page's bottom edge (the board's batch
 /// bar, a form's action bar) so toasts stand above it instead of covering its
 /// buttons. It counts only while its route is the one showing (under a pushed
 /// screen the bar is not there to clear) and while it is built.

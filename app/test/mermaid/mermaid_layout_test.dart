@@ -64,7 +64,7 @@ void main() {
       }
     });
 
-    test("the engine's white and pale-green fills do not light up a dark diagram", () {
+    test("the engine’s white and pale-green fills do not light up a dark diagram", () {
       final theme = core.MermaidTheme.darkTheme.copyWith(fontFamily: 'Inter', fontSize: 13);
       final d = _drawn('erDiagram\n USER ||--o{ ORDER : places\n USER {\n int id PK\n }', theme: theme);
       Iterable<core.SceneShape> shapes(List<core.SceneNode> nodes) sync* {
@@ -86,9 +86,9 @@ void main() {
       expect(label.style.fontFamily, 'Inter');
     });
 
-    test('a kind v1 does not draw says which one, and a syntax error says which line', () {
+    test('a kind v1 doesn’t draw says which one, and a syntax error says which line', () {
       final gantt = layoutMermaid(_job('gantt\n title x\n section a\n t1 :a1, 2024-01-01, 3d'));
-      expect((gantt as MermaidFailed).reason, startsWith("Can't draw gantt chart diagrams yet"));
+      expect((gantt as MermaidFailed).reason, startsWith("Can’t draw gantt chart diagrams yet"));
 
       final broken = layoutMermaid(_job('flowchart TD\n A-->'));
       expect((broken as MermaidFailed).reason, contains('line 2'));
@@ -107,12 +107,12 @@ void main() {
       expect(_drawn('flowchart TB\n A-->B\n B-->C\n C-->D\n D-->E\n E-->F\n F-->G').turned, isFalse);
     });
 
-    test("the author's own directive is kept: no profile line, so the error line is the source's", () {
+    test("the author’s own directive is kept: no profile line, so the error line is the source’s", () {
       final r = layoutMermaid(_job('%%{init: {"flowchart":{"padding":4}}}%%\nflowchart TD\n A-->'));
       expect((r as MermaidFailed).reason, contains('line 3'));
     });
 
-    test('an author fill the theme text does not read on gets text that does (4.5:1)', () {
+    test('an author fill the theme text doesn’t read on gets text that does (4.5:1)', () {
       final theme = core.MermaidTheme.darkTheme.copyWith(fontFamily: 'Inter', fontSize: 13);
       final d = _drawn('flowchart TD\n A[Hello world]\n style A fill:#e1f5fe', theme: theme);
       final label = _texts(d.scene.nodes).firstWhere((t) => t.text.contains('Hello'));

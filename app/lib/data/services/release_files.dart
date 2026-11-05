@@ -171,7 +171,7 @@ class HttpReleaseFiles implements ReleaseFiles {
       if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
         await response.drain<void>();
         part.deleteSync();
-        throw const StaleRelease('The partial download did not fit the release. Try again.');
+        throw const StaleRelease('The partial download didn’t fit the release. Try again.');
       }
       final resumed = have > 0 && response.statusCode == HttpStatus.partialContent;
       if (response.statusCode != HttpStatus.ok && !resumed) {
@@ -182,7 +182,7 @@ class HttpReleaseFiles implements ReleaseFiles {
           !(response.headers.value(HttpHeaders.contentRangeHeader) ?? 'bytes $have-').startsWith('bytes $have-')) {
         await response.drain<void>();
         part.deleteSync();
-        throw const StaleRelease('The partial download did not fit the release. Try again.');
+        throw const StaleRelease('The partial download didn’t fit the release. Try again.');
       }
       if (!resumed) have = 0;
       final sink = part.openWrite(mode: resumed ? FileMode.append : FileMode.write);
@@ -224,7 +224,7 @@ class HttpReleaseFiles implements ReleaseFiles {
     final got = await Isolate.run(() => _sha256Of(partPath));
     if (got != want) {
       part.deleteSync();
-      throw const StaleRelease('The download did not match its checksum, so it was thrown away. Try again.');
+      throw const StaleRelease('The download didn’t match its checksum, so it was thrown away. Try again.');
     }
     await File('${target.path}.sha256').writeAsString(got);
     await part.rename(target.path);
@@ -244,7 +244,7 @@ class HttpReleaseFiles implements ReleaseFiles {
       final m = RegExp(r'^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$').firstMatch(line);
       if (m != null && m[2] == release.fileName) return m[1]!.toLowerCase();
     }
-    throw UpdateException('Version ${release.version} has no checksum for its APK, so herdr will not install it.');
+    throw UpdateException('Version ${release.version} has no checksum for its APK, so herdr won’t install it.');
   }
 }
 

@@ -241,7 +241,7 @@ void main() {
   );
 
   // The release still: the invented demo fleet's studio-mac, where payments-api
-  // has a main checkout and two worktrees (no private names).
+  // has a main checkout and three worktrees (no private names).
   testWidgets('machine: the demo fleet\'s repo with its worktrees (release still)', (tester) async {
     final h = await DemoFleet.create(timed: true, worktrees: true);
     await shoot(

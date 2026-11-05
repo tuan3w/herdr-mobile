@@ -457,8 +457,8 @@ Tailscale.
     of 40 items showed one list buries the pictures below the first screen; a
     Segmented control with a white thumb, underline tabs and board chips were
     each tried in the sheet and rejected (a third look, a style the app does not
-    have, and "reads as a filter, in the middle"); the tab bar's capsule
-    on a borderless tinted pill read as tabs and as the app, so `Segmented` was rebuilt on it.
+    have, and "reads as a filter, in the middle"); the (since removed) tab
+    bar's capsule on a borderless tinted pill read as tabs and as the app, so `Segmented` was rebuilt on it.
 - **Keys are not a send.** `PaneViewModel.sendKeys` never sets `sending` (a
   tapped hotkey must not disable the key row) and keeps calls in order; only
   `sendLine` is a tracked send.
@@ -689,9 +689,10 @@ MediaStore code, which this app has none of: the share sheet is the way out.
 - **Deep links.** `DeepLinks` (`ui/support/deep_link.dart`) must be registered
   before the `MaterialApp` builds and it handles every pushed route:
   `herdr://agent/<machine>/<pane>`, `herdr://session/<machine>/<keeper>`,
-  `herdr://agents`. It turns the home screen to a tab through `HomeTabs`
-  (`ui/support/home_tabs.dart`) and goes back with `maybePop` one route at a
-  time, never `popUntil`, so a screen's `PopScope` guard is respected.
+  `herdr://agents`. It goes back with `maybePop` one route at a time, never
+  `popUntil`, so a screen's `PopScope` guard is respected, and opens Machines
+  or Settings over home through `HomePages` (`ui/shell/home_pages.dart`),
+  never a second copy of one already in front.
 
 ## Agent sessions (ACP)
 
@@ -722,8 +723,8 @@ Rules:
   `answerPermission`/`answerQuestion`, and cancel/end/dispose answer
   `cancelled`).
 - A session detaches 90 s after the app is backgrounded (the keeper keeps the
-  agent alive) and the repository's list timer runs only while the Agents tab
-  is visible.
+  agent alive) and the repository's list timer runs only while the board
+  is visible (not under a pushed page).
 - The permission card always shows the command and gates standing grants with
   a hold (`command_risk.dart`).
 - `SshTransport` pings only an idle link (25 s in the foreground, 330 s in the
@@ -1051,7 +1052,8 @@ Not done, and why:
   back gesture through the framework, and our Cupertino page transition is
   driven by it. Not verified on a device; if back swipes misbehave, remove it
   first.
-- **State that survives a launch**: theme and last root tab (`AppSettings`),
+- **State that survives a launch**: theme (`AppSettings`; the last root tab
+  went with the tabs),
   terminal font and wrap (`TerminalSettings`), and the agent screen in front
   with its view (`AgentScreens` with `PrefsAgentScreensStore`, prefs key
   `frontAgent.v1`, loaded in `main()`; `resumeAgent` puts it back in front

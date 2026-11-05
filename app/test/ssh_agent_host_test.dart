@@ -59,13 +59,13 @@ void main() {
       expect(await host.available(), isEmpty);
     });
 
-    test('a shell banner before the answer does not break it', () async {
+    test('a shell banner before the answer doesn’t break it', () async {
       answer(prints(['Welcome to the box', '42', '{"routes":["pi"]}']));
 
       expect(await host.available(), {'pi'});
     });
 
-    test('a missing python3 is fatal and says so in the host\'s words', () async {
+    test('a missing python3 is fatal and says so in the host’s words', () async {
       answer(fails(78, 'herdr-mobile: agent sessions need python3 on this host'));
 
       await expectLater(host.available(), throwsA(_hostError(fatal: true, message: contains('need python3'))));
@@ -118,23 +118,23 @@ void main() {
     test('runs the start command for the agent and folder and returns the keeper', () async {
       answer(
         prints([
-          '{"id":"k9","agent":"codex","cwd":"/home/me/it\'s a dir","state":"running","started_at":1700000000000}',
+          '{"id":"k9","agent":"codex","cwd":"/home/me/it’s a dir","state":"running","started_at":1700000000000}',
         ]),
       );
 
-      final info = await host.start(agent: 'codex', cwd: "/home/me/it's a dir");
+      final info = await host.start(agent: 'codex', cwd: "/home/me/it’s a dir");
 
       expect(info.id, 'k9');
-      expect(info.cwd, "/home/me/it's a dir");
-      expect(transport.execCommands, [keeperStartCommand(agent: 'codex', cwd: "/home/me/it's a dir")]);
+      expect(info.cwd, "/home/me/it’s a dir");
+      expect(transport.execCommands, [keeperStartCommand(agent: 'codex', cwd: "/home/me/it’s a dir")]);
     });
 
-    test('a folder that is missing is fatal, with the host\'s text', () async {
-      answer(fails(66, 'herdr-keeper: /nope is not a folder'));
+    test('a folder that is missing is fatal, with the host’s text', () async {
+      answer(fails(66, 'herdr-keeper: /nope isn’t a folder'));
 
       await expectLater(
         host.start(agent: 'omp', cwd: '/nope'),
-        throwsA(_hostError(fatal: true, message: 'herdr-keeper: /nope is not a folder')),
+        throwsA(_hostError(fatal: true, message: 'herdr-keeper: /nope isn’t a folder')),
       );
     });
 
@@ -143,7 +143,7 @@ void main() {
 
       await expectLater(
         host.start(agent: 'pi', cwd: '/x'),
-        throwsA(_hostError(fatal: true, message: contains('not installed'))),
+        throwsA(_hostError(fatal: true, message: contains('installed'))),
       );
     });
 
@@ -203,7 +203,7 @@ void main() {
       );
     });
 
-    test('output that is not JSON is reported with an excerpt', () async {
+    test('output that isn’t JSON is reported with an excerpt', () async {
       answer(prints(['segmentation fault (core dumped)']));
 
       await expectLater(
@@ -231,7 +231,7 @@ void main() {
       expect(channels.single.closeCalls, 1);
     });
 
-    test('the default start timeout outlasts the keeper\'s own initialize timeout', () {
+    test('the default start timeout outlasts the keeper’s own initialize timeout', () {
       final script = RegExp(r'INIT_TIMEOUT = (\d+)').firstMatch(keeperScript());
       final keeperSeconds = int.parse(script!.group(1)!);
 
@@ -304,20 +304,17 @@ void main() {
       expect(past.canList, isFalse);
     });
 
-    test('a folder that is gone and an agent that is not installed are fatal', () async {
-      answer(fails(66, 'herdr-mobile: the folder does not exist on this host: /gone'));
+    test('a folder that is gone and an agent that isn’t installed are fatal', () async {
+      answer(fails(66, 'herdr-mobile: the folder doesn’t exist on this host: /gone'));
       await expectLater(
         host.history(agent: 'omp', cwd: '/gone'),
-        throwsA(_hostError(fatal: true, message: contains('does not exist'))),
+        throwsA(_hostError(fatal: true, message: contains('doesn’t exist'))),
       );
       answer(fails(69));
-      await expectLater(
-        host.history(agent: 'pi'),
-        throwsA(_hostError(fatal: true, message: contains('not installed'))),
-      );
+      await expectLater(host.history(agent: 'pi'), throwsA(_hostError(fatal: true, message: contains('installed'))));
     });
 
-    test('an agent that fails or does not answer can be tried again, with its words', () async {
+    test('an agent that fails or doesn’t answer can be tried again, with its words', () async {
       answer(fails(70, 'herdr-mobile: omp: store unreadable'));
 
       await expectLater(
@@ -337,7 +334,7 @@ void main() {
       expect(transport.execCommands, isEmpty);
     });
 
-    test('a line that is not the answer is reported, and a command that hangs times out', () async {
+    test('a line that isn’t the answer is reported, and a command that hangs times out', () async {
       answer(prints(['segmentation fault']));
       await expectLater(host.history(agent: 'omp'), throwsA(_hostError(message: contains('segmentation'))));
 
@@ -365,8 +362,8 @@ void main() {
       transport.onExec = (_) => Future.error(const HerdrTransportException('Host key changed', fatal: true));
       await expectLater(host.list(), throwsA(_hostError(fatal: true, message: 'Host key changed')));
 
-      transport.onExec = (_) => Future.error(const HerdrTransportException('Cannot connect'));
-      await expectLater(host.list(), throwsA(_hostError(fatal: false, message: 'Cannot connect')));
+      transport.onExec = (_) => Future.error(const HerdrTransportException('Can’t connect'));
+      await expectLater(host.list(), throwsA(_hostError(fatal: false, message: 'Can’t connect')));
     });
 
     test('a channel that opens after the timeout is closed, not leaked', () async {
@@ -517,7 +514,7 @@ void main() {
       expect(installs, 1);
     });
 
-    test('a host without python3 fails the install fatally, and the command is not repeated', () async {
+    test('a host without python3 fails the install fatally, and the command isn’t repeated', () async {
       scripted(
         install: () => FakeExecChannel.run(code: 78, stderr: 'herdr-mobile: agent sessions need python3 on this host'),
       );
@@ -533,7 +530,7 @@ void main() {
       await expectLater(host.list(), throwsA(_hostError(fatal: false, message: contains('No space left'))));
     });
 
-    test('an install that does not say ok is a failure', () async {
+    test('an install that doesn’t say ok is a failure', () async {
       scripted(
         install: () => FakeExecChannel.run(stdout: ['{"ok":false}'], stderr: 'bad hash'),
       );
@@ -595,7 +592,7 @@ void main() {
       expect(attachChannel.sent, ['x']);
     });
 
-    test('once a command has worked, attach does not wait for any check', () async {
+    test('once a command has worked, attach doesn’t wait for any check', () async {
       final patient = SshAgentHost(transport, attachCheck: const Duration(seconds: 30));
       scripted(present: true);
       await patient.list();
@@ -695,10 +692,10 @@ void main() {
       expect(errors, isEmpty);
     });
 
-    test('a transport that cannot open the channel fails the attach', () async {
-      transport.onExec = (_) => Future.error(const HerdrTransportException('Cannot connect'));
+    test('a transport that can’t open the channel fails the attach', () async {
+      transport.onExec = (_) => Future.error(const HerdrTransportException('Can’t connect'));
 
-      await expectLater(host.attach('kp1'), throwsA(_hostError(message: 'Cannot connect')));
+      await expectLater(host.attach('kp1'), throwsA(_hostError(message: 'Can’t connect')));
     });
   });
 }

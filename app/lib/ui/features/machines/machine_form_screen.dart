@@ -205,7 +205,7 @@ class _FormState extends State<_Form> with RestorationMixin {
         context,
         title: 'Replace the current key?',
         message: typed
-            ? 'The private key in this form is replaced. If you have not kept a copy '
+            ? 'The private key in this form is replaced. If you haven’t kept a copy '
                   'elsewhere, it is gone for good.'
             : 'The key saved for this machine is replaced when you save. If you have not '
                   'kept a copy elsewhere, it is gone for good.',
@@ -370,9 +370,9 @@ class _FormState extends State<_Form> with RestorationMixin {
       message: switch ((hasKey, generated)) {
         (true, true) =>
           'This key was made on this phone and is saved nowhere else. If its '
-              'public key is already on the machine, this phone cannot log in with it.',
-        (true, false) => 'The key in this form and everything else entered here are not saved.',
-        _ => 'What you entered here is not saved.',
+              'public key is already on the machine, this phone can’t log in with it.',
+        (true, false) => 'The key in this form and everything else entered here aren’t saved.',
+        _ => 'What you entered here isn’t saved.',
       },
       confirmLabel: 'Discard',
     );
@@ -384,7 +384,7 @@ class _FormState extends State<_Form> with RestorationMixin {
   Future<bool?> _askAfterFailedTest(String? why) => showAppSheet<bool>(
     context,
     builder: (ctx) => SheetScaffold(
-      title: 'The new key could not connect',
+      title: 'The new key couldn’t connect',
       kind: SheetKind.message,
       actions: [
         AppButton(label: 'Keep the old key', expand: true, onPressed: () => Navigator.of(ctx).pop(false)),
@@ -404,7 +404,7 @@ class _FormState extends State<_Form> with RestorationMixin {
             const SizedBox(height: Gap.sm),
           ],
           Text(
-            'If its public key is not on the machine yet, saving now locks this phone out '
+            'If its public key isn’t on the machine yet, saving now locks this phone out '
             'of it, and the old key is gone.',
             style: Type.compact.copyWith(color: ctx.ds.textSecondary),
           ),
@@ -431,6 +431,7 @@ class _FormState extends State<_Form> with RestorationMixin {
       controller: _port,
       keyboardType: TextInputType.number,
       textInputAction: TextInputAction.next,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
       validator: (v) {
         final p = int.tryParse(v?.trim() ?? '');
         return (p == null || p < 1 || p > 65535) ? 'Invalid' : null;
@@ -451,7 +452,7 @@ class _FormState extends State<_Form> with RestorationMixin {
 
   Widget _toggle() => CircleButton(
     icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
-    tooltip: _obscure ? 'Show' : 'Hide',
+    tooltip: _obscure ? 'Show password' : 'Hide password',
     filled: false,
     size: CircleButton.compact,
     onPressed: () => setState(() => _obscure = !_obscure),
@@ -469,156 +470,162 @@ class _FormState extends State<_Form> with RestorationMixin {
         body: Column(
           children: [
             Expanded(
-              child: Form(
-                key: _formKey,
-                onChanged: vm.invalidateTest,
-                child: CustomScrollView(
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  slivers: [
-                    SliverLargeTitle.back(title: _editing ? 'Edit machine' : 'Add machine'),
-                    SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: gutter,
-                            child: Text(
-                              'herdr is reached over SSH. Nothing is exposed publicly and no '
-                              'relay is involved.',
-                              style: Type.compact.copyWith(color: ds.textSecondary),
+              child: AutofillGroup(
+                child: Form(
+                  key: _formKey,
+                  onChanged: vm.invalidateTest,
+                  child: CustomScrollView(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    slivers: [
+                      SliverLargeTitle.back(title: _editing ? 'Edit machine' : 'Add machine'),
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: gutter,
+                              child: Text(
+                                'herdr is reached over SSH. Nothing is exposed publicly and no '
+                                'relay is involved.',
+                                style: Type.compact.copyWith(color: ds.textSecondary),
+                              ),
                             ),
-                          ),
-                          FormSection(
-                            label: 'Machine',
-                            children: [
-                              LabeledField(
-                                label: 'Name',
-                                controller: _label,
-                                hint: 'Build server',
-                                textInputAction: TextInputAction.next,
-                              ),
-                              ..._hostAndPort(context),
-                              LabeledField(
-                                label: 'Username',
-                                controller: _user,
-                                validator: _required,
-                                textInputAction: TextInputAction.next,
-                              ),
-                            ],
-                          ),
-                          FormSection(
-                            label: 'Authentication',
-                            endsWithField: _auth != SshAuth.none,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: Gap.sm),
-                                child: _AuthPicker(
-                                  value: _auth,
-                                  onChanged: (a) {
-                                    setState(() => _authR.value = a.index);
-                                    vm.invalidateTest();
-                                  },
-                                ),
-                              ),
-                              if (_auth == SshAuth.none)
-                                Text(
-                                  'Nothing is stored. Tailscale already knows this phone, so no key '
-                                  'or password is needed. If your tailnet asks for an extra check, '
-                                  'the app shows a link to approve the sign-in.',
-                                  style: Type.secondary.copyWith(color: ds.textSecondary),
-                                ),
-                              if (_auth == SshAuth.key) ...[
-                                _KeyActions(
-                                  onGenerate: _generate,
-                                  showPublic: vm.hasSavedKey && _key.text.trim().isEmpty,
-                                  reading: vm.readingKey,
-                                  onShowPublic: () => vm.showSavedPublicKey(_passphrase.text),
-                                ),
+                            FormSection(
+                              label: 'Machine',
+                              children: [
                                 LabeledField(
-                                  label: 'Private key (PEM / OpenSSH)',
-                                  controller: _key,
-                                  mono: true,
-                                  minLines: 4,
-                                  maxLines: 6,
-                                  onChanged: (_) => _keyEdited(),
-                                  hint: _editing
-                                      ? 'Leave blank to keep the saved key'
-                                      : '-----BEGIN OPENSSH PRIVATE KEY-----',
-                                  validator: (v) =>
-                                      !_editing && (v == null || v.trim().isEmpty) ? 'Paste your private key' : null,
-                                  suffix: Align(
-                                    widthFactor: 1,
-                                    heightFactor: 1,
-                                    alignment: Alignment.topCenter,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(top: Gap.xs),
-                                      child: CircleButton(
-                                        icon: LucideIcons.clipboardPaste,
-                                        tooltip: 'Paste from clipboard',
-                                        filled: false,
-                                        size: CircleButton.compact,
-                                        onPressed: _paste,
+                                  label: 'Name',
+                                  prose: true,
+                                  controller: _label,
+                                  hint: 'Build server',
+                                  textInputAction: TextInputAction.next,
+                                ),
+                                ..._hostAndPort(context),
+                                LabeledField(
+                                  label: 'Username',
+                                  autofillHints: const [AutofillHints.username],
+                                  controller: _user,
+                                  validator: _required,
+                                  textInputAction: TextInputAction.next,
+                                ),
+                              ],
+                            ),
+                            FormSection(
+                              label: 'Authentication',
+                              endsWithField: _auth != SshAuth.none,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: Gap.sm),
+                                  child: _AuthPicker(
+                                    value: _auth,
+                                    onChanged: (a) {
+                                      setState(() => _authR.value = a.index);
+                                      vm.invalidateTest();
+                                    },
+                                  ),
+                                ),
+                                if (_auth == SshAuth.none)
+                                  Text(
+                                    'Nothing is stored. Tailscale already knows this phone, so no key '
+                                    'or password is needed. If your tailnet asks for an extra check, '
+                                    'the app shows a link to approve the sign-in.',
+                                    style: Type.secondary.copyWith(color: ds.textSecondary),
+                                  ),
+                                if (_auth == SshAuth.key) ...[
+                                  _KeyActions(
+                                    onGenerate: _generate,
+                                    showPublic: vm.hasSavedKey && _key.text.trim().isEmpty,
+                                    reading: vm.readingKey,
+                                    onShowPublic: () => vm.showSavedPublicKey(_passphrase.text),
+                                  ),
+                                  LabeledField(
+                                    label: 'Private key (PEM / OpenSSH)',
+                                    controller: _key,
+                                    mono: true,
+                                    minLines: 4,
+                                    maxLines: 6,
+                                    onChanged: (_) => _keyEdited(),
+                                    hint: _editing
+                                        ? 'Leave blank to keep the saved key'
+                                        : '-----BEGIN OPENSSH PRIVATE KEY-----',
+                                    validator: (v) =>
+                                        !_editing && (v == null || v.trim().isEmpty) ? 'Paste your private key' : null,
+                                    suffix: Align(
+                                      widthFactor: 1,
+                                      heightFactor: 1,
+                                      alignment: Alignment.topCenter,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: Gap.xs),
+                                        child: CircleButton(
+                                          icon: LucideIcons.clipboardPaste,
+                                          tooltip: 'Paste from clipboard',
+                                          filled: false,
+                                          size: CircleButton.compact,
+                                          onPressed: _paste,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                if (vm.publicKey != null || vm.publicKeyError != null)
-                                  _PublicKeyPanel(
-                                    replacesSaved: vm.publicKeyGenerated && vm.hasSavedKey,
-                                    publicKey: vm.publicKey,
-                                    error: vm.publicKeyError,
-                                    onCopyKey: () => _copy(vm.publicKey!, 'Public key copied'),
-                                    onCopyCommand: () =>
-                                        _copy(KeyGenerator.authorizedKeysCommand(vm.publicKey!), 'Command copied'),
+                                  if (vm.publicKey != null || vm.publicKeyError != null)
+                                    _PublicKeyPanel(
+                                      replacesSaved: vm.publicKeyGenerated && vm.hasSavedKey,
+                                      publicKey: vm.publicKey,
+                                      error: vm.publicKeyError,
+                                      onCopyKey: () => _copy(vm.publicKey!, 'Public key copied'),
+                                      onCopyCommand: () =>
+                                          _copy(KeyGenerator.authorizedKeysCommand(vm.publicKey!), 'Command copied'),
+                                    ),
+                                  LabeledField(
+                                    label: 'Key passphrase (if any)',
+                                    autofillHints: const [AutofillHints.password],
+                                    controller: _passphrase,
+                                    obscure: _obscure,
+                                    suffix: _toggle(),
                                   ),
-                                LabeledField(
-                                  label: 'Key passphrase (if any)',
-                                  controller: _passphrase,
-                                  obscure: _obscure,
-                                  suffix: _toggle(),
-                                ),
-                              ],
-                              if (_auth == SshAuth.password)
-                                LabeledField(
-                                  label: 'Password',
-                                  controller: _password,
-                                  obscure: _obscure,
-                                  hint: _editing ? 'Leave blank to keep the saved password' : null,
-                                  validator: (v) => !_editing && (v == null || v.isEmpty) ? 'Required' : null,
-                                  suffix: _toggle(),
-                                ),
-                            ],
-                          ),
-                          SectionLabel(
-                            label: 'Advanced',
-                            expanded: _advanced,
-                            onTap: () => setState(() => _advancedR.value = !_advanced),
-                          ),
-                          Collapse(
-                            open: _advanced,
-                            child: FormPanel(
-                              children: [
-                                LabeledField(
-                                  key: _sessionKey,
-                                  label: 'herdr session',
-                                  controller: _session,
-                                  helper: 'Named sessions need herdr 0.9+ on the machine',
-                                  validator: _sessionError,
-                                ),
-                                LabeledField(
-                                  label: 'API socket path (optional)',
-                                  controller: _socket,
-                                  hint: '~/.config/herdr/herdr.sock',
-                                  helper: 'Only used when herdr lacks remote-api-bridge',
-                                ),
+                                ],
+                                if (_auth == SshAuth.password)
+                                  LabeledField(
+                                    label: 'Password',
+                                    autofillHints: const [AutofillHints.password],
+                                    controller: _password,
+                                    obscure: _obscure,
+                                    hint: _editing ? 'Leave blank to keep the saved password' : null,
+                                    validator: (v) => !_editing && (v == null || v.isEmpty) ? 'Required' : null,
+                                    suffix: _toggle(),
+                                  ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: Gap.xl),
-                        ],
+                            SectionLabel(
+                              label: 'Advanced',
+                              expanded: _advanced,
+                              onTap: () => setState(() => _advancedR.value = !_advanced),
+                            ),
+                            Collapse(
+                              open: _advanced,
+                              child: FormPanel(
+                                children: [
+                                  LabeledField(
+                                    key: _sessionKey,
+                                    label: 'herdr session',
+                                    controller: _session,
+                                    helper: 'Named sessions need herdr 0.9+ on the machine',
+                                    validator: _sessionError,
+                                  ),
+                                  LabeledField(
+                                    label: 'API socket path (optional)',
+                                    controller: _socket,
+                                    hint: '~/.config/herdr/herdr.sock',
+                                    helper: 'Only used when herdr lacks remote-api-bridge',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: Gap.xl),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -654,13 +661,14 @@ class _ActionBar extends StatelessWidget {
       kind: AppButtonKind.secondary,
       expand: true,
       loading: testing,
-      onPressed: onTest,
+      // One at a time: Save reads the test's result, and Test must not race it.
+      onPressed: vm.saving ? null : onTest,
     );
     final save = AppButton(
       label: editing ? 'Save' : 'Add machine',
       expand: true,
       loading: vm.saving,
-      onPressed: onSave,
+      onPressed: testing ? null : onSave,
     );
 
     return FormActionBar(
@@ -724,7 +732,7 @@ class _TestResult extends StatelessWidget {
     final approval = vm.testState == TestState.testing ? vm.approvalUrl : null;
     final saveError = vm.saveError;
     final (Color color, IconData icon, String title, String? detail)? view = saveError != null
-        ? (ds.danger, LucideIcons.circleAlert, 'Could not save', saveError)
+        ? (ds.danger, LucideIcons.circleAlert, 'Couldn’t save', saveError)
         : approval != null
         ? (
             ds.blocked,
@@ -741,7 +749,7 @@ class _TestResult extends StatelessWidget {
               '${countOf(vm.workspaceCount, 'workspace')}'
                   '${vm.fingerprint == null ? '' : '\nHost key ${vm.fingerprint}'}',
             ),
-            TestState.failed => (ds.danger, LucideIcons.circleAlert, 'Could not connect', vm.message),
+            TestState.failed => (ds.danger, LucideIcons.circleAlert, 'Couldn’t connect', vm.message),
             _ => null,
           };
     return AnimatedSize(

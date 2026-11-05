@@ -75,7 +75,7 @@ class _ReleaseHistoryScreenState extends State<ReleaseHistoryScreen> {
                   ? Padding(
                       padding: const EdgeInsets.all(Gap.gutter),
                       child: Text(
-                        'The release notes could not be read on this phone.',
+                        'The release notes couldn’t be read on this phone.',
                         style: Type.secondary.copyWith(color: ds.textSecondary),
                       ),
                     )

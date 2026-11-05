@@ -57,7 +57,7 @@ import '../composer/unknown_command.dart';
 
 /// One agent's terminal, one screen: the slim bar ([PaneTopBar]), then the
 /// pane's banner, terminal, answer dock, quick keys and composer. A swipe on
-/// the terminal goes to the next agent in the board's order (it replaces this
+/// the terminal goes to the next agent that wants the person (it replaces this
 /// screen, so Back still goes to the board); the options sheet's `Show chat`
 /// shows the same agent's chat when it has one.
 ///
@@ -240,7 +240,7 @@ class _PaneScreenState extends State<PaneScreen> {
           if (machine != null && connectTarget != null)
             SheetAction(
               label: 'Read as chat…',
-              icon: LucideIcons.messageSquare,
+              icon: HerdrIcons.message,
               onTap: () => unawaited(showConnectChat(context, machine, _paneId, connectTarget)),
             ),
           _duplicateAction(),
@@ -269,6 +269,7 @@ class _PaneScreenState extends State<PaneScreen> {
           children: [
             _Chrome(
               bar: PaneTopBar(
+                agent: widget.agent,
                 title: _title,
                 viewModel: vm,
                 machine: machine,
@@ -916,7 +917,7 @@ class _BannerState extends State<_Banner> {
         color: link.state.color(ds),
         icon: switch (link.state) {
           LinkState.connecting => LucideIcons.loader,
-          LinkState.attention => LucideIcons.triangleAlert,
+          LinkState.attention => LucideIcons.circleAlert,
           LinkState.approval => LucideIcons.keyRound,
           LinkState.disabled => LucideIcons.ban,
           _ => LucideIcons.wifiOff,

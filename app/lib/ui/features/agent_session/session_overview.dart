@@ -195,12 +195,11 @@ class _SessionOverviewState extends State<SessionOverview> {
   }
 
   List<Widget> _commands(BuildContext context, SessionOverviewModel model) {
-    final ds = context.ds;
     return [
       _Section(
         'Commands',
-        detail: ['${model.commandCount}', if (model.failedCommands > 0) '${model.failedCommands} failed'].join(' · '),
-        detailColor: model.failedCommands > 0 ? ds.dangerText : null,
+        detail: '${model.commandCount}',
+        alert: model.failedCommands > 0 ? '${model.failedCommands} failed' : null,
       ),
       for (final (i, c) in model.commands.indexed)
         _CommandRow(command: c, open: _open.contains('cmd:$i'), onTap: () => _toggle('cmd:$i')),
@@ -277,15 +276,13 @@ class _SessionOverviewState extends State<SessionOverview> {
                   ),
                 ],
               ),
+              // The why stays quiet even for a dangerous mode: the warning
+              // and the mode's name already say it, and red here was one of
+              // six on the sheet, louder than what needs the person.
               if (c.isRisky && c.reason != null)
                 Padding(
                   padding: const EdgeInsets.only(left: _nameWidth, top: Gap.hair),
-                  child: Text(
-                    c.reason!,
-                    style: Type.caption.copyWith(
-                      color: c.risk == ModeRisk.dangerous ? ds.dangerText : ds.textSecondary,
-                    ),
-                  ),
+                  child: Text(c.reason!, style: Type.caption.copyWith(color: ds.textSecondary)),
                 ),
             ],
           ),
@@ -299,16 +296,19 @@ class _SessionOverviewState extends State<SessionOverview> {
     final percent = fraction == null ? null : (fraction * 100).round().clamp(0, 100);
     final warn = fraction != null && fraction >= contextWarnAt;
     final cost = usage?.costAmount;
+    // A context nearly full is worth a look, not a failure: past
+    // [contextWarnAt] the bar takes the working colour and the words their
+    // weight, never the danger red, which on this sheet is for what failed.
     return [
       _Section('Context and cost'),
       if (fraction != null) ...[
-        _Bar(fraction: fraction, color: warn ? ds.danger : ds.textSecondary),
+        _Bar(fraction: fraction, color: warn ? ds.working : ds.textSecondary),
         Padding(
           padding: const EdgeInsets.only(top: Gap.sm),
           child: Text(
             '${formatTokens(usage!.used)} of ${formatTokens(usage.size)} tokens · $percent% of context',
             style: (warn ? Type.secondaryStrong : Type.secondary).copyWith(
-              color: warn ? ds.dangerText : ds.textSecondary,
+              color: ds.textSecondary,
               fontFeatures: Type.tabular,
             ),
           ),
@@ -382,11 +382,15 @@ class _SessionOverviewState extends State<SessionOverview> {
 }
 
 class _Section extends StatelessWidget {
-  const _Section(this.title, {this.detail, this.detailColor, this.trailing});
+  const _Section(this.title, {this.detail, this.detailColor, this.alert, this.trailing});
 
   final String title;
   final String? detail;
   final Color? detailColor;
+
+  /// What failed, after [detail], in the danger text: the one red words of
+  /// the sheet (`2 · 1 failed`: the total stays quiet).
+  final String? alert;
   final Widget? trailing;
 
   @override
@@ -409,6 +413,16 @@ class _Section extends StatelessWidget {
                         text: ' · $detail',
                         style: Type.label.copyWith(color: detailColor ?? ds.textMuted, fontFeatures: Type.tabular),
                       ),
+                    if (alert != null) ...[
+                      TextSpan(
+                        text: ' · ',
+                        style: Type.label.copyWith(color: ds.textMuted),
+                      ),
+                      TextSpan(
+                        text: alert,
+                        style: Type.label.copyWith(color: ds.dangerText, fontFeatures: Type.tabular),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -518,8 +532,9 @@ class _StatusRow extends StatelessWidget {
   }
 }
 
-/// One command: the command in mono on a line, `exit 1` at the end (the
-/// danger text and a cross when it failed); a tap shows all of it.
+/// One command: the command in mono on a line, `exit 1` at the end, muted
+/// even when it failed (the failed disc in front already says so, in the
+/// one red the row has); a tap shows all of it.
 class _CommandRow extends StatelessWidget {
   const _CommandRow({required this.command, required this.open, required this.onTap});
 
@@ -559,10 +574,7 @@ class _CommandRow extends StatelessWidget {
               const SizedBox(width: Gap.sm),
               Text(
                 code,
-                style: (command.failed ? Type.captionStrong : Type.caption).copyWith(
-                  color: command.failed ? ds.dangerText : ds.textMuted,
-                  fontFeatures: Type.tabular,
-                ),
+                style: Type.caption.copyWith(color: ds.textMuted, fontFeatures: Type.tabular),
               ),
             ],
           ],

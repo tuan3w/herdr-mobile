@@ -1,6 +1,6 @@
 # Settings, updates and the shell
 
-The Settings tab, updates, root-tab navigation, links that fail, what survives a launch.
+The Settings page, updates, how home opens Machines and Settings, links that fail, what survives a launch.
 
 The design system (tokens, kit, motion, words) is `docs/DESIGN.md`; this file holds what this screen does and why.
 
@@ -10,12 +10,13 @@ The theme is a setting (`ThemeChoice` light / dark / system, `AppSettings`),
 `main()` before `runApp`, so the first frame is already right. `MaterialApp`
 switches instantly (`themeAnimationDuration: Duration.zero`): a cross-fade
 would lerp `ThemeData` per frame and rebuild every mounted screen, including
-the hidden Agents board. The system bars follow the resolved brightness, so
+the Agents board under a page. The system bars follow the resolved brightness, so
 `system` follows the phone.
 
-Settings is the third tab (`features/settings/`): five rows, each saying what
+Settings is a page over home, opened from the gear in the board's header
+(`features/settings/`): five rows, each saying what
 it is set to and opening in place (`SettingsGroup`, on `Collapse`), one at a
-time. Look (theme, agent list density, the terminal font size stepper 8 to 22
+time. Look (theme, the terminal font size stepper 8 to 22
 with a sample line, wrap, Dark terminal, and Smooth text: streaming answers at
 an even pace, on by default, `AppSettings.smoothText`; the terminal ones edit
 the pane's `TerminalSettings`), Agents (how agents open, and Quick phrases, a
@@ -30,22 +31,22 @@ and a group grows without lengthening the page. A row shows values, not setting 
 "Blocked by Android"), and a closed group is not built. Two tiles are tinted,
 and only two: notifications Android blocks (orange, the colour that means
 "needs you") and a newer version (the accent, a suggestion). The groups start
-closed; the tab keeps its state, so a later visit shows what was left open.
+closed on every visit: each visit is a new page, opened at its top.
 The version is `lib/data/app_info.dart`; `test/app_settings_test.dart` fails
 when it differs from `pubspec.yaml`. `AppSwitch` / `SwitchRow` are the kit's
 (`ui/core/switch.dart`).
 
 **Updates** (`features/settings/update_group.dart`, `AppUpdate`). A newer
 version on GitHub is a suggestion, so it is quiet: a 10 dp accent dot on the
-Settings tab's icon (`TabSpec.mark`; the loud orange count stays the Agents
-badge's alone) and an `Update available` row at the top of Settings, absent
-when there is nothing newer. No toast, no notification, nothing on the board,
-and no sheet that opens by itself. The row says the version and its size; a
-tap opens the update sheet (`showUpdateSheet`). Settings keeps its place
-between visits, so arriving on the page with a version whose sheet was not
-opened yet scrolls it back to the top, row in view: the dot is what brought
-the person there. A version found while the page is showing does not move
-it: nothing moves under the thumb.
+gear in home's header (`CircleButton.mark`; never a count, the loud colour is
+for a question) and an `Update available` row at the top of Settings, absent
+when there is nothing newer. No toast, no notification, nothing else on the
+board, and no sheet that opens by itself. The row says the version and its
+size; a tap opens the update sheet (`showUpdateSheet`). Each visit opens the
+page at its top, so the row is in view when the dot brings the person there.
+(As a tab the page kept its place and had to scroll itself back to the row;
+that code went with the tab.) A version found while the page is showing does
+not move it: nothing moves under the thumb.
 
 The sheet is the whole update, read before acted on. Why: Download used to be
 the row's main button with `What's new` a text button beside it, and the
@@ -81,34 +82,40 @@ started by a tap (it is ~50 MB of the person's radio). Android only:
 updates.
 
 
-Back on Machines or Settings returns to Agents
-first; on Agents it is as before (background while watching, else leave), and
-the board's selection mode still takes it first.
+**Home and its pages.** There are no tabs: home is the Agents board, and
+Machines and Settings are pages pushed over it from its header (the machines
+chip, the gear) through `HomePages` (`ui/shell/home_pages.dart`), which the
+app hands to the shell and to `DeepLinks`. Opening the page already in front
+does nothing, so a quick second tap never stacks a second copy. Back on
+Machines or Settings returns home; on home it is as before (background while
+watching, else leave), and the board's selection mode still takes it first.
 
-Code outside the shell selects a root tab through `HomeTabs`
-(`ui/support/home_tabs.dart`), which the app hands to the shell and to
-`DeepLinks`; the switch is the tab bar's (fade, remembered), and selecting the
-tab already showing does nothing (it does not scroll the board). The summary
-notification (`N agents need you`, `herdr://agents`) selects Agents and goes
-back to the shell. Why: it used to land on whatever tab the app was left on,
-so the person tapped "agents need you" and saw Machines. Going back is the way
-Back goes (`maybePop`, one route at a time), never `popUntil`: a screen that
-asks before it closes (the machine form with unsaved input) asks, and if the
-person keeps it, it stays with the tab waiting under it. Why: a notification
-tap must not throw away a half-filled form, and the form already has the guard.
+The summary notification (`N agents need you`, `herdr://agents`) goes back to
+home. Going back is the way Back goes (`maybePop`, one route at a time), never
+`popUntil`: a screen that asks before it closes (the machine form with unsaved
+input) asks, and if the person keeps it, it stays; if they discard it, the
+page it was opened from is in front, one Back from home (the link goes no
+further on its own once a guard has the person's attention). Why: a
+notification tap must not throw away a half-filled form, and the form already
+has the guard.
 
 A link that cannot be followed (unknown machine, switched off, unreachable,
 agent gone, not a herdr link) moves nothing: it says why in a toast over the
-screen in front, and the toast's button opens the tab where the next step can
-succeed: `Open Machines` for a machine to add, switch on or retry (Enable and
-Retry live there), `Open Agents` for an agent that is gone or a link the app
-cannot read. The button goes back the same guarded way, and is left out when
-that tab is already in front. Why: never a dead end, never a silent loss; a
+screen in front, and the toast's button opens the page where the next step
+can succeed: `Open Machines` for a machine to add, switch on or retry (Enable
+and Retry live there), `Open Agents` (home) for an agent that is gone or a link
+the app cannot read. The button goes back the same guarded way until that page
+or home is in front, then opens the page over home; it is left out when that
+page is already in front. Why: never a dead end, never a silent loss; a
 failure used to close everything, form included, and offer nothing.
 
 ## What survives a launch
 
-The theme, the root tab the app was left on, Smooth text, the terminal font and
+The app opens on home. (The root tab it was left on used to be remembered;
+with no tabs there is nothing to remember, `app.homeTab.v1` is no longer
+read, and Machines and Settings, pages now, are not put back.)
+
+The theme, Smooth text, the terminal font and
 wrap, and the agent screen in front with its view (`frontAgent.v1`): it is put
 back once, at once and without the slide, as if the app never closed. A
 session the phone has not listed yet is waited for, up to 8 s, while the board

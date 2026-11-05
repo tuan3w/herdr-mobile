@@ -102,7 +102,7 @@ void main() {
     expect(session.sent, ['then run the tests twice']);
   });
 
-  testWidgets('a message that went out while it was being edited says so and cannot be saved', (tester) async {
+  testWidgets('a message that went out while it was being edited says so and can’t be saved', (tester) async {
     final session = working();
     await pump(tester, session);
     await queue(tester, 'then run the tests');
@@ -127,13 +127,19 @@ void main() {
     await queue(tester, 'one');
     await queue(tester, 'two');
 
+    // Removing drops the text and its attachments and cannot be undone, so it asks first.
     await tester.tap(find.byTooltip('Remove queued message').first);
+    await settle(tester, 300);
+    expect(session.queued.map((m) => m.text), ['one', 'two'], reason: 'nothing goes until it is confirmed');
+    await tester.tap(find.widgetWithText(AppButton, 'Remove').last);
     await settle(tester, 300);
     expect(session.queued.map((m) => m.text), ['two']);
 
     await tester.tap(find.text('two'));
     await settle(tester);
     await tester.tap(find.widgetWithText(AppButton, 'Remove'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(AppButton, 'Remove').last);
     await settle(tester);
     expect(session.queued, isEmpty);
 
@@ -150,7 +156,7 @@ void main() {
 
     session.cancel();
     await settle(tester, 300);
-    expect(session.sent, isEmpty, reason: 'the turn has not stopped yet');
+    expect(session.sent, isEmpty, reason: 'the turn hasn’t stopped yet');
     expect(find.text('then run the tests'), findsOneWidget, reason: 'each message is still its own row');
     expect(find.text('Resume'), findsNothing, reason: 'not held: Stop is going on with these');
 
@@ -182,19 +188,19 @@ void main() {
     await tester.pump();
     expect(find.byIcon(LucideIcons.listPlus), findsOneWidget);
 
-    await tester.tap(find.byIcon(LucideIcons.square));
+    await tester.tap(find.byIcon(HerdrIcons.stopMark));
     await tester.pump(const Duration(milliseconds: 50));
     expect(session.cancelCount, 1);
-    expect(tester.widget<TextField>(field).controller!.text, 'a draft', reason: 'Stop does not touch the draft');
+    expect(tester.widget<TextField>(field).controller!.text, 'a draft', reason: 'Stop doesn’t touch the draft');
   });
 
-  testWidgets('Stop is its own button: Send keeps its place and a double tap on Queue cannot reach Stop', (
+  testWidgets('Stop is its own button: Send keeps its place and a double tap on Queue can’t reach Stop', (
     tester,
   ) async {
     final session = working();
     await pump(tester, session);
     final sendAt = tester.getCenter(find.byIcon(LucideIcons.listPlus));
-    final stopAt = tester.getCenter(find.byIcon(LucideIcons.square));
+    final stopAt = tester.getCenter(find.byIcon(HerdrIcons.stopMark));
     expect(stopAt.dx, lessThan(sendAt.dx), reason: 'Stop sits left of Send');
 
     await tester.enterText(field, 'then run the tests');
@@ -206,9 +212,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(session.queued, hasLength(1), reason: 'the second tap met an empty field');
     expect(session.cancelCount, 0);
-    expect(tester.getCenter(find.byIcon(LucideIcons.square)), stopAt, reason: 'sending moves nothing');
+    expect(tester.getCenter(find.byIcon(HerdrIcons.stopMark)), stopAt, reason: 'sending moves nothing');
 
-    await tester.tap(find.byIcon(LucideIcons.square));
+    await tester.tap(find.byIcon(HerdrIcons.stopMark));
     await tester.pump(const Duration(milliseconds: 50));
     expect(session.cancelCount, 1);
   });
@@ -216,16 +222,16 @@ void main() {
   testWidgets('Stop appearing with a turn takes no tap for 450 ms', (tester) async {
     final session = FakeAgentSession();
     await pump(tester, session);
-    expect(find.byIcon(LucideIcons.square), findsNothing);
+    expect(find.byIcon(HerdrIcons.stopMark), findsNothing);
 
     session.update((s) => s.withTurnStarted());
     await tester.pump();
-    await tester.tap(find.byIcon(LucideIcons.square));
+    await tester.tap(find.byIcon(HerdrIcons.stopMark));
     await tester.pump(const Duration(milliseconds: 50));
     expect(session.cancelCount, 0, reason: 'a tap meant for Send');
 
     await tester.pump(Dwell.tapGuard);
-    await tester.tap(find.byIcon(LucideIcons.square));
+    await tester.tap(find.byIcon(HerdrIcons.stopMark));
     await tester.pump(const Duration(milliseconds: 50));
     expect(session.cancelCount, 1);
   });
@@ -252,7 +258,7 @@ void main() {
       ..observed = true
       ..steerable = true;
     await pump(tester, session);
-    expect(find.byIcon(LucideIcons.square), findsOneWidget);
+    expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
     await tester.enterText(field, 'hello');
     await tester.pump();
     expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget);

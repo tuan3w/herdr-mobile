@@ -73,9 +73,16 @@ void main() {
 
         final text = tester.widget<Text>(subject);
         expect(text.style!.fontFamily, monoFamily);
-        expect(text.style!.fontSize, Mono.base.fontSize);
+        expect(text.style!.fontSize, Mono.input.fontSize);
         expect(text.style!.color, isNotNull);
-        expect(text.maxLines, 2);
+        expect(text.maxLines, 3);
+        final asked = tester.widget<Text>(question).style!;
+        expect(asked.fontSize, lessThanOrEqualTo(text.style!.fontSize!));
+        expect(
+          asked.color,
+          isNot(text.style!.color),
+          reason: 'the command is what is approved; the question steps back',
+        );
         expect(text.overflow, TextOverflow.ellipsis);
 
         // Right padding 44 keeps the reply button clear of both texts.
@@ -164,16 +171,16 @@ void main() {
       expect(tester.takeException(), isNull);
 
       final text = tester.widget<Text>(find.text(subject));
-      expect(text.maxLines, 2);
+      expect(text.maxLines, 3);
       expect(text.overflow, TextOverflow.ellipsis);
-      // Two lines of Mono.base at 2x and no more.
+      // Three lines of Mono.input at 2x and no more.
       expect(
         tester.getSize(find.text(subject)).height,
-        lessThanOrEqualTo(2 * Mono.base.fontSize! * Mono.base.height! * 2 + 1),
+        lessThanOrEqualTo(3 * Mono.input.fontSize! * Mono.input.height! * 2 + 1),
       );
       expect(
         tester.getSize(find.text(prompt.question)).height,
-        lessThanOrEqualTo(2 * 14 * 1.35 * 2 + 1),
+        lessThanOrEqualTo(2 * Type.secondaryStrong.fontSize! * Type.secondaryStrong.height! * 2 + 1),
         reason: 'with a subject the question is held to two lines',
       );
 
@@ -288,7 +295,7 @@ void main() {
       final prompt = PromptInfo(question: _question, subject: subject, replies: _push.replies);
       final h = await _board(tester, prompt);
 
-      await tester.tap(find.byTooltip('Reply to task 1'));
+      await tester.tap(replyTo('task 1'));
       await settle(tester);
 
       final inSheet = find.descendant(of: find.byType(ReplySheet), matching: find.text(subject));
@@ -297,7 +304,7 @@ void main() {
       expect(text.maxLines, isNull, reason: 'the sheet is where the full command is read');
       expect(text.overflow, isNot(TextOverflow.ellipsis));
       expect(text.style!.fontFamily, monoFamily);
-      expect(text.style!.fontSize, Mono.base.fontSize);
+      expect(text.style!.fontSize, Mono.input.fontSize);
       expect(
         tester.getSize(inSheet).height,
         greaterThan(3 * 12.5 * 1.35 * 1.5),
@@ -313,7 +320,7 @@ void main() {
 
     testWidgets('its confirm chip names the reason too', (tester) async {
       final h = await _board(tester, _push);
-      await tester.tap(find.byTooltip('Reply to task 1'));
+      await tester.tap(replyTo('task 1'));
       await settle(tester);
 
       Finder inSheet(String text) => find.descendant(of: find.byType(ReplySheet), matching: find.text(text));

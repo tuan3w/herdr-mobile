@@ -323,7 +323,7 @@ Future<BatchResult> runBatch(BatchPlan plan, {String text = ''}) async {
 
 String _words(Exception e) {
   final text = switch (e) {
-    HerdrUnsupportedException() => 'this herdr cannot do that, update it',
+    HerdrUnsupportedException() => 'this herdr can’t do that, update it',
     HerdrApiException(:final message) => message,
     HerdrTransportException(:final message) => message,
     AgentHostException(:final message) => message,

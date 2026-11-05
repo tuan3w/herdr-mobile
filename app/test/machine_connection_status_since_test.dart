@@ -5,6 +5,7 @@ import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/models/status_time.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
+import 'package:herdr_mobile/ui/features/agents/agents_screen.dart' show heardLabel;
 
 import 'support/fake_transport.dart';
 import 'support/memory_snapshot_cache.dart';
@@ -57,6 +58,22 @@ void _rig(String name, List<_P> panes, void Function(_Rig r) body) => test(
 );
 
 void main() {
+  group('heardAgo', () {
+    _rig('grows while the machine says nothing, and resets when it answers', [_pane('w1:p1', 'working')], (r) {
+      expect(r.c.heardAgo(), Duration.zero, reason: 'the first snapshot is an answer');
+      r.advance(const Duration(minutes: 3));
+      expect(r.c.heardAgo(), const Duration(minutes: 3));
+      r.server([_pane('w1:p1', 'working')]);
+      expect(r.c.heardAgo(), Duration.zero);
+    });
+
+    _rig('the board says how long the quietest connected machine has been silent', [_pane('w1:p1', 'working')], (r) {
+      expect(heardLabel([r.c]), 'heard just now');
+      r.advance(const Duration(minutes: 3));
+      expect(heardLabel([r.c]), contains('3m'));
+    });
+  });
+
   group('statusSince', () {
     _rig('panes already there at first sight have no known start', [_pane('w1:p1', 'working')], (r) {
       expect(r.c.statusSince('w1:p1'), isNull);

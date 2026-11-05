@@ -14,7 +14,7 @@ abstract interface class ReleaseFeed {
   Future<ReleaseInfo?> newerThan(AppVersion current);
 }
 
-const _unreadable = UpdateException('GitHub sent something herdr could not read. Try again later.');
+const _unreadable = UpdateException('GitHub sent something herdr couldn’t read. Try again later.');
 
 /// Words for what went wrong talking to GitHub, for [UpdateException]. A
 /// failure the person caused or can fix says so; everything else says what
@@ -22,13 +22,13 @@ const _unreadable = UpdateException('GitHub sent something herdr could not read.
 UpdateException updateFailure(Object error, {String doing = 'reach GitHub'}) {
   if (error is UpdateException) return error;
   if (error is TimeoutException || error is SocketException || error is HandshakeException || error is HttpException) {
-    return UpdateException('Could not $doing. Check the connection and try again.');
+    return UpdateException('Couldn’t $doing. Check the connection and try again.');
   }
   if (error is FileSystemException) {
-    return const UpdateException('Could not save the update on this phone. Free some space and try again.');
+    return const UpdateException('Couldn’t save the update on this phone. Free some space and try again.');
   }
   if (error is TypeError || error is FormatException) return _unreadable;
-  return UpdateException('Could not $doing: $error');
+  return UpdateException('Couldn’t $doing: $error');
 }
 
 /// The one HTTP failure message for a status the code does not expect.
@@ -62,7 +62,7 @@ Future<HttpClientResponse> openGet(HttpClient client, Uri uri, {Map<String, Stri
     final location = response.headers.value(HttpHeaders.locationHeader);
     final next = location == null ? null : url.resolve(location);
     if (hops >= 4 || next == null || !_trustedRedirect(next)) {
-      throw const UpdateException('GitHub sent the download somewhere herdr will not follow. Try again later.');
+      throw const UpdateException('GitHub sent the download somewhere herdr won’t follow. Try again later.');
     }
     url = next;
   }

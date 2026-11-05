@@ -5,16 +5,19 @@ import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart' show LinkState;
+import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/services/notifier.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/repositories/attention_notifier.dart' show agentsBoardLink;
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/support/deep_link.dart';
-import 'package:herdr_mobile/ui/support/home_tabs.dart';
+import 'package:herdr_mobile/ui/shell/home_pages.dart';
 import 'package:herdr_mobile/ui/features/agents/agents_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 import 'package:herdr_mobile/ui/features/machines/machines_screen.dart';
+import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 
@@ -71,7 +74,7 @@ void main() {
       expect(parseAgentLink('herdr://agent/box/w1%3Ap1/'), want);
     });
 
-    test('rejects anything that is not exactly an agent link', () {
+    test('rejects anything that isn’t exactly an agent link', () {
       for (final bad in <String?>[
         null,
         '',
@@ -108,12 +111,12 @@ void main() {
       expect(parseSessionLink('HERDR://Session/box/abc/'), const SessionLink('box', 'abc'));
     });
 
-    test('is not an agent link, and an agent link is not a session link', () {
+    test('isn’t an agent link, and an agent link isn’t a session link', () {
       expect(parseAgentLink('herdr://session/box/k1'), isNull);
       expect(parseSessionLink('herdr://agent/box/w1%3Ap1'), isNull);
     });
 
-    test('rejects anything that is not exactly a session link', () {
+    test('rejects anything that isn’t exactly a session link', () {
       for (final bad in <String?>[
         null,
         '',
@@ -292,7 +295,7 @@ void main() {
       await tearDownApp(tester);
     });
 
-    testWidgets('a route that is not a herdr link is swallowed, not pushed', (tester) async {
+    testWidgets('a route that isn’t a herdr link is swallowed, not pushed', (tester) async {
       await pumpApp(tester);
       await pushLink(tester, '/settings');
       expect(opened, isEmpty);
@@ -329,7 +332,7 @@ void main() {
       await tearDownApp(tester);
     });
 
-    testWidgets('a pane the live machine does not have shows a toast', (tester) async {
+    testWidgets('a pane the live machine doesn’t have shows a toast', (tester) async {
       await pumpApp(tester);
       await pushLink(tester, 'herdr://agent/Mac%20mini/w1%3Ap404');
       expect(opened, isEmpty);
@@ -342,7 +345,7 @@ void main() {
       await pumpApp(tester);
       await pushLink(tester, 'herdr://agent/onlyone');
       expect(opened, isEmpty);
-      expect(find.text("That link isn't one herdr can open."), findsOneWidget);
+      expect(find.text("That link isn’t one herdr can open."), findsOneWidget);
       await tester.pumpAndSettle(const Duration(seconds: 5));
       await tearDownApp(tester);
     });
@@ -381,7 +384,7 @@ void main() {
       expect(find.byKey(toastKey), findsNothing);
       await tester.pump(const Duration(seconds: 2));
       expect(opened, isEmpty);
-      expect(find.text("Couldn't reach Mac mini to open that agent."), findsOneWidget);
+      expect(find.text("Couldn’t reach Mac mini to open that agent."), findsOneWidget);
       await tester.pumpAndSettle(const Duration(seconds: 5));
       await tearDownApp(tester);
     });
@@ -438,7 +441,7 @@ void main() {
       await tearDownApp(tester);
     });
 
-    testWidgets('a session the phone has not listed yet is looked for on the host first', (tester) async {
+    testWidgets('a session the phone hasn’t listed yet is looked for on the host first', (tester) async {
       final sessions = _LateSessions();
       await pumpApp(tester, sessions: sessions);
       await pushLink(tester, 'herdr://session/Mac%20mini/k9');
@@ -456,10 +459,10 @@ void main() {
       await tearDownApp(tester);
     });
 
-    testWidgets('without sessions to open, a session link is not one this app can open', (tester) async {
+    testWidgets('without sessions to open, a session link isn’t one this app can open', (tester) async {
       await pumpApp(tester);
       await pushLink(tester, 'herdr://session/Mac%20mini/k1');
-      expect(find.text("That link isn't one herdr can open."), findsOneWidget);
+      expect(find.text("That link isn’t one herdr can open."), findsOneWidget);
       await tester.pumpAndSettle(const Duration(seconds: 5));
       await tearDownApp(tester);
     });
@@ -489,15 +492,15 @@ void main() {
   group('on the home screen', () {
     late UiHarness h;
     late DeepLinks links;
-    late HomeTabs tabs;
 
-    /// The real shell, on [tab], with the links wired as the app wires them.
-    Future<void> pumpShell(WidgetTester tester, HomeTab tab) async {
+    /// The real shell, with [page] opened over it, and the links wired as the
+    /// app wires them.
+    Future<void> pumpShell(WidgetTester tester, {HomePage page = HomePage.agents}) async {
       h = await UiHarness.create([
         (profile: _mini, snapshot: snapshotWith([(id: 'w1:p1', ws: 'w1', agent: 'claude', status: 'blocked')])),
       ]);
-      tabs = HomeTabs();
-      links = DeepLinks(machines: h.machines, fleet: h.fleet, tabs: tabs, open: (context, agent) async {});
+      const pages = HomePages();
+      links = DeepLinks(machines: h.machines, fleet: h.fleet, pages: pages, open: (context, agent) async {});
       links.attach();
       tester.view
         ..physicalSize = const Size(360, 740) * 2
@@ -512,6 +515,8 @@ void main() {
             ChangeNotifierProvider.value(value: h.terminalSettings),
             ChangeNotifierProvider.value(value: h.appSettings),
             ChangeNotifierProvider.value(value: h.agentScreens),
+            ChangeNotifierProvider(create: (_) => NotificationSettings(MemoryNotificationStore())),
+            Provider<Notifier>.value(value: const NullNotifier()),
             Provider<PanePreviews>.value(value: h.previews),
             Provider<TransportFactory>.value(
               value: (profile, secrets, onPin, onNotice) => UiTransport(snapshotWith(const [])),
@@ -520,11 +525,15 @@ void main() {
           child: MaterialApp(
             theme: AppTheme.light(),
             navigatorKey: links.navigatorKey,
-            home: HomeShell(initialTab: tab.index, tabs: tabs),
+            home: const HomeShell(pages: pages),
           ),
         ),
       );
       await settle(tester);
+      if (page != HomePage.agents) {
+        pages.open(links.navigatorKey.currentContext!, page);
+        await settle(tester);
+      }
     }
 
     Future<void> tearDownShell(WidgetTester tester) async {
@@ -538,20 +547,41 @@ void main() {
       await settle(tester);
     }
 
-    testWidgets('the summary notification on the Machines tab lands on the Agents board', (tester) async {
-      await pumpShell(tester, HomeTab.machines);
+    testWidgets('the summary notification on Machines lands on the Agents board', (tester) async {
+      await pumpShell(tester, page: HomePage.machines);
       expect(find.byType(MachinesScreen), findsOneWidget);
 
       await links.follow(agentsBoardLink);
       await settle(tester);
       expect(find.byType(MachinesScreen), findsNothing);
       expect(find.byType(AgentsScreen), findsOneWidget);
-      expect(tabs.current, HomeTab.agents);
+      await tearDownShell(tester);
+    });
+
+    testWidgets('a failed link’s Open Machines opens the Machines page over home, once', (tester) async {
+      await pumpShell(tester, page: HomePage.settings);
+      await links.follow('herdr://agent/nope/w1%3Ap1');
+      await settle(tester);
+      expect(find.byType(SettingsScreen), findsOneWidget, reason: 'a failed link closes nothing');
+      expect(find.text('Open Machines'), findsOneWidget);
+      await tester.tap(find.byKey(toastActionKey));
+      await settle(tester);
+      expect(find.byType(SettingsScreen), findsNothing, reason: 'Settings went the way Back goes');
+      expect(find.byType(MachinesScreen), findsOneWidget);
+
+      // On Machines already: the next failure offers no button, and Back is home.
+      await links.follow('herdr://agent/nope/w1%3Ap1');
+      await settle(tester);
+      expect(find.byKey(toastActionKey), findsNothing, reason: 'Machines is already in front');
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      expect(find.byType(MachinesScreen), findsNothing);
+      expect(find.byType(AgentsScreen), findsOneWidget);
       await tearDownShell(tester);
     });
 
     testWidgets('a link never discards a machine form with unsaved input', (tester) async {
-      await pumpShell(tester, HomeTab.machines);
+      await pumpShell(tester, page: HomePage.machines);
       await tester.tap(find.byTooltip('Add machine'));
       await settle(tester);
       await tester.enterText(find.byType(TextFormField).at(1), 'box.local');
@@ -571,12 +601,18 @@ void main() {
       expect(find.byType(MachineFormScreen), findsOneWidget);
       expect(find.text('box.local'), findsOneWidget, reason: 'nothing entered was lost');
 
-      // The summary notification asks the same, and lands on the board after Discard.
+      // The summary notification asks the same. Discard closes the form
+      // alone: the page it was opened from is in front, one Back from the
+      // board (the guard has the person's attention; the link goes no
+      // further on its own).
       await links.follow(agentsBoardLink);
       await settle(tester);
       expect(find.byType(MachineFormScreen), findsOneWidget);
       await tapButton(tester, 'Discard');
       expect(find.byType(MachineFormScreen), findsNothing);
+      expect(find.byType(MachinesScreen), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await settle(tester);
       expect(find.byType(AgentsScreen), findsOneWidget);
       await tearDownShell(tester);
     });

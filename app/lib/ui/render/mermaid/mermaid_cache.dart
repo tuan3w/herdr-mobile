@@ -75,7 +75,7 @@ class MermaidCache {
         entry.result = await _layout(job);
       } catch (e) {
         if (identical(_results[key], entry)) _results.remove(key);
-        entry.result = MermaidFailed("Couldn't draw this diagram · $e");
+        entry.result = const MermaidFailed('Couldn’t draw this diagram · showing the source');
       }
       entry.done.complete(entry.result);
     });

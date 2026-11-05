@@ -42,7 +42,7 @@ class PlatformApkInstaller implements ApkInstaller {
       final answer = await _channel.invokeMethod<String>('install', {'path': apk.path});
       return answer == 'needsPermission' ? InstallStart.needsPermission : InstallStart.started;
     } on PlatformException catch (e) {
-      throw UpdateException(e.message ?? 'Android could not open the installer.');
+      throw UpdateException(e.message ?? 'Android couldn’t open the installer.');
     } on MissingPluginException {
       throw const UpdateException('Installing updates works on Android only.');
     }

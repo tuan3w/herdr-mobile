@@ -336,7 +336,7 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
           return SheetScaffold(
             title: 'Everything it will run',
             kind: SheetKind.message,
-            child: SelectableText(_info.subject, style: Mono.base.copyWith(color: ds.text)),
+            child: SelectableText(_info.subject, style: Mono.input.copyWith(color: ds.text)),
           );
         },
       ),
@@ -454,7 +454,8 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
                           text: info.subject,
                           controller: _scroll,
                           overflows: _overflows,
-                          style: Mono.base.copyWith(color: ds.text),
+                          // The thing approved is the largest text here, as on the board card.
+                          style: Mono.input.copyWith(color: ds.text),
                         ),
                       ),
                     ),

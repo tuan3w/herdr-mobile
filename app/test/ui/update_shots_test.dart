@@ -274,29 +274,30 @@ void main() {
     );
   });
 
-  testWidgets('tab bar mark', (tester) async {
+  testWidgets('settings gear mark', (tester) async {
     await shoot(
       tester,
       const Scaffold(
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: EdgeInsets.only(bottom: 80),
-            child: FloatingTabBar(
-              index: 0,
-              onChanged: _noop,
-              tabs: [
-                TabSpec(icon: HerdrIcons.agents, label: 'Agents', badge: 2),
-                TabSpec(icon: HerdrIcons.machines, label: 'Machines'),
-                TabSpec(icon: LucideIcons.settings, label: 'Settings', mark: true, markLabel: 'update available'),
-              ],
-            ),
+        body: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleButton(icon: LucideIcons.plus, tooltip: 'New agent session', onPressed: _noop),
+              SizedBox(width: 4),
+              CircleButton(
+                icon: HerdrIcons.settings,
+                tooltip: 'Settings',
+                mark: true,
+                markLabel: 'update available',
+                onPressed: _noop,
+              ),
+            ],
           ),
         ),
       ),
-      '$out/tabbar.png',
+      '$out/settings-mark.png',
     );
   });
 }
 
-void _noop(int _) {}
+void _noop() {}

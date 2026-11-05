@@ -157,6 +157,19 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// stays in the history; landing on it would show "Opening…").
   var _behind = 0;
 
+  /// The pages of this visit that [_behind] counts, oldest first, the one
+  /// shown last, with their titles once read: what `Pages in this visit`
+  /// lists (a long press on the page-back arrow). Only the newest
+  /// [_visitCap] are kept; the steps back to one are counted from the end,
+  /// so a list cut at its start still lands right.
+  final _visit = <({Uri url, String? title})>[];
+  static const _visitCap = 50;
+
+  /// Steps still to take after the one under way, for a jump from the list
+  /// to a page further back: one step per page, each after the last page is
+  /// in (see [_onPageFinished]).
+  var _stepsLeft = 0;
+
   /// The next page is the first after an entry page: it starts with [_carry]
   /// pages behind it.
   var _afterEntry = false;
@@ -288,7 +301,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       _fail(
         'Couldn’t open this page',
         e.kind == RemoteFileErrorKind.notFound
-            ? '${visibleText(widget.page.label)} is not on the machine any more.'
+            ? '${visibleText(widget.page.label)} isn’t on the machine any more.'
             : visibleText(e.message),
         at,
       );
@@ -315,6 +328,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   void _fail(String title, String message, Uri? url) {
     if (!mounted) return;
     _goingBack = false;
+    _stepsLeft = 0;
     setState(() {
       _failure = (title: title, message: message);
       _failedUrl = url;
@@ -498,6 +512,13 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       setState(() => _phase = _Phase.shown);
     }
     _onUrl(url);
+    // A jump from the list goes on once the page a step landed on is in, not
+    // on its address alone: a step taken at once would cut that page's load
+    // short, and its late report would count as a page of its own.
+    if (_stepsLeft > 0 && !_goingBack && uri == _url) {
+      _stepsLeft--;
+      unawaited(_stepBack());
+    }
   }
 
   /// The view shows [url]: counts the page in [_behind] (once per change:
@@ -518,12 +539,26 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     if (_goingBack) {
       _goingBack = false;
       if (_behind > 0) _behind--;
+      if (_visit.isNotEmpty) _visit.removeLast();
+      if (_visit.isEmpty || _visit.last.url != uri) {
+        // A list cut at its start, or a page the count and the view disagree
+        // on: the page shown is the newest either way.
+        if (_visit.isNotEmpty) _visit.removeLast();
+        _visit.add((url: uri, title: null));
+      }
     } else if (_afterEntry) {
       _afterEntry = false;
+      _stepsLeft = 0;
       _behind = _carry;
+      // A page opened again starts its own visit; another port, opened from
+      // a link, goes on with this one.
+      if (_carry == 0) _visit.clear();
+      _addToVisit(uri);
       _carry = 0;
     } else if (uri != _url) {
+      _stepsLeft = 0;
       _behind++; // a link, a `#section`, a single-page app's route
+      _addToVisit(uri);
     }
     setState(() => _url = uri);
     unawaited(_readTitle());
@@ -537,7 +572,13 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     final title = await _view.getTitle();
     if (!mounted || shown == null || _url != shown) return;
     final usable = _usable(title, shown.toString());
+    if (_visit.isNotEmpty && _visit.last.url == shown) _visit.last = (url: shown, title: usable);
     if (usable != _title) setState(() => _title = usable);
+  }
+
+  void _addToVisit(Uri url) {
+    _visit.add((url: url, title: null));
+    if (_visit.length > _visitCap) _visit.removeAt(0);
   }
 
   /// Back landed on an entry URL, the page that sends the view on with a
@@ -574,7 +615,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         'The server on $machine closed the connection without an answer. Is it still running? Retry asks again.',
       _ when error.description.contains('CONNECTION_RESET') =>
         'The connection to $machine broke while the page loaded. Retry asks again.',
-      _ => 'It didn’t load (${error.description}). Retry asks again.',
+      _ => 'It didn’t load. Retry asks again.',
     };
   }
 
@@ -588,15 +629,95 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
 
   // -- the person's actions ------------------------------------------------------
 
-  /// Back goes back in the page's history first, then leaves.
+  /// The phone's Back goes back in the page's history first, then leaves,
+  /// as a browser's does: what the person already knows keeps working. The
+  /// bar's ✕ leaves at once ([_close]).
   Future<void> _back() async {
     if (_goingBack) return;
     if (_behind > 0 && await _view.canGoBack()) {
-      _goingBack = true;
-      await _view.goBack();
+      await _stepBack();
       return;
     }
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// Leaves the page from any depth in one tap. Why: Back walked every page
+  /// of the visit first, so ten links deep was ten presses back to the chat.
+  /// `pop` passes the [PopScope] that holds the phone's Back for the pages.
+  void _close() => Navigator.of(context).pop();
+
+  /// [steps] pages back in this visit, never past its first page: the
+  /// page-back arrow takes one, a row of `Pages in this visit` as many as it
+  /// sits below the page shown.
+  Future<void> _pageBack(int steps) async {
+    if (_goingBack || _behind == 0 || steps < 1) return;
+    if (!await _view.canGoBack()) return;
+    _stepsLeft = (steps > _behind ? _behind : steps) - 1;
+    await _stepBack();
+  }
+
+  Future<void> _stepBack() async {
+    _goingBack = true;
+    await _view.goBack();
+  }
+
+  /// A long press on the page-back arrow: the pages of this visit, newest
+  /// first, the one shown marked `Here`; a tap on another goes back to it.
+  /// The last row leaves, as ✕ does.
+  void _showVisit() {
+    final pages = _visit.reversed.toList();
+    unawaited(
+      showAppSheet<void>(
+        context,
+        builder: (ctx) {
+          final ds = ctx.ds;
+          return SheetScaffold(
+            title: 'Pages in this visit',
+            kind: SheetKind.list,
+            // The rows bring their own gutter.
+            bleed: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < pages.length; i++) ...[
+                  if (i > 0) Hairline(indent: ListRow.textIndent()),
+                  _visitRow(ctx, pages[i], steps: i),
+                ],
+                Hairline(indent: ListRow.textIndent()),
+                ListRow(
+                  title: 'Close page',
+                  leading: Icon(LucideIcons.x, size: IconSize.lead, color: ds.textSecondary),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _close();
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// A page of the visit, [steps] back from the one shown: its title when
+  /// known, over where it is; else where it is alone.
+  Widget _visitRow(BuildContext ctx, ({Uri url, String? title}) page, {required int steps}) {
+    final ds = ctx.ds;
+    final where = visibleText(_web.machinePage(page.url)?.label ?? '${page.url.host}${page.url.path}');
+    final title = page.title;
+    final here = steps == 0;
+    return ListRow(
+      title: visibleText(title ?? where),
+      subtitle: title == null ? null : where,
+      leading: Icon(LucideIcons.globe, size: IconSize.lead, color: ds.textSecondary),
+      trailing: here ? Text('Here', style: Type.label.copyWith(color: ds.textSecondary)) : null,
+      onTap: () {
+        Navigator.of(ctx).pop();
+        if (!here) unawaited(_pageBack(steps));
+      },
+    );
   }
 
   MachinePage? get _shownPage => _url == null ? null : _web.machinePage(_url!);
@@ -618,6 +739,17 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         context,
         title: visibleText(link),
         actions: [
+          // In ⋯ since the bar holds two actions (the page-back arrow and ⋯).
+          SheetAction(
+            label: 'Reload',
+            icon: LucideIcons.rotateCw,
+            unavailable: _failure != null
+                ? 'Retry, under the message, opens it again.'
+                : _phase == _Phase.opening
+                ? 'The page is still opening.'
+                : null,
+            onTap: () => unawaited(_view.reload()),
+          ),
           SheetAction(
             label: isFile ? 'Copy path' : 'Copy link',
             icon: LucideIcons.link,
@@ -705,12 +837,15 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
                   : appName != null
                   ? '${widget.machine.profile.label} · $address'
                   : '$address · ${widget.machine.profile.label}',
+              // ✕ leaves from any depth; the arrow steps back through the
+              // pages. Why two controls: Back alone walked every page, so ten
+              // links deep was ten presses back to the chat.
+              leading: CircleButton(icon: LucideIcons.x, tooltip: 'Close page', onPressed: _close),
               actions: [
-                CircleButton(
-                  icon: LucideIcons.rotateCw,
-                  tooltip: 'Reload',
-                  // A failure has its own Retry, in the panel.
-                  onPressed: _phase == _Phase.opening || failure != null ? null : () => unawaited(_view.reload()),
+                _PageBackButton(
+                  canGoBack: _behind > 0,
+                  onPressed: () => unawaited(_pageBack(1)),
+                  onLongPress: _showVisit,
                 ),
                 CircleButton(icon: LucideIcons.ellipsis, tooltip: 'Page options', onPressed: _showOptions),
               ],
@@ -761,6 +896,29 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       ),
     );
   }
+}
+
+/// One page back in the visit; held, the visit's pages to jump back to. With
+/// nothing behind the page shown it stays, dimmed, and says why.
+class _PageBackButton extends StatelessWidget {
+  const _PageBackButton({required this.canGoBack, required this.onPressed, required this.onLongPress});
+
+  final bool canGoBack;
+  final VoidCallback onPressed;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: Semantics(
+      hint: canGoBack ? 'Hold for the pages of this visit' : 'This is the first page of this visit',
+      child: CircleButton(
+        icon: LucideIcons.arrowLeft,
+        tooltip: 'Previous page',
+        onPressed: canGoBack ? onPressed : null,
+        onLongPress: canGoBack ? onLongPress : null,
+      ),
+    ),
+  );
 }
 
 /// The edge between herdr and the page: a hairline under the bar, always,

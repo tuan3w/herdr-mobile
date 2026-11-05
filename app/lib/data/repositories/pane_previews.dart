@@ -98,6 +98,13 @@ class PanePreviews {
     return machine.watch(paneId);
   }
 
+  /// What is already known of [paneId] on [machineId] (a watched pane's last
+  /// read, else a released one kept in the LRU), without reading anything or
+  /// touching the LRU. For a glance that must not cost the radio (the swipe's
+  /// peek); null when nothing is in memory.
+  PanePreview? known(String machineId, String paneId) =>
+      _machines[machineId]?.panes[paneId]?.notifier.value ?? _retained['$machineId\u0000$paneId']?.preview;
+
   /// The question [paneId] asks right now, read from its screen on [machine]'s
   /// connection past the throttle (one round trip): what an answer is checked
   /// against just before it is sent. The read is also shown to whoever watches

@@ -20,7 +20,7 @@ import 'board_selection.dart';
 import 'preconnect_tap.dart';
 import 'swipe_review.dart';
 
-/// A finished session that a swipe or "Mark all reviewed" may mark seen: done
+/// A finished session that a swipe or "Mark reviewed" may mark seen: done
 /// on the board and reachable (`AttentionSet.sessionReachable`: a session
 /// whose machine or link is down shows what it knew and is not acted on).
 bool sessionReviewable(AgentSessionView s) => AttentionSet.sessionToReview(s) && AttentionSet.sessionReachable(s);
@@ -99,16 +99,20 @@ String sessionStateWords(AgentSessionView s, DateTime now) {
 /// swipes left to be marked reviewed without opening it (as a terminal
 /// agent's card does).
 class AgentSessionRow extends StatelessWidget {
-  const AgentSessionRow({super.key, required this.session, required this.divider});
+  const AgentSessionRow({super.key, required this.session, required this.divider, this.where});
 
   final AgentSessionView session;
   final bool divider;
+
+  /// Where it runs, in place of [sessionMeta]: on the board, which feature
+  /// it is (`repo · branch · agent`, `sessionWhereOnBoard`).
+  final String? where;
 
   @override
   Widget build(BuildContext context) {
     final status = boardStatus(session);
     final summary = status == AgentStatus.blocked ? blockedSummary(session) : null;
-    final meta = sessionMeta(session);
+    final meta = where ?? sessionMeta(session);
     final live = session.link == AgentLink.live;
     final ref = sessionRef(session.key);
     final sel = rowSelect(context, ref);

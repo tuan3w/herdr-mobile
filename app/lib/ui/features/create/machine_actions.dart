@@ -85,7 +85,7 @@ class MachineActions {
     } on HerdrTransportException catch (e) {
       problem = e.message;
     } on TimeoutException {
-      problem = 'The machine did not answer in time.';
+      problem = 'The machine didn’t answer in time.';
     }
     try {
       await machine.refresh().timeout(Dwell.refreshTimeout);

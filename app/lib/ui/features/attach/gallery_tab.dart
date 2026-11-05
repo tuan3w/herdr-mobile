@@ -129,7 +129,7 @@ class _GalleryTabState extends State<GalleryTab> with WidgetsBindingObserver {
         ),
         GalleryAccess.unavailable => _Panel(
           icon: HerdrIcons.pictureOff,
-          title: 'Photos cannot be listed',
+          title: 'Photos can’t be listed',
           message: 'This phone would not show its library to herdr. The system picker still works.',
           onCamera: widget.onCamera,
           onSystemPicker: widget.onSystemPicker,
@@ -197,7 +197,7 @@ class _NoImagesNote extends StatelessWidget {
   const _NoImagesNote();
 
   /// The line itself (a test finds it).
-  static const text = 'This agent does not take images. Photos go up as files.';
+  static const text = 'This agent doesn’t take images. Photos go up as files.';
 
   @override
   Widget build(BuildContext context) => Padding(

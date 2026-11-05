@@ -1,17 +1,21 @@
-// The shell's motion and Back: the tab fade, tapping the active tab, Back
-// through the tabs, and what sheets and pages do under reduced motion.
+// Home and its Back: the header that opens Machines and Settings as pages
+// (there is no tab bar), Back from them, and what sheets and pages do under
+// reduced motion.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/models/release_info.dart';
+import 'package:herdr_mobile/data/repositories/app_update.dart';
 import 'package:herdr_mobile/ui/core/kit.dart' hide Type;
 import 'package:herdr_mobile/ui/features/agents/agents_screen.dart';
 import 'package:herdr_mobile/ui/features/machines/machines_screen.dart';
 import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
+import 'package:herdr_mobile/ui/shell/home_pages.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 
-import '../support/settings_support.dart';
+import '../support/update_fakes.dart';
 import '../support/shot.dart' show loadAppFonts;
 import 'board_support.dart';
 import 'ui_harness.dart';
@@ -26,13 +30,11 @@ import 'ui_harness.dart';
 void main() {
   setUpAll(loadAppFonts);
 
-  late List<int> changed;
   late List<MethodCall> platformCalls;
   late int systemPops;
   late int moves;
 
   setUp(() {
-    changed = [];
     platformCalls = [];
     systemPops = 0;
     moves = 0;
@@ -58,6 +60,7 @@ void main() {
     int agents = 14,
     bool reduceMotion = false,
     bool mover = false,
+    AppUpdate? update,
   }) async {
     final h = await BoardHarness.create([_machine(agents)]);
     tester.view
@@ -74,7 +77,7 @@ void main() {
             child: child!,
           ),
           home: HomeShell(
-            onTabChanged: changed.add,
+            pages: HomePages(update: update),
             moveToBackground: mover
                 ? () async {
                     moves++;
@@ -91,19 +94,6 @@ void main() {
     return h;
   }
 
-  Future<void> tapTab(WidgetTester tester, String label) async {
-    await tester.tap(find.byKey(FloatingTabBar.tabKey(label)));
-    await tester.pump();
-  }
-
-  int tabIndex(WidgetTester tester) => tester.widget<FloatingTabBar>(find.byType(FloatingTabBar)).index;
-
-  // The fade over a tab's content, as the shell wraps it.
-  double opacityOf(WidgetTester tester, Type screen) => tester
-      .widget<FadeTransition>(find.ancestor(of: find.byType(screen), matching: find.byType(FadeTransition)).first)
-      .opacity
-      .value;
-
   ScrollPosition boardScroll(WidgetTester tester) => tester
       .state<ScrollableState>(
         find.descendant(
@@ -119,186 +109,59 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
-  group('tab switch', () {
-    testWidgets('the incoming tab fades in over ~120 ms, opacity only', (tester) async {
-      final h = await pump(tester);
-      expect(MediaQuery.disableAnimationsOf(tester.element(find.byType(HomeShell))), isFalse);
-      expect(opacityOf(tester, AgentsScreen), 1, reason: 'nothing animates at rest or at first paint');
+  final chip = find.byKey(const ValueKey('machine-health'));
 
-      await tapTab(tester, 'Machines');
+  Future<void> openMachines(WidgetTester tester) async {
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openSettings(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+  }
+
+  // Home has no tab bar (owner decision: most of the time the person cares
+  // about agents, not machines, and the bar cost focus and covered the end of
+  // the list). Machines and Settings are pages its header opens.
+  group('home', () {
+    testWidgets('has no bar under it: the board runs to the bottom', (tester) async {
+      final h = await pump(tester);
+      expect(find.byType(FloatingBarPill), findsNothing);
+      expect(find.byType(FloatingBarScrim), findsNothing);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('the header: the machines chip on the left, + and Settings on the right', (tester) async {
+      final h = await pump(tester);
+      expect(chip, findsOneWidget);
+      expect(find.text('1 of 1 machine'), findsOneWidget);
+      final title = tester.getRect(find.text('Agents').first);
+      final mark = tester.getRect(find.byKey(const ValueKey('machine-health-mark')));
+      expect(mark.left, moreOrLessEquals(title.left, epsilon: 1), reason: 'on the large title’s edge');
+      expect(tester.getSize(chip).height, greaterThanOrEqualTo(kMinTap));
+      final plus = tester.getRect(find.byTooltip('New agent session'));
+      final gear = tester.getRect(find.byTooltip('Settings'));
+      expect(plus.right, lessThan(gear.left), reason: '+ first, the gear last');
+      expect(
+        find.descendant(of: find.byType(SliverLargeTitle), matching: find.byType(CircleButton)),
+        findsNWidgets(2),
+        reason: 'two trailing actions, the budget',
+      );
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('the chip opens Machines with Back in its bar; Back returns home, then leaves', (tester) async {
+      final h = await pump(tester);
+      await openMachines(tester);
       expect(find.byType(MachinesScreen), findsOneWidget);
-      final first = opacityOf(tester, MachinesScreen);
-      expect(first, lessThan(0.1), reason: 'starts from transparent, never one frame at full opacity');
-
-      await tester.pump(const Duration(milliseconds: 40));
-      final mid = opacityOf(tester, MachinesScreen);
-      expect(mid, greaterThan(first));
-      expect(mid, lessThan(1));
-      // No slide: the content sits where it will rest.
-      final top = tester.getTopLeft(find.byType(MachinesScreen));
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(opacityOf(tester, MachinesScreen), 1);
-      expect(tester.getTopLeft(find.byType(MachinesScreen)), top);
-      expect(Motion.fade, lessThanOrEqualTo(const Duration(milliseconds: 150)));
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('switching again restarts the fade for the new tab', (tester) async {
-      final h = await pump(tester);
-      await tapTab(tester, 'Machines');
-      await tester.pump(const Duration(milliseconds: 200));
-      await tapTab(tester, 'Settings');
-      expect(find.byType(SettingsScreen), findsOneWidget);
-      expect(opacityOf(tester, SettingsScreen), lessThan(0.1));
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(opacityOf(tester, SettingsScreen), 1);
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('reduced motion: no fade at all', (tester) async {
-      final h = await pump(tester, reduceMotion: true);
-      await tapTab(tester, 'Machines');
-      expect(opacityOf(tester, MachinesScreen), 1);
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('a hidden tab is not built before its first visit and does not tick', (tester) async {
-      final h = await pump(tester);
-      expect(find.byType(MachinesScreen), findsNothing);
-      await tapTab(tester, 'Machines');
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(TickerMode.valuesOf(tester.element(find.byType(AgentsScreen, skipOffstage: false))).enabled, isFalse);
-      expect(TickerMode.valuesOf(tester.element(find.byType(MachinesScreen))).enabled, isTrue);
-      await teardownBoard(tester, h);
-    });
-  });
-
-  group('tapping the active tab', () {
-    testWidgets('Agents scrolls the board to the top, smoothly, with no tab change and no haptic', (tester) async {
-      final h = await pump(tester);
-      await tester.drag(find.byType(AgentsScreen), const Offset(0, -900));
-      await tester.pumpAndSettle();
-      final position = boardScroll(tester);
-      expect(position.pixels, greaterThan(300));
-      platformCalls.clear();
-
-      await tapTab(tester, 'Agents');
-      await tester.pump(const Duration(milliseconds: 60));
-      expect(position.pixels, greaterThan(0), reason: 'animated, not a jump');
-      await tester.pumpAndSettle();
-      expect(position.pixels, 0);
-      expect(changed, isEmpty);
-      expect(tabIndex(tester), 0);
-      expect(platformCalls.where((c) => c.method == 'HapticFeedback.vibrate'), isEmpty);
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('under reduced motion the board jumps to the top', (tester) async {
-      final h = await pump(tester, reduceMotion: true);
-      await tester.drag(find.byType(AgentsScreen), const Offset(0, -900));
-      await tester.pumpAndSettle();
-      final position = boardScroll(tester);
-      expect(position.pixels, greaterThan(300));
-
-      await tapTab(tester, 'Agents');
-      expect(position.pixels, 0);
-      await teardownBoard(tester, h);
-    });
-
-    // The Update row is the first thing on Settings, and the page keeps its
-    // place between visits: a person who had scrolled down found no sign of it
-    // above the screen but a dot on the tab. (Look is opened first: closed, the
-    // rows fit the screen at normal text and there is nothing to scroll.)
-    testWidgets('Settings scrolls to the top too, with no tab change, no fade and no haptic', (tester) async {
-      final h = await pump(tester);
-      await tapTab(tester, 'Settings');
-      await tester.pumpAndSettle();
-      await openSettingsGroup(tester, 'Look');
-      await tester.drag(find.byType(SettingsScreen), const Offset(0, -600));
-      await tester.pumpAndSettle();
-      final position = tester
-          .state<ScrollableState>(
-            find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first,
-          )
-          .position;
-      expect(position.pixels, greaterThan(200));
-      platformCalls.clear();
-
-      await tapTab(tester, 'Settings');
-      await tester.pump(const Duration(milliseconds: 60));
-      expect(position.pixels, greaterThan(0), reason: 'animated, not a jump');
-      await tester.pumpAndSettle();
-      expect(position.pixels, 0);
-      expect(tabIndex(tester), 2);
-      expect(opacityOf(tester, SettingsScreen), 1);
-      expect(platformCalls.where((c) => c.method == 'HapticFeedback.vibrate'), isEmpty);
-
-      // Leaving and coming back is still not "back to the top".
-      await tester.drag(find.byType(SettingsScreen), const Offset(0, -600));
-      await tester.pumpAndSettle();
-      final before = position.pixels;
-      await tapTab(tester, 'Machines');
-      await tester.pumpAndSettle();
-      await tapTab(tester, 'Settings');
-      await tester.pumpAndSettle();
-      expect(position.pixels, before);
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('at the top it stays put; a re-tap on Settings changes nothing else either', (tester) async {
-      final h = await pump(tester);
-      await tapTab(tester, 'Agents');
-      await tester.pumpAndSettle();
-      expect(boardScroll(tester).pixels, 0);
-      expect(changed, isEmpty);
-
-      await tapTab(tester, 'Settings');
-      await tester.pumpAndSettle();
-      expect(changed, [2]);
-      platformCalls.clear();
-      await tapTab(tester, 'Settings');
-      await tester.pumpAndSettle();
-      expect(changed, [2], reason: 'no onTabChanged churn');
-      expect(opacityOf(tester, SettingsScreen), 1, reason: 'no new fade');
-      expect(platformCalls.where((c) => c.method == 'HapticFeedback.vibrate'), isEmpty);
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('a real switch does tick (the control the re-tap test relies on)', (tester) async {
-      final h = await pump(tester);
-      platformCalls.clear();
-      await tapTab(tester, 'Machines');
-      expect(platformCalls.where((c) => c.method == 'HapticFeedback.vibrate'), hasLength(1));
-      await tester.pumpAndSettle();
-      await teardownBoard(tester, h);
-    });
-
-    testWidgets('the scroll position of the board survives a trip to another tab', (tester) async {
-      final h = await pump(tester);
-      await tester.drag(find.byType(AgentsScreen), const Offset(0, -900));
-      await tester.pumpAndSettle();
-      final before = boardScroll(tester).pixels;
-      await tapTab(tester, 'Machines');
-      await tester.pumpAndSettle();
-      await tapTab(tester, 'Agents');
-      await tester.pumpAndSettle();
-      expect(boardScroll(tester).pixels, before, reason: 'switching tabs is not "back to the top"');
-      await teardownBoard(tester, h);
-    });
-  });
-
-  group('Back', () {
-    testWidgets('from Settings lands on Agents, without leaving the app', (tester) async {
-      final h = await pump(tester);
-      await tapTab(tester, 'Settings');
-      await tester.pumpAndSettle();
-      expect(tabIndex(tester), 2);
+      expect(find.byType(AppBackButton), findsOneWidget);
 
       await back(tester);
-      expect(tabIndex(tester), 0);
+      await tester.pumpAndSettle();
+      expect(find.byType(MachinesScreen), findsNothing);
+      expect(find.byType(AgentsScreen), findsOneWidget);
       expect(systemPops, 0);
-      expect(changed, [2, 0], reason: 'the tab the app is left on is remembered');
-      expect(opacityOf(tester, AgentsScreen), 1);
 
       // Now at the root: Back is the app's again.
       await back(tester);
@@ -306,16 +169,90 @@ void main() {
       await teardownBoard(tester, h);
     });
 
-    testWidgets('from Machines lands on Agents; watching: only then it goes to the background', (tester) async {
+    testWidgets('a quick second tap opens one page, not two', (tester) async {
+      final h = await pump(tester);
+      await tester.tap(chip);
+      await tester.pump();
+      await tester.tap(chip, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await back(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(MachinesScreen), findsNothing, reason: 'one Back is home');
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('the board under a page does not tick, and keeps its place', (tester) async {
+      final h = await pump(tester);
+      await tester.drag(find.byType(AgentsScreen), const Offset(0, -900));
+      await tester.pumpAndSettle();
+      final before = boardScroll(tester).pixels;
+      expect(before, greaterThan(0));
+      await openMachines(tester);
+      expect(TickerMode.valuesOf(tester.element(find.byType(AgentsScreen, skipOffstage: false))).enabled, isFalse);
+      await back(tester);
+      await tester.pumpAndSettle();
+      expect(boardScroll(tester).pixels, before);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('the gear opens Settings, at its top; Back returns home', (tester) async {
+      final h = await pump(tester);
+      await openSettings(tester);
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.byType(AppBackButton), findsOneWidget);
+      await back(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsNothing);
+      expect(systemPops, 0);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('a newer version is a quiet dot on the gear, and its row is the first thing in Settings', (
+      tester,
+    ) async {
+      final update = AppUpdate(
+        store: MemoryUpdateStore(),
+        feed: FakeReleaseFeed()
+          ..answer = const ReleaseInfo(
+            version: '99.0.0',
+            apkUrl: 'https://example.invalid/herdr-mobile-99.0.0.apk',
+            size: 48 * 1024 * 1024,
+            pageUrl: 'https://example.invalid/releases/tag/v99.0.0',
+            notes: 'notes',
+            sha256: 'aaaa',
+          ),
+        files: FakeReleaseFiles(),
+        installer: FakeApkInstaller(),
+        current: AppVersion.tryParse('0.1.0'),
+      );
+      addTearDown(update.dispose);
+      final h = await pump(tester, update: update);
+      final mark = find.byKey(const ValueKey('circle-button-mark'));
+      expect(mark, findsNothing);
+      expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+
+      await update.check();
+      await tester.pump();
+      expect(mark, findsOneWidget);
+      expect(find.bySemanticsLabel('Settings, update available'), findsOneWidget);
+
+      await openSettings(tester);
+      expect(find.text('Update available').hitTestable(), findsOneWidget);
+      await teardownBoard(tester, h);
+    });
+  });
+
+  group('Back', () {
+    testWidgets('from Machines lands home; watching: only then it goes to the background', (tester) async {
       final h = await pump(tester, mover: true);
       h.fleet.keepAliveInBackground = true;
       await tester.pump();
-      await tapTab(tester, 'Machines');
-      await tester.pumpAndSettle();
+      await openMachines(tester);
 
       await back(tester);
-      expect(tabIndex(tester), 0);
-      expect(moves, 0, reason: 'the first Back only returns to Agents');
+      await tester.pumpAndSettle();
+      expect(find.byType(MachinesScreen), findsNothing);
+      expect(moves, 0, reason: 'the first Back only returns home');
       expect(systemPops, 0);
 
       await back(tester);
@@ -324,7 +261,7 @@ void main() {
       await teardownBoard(tester, h);
     });
 
-    testWidgets('on Agents Back is what it was: a pushed screen first, then leaving', (tester) async {
+    testWidgets('on home Back is what it was: a pushed screen first, then leaving', (tester) async {
       final h = await pump(tester);
       final navigator = tester.state<NavigatorState>(find.byType(Navigator));
       navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('pane'))));

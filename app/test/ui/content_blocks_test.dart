@@ -260,8 +260,8 @@ void main() {
           ),
         ),
       );
-      await until(tester, find.text('The picture data is not valid base64.'));
-      await until(tester, find.textContaining('not an image this app can read'));
+      await until(tester, find.text('The picture data is damaged.'));
+      await until(tester, find.textContaining('format the phone can’t show'));
       await until(tester, find.textContaining('Too large to show here'));
       expect(find.byType(RawImage), findsNothing);
       expect(tester.takeException(), isNull);
@@ -377,7 +377,7 @@ void main() {
       cache.clear();
     });
 
-    test('base64 length without decoding, and the isolate path rejects what is not base64', () async {
+    test('base64 length without decoding, and the isolate path rejects what isn’t base64', () async {
       expect(base64DecodedLength('AAAA'), 3);
       expect(base64DecodedLength('AAA='), 2);
       expect(base64DecodedLength('AA=='), 1);

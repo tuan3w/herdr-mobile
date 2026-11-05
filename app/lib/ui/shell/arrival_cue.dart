@@ -5,8 +5,8 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// One haptic when another agent starts waiting for the person: a key entered
 /// [needsYou] (reachable agents that need an answer, terminal panes and
 /// sessions; `AttentionSet.needsYouKeys`) while the app is in front. The
-/// board's wash plays on a card that is often off screen, and the badge is a
-/// number; this is the part you feel.
+/// board's wash plays on a card that is often off screen, and the status line
+/// is words; this is the part you feel.
 ///
 /// By key, not by count: a Wi-Fi to mobile handover empties the set and fills
 /// it again with the same agents, and that is not news. An agent that went

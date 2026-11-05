@@ -42,7 +42,7 @@ class SshLogSource implements SessionLogSource {
     try {
       command = keeperBlobCommand(path, start: start, hash: hash);
     } on ArgumentError {
-      throw const AgentHostException('That session log has a name the app cannot use.', fatal: true);
+      throw const AgentHostException('That session log has a name the app can’t use.', fatal: true);
     }
     return await _host.blob(command);
   }
@@ -99,7 +99,7 @@ class _Follow {
         zipped: true,
       );
     } on ArgumentError {
-      _fail(const AgentHostException('That session log has a name the app cannot use.', fatal: true));
+      _fail(const AgentHostException('That session log has a name the app can’t use.', fatal: true));
       return;
     }
     unawaited(_open(command, missing: false));
@@ -170,7 +170,7 @@ class _Follow {
     if (tab == 1 && line.codeUnitAt(0) == 0x45) {
       // E: the follower met something it cannot go on from, and exits.
       _flush();
-      _fail(AgentHostException(line.length > 2 ? line.substring(2) : 'The machine could not read the session log.'));
+      _fail(AgentHostException(line.length > 2 ? line.substring(2) : 'The machine couldn’t read the session log.'));
       return;
     }
     final offset = int.tryParse(line.substring(0, tab));

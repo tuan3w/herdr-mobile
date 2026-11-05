@@ -98,7 +98,7 @@ void main() {
       expect(site.fs.calls, isEmpty);
     });
 
-    test('opened in a Custom Tab, the entry URL ends on the page, not the listener\'s refusal', () async {
+    test('opened in a Custom Tab, the entry URL ends on the page, not the listener’s refusal', () async {
       final site = await _open();
       final visit = await openInCustomTab(
         Uri.parse('http://localhost:${site.info.port}/__herdr/open?t=${site.info.token}&to=%2Findex.html'),
@@ -198,7 +198,7 @@ void main() {
   });
 
   group('what a page in a home folder must not read', () {
-    test('no name with a leading dot is served, however it is spelled, and the machine is not asked', () async {
+    test('no name with a leading dot is served, however it is spelled, and the machine isn’t asked', () async {
       final site = await _open();
       site.fs
         ..addFile('$_root/.env', 'API_KEY=hunter2')
@@ -248,7 +248,7 @@ void main() {
     });
   });
 
-  group('a request that is not valid text', () {
+  group('a request that isn’t valid text', () {
     test('an invalid escape is a refusal or a 404, never a failure, and the listener keeps serving', () async {
       final site = await _open();
       final cookie = await site.signIn();
@@ -302,14 +302,14 @@ void main() {
       expect(past.headers['content-range'], 'bytes */1000');
     });
 
-    test('a Range with an absurd number is not a crash: it is ignored', () async {
+    test('a Range with an absurd number isn’t a crash: it is ignored', () async {
       final site = await _open();
       final r = await site.get('/style.css', headers: {'Range': 'bytes=99999999999999999999-'});
       expect(r.status, 200);
       expect(r.text, 'body{}');
     });
 
-    test('an open-ended Range gets one piece and a 206, so a player that left does not cost the whole file', () async {
+    test('an open-ended Range gets one piece and a 206, so a player that left doesn’t cost the whole file', () async {
       final site = await _open();
       final big = Uint8List.fromList(List.generate(webBridgeOpenRange * 2 + 4321, (i) => (i * 13) % 256));
       site.fs.addFile('$_root/movie.mp4', big);
@@ -408,7 +408,7 @@ void main() {
       fs.fail = RemoteFileException(RemoteFileErrorKind.network, 'Connection lost');
       final down = await site.get('/index.html');
       expect(down.status, 502);
-      expect(down.text, contains("Couldn't reach build-box"));
+      expect(down.text, contains("Couldn’t reach build-box"));
     });
   });
 
@@ -461,7 +461,7 @@ void main() {
       expect(r.status, 403);
     });
 
-    test('a listener in use does not stop under a request in flight', () async {
+    test('a listener in use doesn’t stop under a request in flight', () async {
       const idle = Duration(milliseconds: 400);
       final reading = Completer<void>();
       final release = Completer<void>();

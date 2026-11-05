@@ -82,6 +82,7 @@ final class CellMetrics {
   /// Text style of the row text; its line height fills the snapped row.
   late final TextStyle textStyle = TextStyle(
     fontFamily: monoFamily,
+    fontFamilyFallback: monoFallback,
     fontSize: fontSize,
     height: lineHeight / fontSize,
     color: palette.foreground,
@@ -89,6 +90,7 @@ final class CellMetrics {
 
   late final StrutStyle strut = StrutStyle(
     fontFamily: monoFamily,
+    fontFamilyFallback: monoFallback,
     fontSize: fontSize,
     height: lineHeight / fontSize,
     leading: 0,

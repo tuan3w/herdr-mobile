@@ -15,11 +15,12 @@ import 'agent_navigation.dart';
 import 'agent_peek.dart';
 
 /// An agent screen's content (the terminal panel, the chat's transcript)
-/// with the swipe to the neighbouring agents: a swipe left shows the next
-/// agent in the board's order coming in from the right, a swipe right the
-/// previous one from the left, and letting go far enough goes there
-/// ([AgentSwipeDetector]). The same steps are the screen's `Next agent` and
-/// `Previous agent` accessibility actions: every gesture has one.
+/// with the swipe along the triage walk (`agent_navigation.dart`): a swipe
+/// left shows the next agent that wants the person coming in from the right,
+/// a swipe right the one before it in the walk from the left, and letting go
+/// far enough goes there ([AgentSwipeDetector]). The same steps are the
+/// screen's `Next agent` and `Previous agent` accessibility actions: every
+/// gesture has one.
 class AgentSwipe extends StatelessWidget {
   const AgentSwipe({super.key, required this.agent, required this.child});
 
@@ -37,17 +38,17 @@ class AgentSwipe extends StatelessWidget {
   );
 
   /// Looked up once, when the swipe is recognised: letting go goes to the
-  /// agent the card showed, even if the order changed while the finger moved.
+  /// agent the card showed.
   SwipePeek _peek(BuildContext context, int step) {
     final to = neighbourOf(context, agent, step);
     if (to == null) {
       return SwipePeek(
-        card: AgentPeekEnd(next: step > 0, listed: agentsInBoardOrder(context).contains(agent)),
+        card: AgentPeekEnd(next: step > 0, working: agentsWorking(context)),
       );
     }
     return SwipePeek(
-      card: AgentPeekCard(item: to, fromLeft: step < 0),
-      go: () => stepToAgent(context, to.agent, step),
+      card: AgentPeekCard(item: to.item, fromLeft: step < 0, position: to.position, count: to.count),
+      go: () => stepToAgent(context, to.item.agent, step),
     );
   }
 

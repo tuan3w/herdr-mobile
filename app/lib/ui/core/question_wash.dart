@@ -7,8 +7,8 @@ import 'tokens.dart';
 
 /// How much of a question a [QuestionWash] shows.
 enum QuestionWashSize {
-  /// Two lines of question and two of subject, and `Read all` when either is
-  /// cut: the board card and the pane's answer dock.
+  /// Two lines of question and three of subject, and `Read all` when either
+  /// is cut: the board card and the pane's answer dock.
   compact,
 
   /// Everything: the reply sheet and the permission dock.
@@ -18,6 +18,13 @@ enum QuestionWashSize {
 /// The question a blocked agent asks, on the faint "needs you" wash, and under
 /// it what the question is about (the command, the path) in mono: the thing
 /// the answer approves is always in front of the thumb that approves it.
+///
+/// With a subject, the subject is the largest thing on the wash (`Mono.input`)
+/// and the question steps back to a secondary line: the person approves the
+/// command, and "Do you want to proceed?" says nothing the chips do not. Why:
+/// in `Mono.base` under a `Type.prompt` question, the command was smaller
+/// than both the question and the answers. Without a subject the question is
+/// the thing, and keeps `Type.prompt`.
 ///
 /// [leading] sits before the question (a tool icon), [trailing] after it
 /// (room for a button that floats over the wash), and [details] below the
@@ -57,21 +64,22 @@ class QuestionWash extends StatelessWidget {
 
   static const _lines = 2;
 
+  /// A compact subject shows one line more than the question: it is what is
+  /// approved, and a command often wraps.
+  static const _subjectLines = 3;
+
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
     final compact = size == QuestionWashSize.compact;
     final subject = this.subject ?? '';
-    final questionStyle = Type.prompt.copyWith(color: ds.text);
-    final subjectStyle = Mono.base.copyWith(color: ds.text);
+    final questionStyle = _questionStyle(subject).copyWith(color: subject.isEmpty ? ds.text : ds.textSecondary);
+    final subjectStyle = _subjectStyle.copyWith(color: ds.text);
     final scaler = MediaQuery.textScalerOf(context);
     final direction = Directionality.of(context);
 
     Widget text(BoxConstraints? box) {
-      final cut =
-          box != null &&
-          (_cut(question, questionStyle, box.maxWidth, scaler, direction) ||
-              (subject.isNotEmpty && _cut(subject, subjectStyle, box.maxWidth, scaler, direction)));
+      final cut = box != null && cuts(question, subject, box.maxWidth, scaler, direction);
       Widget q = Text(
         question,
         maxLines: compact ? _lines : null,
@@ -88,7 +96,7 @@ class QuestionWash extends StatelessWidget {
             const SizedBox(height: Gap.xs),
             Text(
               subject,
-              maxLines: compact ? _lines : null,
+              maxLines: compact ? _subjectLines : null,
               overflow: compact ? TextOverflow.ellipsis : null,
               style: subjectStyle,
             ),
@@ -139,10 +147,22 @@ class QuestionWash extends StatelessWidget {
     );
   }
 
-  static bool _cut(String text, TextStyle style, double width, TextScaler scaler, TextDirection direction) {
+  static TextStyle _questionStyle(String subject) => subject.isEmpty ? Type.prompt : Type.secondaryStrong;
+  static const _subjectStyle = Mono.input;
+
+  /// Whether a compact wash cuts [question] or [subject] at a text [width]
+  /// (and so shows `Read all` as its last row). For a caller that places
+  /// something on the wash's last line (the board card's `Reply…`).
+  static bool cuts(String question, String? subject, double width, TextScaler scaler, TextDirection direction) {
+    final s = subject ?? '';
+    return _cut(question, _questionStyle(s), width, scaler, direction, _lines) ||
+        (s.isNotEmpty && _cut(s, _subjectStyle, width, scaler, direction, _subjectLines));
+  }
+
+  static bool _cut(String text, TextStyle style, double width, TextScaler scaler, TextDirection direction, int lines) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
-      maxLines: _lines,
+      maxLines: lines,
       textScaler: scaler,
       textDirection: direction,
     )..layout(maxWidth: width);

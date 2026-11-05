@@ -1,5 +1,5 @@
 // A page from a machine shown in herdr: what the bar says, Back through the
-// page's history, a failed load, Copy link, where other links go, and the
+// page's history, ✕ and the visit's pages, a failed load, Copy link, where other links go, and the
 // hold on the connection while the screen is up.
 import 'dart:async';
 
@@ -95,7 +95,7 @@ void main() {
     final gate = transport.webGate = Completer();
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
 
-    expect(find.text('localhost:3000'), findsOneWidget, reason: 'the machine\'s port, not the phone\'s 51111');
+    expect(find.text('localhost:3000'), findsOneWidget, reason: 'the machine’s port, not the phone’s 51111');
     expect(
       find.text('build-box'),
       findsOneWidget,
@@ -109,7 +109,9 @@ void main() {
     expect(web.javaScript, isTrue, reason: 'dev pages need it');
   });
 
-  testWidgets('Back goes back in the page first, then leaves, never through the entry page', (tester) async {
+  testWidgets('the phone’s Back goes back in the page first, then leaves, never through the entry page', (
+    tester,
+  ) async {
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
     expect(web.current, 'http://localhost:51111/');
 
@@ -117,16 +119,121 @@ void main() {
     await _settle(tester);
     expect(web.current, 'http://localhost:51111/page2.html');
 
-    await tester.tap(find.byTooltip('Back'));
+    await tester.binding.handlePopRoute();
     await _settle(tester);
     expect(find.byType(WebPreviewScreen), findsOneWidget);
     expect(web.current, 'http://localhost:51111/');
 
-    await tester.tap(find.byTooltip('Back'));
+    await tester.binding.handlePopRoute();
     await _settle(tester);
     expect(find.byType(WebPreviewScreen), findsNothing, reason: 'the first page has nothing behind it');
     expect(web.current, 'http://localhost:51111/', reason: 'the view never went back to the entry page ("Opening…")');
     expect(find.text('open'), findsOneWidget);
+  });
+
+  group('three pages deep', () {
+    /// The first page, then two links: Alpha (titled) and b.html (untitled).
+    Future<void> deep(WidgetTester tester) async {
+      web.titles['http://localhost:51111/a.html'] = 'Alpha';
+      await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+      await web.navigate('http://localhost:51111/a.html');
+      await _settle(tester);
+      await web.navigate('http://localhost:51111/b.html');
+      await _settle(tester);
+      expect(web.current, 'http://localhost:51111/b.html', reason: 'set-up');
+      // The toast about the port the page got sits over the sheet's last row.
+      await tester.pump(const Duration(seconds: 10));
+    }
+
+    CircleButton pageBack(WidgetTester tester) => tester.widget<CircleButton>(
+      find.ancestor(of: find.byTooltip('Previous page'), matching: find.byType(CircleButton)),
+    );
+
+    testWidgets('✕ leaves in one tap', (tester) async {
+      await deep(tester);
+      final loads = web.loaded.length;
+      await tester.tap(find.byTooltip('Close page'));
+      await _settle(tester);
+      expect(find.byType(WebPreviewScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      expect(web.loaded, hasLength(loads), reason: 'no walk back through the pages on the way out');
+    });
+
+    testWidgets('the page-back arrow steps one page, and is dimmed at the first page', (tester) async {
+      await deep(tester);
+      expect(pageBack(tester).onPressed, isNotNull);
+
+      await tester.tap(find.byTooltip('Previous page'));
+      await _settle(tester);
+      expect(web.current, 'http://localhost:51111/a.html');
+      await tester.tap(find.byTooltip('Previous page'));
+      await _settle(tester);
+      expect(web.current, 'http://localhost:51111/');
+
+      expect(pageBack(tester).onPressed, isNull, reason: 'nothing behind the first page');
+      expect(find.byTooltip('Previous page'), findsOneWidget, reason: 'it stays, dimmed');
+      await tester.tap(find.byTooltip('Previous page'), warnIfMissed: false);
+      await _settle(tester);
+      expect(find.byType(WebPreviewScreen), findsOneWidget, reason: 'the arrow never leaves the screen');
+      expect(web.current, 'http://localhost:51111/');
+    });
+
+    testWidgets('a hold on the arrow lists the visit’s pages, newest first, and a tap goes back to one', (
+      tester,
+    ) async {
+      await deep(tester);
+      await tester.longPress(find.byTooltip('Previous page'));
+      await _settle(tester);
+
+      expect(find.text('Pages in this visit'), findsOneWidget);
+      final newest = tester.getTopLeft(find.text('localhost:3000/b.html').last).dy;
+      final alpha = tester.getTopLeft(find.text('Alpha')).dy;
+      final first = tester.getTopLeft(find.text('localhost:3000').last).dy;
+      expect(newest < alpha && alpha < first, isTrue, reason: 'newest first');
+      expect(find.text('localhost:3000/a.html'), findsOneWidget, reason: 'a titled page says where it is under it');
+      expect(find.text('Here'), findsOneWidget);
+      expect(find.text('Close page'), findsOneWidget);
+
+      await tester.tap(find.text('localhost:3000').last);
+      await _settle(tester);
+      expect(find.text('Pages in this visit'), findsNothing);
+      expect(web.current, 'http://localhost:51111/', reason: 'two pages back, in one tap');
+      expect(find.byType(WebPreviewScreen), findsOneWidget);
+      expect(pageBack(tester).onPressed, isNull, reason: 'the count followed the jump');
+
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(find.byType(WebPreviewScreen), findsNothing, reason: 'Back from the first page leaves');
+    });
+
+    testWidgets('the list’s last row leaves', (tester) async {
+      await deep(tester);
+      await tester.longPress(find.byTooltip('Previous page'));
+      await _settle(tester);
+      await tester.tap(find.text('Close page'));
+      await _settle(tester);
+      expect(find.byType(WebPreviewScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+  });
+
+  testWidgets('Reload is in ⋯, and says why it is off while a failure offers Retry', (tester) async {
+    await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+    await tester.tap(find.byTooltip('Page options'));
+    await _settle(tester);
+    await tester.tap(find.text('Reload'));
+    await _settle(tester);
+    expect(web.reloads, 1);
+
+    web.failing.add('http://localhost:51111/page2.html');
+    await web.navigate('http://localhost:51111/page2.html');
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Page options'));
+    await _settle(tester);
+    await tester.tap(find.text('Reload'));
+    await _settle(tester);
+    expect(web.reloads, 1, reason: 'Retry, in the panel, is the way back');
+    expect(find.textContaining('Retry, under the message'), findsOneWidget);
   });
 
   testWidgets('a page that fails to load says what happened, once, and Retry opens it again', (tester) async {
@@ -157,7 +264,7 @@ void main() {
   });
 
   testWidgets(
-    '⋯ shows the whole link, and Copy link copies it: the address on the machine, never the phone\'s tokened URL',
+    '⋯ shows the whole link, and Copy link copies it: the address on the machine, never the phone’s tokened URL',
     (tester) async {
       await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
       await web.navigate('http://localhost:51111/page2.html?tab=logs#b');
@@ -178,7 +285,7 @@ void main() {
     },
   );
 
-  testWidgets('a file\'s page copies its path on the machine', (tester) async {
+  testWidgets('a file’s page copies its path on the machine', (tester) async {
     transport.webInfo = const WebBridgeInfo(port: 51111, token: _token);
     transport.fs = FakeFs()..addFile('/home/dev/site/index.html', '<h1>hi</h1>');
     await pump(tester, const FilePage('/home/dev/site/index.html'));
@@ -219,10 +326,10 @@ void main() {
     await _settle(tester);
     expect(launcher.opened, isEmpty);
     expect(find.text('http://example.org/a'), findsOneWidget);
-    expect(find.text('This link is not encrypted.'), findsOneWidget);
+    expect(find.text('This link isn’t encrypted.'), findsOneWidget);
   });
 
-  testWidgets('a page posted to another site says it is not from the machine, and copies its own address', (
+  testWidgets('a page posted to another site says it isn’t from the machine, and copies its own address', (
     tester,
   ) async {
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
@@ -230,12 +337,12 @@ void main() {
     web.land('https://evil.example.com/login');
     await _settle(tester);
 
-    expect(find.text('evil.example.com'), findsWidgets, reason: 'the real host, not the machine\'s address');
-    expect(find.textContaining('build-box'), findsNothing, reason: 'another site never sits under the machine\'s name');
+    expect(find.text('evil.example.com'), findsWidgets, reason: 'the real host, not the machine’s address');
+    expect(find.textContaining('build-box'), findsNothing, reason: 'another site never sits under the machine’s name');
     expect(
       find.descendant(of: find.byType(AppTopBar), matching: find.textContaining('localhost:3000')),
       findsNothing,
-      reason: 'never the machine\'s address over another site',
+      reason: 'never the machine’s address over another site',
     );
 
     await tester.tap(find.byTooltip('Page options'));
@@ -245,14 +352,14 @@ void main() {
     expect(copied, ['https://evil.example.com/login']);
   });
 
-  testWidgets('another port of the machine is not loaded on its own, is one deliberate tap away, and Back returns', (
+  testWidgets('another port of the machine isn’t loaded on its own, is one deliberate tap away, and Back returns', (
     tester,
   ) async {
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
 
     expect(await web.navigate('http://localhost:8791/api'), isFalse);
     await _settle(tester);
-    expect(launcher.opened, isEmpty, reason: 'the phone\'s own localhost is not the machine\'s');
+    expect(launcher.opened, isEmpty, reason: 'the phone’s own localhost isn’t the machine’s');
     expect(find.text('localhost:8791 isn’t open on this phone.'), findsOneWidget);
 
     transport.webInfo = const WebBridgeInfo(port: 8791, token: _token, entryPort: 51999);
@@ -262,7 +369,7 @@ void main() {
     expect(transport.webBridges.last, isA<PortForward>().having((f) => f.port, 'port', 8791));
     expect(web.current, 'http://localhost:8791/api');
 
-    await tester.tap(find.byTooltip('Back'));
+    await tester.tap(find.byTooltip('Previous page'));
     await _settle(tester);
     expect(web.current, 'http://localhost:51111/', reason: 'past the second entry page, to the page that linked it');
     expect(find.byType(WebPreviewScreen), findsOneWidget);
@@ -281,7 +388,7 @@ void main() {
     expect(find.textContaining('herdr doesn’t download files'), findsOneWidget);
   });
 
-  testWidgets('a single-page app\'s route gets its title once the app has set it', (tester) async {
+  testWidgets('a single-page app’s route gets its title once the app has set it', (tester) async {
     web.titles['http://localhost:51111/'] = 'Dashboard';
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
     web.pushState('http://localhost:51111/settings');
@@ -353,7 +460,7 @@ void main() {
     expect(bar(), findsNothing);
   });
 
-  testWidgets('while nothing is shown the view is the screen\'s colour; a page gets the web\'s white', (tester) async {
+  testWidgets('while nothing is shown the view is the screen’s colour; a page gets the web’s white', (tester) async {
     final gate = transport.webGate = Completer();
     await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
     expect(web.backgrounds, isNotEmpty);
@@ -399,7 +506,7 @@ void main() {
       await _settle(tester);
 
       expect(find.byType(SheetScaffold), findsOneWidget, reason: 'one sheet, not one per request');
-      expect(find.textContaining('staging'), findsOneWidget, reason: 'the server\'s own words for what it protects');
+      expect(find.textContaining('staging'), findsOneWidget, reason: 'the server’s own words for what it protects');
       expect(find.textContaining('build-box'), findsWidgets);
       expect(answers, isEmpty, reason: 'the view waits for the answer');
 

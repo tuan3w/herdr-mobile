@@ -118,7 +118,7 @@ class _BatchSheetState extends State<BatchSheet> {
       BatchAction.close => (
         'Close agents',
         'This closes these terminal panes and ends these agent sessions. '
-            'Whatever runs in them stops, and it cannot be undone.',
+            'Whatever runs in them stops, and it can’t be undone.',
         'Will be closed',
         'Close',
       ),

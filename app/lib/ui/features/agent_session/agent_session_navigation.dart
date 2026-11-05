@@ -20,7 +20,7 @@ import 'subagent_screen.dart';
 Future<void> openSubagentChat(BuildContext context, ObservedAgentSession parent, String name) async {
   final session = context.read<ObservedSessions?>()?.subagent(parent, name);
   if (session == null) {
-    showToast(context, 'That subagent’s transcript is not available.');
+    showToast(context, 'That subagent’s transcript isn’t available.');
     return;
   }
   await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AgentSessionScreen(session: session)));

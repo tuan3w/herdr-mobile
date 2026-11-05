@@ -173,7 +173,7 @@ IconData iconForEntry(RemoteEntry e) {
     danger: true,
   ),
   RemoteFileErrorKind.failed => (
-    icon: LucideIcons.triangleAlert,
+    icon: LucideIcons.circleAlert,
     title: 'Couldn’t read this',
     message: e.message,
     retry: true,

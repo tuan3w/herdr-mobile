@@ -114,6 +114,21 @@ final _rules = <Rule>[
     exempt: ['lib/ui/core/motion.dart'],
   ),
   Rule(
+    'voice',
+    [
+      // A straight apostrophe in a contraction, in either quote style (`isn't`,
+      // `isn\'t`); the voice is a curly one (`isn’t`).
+      RegExp(r'''"[^"\n]*[A-Za-z]'(?:t|s|re|ll|ve|d)\b'''),
+      RegExp(r'''\'[^'\n]*[A-Za-z]\\'(?:t|s|re|ll|ve|d)\b'''),
+      // A negation spelled out in a sentence (a capital after the quote, or
+      // a space before it): `Could not`, `did not`, `is not`, `cannot`.
+      RegExp(
+        r'''['"][^'"\n]*\b(?:[Cc]ould not|did not|does not|is not|was not|cannot|Cannot)\b''',
+      ),
+    ],
+    'say it as the app does: curly apostrophe and contractions (Couldn’t, didn’t, isn’t)',
+  ),
+  Rule(
     'clipboard',
     [RegExp(r'\bClipboard\.setData\(')],
     'use copyText() from the kit: it says "copied" only where Android does not',

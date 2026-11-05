@@ -1,5 +1,7 @@
-// One agent per screen: a quick swipe goes to the next agent in the board's
-// order and replaces the screen, the bar's toggle shows the other view of the
+// One agent per screen: a quick swipe walks the agents that want the person
+// (needs you, then done project by project as the board lists them, in an
+// order frozen at the first swipe) and replaces
+// the screen, the bar's toggle shows the other view of the
 // same agent, a screen whose machine is gone says so, and launch puts the
 // agent screen that was in front back.
 import 'dart:async';
@@ -218,27 +220,80 @@ void main() {
   setUpAll(loadAppFonts);
 
   group('swipe between agents', () {
-    testWidgets('left goes to the next agent in the board\'s order, right to the previous; Back goes home', (
+    testWidgets('left walks what needs you, then what finished, never what works or idles; right retraces', (
+      tester,
+    ) async {
+      final h = await _harness();
+      await _pump(tester, h);
+      await _waitInOrder(tester, h);
+      // p1 finished too: the walk is p4, p2 (needs you), then p1 (done).
+      final t = h.transports[_machine]!;
+      t.snapshot = _snapshot([_pane(1, 'done'), _pane(2, 'blocked'), _pane(3, 'working'), _pane(4, 'blocked')]);
+      t.emit(const {'event': 'pane.agent_status_changed'});
+      await settle(tester);
+      await _open(tester, _id(4));
+      expect(_onScreen(tester), _id(4));
+
+      final (g, at, _) = await _drag(tester, by: const Offset(-40, 0));
+      expect(_peekOf('task 2'), findsOneWidget);
+      expect(_peekOf('2 of 3'), findsOneWidget, reason: 'where the walk is');
+      await _letGoStill(tester, g, at);
+
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), _id(2), reason: 'the other one that needs you, waiting less long');
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), _id(1), reason: 'then what finished; the working p3 is not on the walk');
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), _id(1), reason: 'the walk ends there');
+
+      await _swipeRight(tester);
+      expect(_onScreen(tester), _id(2));
+      await _swipeRight(tester);
+      expect(_onScreen(tester), _id(4));
+
+      await _back(tester);
+      _expectHome();
+      await teardownUi(tester, h);
+    });
+
+    testWidgets('after Needs you the walk takes the finished agents project by project, as the board lists them', (
+      tester,
+    ) async {
+      Pane at(String ws, int i, String status) => (id: '$ws:p$i', ws: ws, agent: 'claude', status: status);
+      final h = await _harness(
+        panes: [at('w1', 1, 'done'), at('w2', 2, 'done'), at('w2', 3, 'working'), at('w1', 4, 'blocked')],
+      );
+      await _pump(tester, h, home: [('w1:p4', const PaneAgent(_machine, 'w1:p4'))]);
+      await _open(tester, 'w1:p4');
+
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), 'w1:p1', reason: 'projects in name order, as the board lists them');
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), 'w2:p2', reason: 'though its project has work running');
+      await teardownUi(tester, h);
+    });
+
+    testWidgets('the walk is frozen: answering the agent left behind does not move it, so right goes back there', (
       tester,
     ) async {
       final h = await _harness();
       await _pump(tester, h);
       await _waitInOrder(tester, h);
       await _open(tester, _id(4));
-      expect(_onScreen(tester), _id(4));
 
       await _swipeLeft(tester);
-      expect(_onScreen(tester), _id(2), reason: 'the other one that needs you, waiting less long');
-      await _swipeLeft(tester);
-      expect(_onScreen(tester), _id(3), reason: 'then what works');
-      await _swipeLeft(tester);
-      expect(_onScreen(tester), _id(1), reason: 'then what is idle');
+      expect(_onScreen(tester), _id(2));
+      // p4 was answered on the desktop and went back to work: on the board it
+      // is now under Working, after p2.
+      final t = h.transports[_machine]!;
+      t.snapshot = _snapshot([_pane(1, 'idle'), _pane(2, 'blocked'), _pane(3, 'working'), _pane(4, 'working')]);
+      t.emit(const {'event': 'pane.agent_status_changed'});
+      await settle(tester);
 
       await _swipeRight(tester);
-      expect(_onScreen(tester), _id(3));
-
-      await _back(tester);
-      _expectHome();
+      expect(_onScreen(tester), _id(4), reason: 'the walk retraces exactly, whatever the board says now');
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), _id(2));
       await teardownUi(tester, h);
     });
 
@@ -266,16 +321,17 @@ void main() {
       await _open(tester, _id(4));
 
       final (g, at, _) = await _drag(tester, by: const Offset(-110, 0), over: const Duration(milliseconds: 400));
+      expect(_peekOf('Let go to open'), findsOneWidget, reason: 'past the distance the card says what letting go does');
       await _letGoStill(tester, g, at);
       expect(_onScreen(tester), _id(2), reason: 'held still past the distance');
 
-      // A short, fast flick: 36 dp in 48 ms.
-      await _swipe(tester, by: const Offset(-36, 0), over: const Duration(milliseconds: 48));
-      expect(_onScreen(tester), _id(3), reason: 'the flick carries it');
+      // A short, fast flick back: 36 dp in 48 ms.
+      await _swipe(tester, by: const Offset(36, 0), over: const Duration(milliseconds: 48));
+      expect(_onScreen(tester), _id(4), reason: 'the flick carries it');
       await teardownUi(tester, h);
     });
 
-    testWidgets('it goes to the agent the card showed, even if the order changed meanwhile', (tester) async {
+    testWidgets('it goes to the agent the card showed, even if that one stopped needing you meanwhile', (tester) async {
       final h = await _harness();
       await _pump(tester, h);
       await _waitInOrder(tester, h);
@@ -283,16 +339,17 @@ void main() {
 
       final (g, at, _) = await _drag(tester, by: const Offset(-60, 0));
       expect(_peekOf('task 2'), findsOneWidget);
-      // p3 starts needing the person and p2 goes back to work: p3 is next now.
+      // p3 starts needing the person and p2 goes back to work.
       final t = h.transports[_machine]!;
       t.snapshot = _snapshot([_pane(1, 'idle'), _pane(2, 'working'), _pane(3, 'blocked'), _pane(4, 'blocked')]);
       t.emit(const {'event': 'pane.agent_status_changed'});
       await settle(tester);
-      expect(neighbourOf(tester.element(find.byType(PaneScreen)), _agent(4), 1)?.agent, _agent(3));
 
       await g.moveBy(const Offset(-60, 0), timeStamp: at + const Duration(milliseconds: 16));
       await _letGoStill(tester, g, at + const Duration(milliseconds: 16));
       expect(_onScreen(tester), _id(2));
+      await _swipeRight(tester);
+      expect(_onScreen(tester), _id(4), reason: 'and back along the same walk');
       await teardownUi(tester, h);
     });
 
@@ -308,15 +365,39 @@ void main() {
       expect(_onScreen(tester), _id(4), reason: 'the first one has nothing before it');
       await _swipeRight(tester);
       expect(_onScreen(tester), _id(4), reason: 'not even flicked');
-      await _back(tester);
-      _expectHome();
 
-      await _open(tester, _id(1));
       await _swipeLeft(tester);
-      expect(_onScreen(tester), _id(1), reason: 'the last one has nothing after it');
+      expect(_onScreen(tester), _id(2));
+      final (g2, at2, _) = await _drag(tester, by: const Offset(-120, 0));
+      expect(find.textContaining('All caught up'), findsOneWidget, reason: 'nothing else wants you');
+      expect(find.textContaining('1 working'), findsOneWidget, reason: 'and p3 works on without you');
+      await _letGoStill(tester, g2, at2);
+      expect(_onScreen(tester), _id(2), reason: 'the last one has nothing after it');
       expect(_peeking(), isFalse);
       await _back(tester);
       _expectHome();
+      await teardownUi(tester, h);
+    });
+
+    testWidgets('back on the board the walk is over: the next one begins where the person is', (tester) async {
+      final h = await _harness();
+      await _pump(tester, h);
+      await _waitInOrder(tester, h);
+      await _open(tester, _id(4));
+      await _swipeLeft(tester);
+      expect(_onScreen(tester), _id(2));
+      await _back(tester);
+      _expectHome();
+
+      // p4 was answered meanwhile; p2 still needs the person.
+      final t = h.transports[_machine]!;
+      t.snapshot = _snapshot([_pane(1, 'idle'), _pane(2, 'blocked'), _pane(3, 'working'), _pane(4, 'working')]);
+      t.emit(const {'event': 'pane.agent_status_changed'});
+      await settle(tester);
+
+      await _open(tester, _id(2));
+      await _swipeRight(tester);
+      expect(_onScreen(tester), _id(2), reason: 'a new walk starts at p2: the old one led back to p4');
       await teardownUi(tester, h);
     });
 
@@ -342,7 +423,7 @@ void main() {
       await teardownUi(tester, h);
     });
 
-    testWidgets('from an agent session\'s transcript to the terminal before it, and back', (tester) async {
+    testWidgets('from an agent session\'s transcript to a terminal on the walk, and back', (tester) async {
       final h = await _harness();
       final session = FakeAgentSession(
         title: 'payments',
@@ -356,24 +437,25 @@ void main() {
         extra: [ListenableProvider<AgentSessions>.value(value: sessions)],
       );
       await _waitInOrder(tester, h);
-      // The session is idle: last, after the idle pane p1.
+      // The session is idle: the walk starts at it, then p4 and p2.
       await _open(tester, 'session');
       expect(find.byType(AgentSessionScreen), findsOneWidget);
 
-      await _swipeRight(tester, from: tester.getCenter(find.byType(TranscriptView)));
+      await _swipeLeft(tester, from: tester.getCenter(find.byType(TranscriptView)));
       expect(find.byType(AgentSessionScreen), findsNothing);
-      expect(_onScreen(tester), _id(1));
+      expect(_onScreen(tester), _id(4));
 
-      final (g, at, _) = await _drag(tester, by: const Offset(-60, 0));
+      final (g, at, _) = await _drag(tester, by: const Offset(60, 0));
       expect(_peekOf('payments'), findsOneWidget, reason: 'a session shows as the board shows it');
-      await g.moveBy(const Offset(-100, 0), timeStamp: at + const Duration(milliseconds: 16));
+      expect(_peekOf('Fixed it.'), findsOneWidget, reason: 'with what it last said, already in memory');
+      await g.moveBy(const Offset(100, 0), timeStamp: at + const Duration(milliseconds: 16));
       await g.up(timeStamp: at + const Duration(milliseconds: 16));
       await settle(tester);
       expect(find.byType(PaneScreen), findsNothing);
       expect(find.byType(AgentSessionScreen), findsOneWidget);
 
-      await _swipeLeft(tester, from: tester.getCenter(find.byType(TranscriptView)));
-      expect(find.byType(AgentSessionScreen), findsOneWidget, reason: 'the session is the last agent');
+      await _swipeRight(tester, from: tester.getCenter(find.byType(TranscriptView)));
+      expect(find.byType(AgentSessionScreen), findsOneWidget, reason: 'the session is where the walk began');
 
       await _back(tester);
       _expectHome();
@@ -382,8 +464,7 @@ void main() {
   });
 
   group('what is not a swipe to the next agent', () {
-    // p2 has an agent on either side (p4 before it, p3 after), so a step
-    // either way would show.
+    // A walk from p2 leads on to p4, so a swipe left would go there.
     Future<UiHarness> inTheMiddle(WidgetTester tester) async {
       final h = await _harness();
       await _pump(tester, h);
@@ -568,7 +649,7 @@ void main() {
       }
 
       await perform('Next agent');
-      expect(_onScreen(tester), _id(3));
+      expect(_onScreen(tester), _id(4), reason: 'the walk from p2: the other one that needs you');
       await perform('Previous agent');
       expect(_onScreen(tester), _id(2));
       semantics.dispose();
@@ -580,24 +661,30 @@ void main() {
       final h = await _harness();
       await _pump(tester, h);
       await _waitInOrder(tester, h);
-      await _open(tester, _id(1));
+      await _open(tester, _id(4));
+
+      Future<void> next() async {
+        final node = tester.getSemantics(find.byType(AgentSwipe));
+        tester.binding.performSemanticsAction(
+          SemanticsActionEvent(
+            type: SemanticsAction.customAction,
+            viewId: tester.view.viewId,
+            nodeId: node.id,
+            arguments: CustomSemanticsAction.getIdentifier(const CustomSemanticsAction(label: 'Next agent')),
+          ),
+        );
+        await settle(tester);
+      }
+
+      await next();
+      expect(_onScreen(tester), _id(2));
       tester.takeAnnouncements();
+      await next();
 
-      final node = tester.getSemantics(find.byType(AgentSwipe));
-      tester.binding.performSemanticsAction(
-        SemanticsActionEvent(
-          type: SemanticsAction.customAction,
-          viewId: tester.view.viewId,
-          nodeId: node.id,
-          arguments: CustomSemanticsAction.getIdentifier(const CustomSemanticsAction(label: 'Next agent')),
-        ),
-      );
-      await settle(tester);
-
-      expect(_onScreen(tester), _id(1), reason: 'the last one has nothing after it');
+      expect(_onScreen(tester), _id(2), reason: 'the walk ends there');
       final said = tester.takeAnnouncements();
       expect(said, hasLength(1));
-      expect(said.single.message, contains('next agent'));
+      expect(said.single.message, contains('All caught up'));
       semantics.dispose();
       await teardownUi(tester, h);
     });

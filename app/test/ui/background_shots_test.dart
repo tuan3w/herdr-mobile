@@ -23,7 +23,6 @@ import 'package:herdr_mobile/data/acp/acp_models.dart' show StopReason;
 import 'package:herdr_mobile/data/observed/observed_contracts.dart' show SubagentInfo;
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart' show AgentSessionState;
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:herdr_mobile/ui/features/agent_session/background_strip.dart';
@@ -468,7 +467,7 @@ void main() {
     'toast-after-stop': (
       () => session(turn: true)..backgroundWork = work([task('bg_6'), task('bg_7')]),
       (tester) async {
-        await tester.tap(find.byIcon(LucideIcons.square));
+        await tester.tap(find.byIcon(HerdrIcons.stopMark));
         await tester.pump();
         current.update((s) => s.withTurnEnded(StopReason.cancelled));
         await tester.pump();

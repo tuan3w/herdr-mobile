@@ -57,12 +57,30 @@ unfinished work, and a prototype patch there is one `git stash` away from
 destroying it. For rung 3: `git worktree add /tmp/proto-<name>`, and delete it
 afterwards. Kill only processes you started, by PID (AGENTS.md).
 
+**Motion, flow and gesture questions** (a swipe order, a sheet against a page,
+how Back leaves) need a live surface, not stills. Between rungs 1 and 3 sits a
+self-contained HTML page: the app's tokens and fonts (`tokens.dart`, Inter,
+JetBrains Mono), a phone frame, every variant fully working behind the
+`emil-prototype` picker, published as an artifact. It shows the idea and its
+timing; it cannot show touch feel, frame time or TalkBack, so say that.
+
 ### 4. Build the baseline first, on the same data
 
 Draw today's behaviour with the data you will use for every variant. Then ask:
 does this render show the owner's complaint? If it looks fine, the data is
 flattering it; fix the data, not the widget. This is the one check that keeps a
 prototype honest, and it is also the most persuasive picture in the report.
+
+A stand-in baseline must draw what today's code draws: copy its rules (how many
+lines, where it cuts, how labels are cleaned) from the widget, with `file:line`,
+or use rung 2. Why: a hand-made baseline cut the command to one line and kept
+the agent's raw `(esc)` labels; the app shows two lines with `Read all` and
+strips the keys, so two "bugs in today's app" the critic found were the
+prototype's own.
+
+Before drawing a variant, check that its data exists and what it costs to get
+(`herdr-design`: the radio line). A variant on data that needs a new poll is a
+battery decision, not a layout one.
 
 ### 5. Use realistic, mixed data, and mark what is invented
 

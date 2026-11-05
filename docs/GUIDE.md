@@ -58,7 +58,8 @@ looked for in that user's home.
    browser or file manager you opened it with). Allow it, then install.
 4. Later releases install over this one and keep your machines and settings.
    You do not have to come back to this page: when a new version is out,
-   Settings gets a small dot. Tap `Update available` there: the update sheet
+   the gear (Settings) at the top of the board gets a small dot. Tap it, then
+   `Update available`: the update sheet
    opens on what's new (a short clip of the changes when the release has one;
    `Play` plays it), then `Download`, then `Install`. herdr
    checks the file against the release's checksum first, and Android asks you
@@ -71,8 +72,9 @@ looked for in that user's home.
 
 ![Machines](screenshots/machines.png)
 
-On first start the Agents tab shows `Add your first machine`. Later, use the
-`+` on the Machines tab (`Add machine`).
+On first start the board shows `Add your first machine`. Later, tap the
+machines count at the top left of the board (`3 of 3 machines`) to open
+Machines, and use its `+` (`Add machine`).
 
 1. Under `Machine`, fill in:
    - `Name`: what the app calls it (for example `Build server`). Blank uses
@@ -133,7 +135,8 @@ know why. To accept a new key, remove the machine and add it again.
   `remote-api-bridge`. Set it when herdr's socket is not where the app looks
   by default.
 
-**Managing machines.** On the Machines tab each machine shows its state (the
+**Managing machines.** On Machines (the count at the top left of the board)
+each machine shows its state (the
 dot in front), `N agents · user@host` and, when agents need you, their count. Its
 `More` menu has `Edit`, `Disable` (stop connecting without deleting it) and
 `Remove` (deletes the connection and its credentials from the phone). Tap a
@@ -148,25 +151,51 @@ there or remove the worktree (held, never forced). `Browse files` and the `+`
 
 ![The board](screenshots/board.png)
 
-The Agents tab is the board: every agent on every machine in one list. It
-holds both kinds of agent:
+The board is the app's home: every agent on every machine in one list, and
+nothing under it. It holds both kinds of agent:
 
 - **Terminal agents**: agents running in herdr panes, as herdr sees them.
 - **Agent sessions**: agents started from the phone (section 6).
 
-**Sections.** Agents are grouped by what they need, in this order:
+**Sections, by status.** From the top:
 
-- `Needs you`: blocked on a question or a permission. Longest waiting first.
-- `Working`
-- `Done`: finished and not yet reviewed. Longest waiting first.
-- `Idle`: agents and phone sessions together, by recency: those that stopped
-  within the last day, newest first; then those the app has no date for; then
-  the older ones, newest first. The first five show; the rest sit behind one
-  line (`22 more idle`, with the names of the first two under it) that opens
-  them in place and then reads `Show less`. The `Idle` chip shows them all.
+- `Needs you`: every agent blocked on a question or a permission. Longest
+  waiting first. The first is a card with its answers; the others are rows
+  under it, and `Answer one by one` on the header walks through them all (see
+  below). It never folds.
+- `Working`: what is running now.
+- `To review`: what finished and you have not looked at yet.
+- `Idle`: the rest.
 
-Tap a section header to fold it. The chips under the title filter the board
-to one status.
+Inside `Working`, `To review` and `Idle` the newest is on top: the agent that
+just started, just finished or just stopped. An agent with no known time sits
+below the ones that changed within the last day and above the older ones.
+Every agent is one row: its task, then which feature it is,
+`herdr-mobile · fix/login · omp` (the repo, the branch, the agent), and the
+machine at the end when you have several.
+
+Tap a section's header to fold it (all but `Needs you`); the fold is kept.
+When many agents are idle the five newest show; the older ones sit behind one
+line after them (`22 more idle`, with the names of the first two) that opens
+them in place and then reads `Show less`. An agent you saw while looking never
+slips behind that line until you next open the board.
+
+**Branches.** herdr groups a repo's checkouts once you open a worktree in it.
+The board reads the branches of those repos once per app run, the first time
+it shows them (one request per repo with several checkouts); until then, and
+for a checkout opened later, a row shows its checkout's folder instead.
+
+**The top of the board.** At the top left, `4 of 5 machines` says how many of
+your machines (those switched on) are online: a filled green dot when all
+are, a ring when one is connecting (yellow) or needs you (orange). Tap it to
+open Machines; Back comes back to the board. At the top right are `+` (start
+an agent session) and the gear for Settings, which carries a small dot when a
+newer version is out.
+
+**The status line.** Under the title, one line says how the board stands:
+`2 need you · 3 to review · 3 working · heard just now`, then `1 not connected` when a
+machine is out of reach (its strip under the title says which, with `Retry`).
+With nothing waiting or working it says `nothing running`.
 
 **When an idle agent stopped.** herdr gives no timestamps, so the app dates a
 change when it sees it. An agent that was already idle when the app first
@@ -174,8 +203,7 @@ looked has no date of its own; an omp agent whose session is reported (see
 below) is dated by when its session file was last written, which is when its
 last turn ended. A phone session is dated by when it last did anything. An
 agent with no date was idle before the app first looked, so it may be an hour
-old or a month: it sits between the ones that stopped within a day and the older
-ones, in machine and pane order, rather than under them.
+old or a month.
 
 **What an agent is called.** The name you gave the pane in herdr, else the
 title the program set. An omp pane whose title is only its folder (omp shows
@@ -189,40 +217,38 @@ file) when a pane needs a name and again when its status changes, never while
 the app is in the background. An idle omp pane with a good title costs one
 `stat`, for the date above.
 
-**Cards or compact.** Cards show the last lines of the agent's terminal and
-how long it has been in its state; the compact list shows one row per agent.
-Switch with the button in the header (`Compact list` / `Cards with preview`),
-or pick a default in Settings > Look > `Agent list`: `Auto` (cards up to
-four agents, compact from five), `Cards` or `Compact`. A blocked agent always
-keeps its answers.
-
-**The count.** One number answers "does anything need me?": the badge on the
-Agents tab, the `Needs you` section, the triage pill and the notifications all
-count the same set. It counts only agents you can answer now: an agent on a
+**The count.** One number answers "does anything need me?": the board's
+status line, the triage sheet and the notifications all count the same
+set. The board says it once, in the status line. It counts only agents you can answer now: an agent on a
 machine that is offline is listed, dimmed and marked `offline`, but not
-counted (the section header says `2 offline` instead).
+counted (the `Needs you` header says `2 offline` instead, and the status line
+`1 offline to review`, or `3 to review, 1 offline`).
 
-**The triage pill.** While anything needs you, a pill floats above the tab bar:
-`2 need you · 3 to review`. Tap it to walk through every waiting agent, one
-at a time, longest waiting first (`1 of 2 need you`, `Previous agent`,
+**Answer one by one.** When more than one agent needs you, `Answer one by one`
+on the `Needs you` header walks through every waiting agent, one at a time, longest waiting first (`1 of 2 need you`, `Previous agent`,
 `Next agent`). A terminal agent shows its answers and a message box; an agent
 session shows what it asks and `Answer in the session`. When the last one is
 answered the sheet says `All clear`.
 
-**Reviewing finished work.** A finished agent stays in `Done` until you
-review it:
+**Reviewing finished work.** A finished agent shows a check and counts in the
+status line's `3 to review` until you review it:
 
-- Swipe a done card or row left until it shows `Reviewed`, or flick it.
-- `Mark all reviewed` on the `Done` header reviews every finished agent you
-  can reach.
+- Swipe a finished row left until it shows `Reviewed`, or flick it.
+- Tap `3 to review`: it selects exactly those agents (opening `To review`
+  if it was folded), and `Reviewed` in the bar at the bottom reviews them all
+  under one `Undo`. Drop any you want to keep first.
 - Opening a finished agent session reviews it.
 
 Each shows a `Marked reviewed` toast with `Undo`. This is a mark on the phone
 only; herdr's own state is not touched.
 
 **Selecting several agents.** Long-press a card or row to start selecting;
-taps then add or remove agents (`All` and `Cancel` are at the top,
-`Select all` on the `Done` header). The bar at the bottom offers:
+taps then add or remove agents (`All` and `Cancel` are at the top; `3 to
+review` in the status line picks exactly the finished ones). The bar at the
+bottom offers:
+
+- `Reviewed`: marks the finished agents among them reviewed, at once, with
+  one `Undo`.
 
 - `Stop`: sends Esc to each terminal agent and stops the turn of each
   agent session.
@@ -237,7 +263,7 @@ agents you can switch on `Send anyway` (off by default). A waiting agent
 session is never typed into.
 
 **Pull to refresh** reconnects every machine. The `+` in the header starts a
-`New agent session`; the history icon next to it opens `Past sessions`.
+`New agent session`; `Past sessions` is a row of that form.
 
 ## 5. Answering an agent
 
@@ -247,12 +273,12 @@ session is never typed into.
 understands, its options appear as chips on the card, with the command or
 path it asks about under the question. Tap an option to send it. When there
 are more than five options, the last chip on the card is `N more…`, which
-opens the reply sheet with all of them. The reply button on a card
-(`Reply to <agent>`) opens the same sheet, with a message box
+opens the reply sheet with all of them. `Reply…` at the end of a card's
+last line opens the same sheet, with a message box
 (`Message Claude Code…`, named after the agent) and `Open full` for the agent's screen.
 
 Agent sessions on the board say what they ask but are answered inside the
-session (open it, or `Answer in the session` from the pill).
+session (open it, or `Answer in the session` from `Answer one by one`).
 
 **Hold for risky answers.** An answer that does something hard to take back
 (a push, a delete) or grants standing permission ("don't ask again",
@@ -294,16 +320,30 @@ checks the question before sending.
 Tap an agent on the board to open it. A terminal agent opens as its live
 terminal; an agent session opens as a chat. Back always returns to the board.
 
-**Swiping between agents.** On an agent's screen, swipe sideways to go to the
-next agent in board order (left for next, right for previous). As your finger
-moves, a card slides in showing which agent is there; let go once it has
-come far enough (it tints and ticks) to go, or bring it back to stay where
-you are. A quick flick goes at once. Swipes that start at the screen's edges
-are left to Android's back gesture, and anything that scrolls sideways (a
-wide table, a terminal with wrap off) keeps its swipe. At either end of the
-list the card says `No next agent` or `No previous agent`. With TalkBack,
-the screen's actions include `Next agent` and `Previous agent`. When the app
-is restarted, it reopens the agent screen that was in front.
+**Swiping between agents.** On an agent's screen, swipe left to go to the
+next agent that wants you: first those that need you, longest waiting first,
+then those that finished and you have not reviewed, newest first, as the
+board lists them. Swipe right to go
+back the way you came. The order is fixed when you start swiping, so an
+agent you just answered stays where it was and swiping back finds it.
+Working and idle agents are not on the way; reach them from the title (below)
+or the board. As your finger moves, a card slides in showing which agent is
+there, what it asks or last said (when the app already knows), and where you
+are (`2 of 4`); let go once it says `Let go to open` (it tints and ticks), or
+bring it back to stay where you are. A quick flick goes at once. Swipes that
+start at the screen's edges are left to Android's back gesture, and anything
+that scrolls sideways (a wide table, a terminal with wrap off) keeps its
+swipe. After the last one the card says `All caught up` and how many agents
+are still working; before the first, `No previous agent`. With TalkBack, the
+screen's actions include `Next agent` and `Previous agent`, which go the same
+way. When the app is restarted, it reopens the agent screen that was in front.
+
+**Switching from the title.** The title at the top of an agent's screen has a
+small arrow after it, and a number while other agents need you. Tap it for a
+list of every agent, in the board's sections and order; the one you are on
+says `Here`. Tap another to go to it (Back still
+returns to the board), or `All agents on the board` to go back. Agents in
+worktrees of one repo show their branch, once the phone has read it.
 
 ### The terminal pane
 
@@ -373,7 +413,7 @@ its screen. The agent runs inside a small keeper process on the machine, so
 it keeps working when the phone's connection drops, and the app reattaches
 when it can.
 
-**Starting one.** Tap `+` on the Agents tab (or on a machine's screen) to open
+**Starting one.** Tap `+` at the top of the board (or on a machine's screen) to open
 `New agent session`:
 
 ![New agent session](screenshots/new-session.png)
@@ -556,14 +596,16 @@ wrote, opens as a page inside herdr: `Open page` on a `localhost` link,
 an app or page in a session's `Made` sheet, or `Show as page` in the file
 viewer. The bar names the page, with where it comes from under the title
 (`devbox · python label_server.py` for an app opened from `Made`, which says
-what started it; `localhost:5173 · devbox` otherwise); `Reload` and `⋯` sit on
-the right. Back
-goes back in the page first, then leaves. While the page is open herdr keeps
+what started it; `localhost:5173 · devbox` otherwise). `✕` on the left closes
+the page from however deep you went; on the right, the arrow goes back one
+page (hold it for `Pages in this visit`, to jump back to any of them) and `⋯`
+holds `Reload`. The phone's Back goes back in the page first, then leaves, as
+in a browser. While the page is open herdr keeps
 its machine's connection up, also when you switch apps or turn the screen
 off, with the Watching notice (below); if the connection drops anyway, the
 page says so and comes back by itself when it is up again. A link to the web
 never opens by itself: herdr says where it leads (`github.com isn't from
-devbox.`) and `Open` takes it to your phone's browser. `⋯` holds `Copy link`
+devbox.`) and `Open` takes it to your phone's browser. `⋯` also holds `Copy link`
 (the address on the machine; `Copy path` for a file) and `Open in browser`,
 for a page that needs your phone's browser, such as a Google sign-in: the
 browser's copy works only while the page stays open in herdr. A page that

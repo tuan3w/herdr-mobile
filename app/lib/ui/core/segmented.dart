@@ -27,8 +27,8 @@ class SegmentOption<T> {
 
 /// The app's one switch: a slim tinted pill (`ds.fill`, no border) and ONE
 /// capsule under the chosen cell in `ds.accentWash`, its label in
-/// `ds.accentText`: the tab bar's selection look. It picks the value of a setting (theme,
-/// density) and switches what a sheet shows (the kinds of what a session made);
+/// `ds.accentText`: the app's one selection look. It picks the value of a setting (theme,
+/// how agents open) and switches what a sheet shows (the kinds of what a session made);
 /// the job differs, the look does not.
 ///
 /// Cells are equal width when every option fits at its own size, and the row
@@ -232,7 +232,7 @@ class _SegmentedState<T> extends State<Segmented<T>> {
     final ds = context.ds;
     // 1 under the capsule, 0 a cell away: the colour follows the capsule.
     final warm = (1 - (place - i).abs()).clamp(0.0, 1.0);
-    // Hue carries the choice, as on the tab bar: secondary ink to accent text.
+    // Hue carries the choice: secondary ink to accent text.
     final color = Color.lerp(ds.textSecondary, ds.accentText, warm)!;
     return PressBuilder(
       onTap: () {

@@ -69,7 +69,7 @@ class RemoteFileStaging {
     if (size == null) {
       throw RemoteFileException(
         RemoteFileErrorKind.failed,
-        'The size of ${stat.name} is not known, so it cannot be copied.',
+        'The size of ${stat.name} isn’t known, so it can’t be copied.',
         path: stat.path,
       );
     }
@@ -119,7 +119,7 @@ class RemoteFileStaging {
         RemoteFileErrorKind.failed,
         e.osError?.errorCode == 28
             ? 'The phone is out of space for a copy.'
-            : 'The file could not be copied to the phone.',
+            : 'The file couldn’t be copied to the phone.',
         path: stat.path,
       );
     } on Object {

@@ -129,7 +129,7 @@ void main() {
         const HomeShell(),
         fleet: h,
         pump: (t) async {
-          await t.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
+          await t.tap(find.byKey(const ValueKey('machine-health')));
           await t.pump(const Duration(milliseconds: 600));
         },
       );

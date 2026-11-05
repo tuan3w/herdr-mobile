@@ -32,8 +32,8 @@ tabs draw what they have (the bars, the camera tile) while the library answers.
   same reason.
 - **Tabs** (`attach_bars.dart`, `attach_sheet_view.dart`): Gallery | Files |
   Machine, each an icon and a label, the selected one in `ds.accentText` on a
-  `ds.accentWash` capsule, as in the app's tab bar, in the tab bar's pill
-  (`FloatingBarPill`). The third tab is `Machine` (the vocabulary's word for
+  `ds.accentWash` capsule, the app's selection look (`Segmented`), in the
+  floating pill (`FloatingBarPill`). The third tab is `Machine` (the vocabulary's word for
   the computer the agent runs on), never `Host`.
   Built the first time they are shown, kept alive and out of layout while
   hidden (scroll position and state survive), cross-faded over `Motion.fade`

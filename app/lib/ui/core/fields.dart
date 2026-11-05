@@ -31,6 +31,8 @@ class LabeledField extends StatelessWidget {
     this.restorationId,
     this.autofocus = false,
     this.onSubmitted,
+    this.prose = false,
+    this.autofillHints,
   });
 
   final String label;
@@ -56,6 +58,15 @@ class LabeledField extends StatelessWidget {
   /// Takes focus (and the keyboard) as soon as it is shown.
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
+
+  /// Words the person writes for people or an agent (a message, a name): the
+  /// keyboard corrects, suggests and capitalises sentences. Off for hosts,
+  /// paths, keys and search, where a "fix" corrupts the value.
+  final bool prose;
+
+  /// Lets a password manager fill the field; wrap related fields in an
+  /// [AutofillGroup].
+  final Iterable<String>? autofillHints;
 
   @override
   Widget build(BuildContext context) {
@@ -85,8 +96,10 @@ class LabeledField extends StatelessWidget {
             textInputAction: textInputAction,
             onChanged: onChanged,
             inputFormatters: inputFormatters,
-            autocorrect: false,
-            enableSuggestions: false,
+            autocorrect: prose,
+            enableSuggestions: prose,
+            textCapitalization: prose ? TextCapitalization.sentences : TextCapitalization.none,
+            autofillHints: autofillHints,
             style: (mono ? Mono.input : Type.input).copyWith(color: ds.text),
             cursorColor: ds.accent,
             decoration: InputDecoration(

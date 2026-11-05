@@ -197,15 +197,15 @@ void main() {
       final plan = BatchPlan.of(BatchAction.stop, [
         _t('1', log: log, fail: const HerdrApiException('pane_busy', 'the pane is busy')),
         _t('2', log: log, fail: const HerdrUnsupportedException('pane.send_keys')),
-        _t('3', log: log, fail: const AgentHostException('Could not end the session: no route')),
+        _t('3', log: log, fail: const AgentHostException('Couldn’t end the session: no route')),
         _t('4', log: log, fail: TimeoutException('slow')),
         _t('5', log: log, fail: const HerdrTransportException('')),
       ]);
       final messages = [for (final f in (await runBatch(plan)).failed) f.message];
       expect(messages, [
         'the pane is busy',
-        'this herdr cannot do that, update it',
-        'Could not end the session: no route',
+        'this herdr can’t do that, update it',
+        'Couldn’t end the session: no route',
         'no answer in time',
         'failed',
       ]);
@@ -342,7 +342,7 @@ void main() {
       expect(s.link, AgentLink.ended);
     });
 
-    test('a machine that is not online makes it unreachable', () {
+    test('a machine that isn’t online makes it unreachable', () {
       final s = FakeAgentSession();
       expect(BatchTarget.session(session: s, status: AgentStatus.idle).unreachable, 'offline');
     });

@@ -129,7 +129,7 @@ class UnknownCommandNote extends StatelessWidget {
                                 style: Mono.input.copyWith(color: ds.text),
                               ),
                               TextSpan(
-                                text: agent == null ? ' is not a command.' : ' is not one of $agent\u2019s commands.',
+                                text: agent == null ? ' isn’t a command.' : ' isn’t one of $agent\u2019s commands.',
                               ),
                             ],
                           ),

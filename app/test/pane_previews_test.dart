@@ -720,6 +720,26 @@ void main() {
     );
   });
 
+  group('what is known, for a glance', () {
+    _rig('says what is in memory and never reads for it', (async, rig) {
+      rig.t.texts['w1:p1'] = 'remembered';
+      expect(rig.previews.known('m', 'w1:p1'), isNull, reason: 'nothing read yet');
+      rig.seconds(30);
+      expect(rig.t.readsOf('w1:p1'), 0, reason: 'asking starts no read');
+      expect(rig.previews.watchedPanes, 0);
+
+      final h = rig.previews.watch('m', 'w1:p1');
+      async.flushMicrotasks();
+      expect(rig.previews.known('m', 'w1:p1')?.lines.single.text, 'remembered', reason: 'a watched pane');
+      h.release();
+      async.flushMicrotasks();
+      final reads = rig.t.readsOf('w1:p1');
+      expect(rig.previews.known('m', 'w1:p1')?.lines.single.text, 'remembered', reason: 'a released pane, kept');
+      rig.seconds(30);
+      expect(rig.t.readsOf('w1:p1'), reads);
+    }, panes: [_pane('w1:p1')]);
+  });
+
   group('cost', () {
     // 20 visible cards, every pane streaming (events every 200 ms) with text
     // that changes on every read: the worst case the throttle must bound.

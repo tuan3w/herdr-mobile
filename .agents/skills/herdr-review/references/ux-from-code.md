@@ -20,14 +20,21 @@ in a diff without rendering it. Every row you produce from it is "from code, not
    - `grep -nE "copyWith\(fontSize|fontWeight:|circular\([0-9]|Clipboard\.setData" <files>`
    - `grep -nE "GestureDetector" <files>`, then check `minTapSize: kMinTap` or an enclosing
      `PressBuilder`.
-   - `grep -nE "HapticFeedback|\.repeat\(|Curves\.|Duration\(milliseconds" <files>`: motion rules
-     belong to `herdr-motion`; list the hits and hand off.
+   - `grep -nE "HapticFeedback|\.repeat\(|Curves\.|Duration\(milliseconds|reverseCurve:|forward\(from: 0\)" <files>`:
+     motion rules belong to `herdr-motion`; list the hits and hand off.
+   - `grep -nE "Opacity\(opacity: 0\.[0-9]+, child: (row|card)" <files>` and any `Opacity` over a whole
+     row: dimmed words fall below contrast; dim the glyph, tone the words.
+   - `grep -nE "'\$e'|e\.toString\(\)|runtimeType" <files>` in user-facing text: `describeError`.
+   - `AnimatedBuilder` whose builder builds the whole card or bar each tick (no `child:`):
+     a per-frame rebuild; hand off to `herdr-motion`.
 3. **State coverage.** For each screen or row the change touches, find the branch for: loading
    or first paint (cached, dimmed), live, stale, offline, failed, empty, one, many, compact
    layout. A state with no branch is a finding. Unavailable things must stay, dimmed, with
    their reason. A failure must say what happened and what to do next.
 4. **Honesty.** A value shown without freshness; a saved copy that answers or acts; "running"
-   where "was running" is true; liveness drawn from a timer instead of from the host.
+   where "was running" is true; liveness drawn from a timer instead of from the host; a
+   missing flag that reads as "clean" where the app cannot know (an agent it does not watch).
+   A risk rule is a hint: "no rule matched" never means "safe".
 5. **Guard proportion.** Cheap = tap. Slip = tap + Undo. Risky, irreversible or a standing grant
    = hold. Bulk = confirm sheet with live data. Check `tapGuard` on anything that appears under
    the thumb. Check that the command or path being approved is shown whole or behind `Read all`.

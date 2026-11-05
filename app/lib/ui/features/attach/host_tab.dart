@@ -215,7 +215,7 @@ class _HostTabState extends State<HostTab> {
               child: EmptyState(
                 icon: HerdrIcons.machinesOff,
                 title: 'Files are unavailable on this machine',
-                message: 'This machine has no file access (SFTP), so its folders cannot be listed here.',
+                message: 'This machine doesn’t allow browsing files.',
               ),
             ),
           ),

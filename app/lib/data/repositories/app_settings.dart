@@ -4,11 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Which look the app wears. [system] follows the phone's dark mode.
 enum ThemeChoice { light, dark, system }
 
-/// How the Agents board draws its rows. [auto] is cards up to
-/// [AppSettings.autoCompactFrom] - 1 agents and compact rows from there;
-/// [cards] and [compact] are the person's own choice and always win.
-enum BoardDensity { auto, cards, compact }
-
 /// What opening an agent that runs in a herdr pane (and can be followed
 /// through its own log, see `ObservedSessions`) shows: the [chat] the app has
 /// for agent sessions, or the pane's [terminal]. Agents without a readable
@@ -26,14 +21,6 @@ abstract interface class AppSettingsStore {
 
   Future<void> writeDarkTerminal(bool dark);
 
-  Future<int?> readHomeTab();
-
-  Future<void> writeHomeTab(int tab);
-
-  Future<BoardDensity?> readDensity();
-
-  Future<void> writeDensity(BoardDensity density);
-
   Future<OpenAgentsAs?> readOpenAgentsAs();
 
   Future<void> writeOpenAgentsAs(OpenAgentsAs value);
@@ -46,8 +33,6 @@ abstract interface class AppSettingsStore {
 class PrefsAppSettingsStore implements AppSettingsStore {
   static const _themeKey = 'app.theme.v1';
   static const _darkTerminalKey = 'app.darkTerminal.v1';
-  static const _homeTabKey = 'app.homeTab.v1';
-  static const _densityKey = 'app.density.v1';
   static const _openAsKey = 'app.openAgentsAs.v1';
   static const _smoothTextKey = 'app.smoothText.v1';
 
@@ -77,33 +62,6 @@ class PrefsAppSettingsStore implements AppSettingsStore {
   Future<void> writeDarkTerminal(bool dark) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_darkTerminalKey, dark);
-  }
-
-  @override
-  Future<int?> readHomeTab() async {
-    final saved = (await SharedPreferences.getInstance()).get(_homeTabKey);
-    return saved is int ? saved : null;
-  }
-
-  @override
-  Future<void> writeHomeTab(int tab) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_homeTabKey, tab);
-  }
-
-  @override
-  Future<BoardDensity?> readDensity() async {
-    final saved = (await SharedPreferences.getInstance()).get(_densityKey);
-    for (final choice in BoardDensity.values) {
-      if (choice.name == saved) return choice;
-    }
-    return null;
-  }
-
-  @override
-  Future<void> writeDensity(BoardDensity density) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_densityKey, density.name);
   }
 
   @override
@@ -137,6 +95,12 @@ class PrefsAppSettingsStore implements AppSettingsStore {
 /// App-wide preferences that are not about one screen. Load it before
 /// `runApp`, so the very first frame is already in the chosen theme and on the
 /// tab the person left.
+///
+/// There was a board density (`app.density.v1`: `Cards` or `Compact`); it went
+/// when the board became status sections of rows with one decision card
+/// (owner decision: eleven idle agents drawn as cards hid what to look at). A
+/// value saved by an older version is never read: it stays in the
+/// preferences, unused, and changes nothing.
 class AppSettings extends ChangeNotifier {
   AppSettings(this._store);
 
@@ -146,16 +110,8 @@ class AppSettings extends ChangeNotifier {
   /// that predates this setting.
   static const defaultTheme = ThemeChoice.light;
 
-  /// The root tabs: Agents, Machines, Settings.
-  static const homeTabCount = 3;
-
-  /// With [BoardDensity.auto], the board turns compact from this many agents.
-  static const autoCompactFrom = 5;
-
   ThemeChoice _theme = defaultTheme;
   bool _darkTerminal = false;
-  int _homeTab = 0;
-  BoardDensity _density = BoardDensity.auto;
   OpenAgentsAs _openAs = OpenAgentsAs.chat;
   bool _smoothText = true;
 
@@ -164,13 +120,6 @@ class AppSettings extends ChangeNotifier {
   /// Panes stay dark on the light theme. Off by default: a pane is drawn in
   /// the colours of the theme.
   bool get darkTerminal => _darkTerminal;
-
-  /// The root tab the app opens on: the one it was left on.
-  int get homeTab => _homeTab;
-
-  /// What the person chose for the board's rows; [BoardDensity.auto] until
-  /// they choose.
-  BoardDensity get density => _density;
 
   /// How agents that can be followed through their log open; [OpenAgentsAs.chat]
   /// until the person chooses.
@@ -181,29 +130,16 @@ class AppSettings extends ChangeNotifier {
   /// shown and when it ends do not change, only the pace.
   bool get smoothText => _smoothText;
 
-  /// Whether a board of [agentCount] agents draws cards (a live preview each)
-  /// rather than compact rows.
-  bool cardsFor(int agentCount) => switch (_density) {
-    BoardDensity.cards => true,
-    BoardDensity.compact => false,
-    BoardDensity.auto => agentCount < autoCompactFrom,
-  };
-
   /// Reads the saved settings. Anything missing or unreadable is the default.
   Future<void> load() async {
     try {
       _theme = await _store.readTheme() ?? defaultTheme;
       _darkTerminal = await _store.readDarkTerminal() ?? false;
-      final tab = await _store.readHomeTab() ?? 0;
-      _homeTab = tab >= 0 && tab < homeTabCount ? tab : 0;
-      _density = await _store.readDensity() ?? BoardDensity.auto;
       _openAs = await _store.readOpenAgentsAs() ?? OpenAgentsAs.chat;
       _smoothText = await _store.readSmoothText() ?? true;
     } on Object {
       _theme = defaultTheme;
       _darkTerminal = false;
-      _homeTab = 0;
-      _density = BoardDensity.auto;
       _openAs = OpenAgentsAs.chat;
       _smoothText = true;
     }
@@ -227,15 +163,6 @@ class AppSettings extends ChangeNotifier {
     return _store.writeDarkTerminal(_darkTerminal);
   }
 
-  /// Applies [density] right away and saves it.
-  Future<void> setDensity(BoardDensity density) {
-    if (density != _density) {
-      _density = density;
-      notifyListeners();
-    }
-    return _store.writeDensity(_density);
-  }
-
   /// Applies [value] right away and saves it.
   Future<void> setOpenAgentsAs(OpenAgentsAs value) {
     if (value != _openAs) {
@@ -252,14 +179,5 @@ class AppSettings extends ChangeNotifier {
       notifyListeners();
     }
     return _store.writeSmoothText(_smoothText);
-  }
-
-  /// Remembers the root tab being shown. Nothing listens: the shell already
-  /// shows it, so this does not rebuild anything.
-  Future<void> setHomeTab(int tab) {
-    if (tab < 0 || tab >= homeTabCount) return Future.value();
-    if (tab == _homeTab) return Future.value();
-    _homeTab = tab;
-    return _store.writeHomeTab(tab);
   }
 }

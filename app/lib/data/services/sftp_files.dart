@@ -256,7 +256,7 @@ class SftpFiles {
           if (attrs.mode?.type != SftpFileType.directory) {
             throw RemoteFileException(
               RemoteFileErrorKind.notADirectory,
-              '${RemotePath.basename(dir)} is not a folder',
+              '${RemotePath.basename(dir)} isn’t a folder',
               path: dir,
             );
           }
@@ -327,7 +327,7 @@ class SftpFiles {
         return RemoteFileException(RemoteFileErrorKind.network, 'The connection was lost', path: path);
       case TimeoutException():
         if (session != null) _forget(session);
-        return RemoteFileException(RemoteFileErrorKind.network, 'The machine did not answer in time', path: path);
+        return RemoteFileException(RemoteFileErrorKind.network, 'The machine didn’t answer in time', path: path);
       case SftpStatusError():
         if ((e.code == 6 || e.code == 7) && session != null) _forget(session);
         return _mapStatus(e, path);
@@ -341,7 +341,7 @@ class SftpFiles {
               : code == 13
               ? RemoteFileErrorKind.permission
               : RemoteFileErrorKind.failed,
-          code == 2 ? 'The file is gone' : 'Cannot read the file: ${e.message}',
+          code == 2 ? 'The file is gone' : 'Can’t read the file: ${e.message}',
         );
       default:
         return e;
@@ -414,7 +414,7 @@ class SftpFiles {
       if (_kindOf(attrs.mode?.type) != RemoteEntryKind.dir) {
         return RemoteFileException(
           RemoteFileErrorKind.notADirectory,
-          '${RemotePath.basename(path)} is not a folder',
+          '${RemotePath.basename(path)} isn’t a folder',
           path: path,
         );
       }
@@ -432,7 +432,7 @@ class SftpFiles {
       if (_kindOf(attrs.mode?.type) != RemoteEntryKind.file) {
         return RemoteFileException(
           RemoteFileErrorKind.notAFile,
-          '${RemotePath.basename(path)} is not a regular file',
+          '${RemotePath.basename(path)} isn’t a regular file',
           path: path,
         );
       }
@@ -470,7 +470,7 @@ class SftpFiles {
         throw RemoteFileException(RemoteFileErrorKind.network, 'The connection was lost', path: path);
       } on TimeoutException {
         _forget(session);
-        throw RemoteFileException(RemoteFileErrorKind.network, 'The machine did not answer in time', path: path);
+        throw RemoteFileException(RemoteFileErrorKind.network, 'The machine didn’t answer in time', path: path);
       } on SftpStatusError catch (e) {
         if (e.code == 6 || e.code == 7) _forget(session);
         final refined = await onFailure?.call(session, e);
@@ -494,11 +494,11 @@ class SftpFiles {
   static RemoteFileException _mapStatus(SftpStatusError e, String path) => switch (e.code) {
     2 => RemoteFileException(RemoteFileErrorKind.notFound, 'No such file or directory', path: path),
     3 => RemoteFileException(RemoteFileErrorKind.permission, 'Permission denied', path: path),
-    8 => RemoteFileException(RemoteFileErrorKind.unsupported, 'The server does not support this operation', path: path),
+    8 => RemoteFileException(RemoteFileErrorKind.unsupported, 'The server doesn’t support this operation', path: path),
     6 || 7 => RemoteFileException(RemoteFileErrorKind.network, 'The connection was lost', path: path),
     _ => RemoteFileException(
       RemoteFileErrorKind.failed,
-      e.message.isEmpty ? 'The server could not complete the request' : e.message,
+      e.message.isEmpty ? 'The server couldn’t complete the request' : e.message,
       path: path,
     ),
   };

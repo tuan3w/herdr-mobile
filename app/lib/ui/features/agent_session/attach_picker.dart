@@ -52,9 +52,9 @@ class DevicePicker implements AttachPicker {
       file = await ImagePicker().pickImage(source: source);
     } on PlatformException catch (e) {
       throw ImagePrepException(switch (e.code) {
-        'camera_access_denied' => 'The camera is not allowed. Allow it in the phone\u2019s settings for this app.',
+        'camera_access_denied' => 'The camera isn’t allowed. Allow it in the phone\u2019s settings for this app.',
         'no_available_camera' => 'This phone has no camera to use.',
-        _ => source == ImageSource.camera ? 'The camera could not be opened.' : 'The photo picker could not be opened.',
+        _ => source == ImageSource.camera ? 'The camera couldn’t be opened.' : 'The photo picker couldn’t be opened.',
       });
     }
     if (file == null) return null;

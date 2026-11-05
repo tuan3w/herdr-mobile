@@ -694,8 +694,8 @@ class _TopRow extends StatelessWidget {
     final secondary = Type.secondary.copyWith(color: context.terminal.dim);
     final (String title, String? detail) = switch (top) {
       TerminalTop.loading => ('Loading earlier output…', null),
-      TerminalTop.serverLimit => ('Earlier output is not available.', 'herdr serves the last 1000 rows of a pane.'),
-      TerminalTop.localLimit => ('Earlier output is not kept.', 'The phone holds the most recent rows only.'),
+      TerminalTop.serverLimit => ('Earlier output isn’t available.', 'herdr serves the last 1000 rows of a pane.'),
+      TerminalTop.localLimit => ('Earlier output isn’t kept.', 'The phone holds the most recent rows only.'),
       TerminalTop.none => ('', null),
     };
     // Align, so the box may be narrower than the (possibly wider) content.

@@ -25,9 +25,9 @@ happens on the phone: no relay, no account, nothing leaves the device.
   a minute.
 - Tap: `herdr://agent/<machine>/<pane>` (terminal agent),
   `herdr://session/<machine>/<keeper>` (agent session) or `herdr://agents`
-  (the summary: the Agents tab). Cold start and running app both work. A
+  (the summary: home, the Agents board). Cold start and running app both work. A
   link that cannot be followed says why over the screen in front, closes
-  nothing (a half-filled form stays), and its toast opens the tab where the
+  nothing (a half-filled form stays), and its toast opens the page where the
   next step is (Machines or Agents).
 - Android 13+ asks for the notification permission when you turn it on; if you
   say no the switch stays off and says why.
@@ -166,7 +166,7 @@ herdr plugin install tuan3w/herdr-mobile/tool/plugins/herdr-ntfy
 Then write the `.env` as above (`herdr plugin config-dir herdr-mobile.ntfy`
 prints where).
 
-`MACHINE` must be the **name the machine has in herdr mobile** (Machines tab).
+`MACHINE` must be the **name the machine has in herdr mobile** (on the Machines page).
 Nothing needs restarting: herdr reads the plugin and its `.env` on every event.
 The same steps work on a headless server.
 
@@ -244,7 +244,7 @@ tapping its card. `<machine>` is matched against your saved machines by label
 travels as `w1%3Ap2`).
 
 `herdr://session/<machine>/<session>` opens an agent session's chat the same
-way, and `herdr://agents` opens the Agents tab. The manifest admits all three
+way, and `herdr://agents` goes back to home, the Agents board. The manifest admits all three
 hosts, so they also open from another app; `Copy session link` in the session
 options hands out the second.
 
@@ -284,7 +284,7 @@ ntfy.sh with a topic shorter than 16 characters, unless `NTFY_TOKEN` is set or
 - A desktop user looking at the pane still gets the alert. Turn `NOTIFY_DONE` off
   if finished-agent alerts are noise.
 - Opening a link whose machine is unknown, switched off or unreachable leaves
-  the app on whichever tab it was on (it does not switch to Agents).
+  the app on whatever screen it was on (it does not go home).
 - If Android restarts the app's process, the launch link is delivered again and
   re-opens that agent once.
 

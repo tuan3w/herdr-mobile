@@ -2,7 +2,7 @@
 
 herdr mobile is deliberately **not Material**. The reference points are Notion
 mobile (warm paper, flat rows, bold page titles, soft tinted tiles and chips,
-a floating bottom bar) and Linear mobile (near-black ink, a surface ladder,
+floating pills) and Linear mobile (near-black ink, a surface ladder,
 hairlines, status as shape, one accent used sparingly). Telegram Android is the
 bar for craft (its source was read for values and behaviours, never copied:
 it is GPL-2 and herdr writes its own code).
@@ -20,21 +20,27 @@ without one gets deleted by the next person who does not understand it.
 2. **Type does the hierarchy.** Inter, size + weight + tracking as one token.
    A screen never sets a weight; it picks the role (`Type.label` or
    `Type.labelStrong`). Sentence case, never letterspaced caps.
-3. **One accent** (`Ds.accent`). It marks the selected tab and chip, the one
+3. **One accent** (`Ds.accent`). It marks the selected chip or segment, the one
    primary action, links and the focused field. Colour otherwise means status.
 4. **Status is a shape first**, colour second (`StatusGlyph`): needs you =
    filled with a bar, working = half full, done = check, idle = empty ring,
    unknown = dashed ring; a call, run or plan step that ended without being
    done adds failed = danger disc with a cross and cancelled = quiet ring with
    a slash (`StatusGlyph.failed`, `.cancelled`: not agent statuses, so
-   `AgentStatus` is unchanged). Readable without colour.
+   `AgentStatus` is unchanged). Readable without colour. A machine's link
+   (`LinkDot`) follows the same rule: online is a quiet filled dot in
+   `textTertiary` (health is not news; a green dot on every machine was
+   decoration), connecting a ring in the working colour, offline or off a
+   quiet ring, and a link that needs the person a blocked ring with a dot.
+   `LinkDot.live` (filled, done colour) marks something running now.
 5. **Hairlines, not elevation.** One physical pixel. The one shadow is
-   `Ds.floatShadow`, for the floating bars and pills. Transient messages are on
+   `Ds.floatShadow`, for the floating bars and pills (two layers on paper; on ink a faint light ring, because a black shadow vanishes on near-black). Transient messages are on
    the inverse surface instead. No backdrop blur: a full-screen blur pass per
    frame is too expensive on a mid-range GPU (Telegram's own fallback is a flat
    colour). Chrome text stops growing at `kBarTextScale` (1.15).
-6. **Press, don't ripple.** Feedback starts on pointer-down (after the scroll
-   intent delay): a soft tint (`Ds.pressTint`) or a scale from `PressScale`.
+6. **Press, don't ripple.** Feedback starts on pointer-down, at once (a scroll
+   that takes over cancels it): a soft tint (`Ds.pressTint`) or a scale from
+   `PressScale`. Waiting for the gesture arena showed nothing for a quick tap.
 7. **Motion is quiet** (see Motion). Nothing moves at rest; durations, curves
    and springs come from `motion.dart`.
 8. **Icons are Lucide, and ours where they sit as peers** (24 grid, stroke 2,
@@ -45,8 +51,9 @@ without one gets deleted by the next person who does not understand it.
    smaller; every control has one accessible name.
 10. **Say it once; tint, don't outline.** A state is named in one place on a
     row and once in a screen's summary. Controls are tints, never rings. The
-    one outline is a primed risky answer (`Ds.armedEdge`), because it must not
-    be missed.
+    one outline is the armed edge (`Ds.armedEdge`): a primed risky answer, and
+    an agent swipe's peek once letting go opens it, because what acts next
+    must not be missed under the thumb.
 
 ## Hierarchy
 
@@ -56,7 +63,7 @@ element has the same weight" is a fail.
 1. **One loud thing.** At rest only "needs you" uses a status colour on text or
    a fill (the question wash, the count badge). Working and done are a glyph's
    shape and colour, nothing more.
-2. **The accent budget.** The selected tab and selected chips or segments; at
+2. **The accent budget.** Selected chips or segments; at
    most one primary (accent-filled) `AppButton` per region, last or lowest;
    `TextAction`s and links; the focused input. Never decoration.
 3. **Surface levels.** `bg` is the page; `fill` is controls and panels inside
@@ -73,10 +80,14 @@ element has the same weight" is a fail.
    w600 when it needs you, `textMuted` otherwise); a screen reader still hears
    the words. The rule covers only what the glyph already says: a quiet
    working agent reads `quiet 14m`, because the working glyph does not say
-   quiet. The section header and the filter chips are the summary.
+   quiet. A screen's status line and its section headers are the summary,
+   and say a count once (the board's needs-you count is in its status line,
+   not its header: the count said four times on one screen was noise).
 6. **Header budget.** A top bar holds at most two trailing actions, ⋯
    included (`AppTopBar` asserts it): a third truncated the title, which is
-   what the person is answering for.
+   what the person is answering for. The leading slot holds Back, or on home
+   the machines chip (status first, the way to Machines second); it takes
+   what the actions leave and shrinks before they move.
 7. **Spacing says what belongs together.** `Gap.xl` between groups, `Gap.md`
    inside a group, `Gap.xs` / `Gap.sm` inside an element.
 8. **A leading tile must carry information.** The same tile on every row (a
@@ -100,9 +111,10 @@ named by its role, so every timing lives in `motion.dart` and is tuned there.
 | `surface` | `#FFFFFF` | `#16171A` | raised: sheets, inputs, floating bars |
 | `fill` / `fillPressed` | `#F1F0EE` / `#E8E7E4` | `#1C1D21` / `#25262B` | controls, panels in content |
 | `hairline` | `#EAE9E6` | `#24262A` | dividers |
-| `border` | `#D3D1CC` | `#3A3D44` | input outline only |
+| `border` | `#D3D1CC` | `#3A3D44` | decorative outline: diagram boxes, table rules, quote bars |
+| `controlBorder` | `#8F8E8A` | `#60646D` | the edge of a field or picker (3:1 on `surface`, WCAG 1.4.11) |
 | `text` | `#37352F` | `#ECEDEF` | titles, values |
-| `textSecondary` | `#5F5E5A` | `#8D9098` | subtitles, labels, unselected tabs |
+| `textSecondary` | `#5F5E5A` | `#8D9098` | subtitles, labels, unselected segments |
 | `textMuted` | `#6E6D69` | `#868993` | meta lines, counts, helper text |
 | `textTertiary` | `#8F8E8A` | `#6A6D75` | icons, chevrons, rings: never text |
 | `accent` / `accentText` | `#5E6AD2` / `#4B57BE` | `#5E6AD2` / `#9AA3F2` | the accent; as text |
@@ -113,7 +125,7 @@ named by its role, so every timing lives in `motion.dart` and is tuned there.
 
 Getters: `wash(c)` (12% paper / 16% ink: a state's panel, strip or primed
 chip), `washPressed(c)`, `armedEdge(c)` (55%), `blockedWash` (the question),
-`accentWash` / `accentWashPressed` (selected tab, chip, row), `accentPressed`,
+`accentWash` / `accentWashPressed` (selected segment, chip, row), `accentPressed`,
 `faint` (grabbers), `skeleton`, `photoScrim` / `onPhoto`, `addedText`, `onStatus`,
 `selection` (selected text), `linkUnderline` (a Markdown link's underline).
 `Ds.fade(c, t)` scales a colour's own opacity, for what is drawn in paint (a
@@ -153,10 +165,15 @@ glyph as well.
 | `bodyStrong` | 15 / 600 | a Markdown heading below level 3 |
 
 Mono (JetBrains Mono, ligatures off): `Mono.small` 11.5 (log tails, ids),
-`Mono.base` 12.5 (commands, paths, code, a question's subject), `Mono.input`
-13.5 (typed shell text, key caps), `Mono.preview` 11 (a card's terminal
+`Mono.base` 12.5 (commands, paths, code), `Mono.input`
+13.5 (typed shell text, key caps, a question's subject: what an answer
+approves is the largest thing on its wash), `Mono.preview` 11 (a card's terminal
 preview). The terminal keeps its own user-sized style. Counts use tabular
-figures.
+figures. Mono and the terminal fall back to `HerdrSymbols` (`monoFallback`):
+the symbols agents' TUIs draw that JetBrains Mono lacks (`⏵ ⏸ ⏺ ⎿ ✻ ✳ ☐ ☒`,
+braille spinners), subset from Noto onto the mono cell by
+`tool/fonts/build_symbols.py` (OFL, about 50 KB in the APK). Why: the phone's
+own fallback drew Claude Code's `⏵⏵ auto mode on` as `▯▯ auto mode on`.
 
 ### Space, radius, icons
 
@@ -169,22 +186,32 @@ figures.
   these: one-dp steps were invisible and drifted. A nested shape takes the outer
   radius minus the inset.
 - `IconSize`: `inline` 14, `row` 16 (and every chevron), `bar` 18, `lead` 20
-  (a row's status glyph), `nav` 24 (tab bar), `empty` 28, `hero` 48.
+  (a row's status glyph), `nav` 24 (the batch bar, the attach sheet's bars), `empty` 28, `hero` 48.
 - **Drawn icons** (`HerdrIcons`, `herdr_icons.dart`, generated with its font by
-  `tool/icons/build_icons.py`): the tab bar, the selection bar, the agent
-  and machine everywhere, and the `Made` list (a glyph per kind: a window with a
+  `tool/icons/build_icons.py`): the selection bar, the Settings gear, the agent
+  and machine everywhere, Stop (`stop`; `stopMark`, its square alone, inside a
+  round button: the composer), Reviewed (`reviewed`, a check in Stop's ring), a message or a chat (`message`), browsing a
+  machine's files (`folder`, lighter than Lucide's open folder, which had four
+  times the ink of the `⋯` beside it), and the `Made` list (a glyph per kind: a window with a
   pulse for a server, a window with text for a page, a picture, a document; a
   sparkle on the chip), the picture wherever one is the content (`picture`,
   `pictureOff` for one that cannot be shown, `pictures` for the gallery; a file
   TYPE in a file list stays Lucide's `fileImage`), and the Settings groups (look, notifications and
-  notifications off, storage, about, update; Agents uses the agent). Why: Lucide draws on one grid with no keylines, so
+  notifications off, storage, about, update, also on its Download; Agents uses the agent). Why: Lucide draws on one grid with no keylines, so
   peers in one bar differed in weight (its `server` enclosed 1.7x the area of
-  its `bot` and popped out of the tab bar; its 14-unit `x` sank next to
+  its `bot` and popped out of the (since removed) tab bar; its 14-unit `x` sank next to
   `circleStop`). Ours keep Lucide's grammar, fit keylines, and are balanced by
   `--measure`: peers in one bar keep their squint (what stays dark after a
   1.5 dp blur) within about 1.5. An open shape (`close`) cannot enclose much;
   it is drawn larger instead. Draw a new glyph only for a peer set or an
   object of the app; generic actions stay Lucide.
+- **Failure or caution.** `circleAlert` says something failed (a send, a read,
+  a copy, a link that needs attention); `triangleAlert` says look before you
+  act (a held answer, a risk under a question, an unencrypted link, a
+  dangerous mode, a secret field, a Markdown warning). Why: a failed answer
+  and a primed one (waiting for its hold) both showed the triangle, and
+  failures elsewhere used either icon, so the triangle could not tell "look
+  before you act" from "this broke".
 - Rows are at least 56 high; `ListRow` text starts at 64 (gutter 20 + 32
   leading column + 12). A small leading widget is centred on the title line.
 
@@ -199,14 +226,13 @@ does not.
 | Token | ms | Use |
 | --- | --- | --- |
 | `press` / `release` | 100 / 180 | a control under the finger (`Motion.pressing`) |
-| `fade` | 120 | an opacity-only change: tab switch, reduced-motion page |
+| `fade` | 120 | an opacity-only change: the batch bar and the selection header coming and going, reduced-motion page |
 | `standard` | 200 | a state change, a small element |
 | `expand` | 220 | a section opening, a scroll the app makes |
 | `settle` | 240 | a one-shot draw-in: glyph, badge arriving, a number rolling |
 | `sheetIn` / `sheetOut` | 250 / 190 | sheets, toasts, floating lanes |
 | `page` | 260 | push and pop (the Cupertino slide, shortened) |
 | `draw` / `brand` | 320 / 420 | `DrawCheck`, the brand mark: rare moments |
-| `arrival` | 420 | a highlight fading on a card that changed section |
 | `holdFill` / `holdSnapBack` | 550 / 200 | hold to confirm: fills slow, snaps back fast |
 
 Distances: `Motion.travel` 16 (a floating thing entering), `enterScale` .97
@@ -214,7 +240,7 @@ Distances: `Motion.travel` 16 (a floating thing entering), `enterScale` .97
 `PressScale`: `panel` .985, `button` .97, `chip` .96, `icon` .92; rows and keys
 do not scale (a key is pressed a hundred times a day).
 `Springs` (anything a finger hands over): `carry` 420 / .88, `settle` 420 / 1,
-`snap` 1500 / .85 (the tab capsule), `recoil` and `out` (swipe to review);
+`recoil` and `out` (swipe to review);
 critically damped unless the gesture carried momentum, and then ratio >= .85.
 `Dwell` holds the timers (tap guard 450, hold intent 150, confirm window 4 s,
 key repeat 320 / 45, toasts 1.5 / 2.75 / 5 s, spinner delay 120).
@@ -238,9 +264,10 @@ the **settle**: when the status of a glyph already on screen changes, the old
 shape fades and the new one is drawn in once (`Motion.settle`: a ring sweeps
 round, the check and the bar are stroked, the dot lands) and a needs-you or done
 glyph sends one faint ring outward; then the ticker stops. A glyph built with
-its status never animates, and reduced motion skips it. A card that changed
-section gets an accent wash that fades over `Motion.arrival` (a highlight
-decaying, not a movement), and a card resizes with `AnimatedSize` when its
+its status never animates, and reduced motion skips it. (A card that changed
+status used to get an accent wash, `Motion.arrival`; it went with the Cards
+density: the one card on the board is the waiting agent in front, which never
+changes status in place.) A card resizes with `AnimatedSize` when its
 question appears or is answered instead of snapping: a height change the person
 did not cause must not jump the rows under their thumb.
 
@@ -264,8 +291,8 @@ change. Status: **stable** = a catalog entry, a semantics test and this row.
 | Component | File | Job | Replaced |
 | --- | --- | --- | --- |
 | `PressBuilder` | `press.dart` | every tappable: press feedback, 44 dp hit, one semantics node | `InkWell`, raw `GestureDetector` taps |
-| `AppButton`, `CircleButton` | `buttons.dart` | buttons; round icon buttons | Material buttons |
-| `TextAction` | `text_action.dart` | a word to tap (`Read all`, `Mark all reviewed`) | six text-link styles; one exception, the board's `N more…` under its answer chips (`reply_chips.dart`): it is a row of that stack, with the chips' height and fill, and it greys out while an answer is in flight, which a `TextAction` cannot |
+| `AppButton`, `CircleButton` | `buttons.dart` | buttons; round icon buttons (`mark`: a quiet accent dot on the disc for something worth a look, never a count: the update on the Settings gear) | Material buttons |
+| `TextAction` | `text_action.dart` | a word to tap (`Read all`, `Mark reviewed`) | six text-link styles; one exception, the board's `N more…` under its answer chips (`reply_chips.dart`): it is a row of that stack, with the chips' height and fill, and it greys out while an answer is in flight, which a `TextAction` cannot |
 | `AppChip` | `chips.dart` | filter, tag, pick-one; selected = accent wash; `enabled: false` keeps an unavailable choice, at half strength, untappable | outlined chips, an `Opacity` over a chip |
 | `Segmented` | `segmented.dart` | "this or that": one capsule that travels | two chips used as a switch |
 | `AppSwitch`, `SwitchRow` | `switch.dart` | on/off | |
@@ -278,12 +305,12 @@ change. Status: **stable** = a catalog entry, a semantics test and this row.
 | `RowList` / `RowColumn` + `RowSpec` | `row_kit.dart` | settings-style lists declared as data; dividers from neighbours | per-screen padding and `divider:` flags |
 | `Panel`, `FoldPanel` | `panel.dart` | a group in content; a group that folds | eleven hand-made containers |
 | `StatusStrip`, `StatusPanel` | `status_panel.dart` | a state in one line; a state that needs a sentence (tint, no outline) | |
-| `QuestionWash`, `AnswerChip` | `question_wash.dart`, `answer_chip.dart` | what an agent asks; an answer, held when risky | six washes, five chips |
+| `QuestionWash`, `AnswerChip` | `question_wash.dart`, `answer_chip.dart` | what an agent asks; an answer, held when risky, quiet when it declines (no fill: a fill read as another yes; a small leading ✕ in `textSecondary`, so it still reads as an answer to tap) | six washes, five chips |
 | `HoldToConfirm` | `hold_confirm.dart` | the hold guard | |
 | `AppTopBar`, `AppBackButton` | `top_bar.dart` | every top bar | seven bars, twelve Backs |
 | `SliverLargeTitle` | `large_title.dart` | a root or list page's title | |
 | `showAppSheet`, `SheetScaffold`, `SheetTitle`, `SheetGrabber`, `showActionSheet`, `showConfirmSheet` | `sheets.dart` | every sheet: four kinds (actions, list, message, form); a confirm sheet takes `hold: true` and its danger button is then a `HoldToConfirm` (a tap says how; a screen reader activates twice), for what deletes something outside the app | 23 sheets with their own paddings |
-| `FloatingBar*`, `FloatingTabBar`, `BottomStackTransition` | `bottom_stack.dart` | the bottom stack (below) | |
+| `FloatingBar*`, `BottomStackTransition` | `bottom_stack.dart` | the bottom stack (below) | |
 | `FloatingPill` | `floating_pill.dart` | a pill over content (jump to latest, changed on disk) | three pills |
 | `showToast`, `Toaster`, `ToastShelf`, `ToastCard` | `toast.dart` | the one transient message (`ToastCard` is its picture, for the catalog) | `SnackBar` |
 | `copyText` | `clipboard.dart` | the one way to copy (below) | ten copy sites |
@@ -304,7 +331,7 @@ plain success.
 
 **Segmented.** A slim `ds.fill` pill, no border, no shadow (owner: borders are
 noise; a hairline pill, tried first, was), with one `accentWash` capsule under
-the chosen cell: the tab bar's look, so the app has one switch. The capsule
+the chosen cell: one look for every switch (the tab bar had it too, until it went). The capsule
 slides (`Motion.standard`, a jump under reduced motion) and one number, its
 place, drives it and every label's colour, so a label warms as the capsule
 arrives and cools as it leaves; the weight never changes. No press scale; a
@@ -341,7 +368,7 @@ is intended.
 
 Renderers live outside the kit: `ui/render/markdown/` (one Markdown renderer,
 `docs/screens/markdown.md`) and `ui/render/terminal/`. Non-visual helpers
-(`TapGuardState`, `SettleGate`, `StepClock`, `DeepLinks`, `HomeTabs`) live in
+(`TapGuardState`, `SettleGate`, `StepClock`, `DeepLinks`) live in
 `ui/support/`.
 
 ### Toasts
@@ -356,7 +383,7 @@ first.
   mark for `success` / `failed`. No outline, no shadow. Why: the old card was
   `surface` with the input outline and read as a text field; under Android's
   own black "Copied" toast it looked like a second, white system.
-- **Place.** 8 above the highest `ToastShelf` (the tab bar, the triage pill, a
+- **Place.** 8 above the highest `ToastShelf` (the board's batch bar, a
   form's action bar, a composer region), or 8 above the bottom inset; it glides
   when a shelf moves. A shelf counts only while its route is showing.
 - **Motion.** It rises from behind the bar it stands on (clipped to its own
@@ -389,50 +416,39 @@ a check for `Dwell.copied`: the feedback stays where the eye is.
 
 ## Bottom stack and navigation
 
-The bottom of a root screen is lanes, from the bottom edge up, each present only
-while it has content: the inset; **Dock** (`FloatingTabBar`, or the batch bar
-while picking on the board), 56; **Pin** (the triage pill), 44; **Toast**.
-Every gap is 8. Every floating lane goes through `FloatingBarSlot` (12 from the
-sides plus the inset, centred, at most 312), with `surface`, a hairline,
-`floatShadow` and round ends. `FloatingBar.clearance` is the Dock's height and
-margins plus the inset; a list ends `clearance + 8` (plus the Pin while it
-shows). `FloatingBarScrim` fades rows out above the Dock; its solid lower half
-takes taps, so nothing is tapped beside the pill by accident.
+**Home has no bar under it.** Home is the Agents board; Machines and Settings
+are pages pushed over it from its header (the machines chip on the left, the
+gear on the right; `HomePages`, `docs/screens/board.md`), with Back in their
+bars. Why (owner decision): most of the time the person cares about agents,
+not machines; home is the app, chrome costs focus, and the tab bar (Agents,
+Machines, Settings) covered the end of the list. A screen never adds a
+permanent bottom bar; the bottom belongs to the content.
+
+The bottom of a screen is lanes, from the bottom edge up, each present only
+while it has content: the inset; **Dock**, 56 (on home, the batch bar while the
+board picks, and nothing otherwise; a form's action bar; the attach sheet's
+bars); **Toast**. (A **Pin** lane, the board's triage pill, sat between them;
+it went when the board's status line took the count, since it only repeated
+it. The tab bar sat in the Dock at rest; it went with the tabs.) Every gap is
+8. Every floating lane goes through `FloatingBarSlot` (12 from the sides plus
+the inset, centred, at most 312), with `surface`, a hairline, `floatShadow`
+and round ends. `FloatingBar.clearance` is the Dock's height and margins plus
+the inset; a list under a Dock ends `clearance + 8`, and a list with nothing
+under it ends `Gap.xl` above the inset. `FloatingBarScrim` fades rows out
+above the Dock; its solid lower half takes taps, so nothing is tapped beside
+the pill by accident.
 
 One motion for every lane: up from `Motion.travel` with a fade in, `sheetIn`;
-the reverse, `sheetOut`; a fade only under reduced motion. The tab bar and the
-batch bar swap in place with a `Motion.fade` cross-fade. Picking belongs to the
-board: leaving the Agents tab ends it, and the tab bar hides only while the
-board picks.
-
-**The tab bar.** Three equal cells, an icon (`IconSize.nav`) over its name
-(`Type.caption`); the selected one in `accentText` on an `accentWash` capsule
-that travels between cells, and the colour of every cell follows the capsule's
-place, so text warms as it arrives. Why accent: grey on grey said "selected"
-too quietly; Telegram's bar carries the state by hue. The weight never changes.
-A drag along the bar carries the capsule 1:1 (a tick per cell, the bar lifts to
-`FloatingBar.liftScale`), and on release it springs (`Springs.snap`) with the
-finger's speed to the cell a flick would reach. Re-tapping the selected tab
-scrolls that tab to the top, on every tab, with no haptic (nothing changed
-tab). A single tap, not a double: a double tap would hold the single one back
-to wait for a second. Settings keeps its place between visits too; its Update
-row is the first row, so arriving there with an update not yet opened scrolls
-it back into view (`docs/screens/settings.md`). The count badge (`CountBadge`, 16
-high, `99+`) rides the icon's corner, arrives and leaves with a scale over
-`settle`, and its number rolls; its ring takes the colour under it. Settings
-carries a quiet accent dot for an update, never a count. No hide-on-scroll and
-no tab long-press: the bar's cost is paid once, and Material 3 and Apple keep
-top-level bars put. No sideways swipe between tabs: nothing showed it existed,
-the page did not follow the finger, and on Agents it fought swipe-to-review.
-Tests find a tab with `FloatingTabBar.tabKey(label)` and the capsule with
-`FloatingTabBar.capsuleKey`. The shadow is soft on the phone; `flutter test`
-paints a `BoxShadow` without its blur unless `debugDisableShadows` is off
-(`bottom_bars_shots_test.dart` turns it off), which once read as a hard band.
+the reverse, `sheetOut`; a fade only under reduced motion. The batch bar and
+the selection header come and go with a `Motion.fade`. The shadow is soft on
+the phone; `flutter test` paints a `BoxShadow` without its blur unless
+`debugDisableShadows` is off (`bottom_bars_shots_test.dart` turns it off),
+which once read as a hard band.
 
 **Pages.** A push is the Cupertino slide at `Motion.page` with edge-swipe back
-(a `Motion.fade` cross-fade under reduced motion). The tab content fades in over
-`Motion.fade`. The native launch window is paper in day and night (the chosen
-theme is not readable before Flutter starts).
+(a `Motion.fade` cross-fade under reduced motion). The native launch window is
+paper in day and night (the chosen theme is not readable before Flutter
+starts).
 
 ## Words
 
@@ -485,8 +501,8 @@ follows:
   same text.
 - The button role is announced only when the control can be activated
   (`button:` overrides for dimmed buttons).
-- `selected` marks tabs, segments and chips. A count badge is spoken
-  ("Agents, 2 need you").
+- `selected` marks segments and chips. A count badge or a mark is spoken
+  ("Settings, update available").
 - Page titles, section labels, sheet titles and empty-state titles are
   headings. `LabeledField` names its field by the label.
 - Collapsed content is excluded from semantics, focus and hit testing.
@@ -518,7 +534,7 @@ follows:
 `tool/design_lint.dart` runs in `tool/check.sh` and CI. Rules: `raw-color`,
 `raw-type`, `raw-alpha`, `raw-radius`, `raw-duration`, `raw-curve`,
 `raw-spring`, `raw-size` (screens), `raw-haptic`, `clipboard`, `material`,
-`modal-sheet`, `spinner` (`BusySpinner` only), `loop`, `kit-import` (features
+`voice` (curly apostrophes, contractions), `modal-sheet`, `spinner` (`BusySpinner` only), `loop`, `kit-import` (features
 import `kit.dart` only) and `layer` (the kit imports nothing above it;
 renderers import no feature; `data/words` is pure Dart). Rules match across
 lines, so a wrapped argument list is checked whole. A size used once in a
@@ -550,12 +566,12 @@ that line or the one above. `--report` counts findings per rule and folder;
 
 ## Screens
 
-- `docs/screens/board.md`: the Agents board, answering, needs you, selection,
+- `docs/screens/board.md`: the Agents board (home and its header), answering, needs you, selection,
   starting.
 - `docs/screens/agent-screens.md`: one agent per screen, the pane and its bar,
   composers, the terminal.
 - `docs/screens/session.md`: the agent session screen.
 - `docs/screens/attach.md`, `photos.md`, `files.md`, `markdown.md`.
 - `docs/screens/web.md`: a page from a machine shown in herdr.
-- `docs/screens/settings.md`: Settings, updates, root tabs, failed links, what
+- `docs/screens/settings.md`: Settings, updates, home's pages, failed links, what
   survives a launch.

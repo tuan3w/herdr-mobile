@@ -108,7 +108,23 @@ These are the patterns this app has proven:
   answers to the same gesture everywhere.
 - **Respect the battery and the radio.** A timer, subscription, poll or retry is
   a cost to the person. Each one stops when nobody looks, and follows the background
-  profile.
+  profile. Give every idea its radio line before it is drawn: what it reads,
+  when, and what that costs in the background. A glance surface (a switcher, a
+  peek) shows what is already in memory and never fetches to decorate itself.
+- **Chrome costs focus.** A strip or bar that stays over what the person is
+  reading spends height and pulls the eye each time it changes. Prefer the
+  on-demand surface (the title opens the agent switcher) plus a mark that does
+  not move (its count badge). Why: an agent strip and a next-up bar were drawn
+  and rejected by the owner: "it takes space, I lose my focus".
+- **Twins must differ by name.** Several git worktrees of one repo share a
+  folder name, so a folder alone names nothing; name by what differs (the
+  branch, `agent_identity.dart`), the folder only when it is alone.
+- **Every surface with its own history has a one-tap way out.** Back may step
+  through it, but ✕ leaves from any depth. Why: ten links deep in the web
+  preview was ten presses back to the chat.
+- **Design for what already happened.** Most people run agents on auto-accept,
+  so approvals are rare and the common moment is after the fact: what ran, is
+  it on track, Stop. A feature that only helps before the fact helps the few.
 
 ### 4. Keep a ledger: noise and delight
 
@@ -228,6 +244,9 @@ table below in `tool/check.sh` (`dart run ../tool/design_lint.dart` from `app/`)
 | A second toast, sheet, viewer or guard system | The one in `ui/core` or `features/` |
 | `semanticLabel` that repeats visible text | Leave it null; set it only for icon-only controls |
 | A layout that jumps when an error appears | Reserved space (`LabeledField`) |
+| An `Opacity` over a whole row or card to say stale or unavailable | Dim the glyph, step the words down a tone (`textSecondary` / `textMuted`), and say the reason in words. The faded words fell to ~2.2:1 |
+| A field or picker edge drawn with `border` (~1.5:1) | `controlBorder`, 3:1 on `surface` (WCAG 1.4.11) |
+| `'$e'`, `e.toString()` or a type name in user text | `describeError` (`data/words/error_words.dart`): what happened and what to do next |
 
 ## Reviewing
 

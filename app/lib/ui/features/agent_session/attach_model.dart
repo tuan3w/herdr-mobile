@@ -23,6 +23,10 @@ import 'attach_picker.dart';
 /// more pictures than a prompt should hold.
 const maxAttachments = 5;
 
+/// One sentence for every picture that cannot be read back from the phone: the
+/// picker's file went away or is damaged, so the next step is another pick.
+const _unreadablePicture = 'Couldn’t read that picture. Pick it again.';
+
 enum AttachmentKind { image, file }
 
 /// Where a chip is in its life. Only [ready] chips carry a block to send.
@@ -267,8 +271,8 @@ class ComposerAttachments extends ChangeNotifier {
     if (lost > 0) {
       _problem(
         lost == 1
-            ? 'One attachment did not fit back and was removed.'
-            : '$lost attachments did not fit back and were removed.',
+            ? 'One attachment didn’t fit back and was removed.'
+            : '$lost attachments didn’t fit back and were removed.',
       );
     }
     notifyListeners();
@@ -509,7 +513,7 @@ class ComposerAttachments extends ChangeNotifier {
         return;
       } on Object {
         _drop(id);
-        _problem('Couldn’t read that picture.');
+        _problem(_unreadablePicture);
         return;
       }
     }
@@ -522,7 +526,7 @@ class ComposerAttachments extends ChangeNotifier {
     final file = known ?? await _galleryFile(pick);
     if (file == null || _disposed) {
       _drop(id);
-      _problem('Couldn’t read that picture.');
+      _problem(_unreadablePicture);
       return;
     }
     if (sizeVerdict(file.size) == SizeVerdict.tooLarge) {
@@ -541,7 +545,7 @@ class ComposerAttachments extends ChangeNotifier {
   Future<PreparedImage> _prepareGallery(GalleryPick pick) async {
     final f = await _galleryFile(pick);
     if (pick.work.cancelled) throw const _Abandoned();
-    if (f == null) throw const ImagePrepException('Couldn’t read that picture.');
+    if (f == null) throw ImagePrepException(_unreadablePicture);
     if (f.size > maxImageInputBytes) throw _TooBigForImage(f);
     final bytes = await readFile(f.path);
     if (pick.work.cancelled) throw const _Abandoned();
@@ -578,7 +582,7 @@ class ComposerAttachments extends ChangeNotifier {
       _problem(e.message);
     } on Object {
       _drop(id);
-      _problem('Couldn’t read that picture.');
+      _problem(_unreadablePicture);
     }
   }
 
@@ -671,7 +675,7 @@ class ComposerAttachments extends ChangeNotifier {
         onProgress: (sent, total) => t.progress.value = total <= 0 ? 0 : (sent / total).clamp(0.0, 1.0),
       );
     } on Object {
-      _replace(id, (a) => a._with(phase: AttachPhase.failed, error: 'Couldn’t start the upload'));
+      _replace(id, (a) => a._with(phase: AttachPhase.failed, error: 'Couldn’t start the upload · attach it again'));
       return;
     }
     t.upload = upload;

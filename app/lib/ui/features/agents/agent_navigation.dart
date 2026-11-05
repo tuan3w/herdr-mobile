@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/app_settings.dart';
@@ -27,7 +28,7 @@ import 'agents_grouping.dart';
 /// One agent per screen. A terminal pane shows its terminal ([PaneScreen]) or,
 /// when the app can follow its log, its chat ([AgentSessionScreen] over an
 /// observed session); an agent session shows its chat. Inside an agent screen
-/// a swipe goes to the next agent in the board's order ([neighbourOf],
+/// a swipe walks the agents that want the person ([neighbourOf],
 /// [stepToAgent]) and the menu's view row switches the view
 /// ([showAgentView]); both replace the screen, so Back always goes where the
 /// person came from (the board).
@@ -66,66 +67,127 @@ Future<void> showAgentView(BuildContext context, AgentRef agent, AgentView view)
   return _open(context, agent, view: view, replace: true, entrance: _Entrance.fade);
 }
 
-/// The agent [delta] places from [agent] in the board's order (+1 the next
-/// one), as the board lists it. Null at either end, or for an agent the board
-/// does not list: the order does not wrap round.
-BoardItem? neighbourOf(BuildContext context, AgentRef agent, int delta) {
-  final items = _boardItems(context);
-  final at = items.indexWhere((item) => item.agent == agent);
-  final to = at + delta;
-  if (at < 0 || to < 0 || to >= items.length) return null;
-  return items[to];
+/// The triage walk a swipe between agents follows: the agent the walk began
+/// on, then every agent that wants the person, in the board's own order:
+/// Needs you ([AttentionSet]'s: what can be reached first, longest waiting
+/// first), then To review (newest first). Working and idle agents are not in
+/// it (the board and the title reach them).
+///
+/// The order is frozen when the walk begins (the first swipe, or the first
+/// `Next agent` / `Previous agent`), so a swipe back retraces it exactly. Why:
+/// the order used to be read from the board on every swipe, so answering the
+/// agent in front moved it from Needs you to Working, and a swipe back did
+/// not return where the person came from. An agent that stopped needing the
+/// person meanwhile stays in the walk (its card shows what it is now); one
+/// the board no longer lists (a closed pane) is skipped.
+///
+/// It lives with the navigator, not in a route, because every step replaces
+/// the agent route. Opening an agent any other way (the board, a link, a
+/// form) or going back to the board ends it.
+class _AgentWalk {
+  _AgentWalk(this.stops);
+
+  /// The agents of the walk, in order, frozen.
+  final List<AgentRef> stops;
+
+  /// The stop in front.
+  int _at = 0;
+
+  AgentRef get current => stops[_at];
 }
 
-/// A swipe's step: shows [to], [delta] places from the agent in front (+1
-/// the next one, for a swipe to the left), in place of this screen, sliding
-/// in from the side the finger came from. [to] is the agent the swipe showed
-/// while the finger moved, not one looked up again: the order may have
-/// changed meanwhile. One the board no longer lists is not opened; a tick
-/// says so. True if a screen for [to] is on its way.
+/// A navigator's walk, while it has one.
+final _walks = Expando<_AgentWalk>('agent walk');
+
+/// The walk [agent] (the agent in front) is on, begun now if there is none
+/// or [agent] is not where it stands.
+_AgentWalk _walkFrom(BuildContext context, AgentRef agent) {
+  final navigator = Navigator.of(context);
+  final walk = _walks[navigator];
+  if (walk != null && walk.current == agent) return walk;
+  final layout = boardLayoutOf(context);
+  final wanting = [
+    for (final status in const [AgentStatus.blocked, AgentStatus.done])
+      for (final item in layout.section(status)?.items ?? const <BoardItem>[])
+        if (item.agent != agent) item.agent,
+  ];
+  return _walks[navigator] = _AgentWalk([agent, ...wanting]);
+}
+
+/// One stop a step leads to: the agent as the board shows it now, and its
+/// place in the walk ([position] of [count], 1-based, counting the stops the
+/// board still lists).
+typedef WalkStop = ({BoardItem item, int position, int count});
+
+/// The stop [delta] steps from [agent] along the walk (+1 the next one),
+/// skipping agents the board no longer lists. Null at either end: the walk
+/// does not wrap round.
+WalkStop? neighbourOf(BuildContext context, AgentRef agent, int delta) {
+  final walk = _walkFrom(context, agent);
+  final listed = {for (final item in _boardItems(context)) item.agent: item};
+  final live = [
+    for (final (i, stop) in walk.stops.indexed)
+      if (i == walk._at || listed.containsKey(stop)) stop,
+  ];
+  for (var i = walk._at + delta; i >= 0 && i < walk.stops.length; i += delta) {
+    final item = listed[walk.stops[i]];
+    if (item != null) return (item: item, position: live.indexOf(item.agent) + 1, count: live.length);
+  }
+  return null;
+}
+
+/// The agents working now, as the board counts them: what the end of the
+/// walk says is going on without the person.
+int agentsWorking(BuildContext context) => boardLayoutOf(context).working;
+
+/// A swipe's step: shows [to], [delta] steps along the walk from the agent
+/// in front (+1 the next one, for a swipe to the left), in place of this
+/// screen, sliding in from the side the finger came from. [to] is the agent
+/// the swipe showed while the finger moved. One the board no longer lists is
+/// not opened; a tick says so. True if a screen for [to] is on its way.
 bool stepToAgent(BuildContext context, AgentRef to, int delta) {
-  if (!agentsInBoardOrder(context).contains(to)) {
+  final walk = _walks[Navigator.of(context)];
+  final at = walk?.stops.indexOf(to) ?? -1;
+  if (walk == null || at < 0 || !_boardItems(context).any((item) => item.agent == to)) {
     Haptics.tick();
     return false;
   }
   final opens = _screenFor(context, to, _defaultView(context, to)) != null;
+  if (opens) walk._at = at;
   unawaited(_open(context, to, replace: true, entrance: delta > 0 ? _Entrance.fromRight : _Entrance.fromLeft));
   return opens;
 }
 
 /// The step without a gesture (the screen's `Next agent` and `Previous
-/// agent` accessibility actions): the agent [delta] places from [agent], or
-/// at either end a tick, the end card's words said out loud, and nothing
-/// moves.
+/// agent` accessibility actions): along the same walk, or at either end a
+/// tick, the end card's words said out loud, and nothing moves.
 void swipeToAgent(BuildContext context, AgentRef agent, int delta) {
   final to = neighbourOf(context, agent, delta);
   if (to == null) {
     Haptics.tick();
-    final words = peekEndWords(next: delta > 0, listed: agentsInBoardOrder(context).contains(agent));
+    final words = peekEndWords(next: delta > 0, working: agentsWorking(context));
     unawaited(SemanticsService.sendAnnouncement(View.of(context), words, Directionality.of(context)));
     return;
   }
-  stepToAgent(context, to.agent, delta);
+  stepToAgent(context, to.item.agent, delta);
 }
 
-/// Every agent the board lists, in the board's order: its sections in turn
-/// (Needs you and Done in [AttentionSet]'s order: what can be reached first,
-/// longest waiting first), terminal panes and sessions as the board mixes
-/// them. The board's filter and collapsed sections are a way of looking, not
-/// an order, and are not applied.
-List<AgentRef> agentsInBoardOrder(BuildContext context) => [for (final item in _boardItems(context)) item.agent];
-
-/// [agentsInBoardOrder] as the board's rows, with what each row shows.
-List<BoardItem> _boardItems(BuildContext context) {
-  final attention = context.read<AttentionSet?>();
-  if (attention == null) return const [];
-  final sections = boardSections(
+/// The board's layout, as the board lists it now: the one order the swipe
+/// walk and the title switcher both follow. Its folded sections are a way of
+/// looking, not an order, and are not applied. [attention] lets a caller that
+/// watches the set pass it in.
+BoardLayout boardLayoutOf(BuildContext context, {AttentionSet? attention}) {
+  attention ??= context.read<AttentionSet?>();
+  if (attention == null) return const BoardLayout();
+  return boardLayout(
     AgentsOverview.of(context.read<FleetRepository>()).agents,
     context.read<AgentSessions?>()?.sessions ?? const [],
     attention,
   );
-  return [for (final section in sections) ...section.items];
 }
+
+/// Every row the board lists, in its order.
+List<BoardItem> _boardItems(BuildContext context) => boardLayoutOf(context).items.toList();
 
 /// The agent a board row stands for.
 extension BoardItemAgent on BoardItem {
@@ -197,7 +259,7 @@ SheetAction agentViewAction(BuildContext context, AgentRef agent, AgentView show
   final toTerminal = shown == AgentView.chat;
   return SheetAction(
     label: toTerminal ? 'Show terminal' : 'Show chat',
-    icon: toTerminal ? LucideIcons.terminal : LucideIcons.messageSquare,
+    icon: toTerminal ? LucideIcons.terminal : HerdrIcons.message,
     onTap: () => unawaited(showAgentView(context, agent, toTerminal ? AgentView.terminal : AgentView.chat)),
   );
 }
@@ -212,6 +274,9 @@ Future<void> _open(
 }) async {
   final want = view ?? _defaultView(context, agent);
   final navigator = Navigator.of(context);
+  // Opened any way but a step (the board, a link, a form): a walk begins
+  // afresh at the first swipe from here.
+  if (entrance == _Entrance.page) _walks[navigator] = null;
   final screen = _screenFor(context, agent, want, preconnect: preconnect);
   if (screen == null) {
     preconnect?.cancel();
@@ -341,6 +406,15 @@ class _AgentRoute extends MaterialPageRoute<void> {
     return future;
   }
 
+  /// Back (the button, the edge swipe) from an agent screen lands on the
+  /// board: the walk is over. A step replaces the route instead, which
+  /// completes it without a pop.
+  @override
+  bool didPop(void result) {
+    if (navigator case final navigator?) _walks[navigator] = null;
+    return super.didPop(result);
+  }
+
   @override
   bool canTransitionTo(TransitionRoute<dynamic> nextRoute) =>
       !(nextRoute is _AgentRoute && nextRoute.entrance != _Entrance.page) && super.canTransitionTo(nextRoute);
@@ -403,7 +477,7 @@ class _EntranceTransition extends StatefulWidget {
 }
 
 class _EntranceTransitionState extends State<_EntranceTransition> {
-  late final CurvedAnimation _curve = Motion.curved(widget.animation);
+  late final ExitCurvedAnimation _curve = Motion.curved(widget.animation);
   late bool _done = widget.animation.isCompleted;
 
   @override

@@ -64,7 +64,7 @@ const _bottomShare = 0.8;
 /// nothing else.
 ///
 /// Opened as an agent ([agent], see `openAgent`), a swipe on the transcript
-/// goes to the next agent in the board's order, an agent in a pane has `Show
+/// goes to the next agent that wants the person, an agent in a pane has `Show
 /// terminal` in the options sheet, and the draft is kept outside the
 /// screen. A subagent's transcript is not an agent of the board: it has none
 /// of those.
@@ -436,7 +436,17 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   /// back, and goes out as a prompt when the turn has ended.
   void _submit({bool after = false}) {
     final session = widget.session;
-    if (session.link != AgentLink.live || session.sendBlocked != null) return;
+    // Nothing typed, nothing refused: an empty Send has nothing to explain.
+    final hasContent = _input.text.trim().isNotEmpty || !_attachments.isEmpty;
+    void refuse(String why) {
+      if (!hasContent) return;
+      Haptics.failed();
+      showToast(context, why);
+    }
+
+    if (session.link != AgentLink.live) return refuse('Not connected. Try again when it is back');
+    final blocked = session.sendBlocked;
+    if (blocked != null) return refuse(blocked);
     if (!_attachments.canSend) return;
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
@@ -584,7 +594,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       backgroundColor: ds.bg,
       body: Column(
         children: [
-          SessionBar(session: widget.session),
+          SessionBar(session: widget.session, agent: widget.agent),
           _LinkStrip(session: widget.session, agent: widget.agent),
           Expanded(
             // Shares are worked out when the area is laid out, not when it is
@@ -855,7 +865,7 @@ class _LinkStrip extends StatelessWidget {
           color: ds.blocked,
           state: LinkState.attention,
           title: 'Needs you in the terminal',
-          detail: 'It asks something the chat cannot show.',
+          detail: 'It asks something the chat can’t show.',
           action: openTerminal,
         );
       }

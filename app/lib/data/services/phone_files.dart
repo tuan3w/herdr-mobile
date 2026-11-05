@@ -48,7 +48,7 @@ class DevicePhoneFilePicker implements PhoneFilePicker {
     try {
       picked = await FilePicker.pickFiles();
     } on PlatformException {
-      throw const PhoneFileException('The file picker could not be opened.');
+      throw const PhoneFileException('The file picker couldn’t be opened.');
     }
     final out = <PhoneFile>[];
     for (final f in picked) {
@@ -59,7 +59,7 @@ class DevicePhoneFilePicker implements PhoneFilePicker {
       out.add(PhoneFile(path: path, name: f.name, size: size));
     }
     if (picked.isNotEmpty && out.isEmpty) {
-      throw const PhoneFileException('Could not read that file from the phone.');
+      throw const PhoneFileException('Couldn’t read that file from the phone.');
     }
     return out;
   }

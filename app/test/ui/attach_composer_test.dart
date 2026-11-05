@@ -221,7 +221,7 @@ void main() {
         await tester.pump();
         await tester.longPress(send);
         await settle(tester);
-        expect(session.steeredBlocks, hasLength(1), reason: 'a hold does not steer');
+        expect(session.steeredBlocks, hasLength(1), reason: 'a hold doesn’t steer');
         expect(
           [for (final q in session.queued) q.text],
           ['then update the docs'],
@@ -288,7 +288,7 @@ void main() {
       expect(find.byKey(AttachTabBar.tabKey(AttachTab.host)), findsOneWidget);
       expect(find.text('Machine'), findsOneWidget, reason: 'the vocabulary says machine, not host');
       expect(find.text('Camera'), findsOneWidget);
-      expect(find.text('This agent does not take images. Photos go up as files.'), findsNothing);
+      expect(find.text('This agent doesn’t take images. Photos go up as files.'), findsNothing);
     });
 
     testWidgets('an agent with no images says so in the Gallery tab; the photos still go, as files', (tester) async {
@@ -296,8 +296,8 @@ void main() {
       await pump(tester, session, kit: FakeKit().kit);
       await tester.tap(attachButton);
       await settle(tester);
-      expect(find.text('This agent does not take images. Photos go up as files.'), findsOneWidget);
-      expect(find.text('Camera'), findsOneWidget, reason: 'the tab is not taken away');
+      expect(find.text('This agent doesn’t take images. Photos go up as files.'), findsOneWidget);
+      expect(find.text('Camera'), findsOneWidget, reason: 'the tab isn’t taken away');
     });
 
     testWidgets('a machine with no file access says so in the Machine tab', (tester) async {
@@ -367,7 +367,7 @@ void main() {
       expect(session.sentBlocks.single.single, isA<ImageBlock>());
     });
 
-    testWidgets('while it is being prepared the chip says so and the message cannot go', (tester) async {
+    testWidgets('while it is being prepared the chip says so and the message can’t go', (tester) async {
       final session = FakeAgentSession();
       final done = Completer<PreparedImage>();
       await pump(tester, session, picker: FakePicker()..gallery.add(photo()), prepare: (_) => done.future);
@@ -402,14 +402,14 @@ void main() {
 
       done.complete(PreparedImage(bytes: _jpeg, width: 8, height: 8));
       await settle(tester);
-      expect(find.text('IMG_2031.jpg'), findsNothing, reason: 'a late result does not bring it back');
+      expect(find.text('IMG_2031.jpg'), findsNothing, reason: 'a late result doesn’t bring it back');
     });
 
     testWidgets('a picker failure or an unreadable picture: a plain message and no chip', (tester) async {
-      final picker = FakePicker()..failure = const ImagePrepException('The photo picker could not be opened.');
+      final picker = FakePicker()..failure = const ImagePrepException('The photo picker couldn’t be opened.');
       await pump(tester, FakeAgentSession(), picker: picker);
       await attach(tester, 'Photo library');
-      expect(find.text('The photo picker could not be opened.'), findsOneWidget);
+      expect(find.text('The photo picker couldn’t be opened.'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
 
       final broken = FakePicker()..gallery.add(photo('bad.heic'));
@@ -417,10 +417,10 @@ void main() {
         tester,
         FakeAgentSession(),
         picker: broken,
-        prepare: (_) async => throw const ImagePrepException('Could not read that picture. Use a JPEG, PNG or WebP.'),
+        prepare: (_) async => throw const ImagePrepException('Couldn’t read that picture. Use a JPEG, PNG or WebP.'),
       );
       await attach(tester, 'Photo library');
-      expect(find.text('Could not read that picture. Use a JPEG, PNG or WebP.'), findsOneWidget);
+      expect(find.text('Couldn’t read that picture. Use a JPEG, PNG or WebP.'), findsOneWidget);
       expect(find.text('bad.heic'), findsNothing);
     });
 
@@ -509,7 +509,7 @@ void main() {
       expect(block.text, 'notes\n');
     });
 
-    testWidgets('a file over the cap, or one that is not text, stays a link', (tester) async {
+    testWidgets('a file over the cap, or one that isn’t text, stays a link', (tester) async {
       final session = onHost()..embeddedAccepted = true;
       await pump(tester, session);
       await attachHostFile(tester, ['release.apk']);
@@ -663,7 +663,7 @@ void main() {
       expect(opened, ['p-signin']);
     });
 
-    testWidgets('a terminal that could not start says why, in a message', (tester) async {
+    testWidgets('a terminal that couldn’t start says why, in a message', (tester) async {
       final session = FakeAgentSession()..auth = need();
       await tester.pumpWidget(
         MaterialApp(

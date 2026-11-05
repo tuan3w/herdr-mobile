@@ -114,7 +114,7 @@ app/lib/
                     visible_text.dart
     support/        app plumbing without pixels of its own: deep_link.dart,
                     keyboard_frames.dart, open_link.dart, tap_guard.dart,
-                    home_tabs.dart, error_view.dart, ...
+                    error_view.dart, ...
     features/       views + view models, one folder per screen family:
                     agents/          the board, batch actions, opening an
                                      agent and switching between agents
@@ -133,9 +133,10 @@ app/lib/
                                      key row, slash palette, answer dock
                     photos/          the one photo viewer
                     settings/
-    shell/          home_shell.dart (the three root tabs: Agents, Machines,
-                    Settings, floating tab bar), arrival_cue.dart (one haptic
-                    when another agent starts waiting)
+    shell/          home_shell.dart (home: the Agents board, no tab bar),
+                    home_pages.dart (Machines and Settings, pushed from the
+                    board's header and from links), arrival_cue.dart (one
+                    haptic when another agent starts waiting)
 app/test/                    unit and widget tests; support/ (fakes, shot.dart),
                              fixtures/ (prompts, traces, omp_logs)
 app/benchmark/               benchmarks: transfer_bench.dart (bytes on the wire,

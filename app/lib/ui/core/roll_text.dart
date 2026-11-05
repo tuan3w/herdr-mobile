@@ -9,8 +9,7 @@ import 'tokens.dart';
 /// font size, crossing in opacity over [Motion.settle]. Its width follows from
 /// the old to the new. Up when a number rose, down when it fell.
 ///
-/// For counts that bring news: a badge, the triage pill, a filter chip, the
-/// selection count. Never for a clock: a time that changes every second
+/// For counts that bring news: a badge, the selection count. Never for a clock: a time that changes every second
 /// would never rest.
 ///
 /// At rest it is one plain [Text.rich] (so it finds and reads as its text) and

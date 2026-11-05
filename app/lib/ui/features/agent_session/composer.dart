@@ -8,7 +8,7 @@ import '../../../data/acp/prompt_queue.dart' show SendDelivery;
 import '../../../data/acp/session_state.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/attach_target.dart' show AttachMode;
-import '../../core/kit.dart' show IconSize;
+import '../../core/kit.dart' show HerdrIcons, IconSize;
 import '../../support/tap_guard.dart';
 import '../composer/composer_frame.dart';
 import '../dictation/dictation_language_sheet.dart';
@@ -315,8 +315,8 @@ class _StopButtonState extends State<_StopButton> with TapGuardState<_StopButton
   @override
   Widget build(BuildContext context) => ComposerRoundButton(
     label: 'Stop',
-    icon: LucideIcons.square,
-    iconSize: IconSize.inline,
+    icon: HerdrIcons.stopMark,
+    iconSize: IconSize.row,
     busy: widget.stopping,
     ready: settled && !widget.stopping,
     quiet: true,

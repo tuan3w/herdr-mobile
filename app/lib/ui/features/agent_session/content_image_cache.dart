@@ -71,7 +71,7 @@ Future<Uint8List> decodeImageData(String data) async {
   try {
     return data.length > _isolateFromChars ? await compute(_decodeBase64, data) : _decodeBase64(data);
   } on Object {
-    throw const ImageProblem('The picture data is not valid base64.');
+    throw const ImageProblem('The picture data is damaged.');
   }
 }
 
@@ -100,8 +100,7 @@ Future<DecodedImage> decodeImageBlock(
   try {
     image = await decoder(bytes, maxDimension: maxDimension);
   } on Object {
-    final mime = block.mimeType.isEmpty ? 'this format' : block.mimeType;
-    throw ImageProblem('The picture is not an image this app can read ($mime).');
+    throw const ImageProblem('This picture is in a format the phone can’t show.');
   }
   if (image.width <= 0 || image.height <= 0) {
     image.dispose();
@@ -252,7 +251,7 @@ class ImagePreviewCache {
     } on LogPictureException catch (e) {
       entry._finish(null, e.message, retryable: e.retryable);
     } on Object {
-      entry._finish(null, 'The picture could not be shown.');
+      entry._finish(null, 'The picture couldn’t be shown.');
     }
   }
 

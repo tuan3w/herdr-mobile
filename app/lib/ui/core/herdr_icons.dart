@@ -7,10 +7,10 @@ import 'package:flutter/widgets.dart';
 /// sit as peers in one bar (Lucide's differ in visual weight there). Same
 /// grammar as Lucide: 24 grid, stroke 2, round caps; any [IconSize].
 abstract final class HerdrIcons {
-  /// An agent: the Agents tab, subagents, agent rows.
+  /// An agent: subagents, agent rows, the switcher.
   static const IconData agents = IconData(0xE000, fontFamily: 'HerdrIcons');
 
-  /// A machine: the Machines tab, machine rows and pickers, what lives on it.
+  /// A machine: machine rows and pickers, what lives on it.
   static const IconData machines = IconData(0xE001, fontFamily: 'HerdrIcons');
 
   /// A machine the app cannot reach: the machine, slashed.
@@ -22,7 +22,13 @@ abstract final class HerdrIcons {
   /// Stop agents (the selection bar).
   static const IconData stop = IconData(0xE010, fontFamily: 'HerdrIcons');
 
-  /// Message agents (the selection bar).
+  /// Stop inside a round button (the composer): `stop` without its ring, the button being the ring.
+  static const IconData stopMark = IconData(0xE013, fontFamily: 'HerdrIcons');
+
+  /// Mark finished agents reviewed (the selection bar).
+  static const IconData reviewed = IconData(0xE014, fontFamily: 'HerdrIcons');
+
+  /// A message to an agent, and a chat: the selection bar, Read as chat, the chat view.
   static const IconData message = IconData(0xE011, fontFamily: 'HerdrIcons');
 
   /// Close agents (the selection bar).
@@ -49,7 +55,7 @@ abstract final class HerdrIcons {
   /// What a session made: the Made chip (a sparkle).
   static const IconData made = IconData(0xE024, fontFamily: 'HerdrIcons');
 
-  /// Look: theme and density (Settings).
+  /// Look: theme and text (Settings).
   static const IconData look = IconData(0xE030, fontFamily: 'HerdrIcons');
 
   /// Notifications (Settings).
@@ -64,6 +70,9 @@ abstract final class HerdrIcons {
   /// About: version, repository, licences (Settings).
   static const IconData about = IconData(0xE034, fontFamily: 'HerdrIcons');
 
-  /// Update available: an arrow into a tray (Settings).
+  /// Browse a machine's files: the pane bar, the session options, the machine, the folder field.
+  static const IconData folder = IconData(0xE040, fontFamily: 'HerdrIcons');
+
+  /// An update: an arrow into a tray (Settings, its row and its Download).
   static const IconData update = IconData(0xE035, fontFamily: 'HerdrIcons');
 }

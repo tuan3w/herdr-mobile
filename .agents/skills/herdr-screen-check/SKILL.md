@@ -83,7 +83,7 @@ The matrix, as a minimum:
 
 - **Light and dark.** Plus "dark terminal on paper" when a terminal is visible.
 - **412x892** (the reference phone) and **320x640** (the smallest phone supported).
-- **Text scale 1.0 and 1.6.** Use 2.0 for chrome that must still fit (the tab bar does).
+- **Text scale 1.0 and 1.6.** Use 2.0 for chrome that must still fit (home's header and the batch bar do).
 - **892x412 landscape**, with a keyboard inset, when the screen has a composer
   (the compact layout hides the dock, the palette and the quick phrases).
 - The **states** from step 1, not only the happy one.
@@ -117,7 +117,7 @@ Then as an inspector, look for these signatures:
 | Text in `textTertiary`, or contrast below 4.5:1 | The wrong tier | `textSecondary` / `textMuted` |
 | "1 agents", "0 need you" | A hand-built plural | A count-aware string |
 | A number that jumps width as it updates | Proportional figures | Tabular figures |
-| The last row under the gesture bar or the floating tab bar | Explicit `padding:` without the inset | Add `MediaQuery.paddingOf(context).bottom` / the bar's clearance |
+| The last row under the gesture bar or the batch bar | Explicit `padding:` without the inset | Add `MediaQuery.paddingOf(context).bottom` / the bar's clearance |
 | The composer behind the keyboard, or jumping | Pane reading `viewInsets` | `docs/ENGINEERING.md` "Keyboard" |
 | A target under 44 dp | A bare `GestureDetector` | `PressBuilder(minTapSize: kMinTap)` |
 | A centred empty state jumping as the list loads | The layout differs per state | Top-align it and keep the same frame |

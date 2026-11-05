@@ -184,7 +184,7 @@ void main() {
       final keys = tester.getRect(find.byType(QuickKeys));
       expect(dock.bottom, lessThanOrEqualTo(keys.top));
       expect(keys.top - dock.bottom, lessThan(12), reason: 'directly above');
-      expect(tester.getSize(find.byType(ReplyChips)).height, ReplyChips.heightFor(2));
+      expect(tester.getSize(find.byType(ReplyChips)).height, ReplyChips.heightFor(_prompt(), limit: dockChipLimit));
       await _tearDown(tester, h);
     });
 
@@ -228,7 +228,7 @@ void main() {
       expect(question.bottom, lessThanOrEqualTo(shown.top), reason: 'question, then the command');
       expect(shown.bottom, lessThan(chips.top), reason: 'and the command, then the chips');
       final text = tester.widget<Text>(subject);
-      expect(text.maxLines, 2);
+      expect(text.maxLines, 3);
       expect(text.style?.fontFamily, monoFamily, reason: 'a command is read in mono');
       await _tearDown(tester, h);
     });
@@ -398,7 +398,11 @@ void main() {
       expect(dockText('3. Three'), findsOneWidget);
       expect(dockText('4. Four'), findsNothing);
       expect(dockText('3 more…'), findsOneWidget);
-      expect(tester.getSize(find.byType(ReplyChips)).height, ReplyChips.heightFor(dockChipLimit));
+      expect(
+        tester.getSize(find.byType(ReplyChips)).height,
+        dockChipLimit * kMinTap + (dockChipLimit - 1) * Gap.sm,
+        reason: 'one group of chips, the "more" chip in the last place',
+      );
 
       await tester.tap(dockText('3 more…'));
       await settle(tester);

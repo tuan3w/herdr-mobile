@@ -718,6 +718,46 @@ void main() {
       expect(_text('Run flutter test'), findsOneWidget);
     });
 
+    testWidgets('red is for what failed: the failed command and its count, nothing else', (tester) async {
+      await open(tester, FakeAgentSession(state: rich()));
+      final sheet = find.byType(SessionOverview);
+      final ds = tester.element(sheet).ds;
+      final red = <String>[];
+      for (final t in tester.widgetList<RichText>(find.descendant(of: sheet, matching: find.byType(RichText)))) {
+        t.text.visitChildren((span) {
+          final text = span is TextSpan ? (span.text ?? '').trim() : '';
+          // Words only: an icon is a private-use glyph, and a diff's `−3`
+          // is the removed-lines colour, a convention of its own.
+          final words = text.isNotEmpty && !text.startsWith('\u2212') && text.runes.first < 0xE000;
+          if (words && (span as TextSpan).style?.color == ds.dangerText) {
+            red.add(text);
+          }
+          return true;
+        });
+      }
+      expect(red, unorderedEquals(['1 failed', 'Bypass Permissions']), reason: 'the count; the mode keeps its warning');
+      expect(
+        find.descendant(of: sheet, matching: find.byWidgetPredicate((w) => w is StatusGlyph && w.isFailed)),
+        findsOneWidget,
+        reason: 'the failed command\'s disc',
+      );
+      expect(
+        find.descendant(
+          of: sheet,
+          matching: find.byWidgetPredicate(
+            (w) => w is ColoredBox && (w.color == ds.danger || w.color == ds.dangerText),
+          ),
+        ),
+        findsNothing,
+        reason: 'a context bar at 91% is worth a look, not a failure',
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.byWidgetPredicate((w) => w is ColoredBox && w.color == ds.working)),
+        findsOneWidget,
+        reason: 'past the warning line the bar takes the working colour',
+      );
+    });
+
     testWidgets('almost nothing: only what exists', (tester) async {
       await open(tester, FakeAgentSession(state: stateWith(items: [userAt('u', 'Say hi', 0)])));
       expect(_text('Goal'), findsOneWidget);
@@ -795,16 +835,11 @@ void main() {
       expect(find.text('Context 91%'), findsOneWidget);
     });
 
-    testWidgets('a tap on the title opens the overview; the options sheet has it too', (tester) async {
+    // The title switches agent (agent_switcher_test.dart); the overview is in
+    // the options.
+    testWidgets('the options sheet opens the overview', (tester) async {
       final session = withContext(40);
       await _pump(tester, _app(SessionBar(session: session)));
-      await tester.tap(find.text('payments-api'));
-      await tester.pumpAndSettle();
-      expect(find.text('Session overview'), findsOneWidget);
-      await tester.tapAt(const Offset(10, 10));
-      await tester.pumpAndSettle();
-      expect(find.text('Session overview'), findsNothing);
-
       await tester.tap(find.byTooltip('Session options'));
       await tester.pumpAndSettle();
       expect(find.text('Session overview'), findsOneWidget);

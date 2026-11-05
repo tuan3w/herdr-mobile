@@ -109,7 +109,7 @@ class PrefsDictationStore implements DictationStore {
 enum DictationProblem {
   denied('Microphone is off for herdr. Allow it in Android settings > Apps > herdr > Permissions.'),
   unavailable('This phone has no speech service. Install or enable Google speech services.'),
-  language('The speech service does not have this language. Pick another one with a long press on the mic.'),
+  language('The speech service doesn’t have this language. Pick another one with a long press on the mic.'),
   offline('Speech needs a connection, or an offline language installed in the speech service.'),
   silence('Heard nothing. Tap the mic and speak.'),
   failed('Dictation stopped. Tap the mic to try again.');

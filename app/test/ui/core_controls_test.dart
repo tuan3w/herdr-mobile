@@ -3,6 +3,7 @@ import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -59,6 +60,8 @@ void main() {
         // An unchosen count sits on the pill, the chosen one on the capsule.
         expect(contrast(ds.textMuted, ds.fill), greaterThanOrEqualTo(4.5));
         expect(contrast(ds.textSecondary, capsule), greaterThanOrEqualTo(4.5));
+        // The edge of a field is the only thing that says where to type.
+        expect(contrast(ds.controlBorder, ds.surface), greaterThanOrEqualTo(3), reason: 'field edge');
       });
 
       test('$name status text holds on its own wash, pressed too', () {
@@ -248,29 +251,22 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('tab bar reports the selected tab and a spoken badge', (tester) async {
+    testWidgets('a round button with a mark says what the mark means', (tester) async {
       final handle = tester.ensureSemantics();
       await pumpCore(
         tester,
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: FloatingTabBar(
-            index: 0,
-            onChanged: (_) {},
-            tabs: const [
-              TabSpec(icon: Icons.list, label: 'Agents', badge: 2),
-              TabSpec(icon: Icons.dns, label: 'Machines'),
-            ],
+        Center(
+          child: CircleButton(
+            icon: Icons.settings,
+            tooltip: 'Settings',
+            mark: true,
+            markLabel: 'update available',
+            onPressed: () {},
           ),
         ),
       );
-      final agents = tester.getSemantics(find.byKey(FloatingTabBar.tabKey('Agents')));
-      expect(agents.label, 'Agents, 2 need you');
-      expect(agents.flagsCollection.isSelected, Tristate.isTrue);
-      expect(
-        tester.getSemantics(find.byKey(FloatingTabBar.tabKey('Machines'))).flagsCollection.isSelected,
-        Tristate.isFalse,
-      );
+      expect(find.byKey(const ValueKey('circle-button-mark')), findsOneWidget);
+      expect(find.bySemanticsLabel('Settings, update available'), findsOneWidget);
       handle.dispose();
     });
 
@@ -702,12 +698,27 @@ void main() {
       expect(tester.getRect(find.byKey(const Key('below'))).top, rest);
     });
 
+    testWidgets('a held answer says so at rest; one that sends on a tap does not', (tester) async {
+      await pumpCore(tester, chip());
+      expect(find.text('Hold'), findsOneWidget, reason: 'a tap would not send it: the chip has to say');
+      await pumpCore(tester, chip(hold: false));
+      expect(find.text('Hold'), findsNothing);
+    });
+
     testWidgets('a failed held answer says it needs a hold to retry; a tapped one says Retry', (tester) async {
       await pumpCore(tester, chip(state: AnswerChipState.failed));
       expect(find.textContaining('Hold to retry'), findsOneWidget);
       await pumpCore(tester, chip(state: AnswerChipState.failed, hold: false));
       expect(find.textContaining('Hold to retry'), findsNothing);
       expect(find.textContaining('Retry'), findsOneWidget);
+    });
+
+    testWidgets('a failed answer is marked as a failure, not with the caution a primed one shows', (tester) async {
+      await pumpCore(tester, chip(state: AnswerChipState.primed));
+      expect(find.byIcon(LucideIcons.triangleAlert), findsOneWidget);
+      await pumpCore(tester, chip(state: AnswerChipState.failed));
+      expect(find.byIcon(LucideIcons.circleAlert), findsOneWidget);
+      expect(find.byIcon(LucideIcons.triangleAlert), findsNothing);
     });
   });
 
@@ -740,48 +751,6 @@ void main() {
       visible.value = true;
       await tester.pumpAndSettle();
       expect(inits, 1);
-    });
-
-    testWidgets('after a scrub, tapping away and back puts the capsule under the selected tab', (tester) async {
-      final index = ValueNotifier(0);
-      addTearDown(index.dispose);
-      await pumpCore(
-        tester,
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: ValueListenableBuilder<int>(
-            valueListenable: index,
-            builder: (context, i, _) => FloatingTabBar(
-              index: i,
-              onChanged: (n) => index.value = n,
-              tabs: const [
-                TabSpec(icon: Icons.list, label: 'Agents'),
-                TabSpec(icon: Icons.dns, label: 'Machines'),
-                TabSpec(icon: Icons.settings, label: 'Settings'),
-              ],
-            ),
-          ),
-        ),
-      );
-      double capsule() => tester.getCenter(find.byKey(FloatingTabBar.capsuleKey)).dx;
-      double tab(String l) => tester.getCenter(find.byKey(FloatingTabBar.tabKey(l))).dx;
-
-      // Scrub from Agents to Settings and let the spring land.
-      final cell = tab('Machines') - tab('Agents');
-      await tester.timedDrag(
-        find.byKey(FloatingTabBar.tabKey('Agents')),
-        Offset(cell * 2, 0),
-        const Duration(milliseconds: 300),
-      );
-      await tester.pumpAndSettle();
-      expect(index.value, 2);
-
-      await tester.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
-      await tester.pump(const Duration(milliseconds: 60));
-      await tester.tap(find.byKey(FloatingTabBar.tabKey('Settings')));
-      await tester.pumpAndSettle();
-      expect(index.value, 2);
-      expect(capsule(), moreOrLessEquals(tab('Settings'), epsilon: 1));
     });
   });
 }

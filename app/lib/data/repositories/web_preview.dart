@@ -12,7 +12,7 @@ class WebPreviewException implements Exception {
   /// The reason alone, as a sentence: `Cannot open a local port: no free
   /// port.`, for a place that already says what could not be opened.
   String get reason {
-    const prefix = "Couldn't open on this phone: ";
+    const prefix = "Couldn’t open on this phone: ";
     if (!message.startsWith(prefix)) return message;
     final r = message.substring(prefix.length);
     return r.isEmpty ? message : r[0].toUpperCase() + r.substring(1);
@@ -103,7 +103,7 @@ class WebPreview {
       throw const WebPreviewException('Files are not available on this machine.');
     }
     if (!RemotePath.isAbsolute(file.path)) {
-      throw const WebPreviewException("Couldn't open on this phone: the file's location is not known.");
+      throw const WebPreviewException("Couldn’t open on this phone: the file’s location isn’t known.");
     }
     final info = await _open(StaticSite(RemotePath.parent(file.path), machineName: machineName));
     return _entry(info, '/${Uri.encodeComponent(file.name)}', fragment);
@@ -117,10 +117,10 @@ class WebPreview {
   /// whatever holds the number, which may be another machine's listener.
   Future<Uri> forwardUrl(Uri link, {void Function(String note)? onNote}) async {
     if (_isPreviewLink(link) && !_portExists(link)) {
-      throw WebPreviewException(_sentence('That port number is not valid.'));
+      throw WebPreviewException(_sentence('That port number isn’t valid.'));
     }
     if (!_isPreviewLink(link)) {
-      throw const WebPreviewException("Couldn't open on this phone: only http addresses on the machine can be opened.");
+      throw const WebPreviewException("Couldn’t open on this phone: only http addresses on the machine can be opened.");
     }
     // Every spelling of the machine itself is one listener: the machine resolves
     // `localhost` to whichever of 127.0.0.1 and ::1 the server is on.
@@ -159,7 +159,7 @@ class WebPreview {
   Future<Uri> reopen(Uri url) async {
     final spec = url.scheme == 'http' && _isListenerHost(url.host) ? _specs[url.port] : null;
     if (spec == null) {
-      throw const WebPreviewException("Couldn't open on this phone: herdr did not open this page.");
+      throw const WebPreviewException("Couldn’t open on this phone: herdr didn’t open this page.");
     }
     final info = await _open(spec);
     final path = url.path.isEmpty ? '/' : url.path;
@@ -210,7 +210,7 @@ class WebPreview {
     if (r.length > 1 && r[0] == r[0].toUpperCase() && r[1] == r[1].toLowerCase() && r[1] != ' ') {
       r = r[0].toLowerCase() + r.substring(1);
     }
-    return "Couldn't open on this phone: $r.";
+    return "Couldn’t open on this phone: $r.";
   }
 
   /// `http://localhost:<entryPort>/__herdr/open?t=<token>&to=<where>`: the one

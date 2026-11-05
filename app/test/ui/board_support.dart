@@ -149,9 +149,10 @@ class BoardHarness {
     }
     await fleet.settled();
     final harness = BoardHarness._(machines, fleet, network, transports, shift, agentScreens);
-    // Cards whatever the agent count (`auto` turns compact from 5); the board
-    // tests look at cards. attention_test.dart tests `auto`.
-    await harness.appSettings.setDensity(BoardDensity.cards);
+    // One more turn before the test acts: what the first read set going
+    // finishes on it (a test that took the machine offline at once found its
+    // reconnect never restored the wait).
+    await Future<void>.value();
     return harness;
   }
 
@@ -225,6 +226,12 @@ Future<void> pumpBoard(
   }
 }
 
+/// A card's `Reply…`, by the agent it answers (its screen-reader name).
+Finder replyTo(String title) => find.byWidgetPredicate(
+  (w) => w is TextAction && w.semanticLabel == 'Reply to $title',
+  description: 'Reply to $title',
+);
+
 Future<void> teardownBoard(WidgetTester tester, BoardHarness h) async {
   await tester.pumpWidget(const SizedBox());
   h.dispose();
@@ -232,4 +239,66 @@ Future<void> teardownBoard(WidgetTester tester, BoardHarness h) async {
 
 class _Shift {
   Duration ago = Duration.zero;
+}
+
+/// What home's status line says needs the person (`2 need you`), or null
+/// when it says nothing does. The Agents tab badge that said it off the board
+/// went with the tab bar; this line is the one place home counts it.
+String? statusNeedsYou(WidgetTester tester) {
+  final texts = find.descendant(of: find.byType(SliverLargeTitle), matching: find.byType(Text));
+  for (final e in texts.evaluate()) {
+    final text = e.widget as Text;
+    final plain = text.data ?? text.textSpan?.toPlainText() ?? '';
+    final match = RegExp(r'^\d+ needs? you').firstMatch(plain);
+    if (match != null) return match.group(0);
+  }
+  return null;
+}
+
+/// Home's status line as it reads (`2 need you · 3 to review · 1 working`),
+/// the words of its `to review` button in its place.
+String statusLine(WidgetTester tester) {
+  final line = find.descendant(
+    of: find.byType(SliverLargeTitle),
+    matching: find.byWidgetPredicate((w) => w is Text && w.textSpan != null),
+  );
+  final out = StringBuffer();
+  tester.widget<Text>(line.first).textSpan!.visitChildren((span) {
+    if (span is TextSpan) {
+      out.write(span.text ?? '');
+    } else if (span is WidgetSpan && span.child.key == toReviewKey) {
+      out.write(tester.widget<Text>(find.descendant(of: find.byKey(toReviewKey), matching: find.byType(Text))).data);
+    }
+    return true;
+  });
+  return out.toString();
+}
+
+/// The status line's `3 to review`, a button that picks those agents.
+const toReviewKey = ValueKey('to-review');
+
+/// What the status line counts to review (0 when it says nothing is).
+int toReviewCount(WidgetTester tester) =>
+    int.tryParse(RegExp(r'(\d+) to review').firstMatch(statusLine(tester))?.group(1) ?? '') ?? 0;
+
+/// Opens a page from home's header, as the person does: the machines chip
+/// for Machines, the gear for Settings.
+Future<void> openHomePage(WidgetTester tester, String page) async {
+  await tester.tap(page == 'Machines' ? find.byKey(const ValueKey('machine-health')) : find.byTooltip(page));
+  await _pageMoves(tester);
+}
+
+// Fixed frames, not pumpAndSettle: a board can hold a spinner that never
+// settles. Longer than a page transition.
+Future<void> _pageMoves(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+/// Back, as the system's Back does: from a page over home, home.
+Future<void> backHome(WidgetTester tester) async {
+  await tester.binding.handlePopRoute();
+  await _pageMoves(tester);
 }

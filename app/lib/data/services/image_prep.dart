@@ -79,11 +79,11 @@ Future<PreparedImage> prepareImage(Uint8List input, {int maxEdge = maxImageEdge,
       buffer = await ui.ImmutableBuffer.fromUint8List(input);
       descriptor = await ui.ImageDescriptor.encoded(buffer);
     } on Object {
-      throw const ImagePrepException('Could not read that picture. Use a JPEG, PNG or WebP.');
+      throw const ImagePrepException('Couldn’t read that picture. Use a JPEG, PNG or WebP.');
     }
     final width = descriptor.width;
     final height = descriptor.height;
-    if (width <= 0 || height <= 0) throw const ImagePrepException('Could not read that picture.');
+    if (width <= 0 || height <= 0) throw const ImagePrepException('Couldn’t read that picture.');
     if (width * height > maxImagePixels) {
       throw const ImagePrepException('That picture has too many pixels (over 150 megapixels).');
     }
@@ -97,9 +97,9 @@ Future<PreparedImage> prepareImage(Uint8List input, {int maxEdge = maxImageEdge,
       image = (await codec.getNextFrame()).image;
       rgba = await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
     } on Object {
-      throw const ImagePrepException('Could not read that picture. Use a JPEG, PNG or WebP.');
+      throw const ImagePrepException('Couldn’t read that picture. Use a JPEG, PNG or WebP.');
     }
-    if (rgba == null) throw const ImagePrepException('Could not read that picture.');
+    if (rgba == null) throw const ImagePrepException('Couldn’t read that picture.');
     final w = image.width;
     final h = image.height;
     final job = _Job(

@@ -77,12 +77,12 @@ def gear(cx, cy, teeth, r_out, r_in, top, flank, n=360):
 # is stroked.
 
 GLYPHS = [
-    dict(cp=0xE000, name='agents', doc='An agent: the Agents tab, subagents, agent rows.',
+    dict(cp=0xE000, name='agents', doc='An agent: subagents, agent rows, the switcher.',
          # A head on the landscape keyline, a short antenna (clear of the badge,
          # which sits on the icon's top right) and two eyes.
          strokes=[rrect(2.5, 8, 21.5, 20.5, 4.5), 'M12 8V5.5', 'M8.75 12.5V16', 'M15.25 12.5V16'],
          fills=[circle(12, 4.2, 1.45)]),
-    dict(cp=0xE001, name='machines', doc='A machine: the Machines tab, machine rows and pickers, what lives on it.',
+    dict(cp=0xE001, name='machines', doc='A machine: machine rows and pickers, what lives on it.',
          # A screen on a stand: "a machine" (a Mac, a dev box, a Pi with a
          # display). One box with a slot read as a toggle; a terminal window as a pane.
          strokes=[rrect(2.5, 4, 21.5, 15.5, 2.5), 'M12 15.5V19.5', 'M8 19.5H16']),
@@ -94,7 +94,16 @@ GLYPHS = [
          strokes=[gear(12, 12, 6, 9.1, 7.5, top=0.30, flank=0.12)], rings=[(12, 12, 2.5)]),
     dict(cp=0xE010, name='stop', doc='Stop agents (the selection bar).',
          rings=[(12, 12, 9)], fills=[rrect(8.75, 8.75, 15.25, 15.25, 1.5)]),
-    dict(cp=0xE011, name='message', doc='Message agents (the selection bar).',
+    dict(cp=0xE013, name='stopMark', doc='Stop inside a round button (the composer): `stop` without its ring, the button being the ring.',
+         # `stop`'s square (its corners the same share of its side), so the two
+         # read as one drawing; at IconSize.row in the composer's 36 dp button it
+         # weighs with Send's arrow beside it (at IconSize.bar it outweighed it).
+         fills=[rrect(5, 5, 19, 19, 3.25)]),
+    dict(cp=0xE014, name='reviewed', doc='Mark finished agents reviewed (the selection bar).',
+         # A check in Stop's ring: the two ringed actions of the bar read as a
+         # pair, and the check alone weighed half the ring beside it.
+         rings=[(12, 12, 9)], strokes=['M8 12.25L10.75 15L16 9.5']),
+    dict(cp=0xE011, name='message', doc='A message to an agent, and a chat: the selection bar, Read as chat, the chat view.',
          # A speech bubble whose left edge runs on into the tail, as Lucide's does.
          strokes=['M6 4H18A3 3 0 0 1 21 7V13.5A3 3 0 0 1 18 16.5H8L3.5 20.5V7A3 3 0 0 1 6 4Z']),
     dict(cp=0xE012, name='close', doc='Close agents (the selection bar).',
@@ -126,7 +135,7 @@ GLYPHS = [
     dict(cp=0xE024, name='made', doc='What a session made: the Made chip (a sparkle).',
          strokes=['M12 2.5C12.7 8 16 11.3 21.5 12C16 12.7 12.7 16 12 21.5C11.3 16 8 12.7 2.5 12C8 11.3 11.3 8 12 2.5Z']),
     # The Settings groups: peers in one list (Agents uses `agents`).
-    dict(cp=0xE030, name='look', doc='Look: theme and density (Settings).',
+    dict(cp=0xE030, name='look', doc='Look: theme and text (Settings).',
          # Contrast: a ring, its right half filled. One glyph for light, dark and density.
          rings=[(12, 12, 8.5)], fills=['M12 3.5A8.5 8.5 0 0 1 12 20.5Z']),
     dict(cp=0xE031, name='notifications', doc='Notifications (Settings).',
@@ -140,7 +149,13 @@ GLYPHS = [
                   'M4 5.5V18.5C4 20 7.6 21.25 12 21.25S20 20 20 18.5V5.5', 'M4 12C4 13.5 7.6 14.75 12 14.75S20 13.5 20 12']),
     dict(cp=0xE034, name='about', doc='About: version, repository, licences (Settings).',
          rings=[(12, 12, 9)], strokes=['M12 11V16.5'], fills=[circle(12, 7.75, 1.2)]),
-    dict(cp=0xE035, name='update', doc='Update available: an arrow into a tray (Settings).',
+    dict(cp=0xE040, name='folder', doc='Browse a machine\'s files: the pane bar, the session options, the machine, the folder field.',
+         # A closed folder, its tab a step in the top edge, drawn smaller than
+         # Lucide's: beside the bar's ⋯ and back chevron (open shapes of a
+         # third of its ink) Lucide's open folder carried four times the ink
+         # of the ⋯ beside it.
+         strokes=['M4 7.25V6.5A1.75 1.75 0 0 1 5.75 4.75H9.25L11.25 7H18.25A1.75 1.75 0 0 1 20 8.75V16.75A1.75 1.75 0 0 1 18.25 18.5H5.75A1.75 1.75 0 0 1 4 16.75Z']),
+    dict(cp=0xE035, name='update', doc='An update: an arrow into a tray (Settings, its row and its Download).',
          strokes=['M12 2.5V14.5', 'M7 9.75L12 14.75L17 9.75', 'M3.5 14.5V18.5A2.5 2.5 0 0 0 6 21H18A2.5 2.5 0 0 0 20.5 18.5V14.5']),
 ]
 

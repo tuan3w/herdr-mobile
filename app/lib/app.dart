@@ -33,7 +33,6 @@ import 'data/services/snapshot_cache.dart';
 import 'data/services/task_mover.dart';
 import 'data/services/transport_factory.dart';
 import 'ui/support/deep_link.dart';
-import 'ui/support/home_tabs.dart';
 import 'ui/support/keyboard_frames.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -43,6 +42,7 @@ import 'ui/features/machines/machine_form_view_model.dart' show TransportFactory
 import 'ui/features/photos/mermaid_viewer.dart' show openDiagramViewer;
 import 'ui/render/mermaid/md_diagram_opener.dart';
 import 'ui/shell/home_shell.dart';
+import 'ui/shell/home_pages.dart';
 
 /// How the app opens a connection to a saved machine: over SSH, with the
 /// credentials read from the keychain only when the transport starts.
@@ -196,21 +196,22 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
   late final PanePreviews _previews = widget.previews ?? PanePreviews(changes: _fleet, connection: _fleet.connection);
 
   /// What needs the person and what is to review, computed once per change
-  /// for the badge, the board, the triage, the Machines tab and the cue.
+  /// for the board, the triage, the Machines page, the notifier and the cue.
   late final AttentionSet _attentionSet =
       widget.attentionSet ?? AttentionSet(fleet: _fleet, sessions: widget.agentSessions);
 
   /// Lets a toast step aside for a sheet or dialog.
   final _toastRoutes = ToastRouteObserver();
 
-  /// Turns the home screen to a root tab from outside it (a link, a toast).
-  final _tabs = HomeTabs();
+  /// Opens Machines and Settings over home, from its header and from a
+  /// link's toast.
+  late final _pages = HomePages(update: widget.update);
 
   /// Follows `herdr://agent/...` links (alert taps), at launch and while running.
   late final DeepLinks _links = DeepLinks(
     machines: widget.machines,
     fleet: _fleet,
-    tabs: _tabs,
+    pages: _pages,
     open: openAgentFromLink,
     sessions: widget.agentSessions,
   );
@@ -220,18 +221,11 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
 
   late final Notifier _notifier = widget.notifier ?? const NullNotifier();
 
-  /// Built once: the shell remembers its own tab, and a theme change must not
-  /// hand it a new widget. It puts the agent screen the app was left on back
+  /// Built once: a theme change must not hand the shell a new widget. It puts the agent screen the app was left on back
   /// in front (see [_ResumeAgent]).
   late final Widget _home = _ResumeAgent(
     screens: widget.agentScreens,
-    child: HomeShell(
-      initialTab: widget.appSettings.homeTab,
-      onTabChanged: (tab) => unawaited(widget.appSettings.setHomeTab(tab)),
-      moveToBackground: const PlatformTaskMover().moveToBack,
-      tabs: _tabs,
-      update: widget.update,
-    ),
+    child: HomeShell(moveToBackground: const PlatformTaskMover().moveToBack, pages: _pages),
   );
 
   @override
@@ -319,7 +313,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
         // hidden Agents board and a live pane.
         themeAnimationDuration: Duration.zero,
         // Lets the navigator and screens that opt in (non-secret form text,
-        // the selected tab) survive Android reclaiming the process.
+        // the board's folded sections) survive Android reclaiming the process.
         restorationScopeId: 'herdr',
         // One region for every screen, including ones without an AppBar
         // (the empty state), so the bars never fall back to OEM defaults.

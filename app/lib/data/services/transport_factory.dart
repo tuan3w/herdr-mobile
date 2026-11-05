@@ -43,7 +43,7 @@ Future<Map<String, Object?>> sshWorkerConfig(MachineProfile profile, Future<Mach
   try {
     s = await secrets();
   } on Object {
-    throw const HerdrTransportException("Couldn't read the saved credentials from the keychain.");
+    throw const HerdrTransportException("Couldn’t read the saved credentials from the keychain.");
   }
   return {
     'profile': profile.toJson(),

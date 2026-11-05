@@ -41,7 +41,7 @@ class FolderNotFoundException implements Exception {
   final String actual;
 
   @override
-  String toString() => '$folder does not exist';
+  String toString() => '$folder doesn’t exist';
 }
 
 /// Starts a workspace with a plain shell, with only calls every herdr version

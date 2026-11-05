@@ -92,12 +92,25 @@ class QuickPhrasesSection extends StatelessWidget {
               label: 'Forget ${sent.tracked} remembered ${plural(sent.tracked, 'message')}',
               kind: AppButtonKind.secondary,
               expand: true,
-              onPressed: () => unawaited(sent.forget()),
+              // Not recoverable (the counts are gone), and one tap forgets all
+              // of them: a confirmation with the number, not an Undo.
+              onPressed: () => unawaited(_forget(context, sent)),
             ),
         ],
       ],
     );
   }
+}
+
+Future<void> _forget(BuildContext context, SentPhrases sent) async {
+  final n = sent.tracked;
+  final ok = await showConfirmSheet(
+    context,
+    title: 'Forget $n remembered ${plural(n, 'message')}?',
+    message: 'The messages learned from what you send are deleted from this phone. They can be learned again.',
+    confirmLabel: 'Forget',
+  );
+  if (ok) await sent.forget();
 }
 
 class _PhraseRow extends StatelessWidget {
@@ -188,8 +201,14 @@ class _QuickPhraseEditorState extends State<QuickPhraseEditor> {
   }
 
   void _delete() {
-    widget.phrases.remove(widget.editing!);
+    final phrase = widget.editing!;
+    final phrases = widget.phrases;
+    // Taken before the sheet closes: its context is gone when Undo is pressed.
+    final toaster = Toaster.of(context);
+    unawaited(phrases.remove(phrase));
     Navigator.of(context).pop();
+    // Undo appends: the list has no way to put a phrase back at its place.
+    toaster.show('Phrase deleted', action: ToastAction('Undo', () => unawaited(phrases.add(phrase))));
   }
 
   @override
@@ -215,6 +234,7 @@ class _QuickPhraseEditorState extends State<QuickPhraseEditor> {
         padding: const EdgeInsets.only(top: Gap.sm),
         child: LabeledField(
           label: 'Phrase',
+          prose: true,
           hint: 'e.g. run the tests',
           controller: _controller,
           autofocus: true,

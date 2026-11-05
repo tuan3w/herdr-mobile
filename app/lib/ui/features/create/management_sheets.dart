@@ -56,8 +56,8 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
       navigator.context,
       title: 'Close $name?',
       message: panes <= 1
-          ? 'What is running in it stops. This cannot be undone.'
-          : 'Its $panes panes and whatever runs in them stop. This cannot be undone.',
+          ? 'What is running in it stops. This can’t be undone.'
+          : 'Its $panes panes and whatever runs in them stop. This can’t be undone.',
       confirmLabel: 'Close workspace',
     );
     if (!ok) return;
@@ -198,7 +198,7 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
       message: last
           ? 'It is the last pane in its workspace, so the workspace closes too. '
                 'What is running in it stops.'
-          : 'What is running in it stops. This cannot be undone.',
+          : 'What is running in it stops. This can’t be undone.',
       confirmLabel: 'Close pane',
     );
     if (!ok) return;

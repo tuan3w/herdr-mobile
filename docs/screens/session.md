@@ -7,9 +7,9 @@ The design system (tokens, kit, motion, words) is `docs/DESIGN.md`; this file ho
 ## Agent session screen (ACP)
 
 Slim bar like the pane bar (status glyph by phase, title over
-`agent · machine · folder`, a tap on the title area opens the session
-overview, `Session options`, which also holds `Show terminal` for a followed
-pane's chat); plan header (`1 of 3` + the
+`agent · machine · folder`, a tap on the title area opens the agent
+switcher (`docs/screens/agent-screens.md`), `Session options`, which holds the
+session overview and `Show terminal` for a followed pane's chat); plan header (`1 of 3` + the
 current step); a virtualized transcript stuck to the bottom with Jump to
 latest; the permission dock; the composer (send becomes stop while a turn
 runs). The permission dock is a safety surface: the command is always visible
@@ -108,7 +108,7 @@ until the pane has stopped working. Three differences, each with its reason.
 question tool): a dialog that opened since herdr last said `working` would take
 the text and the Enter as its answer, and `1. Yes` is the default of most. It
 refuses with `The terminal is asking something. Answer it first; the message
-was not sent.`, and the text goes back to the field. (2) A message typed in
+wasn’t sent.`, and the text goes back to the field. (2) A message typed in
 goes to the agent's own queue or steer buffer, where the phone can neither
 edit nor take it back, and the chat shows it only when the agent writes it to
 its log (Claude at once, as `queue-operation`; omp when it injects it, after
@@ -424,17 +424,19 @@ desktop only (2,001 items, JIT): 43-91 ms for the first frame before, 2.4-3.7 ms
 after; not measured on a phone.
 
 **Session overview** (`session_overview.dart`,
-`session_overview_model.dart`). A tap on the bar's title area, or `Session
-overview` in the options sheet, opens a sheet (`showAppSheet`: it stops below
+`session_overview_model.dart`). `Session overview` in the options sheet
+opens a sheet (`showAppSheet`: it stops below
 the status bar and scrolls when it is taller than the room). In order: the status in words and how long
 (`Working · 4 min`), `Goal` (the first message, three lines), `Plan · 1 of 3
 done` with a thin bar and the step in progress, `Changed · 12 files +310 −42`
 (the files of every turn merged by path, eight, then `N more` in steps of 16;
 a tap opens the file's diff in place with `ChangedFileRow` and `DiffPanel`),
 `Commands · 14 · 2 failed` (five: the failed ones first, then the newest, mono,
-`exit 1` in `dangerText` with a cross; a tap shows all of the command),
-`Subagents` (one row into the roster), `Mode and model` (a dangerous mode in
-the danger tint with its reason), `Context and cost` (a thin bar, `182k of 200k
+a failed one with the failed disc and `exit 1` muted beside it: the disc and
+the `2 failed` count are the sheet's only red, so they do not compete with
+`Needs you`; a tap shows all of the command),
+`Subagents` (one row into the roster), `Mode and model` (a dangerous mode's
+name and warning icon in the danger tint, its reason muted), `Context and cost` (a thin bar, `182k of 200k
 tokens · 91% of context`, the cost with its currency, the last turn's tokens)
 and `Needs you` (what asks, `From subagent: …`; a tap closes the sheet,
 the dock is under it). A part the session has nothing for is absent, never a
@@ -444,7 +446,9 @@ rebuilds only when a list it reads is replaced, so a streaming answer costs it
 nothing. **Context warning**: from 85% (`contextWarnAt`) the bar's subtitle
 line adds `Context 91%` in `dangerText` (the words, at weight 600, next to the
 place line, which gives way first); nothing below that and nothing without a
-window size; the overview bar turns to the danger colour at the same point.
+window size; at the same point the overview's bar takes the working colour
+and its words their weight (a nearly full context is worth a look, not a
+failure: red there outshouted what needs the person).
 
 **Content the agents send** (`content_blocks.dart`
 and the `content_*.dart` files). Every block that is not Markdown text goes
@@ -566,8 +570,8 @@ An ended session whose keeper is gone shows its saved transcript read-only and t
 link strip says `Session ended` with `The agent kept the conversation.` and a
 `Continue` button (the one allowed `BusySpinner` while it resumes; a failure is a
 toast with the host's words and the button comes back; evicted sessions keep
-`Take over`). `Past sessions` (the history icon in the Agents board header, and a row
-in the new-agent-session form that passes the typed folder) lists what an agent
+`Take over`). `Past sessions` (a row in the new-agent-session form, which passes the
+typed folder; the board reaches it through its `+`) lists what an agent
 remembers on a machine: machine chips when more than one is online, agent chips,
 a `This folder` chip when the opener passed a folder, search past six rows. Row =
 title (`Untitled session`), folder tail, `5m ago · 14 messages`; whole row is

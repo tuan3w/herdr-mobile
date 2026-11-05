@@ -1,6 +1,6 @@
 // What "needs you" means on this phone, without widgets: the reviewed state,
-// the one status every screen reads, honest wait times, density, and the order
-// inside a board section.
+// the one status every screen reads, honest wait times, and the order inside
+// a board section.
 import 'dart:async';
 import 'dart:ui' show AppLifecycleState;
 
@@ -11,7 +11,6 @@ import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/models/status_time.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
-import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
@@ -27,21 +26,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_network.dart';
 import 'support/fake_transport.dart';
-import 'support/memory_app_settings_store.dart';
 import 'support/memory_reviewed_store.dart';
 import 'support/memory_snapshot_cache.dart';
 import 'support/memory_stores.dart';
 import 'support/test_transport.dart';
 
 typedef _P = ({String id, String ws, String? agent, String status});
-
-/// The panes of [ids] as the board orders its Working section.
-List<String> _workingOrder(MachineConnection c, List<String> ids) => [
-  for (final r in groupByStatus([
-    for (final id in ids) agentRow(FleetAgent(machine: c, pane: c.paneById(id)!, workspace: null), showMachine: false),
-  ])[AgentStatus.working]!)
-    r.paneId,
-];
 
 _P _pane(String id, String status) => (id: id, ws: 'w1', agent: 'claude', status: status);
 
@@ -983,7 +973,7 @@ void main() {
     );
 
     _rig(
-      'a burst of events moves nothing: no notification, the order waits for the next poll',
+      'a burst of events moves nothing: no notification, the quiet time waits for the next poll',
       [_pane('w1:p1', 'working'), _pane('w1:p2', 'working')],
       poll: const Duration(seconds: 20),
       (r) {
@@ -993,14 +983,8 @@ void main() {
           r.advance(const Duration(seconds: 20));
         }
         r.advance(const Duration(milliseconds: 500));
-        List<String> order() => groupByStatus([
-          for (final p in ['w1:p1', 'w1:p2'])
-            agentRow(FleetAgent(machine: r.c, pane: r.c.paneById(p)!, workspace: null), showMachine: false),
-        ])[AgentStatus.working]!.map((a) => a.paneId).toList();
-
         expect(r.c.quietMinutes('w1:p2'), 6);
         expect(r.c.quietMinutes('w1:p1'), 0);
-        expect(order(), ['w1:p2', 'w1:p1'], reason: 'the quiet one first, whatever the pane ids say');
 
         var notified = 0;
         r.c.addListener(() => notified++);
@@ -1014,17 +998,15 @@ void main() {
         expect(r.c.lastActivity('w1:p2'), burstAt, reason: 'the event was noted, cheaply');
         expect(r.c.quietMinutes('w1:p2'), 6, reason: 'but nothing re-evaluated it');
         expect(notified, 0, reason: 'no listener is woken per event');
-        expect(order(), ['w1:p2', 'w1:p1'], reason: 'no reshuffle under the burst');
 
         r.advance(const Duration(seconds: 20));
         expect(r.c.quietMinutes('w1:p2'), 0, reason: 'the next poll takes it into account');
         expect(notified, 1, reason: 'one notification, from that refresh');
-        expect(order(), ['w1:p1', 'w1:p2'], reason: 'both quiet for no time: machine, then pane');
       },
     );
 
     _rig(
-      'the order changes only when a poll moves a minute count, not between',
+      'the quiet time changes only when a poll moves a minute count, not between',
       [_pane('w1:p1', 'working'), _pane('w1:p2', 'working')],
       poll: const Duration(seconds: 20),
       (r) {
@@ -1102,7 +1084,6 @@ void main() {
         expect(r.c.quietMinutes('w1:p1'), 0, reason: 'a 2 h old start is not 2 h of silence');
         expect(r.c.quietMinutes('w1:p2'), 0);
         expect(r.c.lastActivity('w1:p1'), r.now, reason: 'the stream has just gone live');
-        expect(_workingOrder(r.c, ['w1:p1', 'w1:p2']), ['w1:p1', 'w1:p2']);
 
         // p1 keeps talking for the next minutes; p2 never does.
         for (var i = 0; i < 4; i++) {
@@ -1110,13 +1091,11 @@ void main() {
           r.minutes(1);
         }
         expect(r.c.quietMinutes('w1:p2'), 0, reason: 'not live for five minutes yet');
-        expect(_workingOrder(r.c, ['w1:p1', 'w1:p2']), ['w1:p1', 'w1:p2']);
 
         held.emit(r.event('w1:p1'));
         r.minutes(1);
         expect(r.c.quietMinutes('w1:p2'), greaterThanOrEqualTo(5), reason: 'now it has been listened to');
         expect(r.c.quietMinutes('w1:p1'), 0);
-        expect(_workingOrder(r.c, ['w1:p1', 'w1:p2']), ['w1:p2', 'w1:p1']);
         r.c.dispose();
         async.flushMicrotasks();
       });
@@ -1180,7 +1159,7 @@ void main() {
     final noon = DateTime.utc(2026, 1, 1, 12);
     List<String> keys(Map<AgentStatus, List<AgentRowData>> g, AgentStatus s) => [for (final r in g[s]!) r.key];
 
-    test('Needs you and Done: longest waiting first, a bound counts from when it begins', () {
+    test('Needs you longest waiting first, a bound counts from when it begins; To review newest first', () {
       final a = machine('a');
       final g = groupByStatus([
         row(a, 'p1', AgentStatus.blocked, since: StatusTime.exact(noon.add(const Duration(minutes: 5)))),
@@ -1197,14 +1176,14 @@ void main() {
         'a/p1',
         'a/p3',
       ], reason: 'bound (3 h) first, then exact oldest to newest, unknown last');
-      expect(keys(g, AgentStatus.done), ['a/p6', 'a/p5']);
+      expect(keys(g, AgentStatus.done), ['a/p5', 'a/p6']);
     });
 
-    test('equal waits fall back to machine label, then pane id', () {
+    test('equal times fall back to machine label, then pane id', () {
       final a = machine('a');
       final b = machine('b');
       final since = StatusTime.exact(noon);
-      final g = groupByStatus([
+      final g = groupByStatus(now: noon, [
         row(b, 'p1', AgentStatus.done, since: since),
         row(a, 'p2', AgentStatus.done, since: since),
         row(a, 'p10', AgentStatus.done, since: since),
@@ -1215,16 +1194,17 @@ void main() {
       expect(keys(g, AgentStatus.done), ['a/p10', 'a/p2', 'b/p1', 'a/p3', 'b/p0']);
     });
 
-    test('Working: quietest first; below the threshold they are equal', () {
+    // Owner decision: newest first within each section. Quiet is said on the
+    // row (`quiet 14m`), not by its place.
+    test('Working: newest first, quiet or not', () {
       final a = machine('a');
-      final g = groupByStatus([
-        row(a, 'p1', AgentStatus.working),
-        row(a, 'p2', AgentStatus.working, quiet: 9),
-        row(a, 'p3', AgentStatus.working),
-        row(a, 'p4', AgentStatus.working, quiet: 6),
+      final g = groupByStatus(now: noon, [
+        row(a, 'p1', AgentStatus.working, since: StatusTime.exact(noon.subtract(const Duration(hours: 2)))),
+        row(a, 'p2', AgentStatus.working, since: StatusTime.exact(noon.subtract(const Duration(hours: 1))), quiet: 9),
+        row(a, 'p3', AgentStatus.working, since: StatusTime.exact(noon.subtract(_min))),
       ]);
 
-      expect(keys(g, AgentStatus.working), ['a/p2', 'a/p4', 'a/p1', 'a/p3']);
+      expect(keys(g, AgentStatus.working), ['a/p3', 'a/p2', 'a/p1']);
     });
 
     test('Idle: stopped within a day newest first, then no known time, then older (newest first)', () {
@@ -1289,19 +1269,18 @@ void main() {
       );
     });
 
-    test('the sections: Needs you, Done, Working, Idle, Unknown; the enum is not reordered', () {
+    test('the sections: Needs you, Working, To review, Idle, Unknown; the enum is not reordered', () {
       final a = machine('a');
       final g = groupByStatus([for (final s in AgentStatus.values.reversed) row(a, s.name, s)]);
 
       expect(g.keys, [
         AgentStatus.blocked,
-        AgentStatus.done,
         AgentStatus.working,
+        AgentStatus.done,
         AgentStatus.idle,
         AgentStatus.unknown,
       ]);
-      expect(filterableStatuses, [AgentStatus.blocked, AgentStatus.done, AgentStatus.working, AgentStatus.idle]);
-      // Collapsed sections are stored as bits of this index.
+      // The fleet's flat list sorts by this order.
       expect(AgentStatus.values, [
         AgentStatus.blocked,
         AgentStatus.working,
@@ -1324,60 +1303,6 @@ void main() {
     test('the quiet time reads whole minutes', () {
       expect(Elapsed.compact(const Duration(minutes: 14, seconds: 59), seconds: false), '14m');
       expect(Elapsed.compact(const Duration(hours: 1, minutes: 5), seconds: false), '1h 05m');
-    });
-  });
-
-  group('board density', () {
-    test('is auto until chosen: cards up to four agents, compact from five', () async {
-      final settings = AppSettings(MemoryAppSettingsStore());
-      await settings.load();
-
-      expect(settings.density, BoardDensity.auto);
-      expect(AppSettings.autoCompactFrom, 5);
-      expect([for (var n = 0; n <= 6; n++) settings.cardsFor(n)], [true, true, true, true, true, false, false]);
-    });
-
-    test('a choice wins over the count, both ways', () async {
-      final settings = AppSettings(MemoryAppSettingsStore());
-      await settings.setDensity(BoardDensity.cards);
-      expect(settings.cardsFor(10), isTrue);
-
-      await settings.setDensity(BoardDensity.compact);
-      expect(settings.cardsFor(1), isFalse);
-      expect(settings.cardsFor(0), isFalse);
-    });
-
-    test('is saved, restored, and notifies once per change', () async {
-      final store = MemoryAppSettingsStore();
-      final settings = AppSettings(store);
-      var notified = 0;
-      settings.addListener(() => notified++);
-
-      await settings.setDensity(BoardDensity.compact);
-      await settings.setDensity(BoardDensity.compact);
-      expect(notified, 1);
-      expect(store.writes, ['density compact', 'density compact']);
-
-      final reopened = AppSettings(store);
-      await reopened.load();
-      expect(reopened.density, BoardDensity.compact);
-    });
-
-    test('preferences keep it; an unknown value is auto', () async {
-      SharedPreferences.resetStatic();
-      SharedPreferences.setMockInitialValues({});
-      final first = AppSettings(PrefsAppSettingsStore());
-      await first.setDensity(BoardDensity.cards);
-
-      final second = AppSettings(PrefsAppSettingsStore());
-      await second.load();
-      expect(second.density, BoardDensity.cards);
-
-      SharedPreferences.resetStatic();
-      SharedPreferences.setMockInitialValues({'app.density.v1': 'tiles'});
-      final third = AppSettings(PrefsAppSettingsStore());
-      await third.load();
-      expect(third.density, BoardDensity.auto);
     });
   });
 

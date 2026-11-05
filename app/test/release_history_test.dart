@@ -43,7 +43,7 @@ No headline here, just words.
 
 void main() {
   group('the changelog as releases', () {
-    test('releases come newest first, with their headline and date; Unreleased is not one', () {
+    test('releases come newest first, with their headline and date; Unreleased isn’t one', () {
       final r = parseChangelog(_sample);
       expect([for (final x in r) x.version], ['0.2.0', '0.1.9', '0.1.8']);
       expect(r[0].headline, 'Pictures stay on the phone');
@@ -61,7 +61,7 @@ void main() {
       expect(r[1].clip, isNull);
     });
 
-    test('the bundled notes are the repository\'s CHANGELOG.md, and the newest release is this version', () async {
+    test('the bundled notes are the repository’s CHANGELOG.md, and the newest release is this version', () async {
       final bundled = await rootBundle.loadString('assets/CHANGELOG.md');
       expect(bundled, File('../CHANGELOG.md').readAsStringSync(), reason: 'assets/CHANGELOG.md is a link to it');
       final releases = parseChangelog(bundled);
@@ -105,9 +105,9 @@ void main() {
       expect(find.textContaining('Try it: in Settings'), findsOneWidget, reason: 'the tip card is in the notes');
     });
 
-    testWidgets('says so when the notes cannot be read, instead of an empty page', (tester) async {
+    testWidgets('says so when the notes can’t be read, instead of an empty page', (tester) async {
       await pump(tester, () async => throw const FileSystemException('gone'));
-      expect(find.text('The release notes could not be read on this phone.'), findsOneWidget);
+      expect(find.text('The release notes couldn’t be read on this phone.'), findsOneWidget);
     });
   });
 }

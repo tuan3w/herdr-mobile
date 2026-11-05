@@ -25,7 +25,7 @@ Answer this first. Often the answer is no, and then you write no motion code.
 | How often the person sees it | Decision | Examples here |
 | --- | --- | --- |
 | Continuously, or driven by the agent rather than the person | Never animate. At most one settle when it changes on screen | status updates, streaming text, board refresh, elapsed-time labels |
-| 100+ times a day, or from keys | No animation, or a short fade | key row, quick keys, typing, tab switch (`Motion.fade`) |
+| 100+ times a day, or from keys | No animation | key row, quick keys, typing, tab switch (a fade from zero made quick taps blink), switching agents from the title |
 | Tens of times a day | Fast and subtle | press feedback, opening a pane, a sheet |
 | Occasionally | Standard | toast, collapse, a card changing section |
 | Rarely, and meaning something | Delight is allowed | `DrawCheck` after a connection test succeeds |
@@ -35,8 +35,8 @@ Then name the purpose in one word. If you can't, don't build it:
 - **Feedback**: the touch landed (press scale, hold fill, haptic).
 - **Continuity**: where something came from or went (sheet from the bottom, the gap a
   departing card leaves closing under the thumb: `AgentFolding`).
-- **State change**: a change the person would otherwise miss (`StatusGlyph` settle, the
-  arrival wash, `RollText` rolling a changed count, `CountBadge` arriving).
+- **State change**: a change the person would otherwise miss (`StatusGlyph` settle,
+  `RollText` rolling a changed count, `CountBadge` arriving).
 - **Preventing a jump**: content would teleport (`AnimatedSize` when a card's question
   appears).
 
@@ -80,18 +80,21 @@ that the ticker stops.
 ## 4. Curves and durations come from `Motion`
 
 `Motion` (`ui/core/motion.dart`) names each motion by its role: press and
-release, fade, standard, expand, settle, sheet in and out, page, arrival.
+release, fade, standard, expand, settle, sheet in and out, page.
 `Springs` holds the springs (`carry`, `settle`, `snap`, `recoil`, `out`) and
 their tolerances, `PressScale` the press scales and `Dwell` the timers (tap
 guard, hold, toast times). Read the file for the current values. Pick the
 token by role, not by the number you want.
 
 The curve is `Motion.easeOut`, a strong ease-out. Exits run the same curve
-mirrored: drive a controller through `Motion.curved(parent)`, whose reverse
-curve is `Motion.easeOutExit`, and give an `AnimatedSwitcher`
+mirrored: drive a controller through `Motion.curved(parent)`
+(`ExitCurvedAnimation`), and give an `AnimatedSwitcher`
 `switchOutCurve: Motion.easeOutExit`. Never use ease-in on UI: it delays the
 moment the person is watching (a plain `CurvedAnimation` played in reverse is
-ease-in). Under reduced motion, `Motion.of(context, d)` gives `Duration.zero`.
+ease-in). Never write `CurvedAnimation(reverseCurve:)` by hand either: it swaps
+curves at the same controller value, so an enter reversed a third of the way in
+jumps from ~0.8 shown to ~0.03. `Motion.curved` starts the exit from what is on
+screen. Under reduced motion, `Motion.of(context, d)` gives `Duration.zero`.
 A raw `Cubic(...)`, `Curves.*`, `SpringDescription` or an animation
 `Duration(milliseconds:)` in `lib/ui` is a defect, and `tool/design_lint.dart`
 fails on it (timers are not animations: they go in `Dwell`).
@@ -126,8 +129,11 @@ Apple's fluid interfaces:
   Use a little bounce (`Springs.carry`, `Springs.snap`: ratio ≥ 0.85) only
   when the gesture itself carried momentum. Snap to the end (`snapToEnd`, a
   `Springs` tolerance) so a still element keeps no sub-pixel offset.
-- **Disambiguate.** Press feedback waits for the scroll-intent delay
-  (`PressBuilder`), so scrolling a list never flashes rows. Ignore a second finger
+- **Disambiguate.** Press feedback starts on pointer-down, at once
+  (`PressBuilder`'s `Listener`); a scroll that takes over cancels it. Waiting
+  for the gesture arena delayed every row in a list by 100 ms and showed nothing
+  at all for a tap quicker than that; a faint tint at the start of a scroll is
+  the accepted cost. Commit on up, never on down. Ignore a second finger
   once a one-finger drag has started. A horizontal swipe inside a vertical list
   must not steal vertical scrolls.
 - Every gesture has a semantic alternative (a `Mark reviewed` action, a
@@ -140,7 +146,9 @@ Use the existing code as models: `swipe_review.dart` (swipe to act, with undo),
 ## 6. Interruption
 
 Anything can be reversed mid-flight from its current value. Implicit widgets
-retarget by themselves. Controllers use `animateTo` from `controller.value`, and
+retarget by themselves. `controller.forward(from: 0)` on a value that may still
+be moving is a restart, not a retarget: the element snaps back to its start
+pose (a count changing mid-roll, a glyph settling twice). Controllers use `animateTo` from `controller.value`, and
 springs use the live position and velocity. Never lock input while a transition
 plays. A toast that is leaving slides back in when the same message (its
 group) is replaced; a different message takes over while the old one leaves.
@@ -176,7 +184,12 @@ callers don't.
 A frame has 16.7 ms on a Galaxy A51-class phone while an agent streams
 ~140 KB per refresh. Desktop and `flutter test` timings say nothing about it.
 
-- Nothing rebuilds a large subtree per frame. While the keyboard moves there is one
+- Nothing rebuilds a large subtree per frame. An `AnimatedBuilder` gets the
+  still part as its `child:`; a builder that calls the whole card or bar each
+  tick is a defect. Dim a row by toning its words and dimming its glyph, not
+  with an `Opacity` over the row (a layer per row, and the words fall below
+  contrast).
+- While the keyboard moves there is one
   relayout per frame and no rebuilds (`docs/ENGINEERING.md` "Keyboard").
 - Streaming text updates one live row, never the list (`LiveMessageRow`,
   `RevealPacer`, `FrameFlush`).
@@ -209,6 +222,7 @@ transform or opacity, make it asymmetric, polish it.
 
 **Auditing or finding opportunities.** Sweep `lib/ui` for `.repeat(`,
 `AnimationController`, `Ticker`, `Duration(milliseconds`, `Curves.`, `Cubic(`,
+`reverseCurve:`, `forward(from: 0)`, `AnimatedBuilder` without `child:`,
 `HapticFeedback`, `Opacity(`, `FadeTransition`, `BackdropFilter`, `AnimatedSize`,
 `setState` in scroll and gesture callbacks. Look for jarring changes: content that
 teleports, a section that pops, a sheet that doesn't follow the finger. Gate
@@ -228,6 +242,8 @@ patterns with this app's exemplars, see `references/recipes.md`.
 | Animation at rest or on agent-driven updates | One settle when it changes on screen, or nothing |
 | `Curves.*`, raw `Cubic`, `SpringDescription`, raw animation `Duration` in `lib/ui` | `Motion`, `Springs`, `Dwell` tokens (add one if missing) |
 | Ease-in on UI, or an exit that plays `easeOut` backwards | `Motion.easeOut`; exits through `Motion.curved` / `Motion.easeOutExit` |
+| `CurvedAnimation(reverseCurve:)`, or `forward(from: 0)` on something that may be moving | `Motion.curved`; retarget from the live value |
+| Press feedback that waits for the gesture arena | `PressBuilder` (pointer-down), cancelled by the scroll |
 | Scale from 0 | 0.92 to 0.97 plus opacity (`Motion.enterScale`); only `CountBadge` grows from 0 |
 | Opacity widgets at 1, `BackdropFilter` | Wrap only while dimmed; no blur |
 | A gesture that animates only on release, or from the target value | 1:1 tracking, live value, velocity handoff |

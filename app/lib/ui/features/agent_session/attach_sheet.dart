@@ -12,7 +12,7 @@ import '../attach/tray.dart';
 import 'attach_model.dart';
 
 /// The reason shown under the picture items of an agent that takes none.
-const noImagesReason = 'This agent does not take images';
+const noImagesReason = 'This agent doesn’t take images';
 
 /// The attach button's sheet: photos of the phone (Gallery), files of the
 /// phone (Files) and files of the machine (Host), one tray for all three.

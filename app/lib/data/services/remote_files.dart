@@ -192,7 +192,7 @@ class RemoteFiles {
         RemotePath.usesHome(text) || (!RemotePath.isAbsolute(text) && !(cwd != null && RemotePath.isAbsolute(cwd)));
     final resolved = RemotePath.resolve(text, cwd: cwd, home: needsHome ? await home() : null);
     if (resolved == null) {
-      throw RemoteFileException(RemoteFileErrorKind.notFound, 'Cannot place $text', path: text);
+      throw RemoteFileException(RemoteFileErrorKind.notFound, 'Can’t place $text', path: text);
     }
     return resolved;
   }

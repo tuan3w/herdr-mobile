@@ -45,18 +45,33 @@ person wants to see it now, from the phone, and then go back to the agent.
   the part an ellipsis cuts. Why the plain bar: a pill of its
   own (0.1.18) cost the page height and looked like no other screen; the
   owner chose consistency, with the globe to say "web" (a prototype of four
-  bars, 2026-10-19). Actions: `Reload` (off while a failure panel offers
-  Retry) and `⋯` (`Page options`). The hairline under the bar is the edge
-  between herdr and the page.
+  bars, 2026-10-19). The leading control is `✕` (`Close page`), not Back;
+  the actions are the page-back arrow and `⋯` (`Page options`), the header
+  budget's two. The hairline under the bar is the edge between herdr and the
+  page.
 - **Not from the machine.** A page that ends up showing another site (a form
   it posted there, which Android does not ask about) shows that site's host on
   the second line and never the machine's name; Copy link then copies that
   site's address. No extra warning: the host is the honest part, and the owner
   found a `not from` label noise.
-- **Back** goes back in the page's history first, then leaves (the bar's Back
-  and the system gesture alike; with nothing behind the page the system Back
-  pops at once). The entry page that sets the cookie is never a step.
-- **`⋯`.** Its title is the whole link, wrapped (the bar's line is cut to fit,
+- **Leaving and going back.** `✕` leaves from any depth in one tap. Why: the
+  bar's Back walked every page of the visit first, so ten links deep was ten
+  presses back to the chat (owner-approved prototype, 2026-10-29). The arrow
+  goes back one page and stays, dimmed, on the first page (a screen reader
+  hears why). Held, it opens `Pages in this visit`: the visit's pages newest
+  first (title over address, else the address), the one shown marked `Here`,
+  and a last row that closes the page; a tap goes back to that page, one
+  history step at a time, each after the page before it is in (a step taken
+  at once cut the page's load short and its late report counted as a new
+  page). The newest 50 pages are kept. A jump through a single-page app's
+  routes may stop on the first of them, if Android reports no finished load
+  for a route (unverified: not run on a phone). The phone's Back is
+  unchanged, as in a browser: back one page, then it leaves (with nothing
+  behind the page the system Back pops at once). The entry page that sets the
+  cookie is never a step.
+- **`⋯`.** `Reload` first (dimmed with its reason while the page is opening,
+  or while a failure panel offers Retry); it moved here because the bar holds
+  two actions. Its title is the whole link, wrapped (the bar's line is cut to fit,
   and the person often wants to read the full address); `Copy link` copies
   that link, the page's address on the machine
   (`http://localhost:5173/settings`: the machine's port, never the phone's

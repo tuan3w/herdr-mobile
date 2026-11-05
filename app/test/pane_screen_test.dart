@@ -271,7 +271,7 @@ void main() {
     await pumpPane(tester);
 
     expect(inBar('Claude Code'), findsOneWidget);
-    expect(inBar('box'), findsOneWidget, reason: 'the agent is not repeated on the subtitle line');
+    expect(inBar('box'), findsOneWidget, reason: 'the agent isn’t repeated on the subtitle line');
     await teardown(tester);
   });
 
@@ -437,7 +437,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets("the keyboard's send key on an empty field presses enter", (tester) async {
+    testWidgets("the keyboard’s send key on an empty field presses enter", (tester) async {
       await pumpPane(tester);
 
       await tester.showKeyboard(composer());
@@ -470,7 +470,7 @@ void main() {
       await _settle(tester);
 
       expect(tester.widget<TextField>(composer()).controller!.text, 'important command');
-      expect(banner('write failed'), findsOneWidget);
+      expect(banner('No connection to'), findsOneWidget);
       semantics.dispose();
       await teardown(tester);
     });
@@ -495,7 +495,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('says why it cannot be used while offline', (tester) async {
+    testWidgets('says why it can’t be used while offline', (tester) async {
       await pumpPane(tester);
       expect(find.text('Message Claude Code…'), findsOneWidget);
 
@@ -517,7 +517,7 @@ void main() {
 
       expect(find.text('/compact'), findsOneWidget);
       expect(find.text('/context'), findsOneWidget);
-      expect(find.text('/exit'), findsNothing, reason: 'does not match "co"');
+      expect(find.text('/exit'), findsNothing, reason: 'doesn’t match "co"');
 
       await tester.tap(find.text('/compact'));
       await tester.pump();
@@ -526,7 +526,7 @@ void main() {
       expect(field.text, '/compact ');
       expect(field.selection, const TextSelection.collapsed(offset: 9));
       expect(find.text('/context'), findsNothing, reason: 'chosen: the palette goes');
-      expect(transport.sent, isEmpty, reason: 'filling is not sending');
+      expect(transport.sent, isEmpty, reason: 'filling isn’t sending');
       await teardown(tester);
     });
 
@@ -699,7 +699,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('a held arrow repeats and its release is not one more press', (tester) async {
+    testWidgets('a held arrow repeats and its release isn’t one more press', (tester) async {
       final semantics = tester.ensureSemantics();
       await pumpPane(tester);
 
@@ -732,7 +732,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('are inert while the machine is not live', (tester) async {
+    testWidgets('are inert while the machine isn’t live', (tester) async {
       final semantics = tester.ensureSemantics();
       await pumpPane(tester);
       await goOffline(tester);
@@ -747,12 +747,12 @@ void main() {
     });
   });
 
-  group('when the machine is not live', () {
+  group('when the machine isn’t live', () {
     testWidgets('says so, and Retry reads the pane again', (tester) async {
       await pumpPane(tester);
       await goOffline(tester);
 
-      expect(banner('network down'), findsOneWidget);
+      expect(banner('No connection to'), findsOneWidget);
       final reads = transport.sources.length;
 
       await tester.tap(find.text('Retry'));
@@ -774,13 +774,13 @@ void main() {
         },
       });
       await _settle(tester);
-      expect(banner('read failed'), findsOneWidget);
+      expect(banner('No connection to'), findsOneWidget);
 
       transport.readFailure = null;
       await tester.tap(find.text('Retry'));
       await _settle(tester);
 
-      expect(banner('read failed'), findsNothing);
+      expect(banner('No connection to'), findsNothing);
       await teardown(tester);
     });
   });
@@ -803,7 +803,7 @@ void main() {
       await _settle(tester);
     }
 
-    testWidgets('a live pane is not dimmed and says nothing', (tester) async {
+    testWidgets('a live pane isn’t dimmed and says nothing', (tester) async {
       await pumpPane(tester);
 
       expect(dim, findsNothing);
@@ -839,7 +839,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('a pane that was closed is dimmed once and is not "stale"', (tester) async {
+    testWidgets('a pane that was closed is dimmed once and isn’t "stale"', (tester) async {
       await pumpPane(tester);
       (transport.snapshot['panes']! as List).clear();
       await tester.runAsync(machine.refresh);
@@ -892,7 +892,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('does not send twice while a send is in flight', (tester) async {
+    testWidgets('doesn’t send twice while a send is in flight', (tester) async {
       transport.sendGate = Completer<void>();
       await pumpPane(tester);
 
@@ -909,7 +909,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('leaving the pane mid-send does not touch the composer', (tester) async {
+    testWidgets('leaving the pane mid-send doesn’t touch the composer', (tester) async {
       transport.sendGate = Completer<void>();
       await pumpPane(tester);
 
@@ -961,7 +961,7 @@ void main() {
     testWidgets('closes with its content instead of emptying first', (tester) async {
       await pumpPane(tester);
       await goOffline(tester);
-      expect(banner('network down'), findsOneWidget);
+      expect(banner('No connection to'), findsOneWidget);
 
       transport.failure = null;
       machine.retry();
@@ -970,12 +970,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
 
       expect(
-        banner('network down'),
+        banner('No connection to'),
         findsOneWidget,
         reason: 'mid-animation the message is still there, fading with the strip',
       );
       await _settle(tester);
-      expect(banner('network down'), findsNothing);
+      expect(banner('No connection to'), findsNothing);
       await teardown(tester);
     });
   });
@@ -1122,7 +1122,7 @@ void main() {
           expect(
             find.text('Open in browser'),
             findsNothing,
-            reason: 'the phone cannot reach the machine\'s localhost itself',
+            reason: 'the phone can’t reach the machine’s localhost itself',
           );
           expect(find.text('Copy link'), findsOneWidget);
           await teardown(tester);
@@ -1132,7 +1132,7 @@ void main() {
       // A forward dials the host from the machine: a `.local` name would reach
       // other devices on its network, another 127.x is not what `localhost` reads as.
       for (final local in ['http://devbox.local:4000/ui', 'http://127.1.2.3:3000']) {
-        testWidgets('a name on the machine that is not the machine itself ($local) can only be copied', (tester) async {
+        testWidgets('a name on the machine that isn’t the machine itself ($local) can only be copied', (tester) async {
           transport.readText = 'listening on $local now';
           await pumpPane(tester);
 
@@ -1181,11 +1181,11 @@ void main() {
         await teardown(tester);
       });
 
-      testWidgets('a machine that does not forward ports is said so, and the link can still be copied', (tester) async {
+      testWidgets('a machine that doesn’t forward ports is said so, and the link can still be copied', (tester) async {
         final launcher = _Launcher();
         UrlLauncherPlatform.instance = launcher;
         final web = FakeWebView.install();
-        transport.webFailure = const HerdrTransportException('the machine does not allow port forwarding', fatal: true);
+        transport.webFailure = const HerdrTransportException('the machine doesn’t allow port forwarding', fatal: true);
         transport.readText = 'listening on http://localhost:3000 now';
         await pumpPane(tester);
         await tapText(tester, 'listening on', column: 16);
@@ -1193,10 +1193,10 @@ void main() {
         await tester.tap(find.text('Open page'));
         await _settle(tester);
 
-        expect(find.text('The machine does not allow port forwarding.'), findsOneWidget);
+        expect(find.text('The machine doesn’t allow port forwarding.'), findsOneWidget);
         expect(web.loaded, isEmpty);
         expect(launcher.opened, isEmpty);
-        await tester.tap(find.byTooltip('Back'));
+        await tester.tap(find.byTooltip('Close page'));
         await _settle(tester);
         await tapText(tester, 'listening on', column: 16);
         expect(find.text('Copy link'), findsOneWidget);
@@ -1208,7 +1208,7 @@ void main() {
         await pumpPane(tester);
         await tapText(tester, 'for more');
 
-        expect(find.textContaining('not encrypted'), findsOneWidget);
+        expect(find.textContaining('isn’t encrypted'), findsOneWidget);
         expect(find.text('Open in browser'), findsOneWidget);
         await teardown(tester);
       });
@@ -1226,7 +1226,7 @@ void main() {
     });
 
     group('a file path', () {
-      testWidgets('opens the file, found from the pane\'s folder', (tester) async {
+      testWidgets('opens the file, found from the pane’s folder', (tester) async {
         final fs = filesystem();
         transport.readText = 'edited lib/main.dart:12:3 just now';
         await pumpPane(tester);
@@ -1267,7 +1267,7 @@ void main() {
         await teardown(tester);
       });
 
-      testWidgets('a path that is not there says so on the screen that opened', (tester) async {
+      testWidgets('a path that isn’t there says so on the screen that opened', (tester) async {
         filesystem();
         transport.readText = 'see src/gone.dart:1 please';
         await pumpPane(tester);
@@ -1296,7 +1296,7 @@ void main() {
 
     group('the Files button', () {
       testWidgets('is there when the machine has files, and opens its browser at the '
-          'pane\'s folder', (tester) async {
+          'pane’s folder', (tester) async {
         final fs = filesystem();
         await pumpPane(tester);
 
@@ -1309,7 +1309,7 @@ void main() {
         await teardown(tester);
       });
 
-      testWidgets('is not there when the machine cannot do files', (tester) async {
+      testWidgets('isn’t there when the machine can’t do files', (tester) async {
         await pumpPane(tester);
 
         expect(find.byTooltip('Browse files'), findsNothing);
@@ -1370,7 +1370,7 @@ void main() {
         position.jumpTo(position.maxScrollExtent);
         await _settle(tester);
         expect(terminalRow('row 1000'), findsOneWidget, reason: 'the oldest row herdr serves');
-        expect(find.textContaining('Earlier output is not available'), findsOneWidget);
+        expect(find.textContaining('Earlier output isn’t available'), findsOneWidget);
         await teardown(tester);
       });
     });
@@ -1440,7 +1440,7 @@ void main() {
       return engine;
     }
 
-    testWidgets('an agent\'s pane has the mic where Send waits; speaking fills the box and sends nothing', (
+    testWidgets('an agent’s pane has the mic where Send waits; speaking fills the box and sends nothing', (
       tester,
     ) async {
       final semantics = tester.ensureSemantics();

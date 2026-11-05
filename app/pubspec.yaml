@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 5036: development builds before the public 0.1.0 reached
 # 5036, and a lower code is refused as a downgrade by phones that have one.
-version: 0.1.44+5081
+version: 0.1.49+5086
 
 environment:
   sdk: ^3.13.5
@@ -120,6 +120,8 @@ flutter:
   # so the app and the GitHub release read the one file (test/release_history_test.dart).
   assets:
     - assets/CHANGELOG.md
+    # The licence of the symbol fallback font, shown in Settings > About > Licences.
+    - assets/fonts/HerdrSymbols-OFL.txt
 
   fonts:
     - family: Inter
@@ -145,6 +147,11 @@ flutter:
     - family: HerdrIcons
       fonts:
         - asset: assets/fonts/HerdrIcons.ttf
+    # The symbols agents' TUIs draw that JetBrains Mono lacks (⏵ ⏺ ⎿ ✻ ⠋),
+    # subset from Noto (tool/fonts/build_symbols.py); the mono fallback.
+    - family: HerdrSymbols
+      fonts:
+        - asset: assets/fonts/HerdrSymbols.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

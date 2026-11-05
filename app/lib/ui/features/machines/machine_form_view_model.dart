@@ -205,9 +205,9 @@ class MachineFormViewModel extends ChangeNotifier {
       _publicKey = result.line;
       _publicKeyError = switch (result.failure) {
         null => null,
-        KeyReadFailure.needsPassphrase => 'This key has a passphrase. Enter it in the field below, then try again.',
-        KeyReadFailure.wrongPassphrase => 'That passphrase does not open the saved key.',
-        KeyReadFailure.unreadable => 'The saved key could not be read.',
+        KeyReadFailure.needsPassphrase => 'This key has a passphrase. Enter it in the field below.',
+        KeyReadFailure.wrongPassphrase => 'That passphrase doesn’t open the saved key.',
+        KeyReadFailure.unreadable => 'The saved key couldn’t be read.',
       };
     } finally {
       _readingKey = false;
@@ -329,10 +329,10 @@ class MachineFormViewModel extends ChangeNotifier {
           HerdrTransportException(:final message) => message,
           HerdrApiException() => e.toString(),
           _ when secrets == null =>
-            'The saved secrets could not be read from this phone’s keystore (${_describe(e)}). '
+            'The saved secrets couldn’t be read from this phone’s keystore (${_describe(e)}). '
                 'Test again; if it keeps failing, restart the app.',
           TimeoutException() =>
-            'The machine did not answer in time. Check that it is on and '
+            'The machine didn’t answer in time. Check that it is on and '
                 'reachable from this phone, then test again.',
           _ => 'The test stopped: ${_describe(e)}. Check the host and port, then test again.',
         };
@@ -368,6 +368,8 @@ class MachineFormViewModel extends ChangeNotifier {
   /// Stores the machine. False when nothing could be stored: [saveError]
   /// says why and the form keeps everything that was entered.
   Future<bool> save(MachineFormValues v) async {
+    // A second tap while the first is out would store twice.
+    if (_saving) return false;
     _saving = true;
     _saveError = null;
     notifyListeners();

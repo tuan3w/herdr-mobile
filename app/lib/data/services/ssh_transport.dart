@@ -79,13 +79,13 @@ HerdrTransportException signInRefused(MachineProfile profile, String? reason, {S
   final tailscale = profile.auth == SshAuth.none;
   final message = switch ((tailscale, reason)) {
     (true, null) =>
-      'Tailscale SSH did not accept this sign-in. Check that '
+      'Tailscale SSH didn’t accept this sign-in. Check that '
           'Tailscale is connected on this phone and that your tailnet policy '
           'lets you SSH to this machine as "${profile.username}".',
     (false, null) => 'SSH authentication failed (check username and key/password).',
     (true, final r?) =>
       'Tailscale refused the sign-in: $r. Check the username '
-          'and your tailnet\'s SSH policy.',
+          'and your tailnet’s SSH policy.',
     (false, final r?) =>
       'The machine refused the sign-in: $r. Check the '
           'username and key/password.',
@@ -239,7 +239,7 @@ class SshTransport implements HerdrTransport {
           identities = SSHKeyPair.fromPem(pem, secrets.passphrase);
         } on Object {
           throw const HerdrTransportException(
-            'Private key could not be read (wrong passphrase, incomplete paste or unsupported format).',
+            'Private key couldn’t be read (wrong passphrase, incomplete paste or unsupported format).',
             fatal: true,
           );
         }
@@ -264,7 +264,7 @@ class SshTransport implements HerdrTransport {
             approvalOffered = true;
             expectAuthWithin(
               approvalTimeout,
-              const HerdrTransportException('Sign-in was not approved in time. Retry to get a new link.', fatal: true),
+              const HerdrTransportException('Sign-in wasn’t approved in time. Retry to get a new link.', fatal: true),
             );
           } else {
             refusal = refusalReasonFrom(banner) ?? refusal;
@@ -317,7 +317,7 @@ class SshTransport implements HerdrTransport {
         }
         throw const HerdrTransportException(closedBeforeSignInMessage);
       }
-      throw HerdrTransportException('Cannot connect: $e');
+      throw HerdrTransportException('Can’t connect: $e');
     } finally {
       deadline?.cancel();
     }
@@ -393,7 +393,7 @@ class SshTransport implements HerdrTransport {
       if (refused != null) throw refused;
       _drop(client);
       client.close();
-      throw HerdrTransportException('Cannot open channel: $e');
+      throw HerdrTransportException('Can’t open channel: $e');
     }
   }
 
@@ -429,7 +429,7 @@ class SshTransport implements HerdrTransport {
     } on Object catch (e) {
       _drop(client);
       client.close();
-      throw HerdrTransportException('Cannot open channel: $e');
+      throw HerdrTransportException('Can’t open channel: $e');
     }
     try {
       await sftp.handshake.timeout(_sftpHandshakeTimeout);
@@ -446,7 +446,7 @@ class SshTransport implements HerdrTransport {
 
   static RemoteFileException _noSftp() => RemoteFileException(
     RemoteFileErrorKind.unsupported,
-    'This host does not allow SFTP, so its files cannot be shown. Enable the '
+    'This host doesn’t allow SFTP, so its files can’t be shown. Enable the '
     '"sftp" subsystem in its sshd_config to use Files.',
   );
 
@@ -550,7 +550,7 @@ class SshTransport implements HerdrTransport {
       } on StateError {
         throw await _bridgeFailure(session, stderr);
       } on TimeoutException {
-        throw HerdrTransportException('herdr did not answer $method in time');
+        throw HerdrTransportException('herdr didn’t answer $method in time');
       }
       return unwrapResponse(line);
     } finally {
@@ -674,7 +674,7 @@ class SshTransport implements HerdrTransport {
     } on Object catch (e) {
       _drop(client);
       client.close();
-      throw HerdrTransportException('Cannot open channel: $e');
+      throw HerdrTransportException('Can’t open channel: $e');
     }
   }
 
@@ -735,9 +735,9 @@ HerdrTransportException? channelRefusal(Object error) {
 /// browser gets says so and a server that starts later works.
 HerdrTransportException forwardRefusal(SSHChannelOpenError error) {
   if (error.code == 1) {
-    return const HerdrTransportException('the machine does not allow port forwarding', fatal: true);
+    return const HerdrTransportException('the machine doesn’t allow port forwarding', fatal: true);
   }
-  return HerdrTransportException('The machine could not reach that port: ${error.description}');
+  return HerdrTransportException('The machine couldn’t reach that port: ${error.description}');
 }
 
 /// [SSHSocket] that tells `onData` about every inbound chunk: proof of life

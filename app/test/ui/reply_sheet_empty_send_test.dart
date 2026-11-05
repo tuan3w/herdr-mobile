@@ -29,7 +29,7 @@ Future<BoardHarness> _sheet(WidgetTester tester, {PromptInfo? prompt}) async {
   final h = await BoardHarness.create([_machine()]);
   h.previews.set('a/w1:p1', const ['…context…'], prompt: prompt);
   await pumpBoard(tester, h, width: 360, height: 2400);
-  await tester.tap(find.byTooltip('Reply to task 1'));
+  await tester.tap(replyTo('task 1'));
   await tester.pump();
   return h;
 }

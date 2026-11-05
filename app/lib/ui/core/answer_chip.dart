@@ -47,6 +47,13 @@ enum AnswerChipTone {
 
   /// The answer stops or ends something: danger words, a danger wash at rest.
   danger,
+
+  /// The answer declines (`3. No`): no fill at rest and secondary words, so
+  /// it reads apart from the filled answers that allow, led by a small ✕ so
+  /// it still reads as an answer to tap. Pressed, it fills like any chip.
+  /// Why no fill: as one more identical fill, `No` looked like the
+  /// `Yes, don't ask again` above it; with a fill and no mark it still did.
+  quiet,
 }
 
 /// One answer to an agent: the option text exactly as the agent gave it, on a
@@ -167,6 +174,7 @@ class AnswerChip extends StatelessWidget {
   Widget _body(BuildContext context, {required bool pressed, HoldState? hold}) {
     final ds = context.ds;
     final danger = tone == AnswerChipTone.danger;
+    final quiet = tone == AnswerChipTone.quiet;
     final showsHold = hold?.showsHold ?? false;
     final (bg, pressedBg, fg, edge) = switch (state) {
       AnswerChipState.primed => (ds.wash(ds.danger), ds.washPressed(ds.danger), ds.dangerText, ds.armedEdge(ds.danger)),
@@ -174,6 +182,7 @@ class AnswerChip extends StatelessWidget {
       AnswerChipState.failed => (ds.wash(ds.danger), ds.washPressed(ds.danger), ds.dangerText, null),
       AnswerChipState.changed => (ds.blockedWash, ds.blockedWash, ds.blockedText, null),
       _ when danger => (ds.wash(ds.danger), ds.washPressed(ds.danger), ds.dangerText, null),
+      _ when quiet => (Colors.transparent, ds.fill, ds.textSecondary, null),
       _ => (ds.fill, ds.fillPressed, ds.text, null),
     };
     final shown = showsHold
@@ -197,21 +206,30 @@ class AnswerChip extends StatelessWidget {
     final lead = switch (state) {
       AnswerChipState.sending => const BusySpinner(size: IconSize.inline),
       AnswerChipState.sent => Icon(LucideIcons.check, size: IconSize.row, color: ds.done),
-      AnswerChipState.primed ||
-      AnswerChipState.failed => Icon(LucideIcons.triangleAlert, size: IconSize.row, color: fg),
+      // Primed is caution before acting; failed is a failure (docs/DESIGN.md, icons).
+      AnswerChipState.primed => Icon(LucideIcons.triangleAlert, size: IconSize.row, color: fg),
+      AnswerChipState.failed => Icon(LucideIcons.circleAlert, size: IconSize.row, color: fg),
       AnswerChipState.changed => Icon(LucideIcons.refreshCw, size: IconSize.row, color: fg),
+      // Inline-sized, inside the one-line 44 a card reserves per chip.
+      AnswerChipState.rest when quiet => Icon(LucideIcons.x, size: IconSize.inline, color: color),
       AnswerChipState.rest => null,
     };
     // A resting hint that the answer asks for more; red is for the chip that is
-    // actually primed.
+    // actually primed. A held answer says "Hold" at rest: a triangle alone did
+    // not tell the person that a tap would not send.
+    final markColor = danger ? ds.dangerText : ds.textSecondary;
     final marker = state != AnswerChipState.rest
         ? null
         : switch (risk) {
-            AnswerRisk.gate => Icon(
-              LucideIcons.triangleAlert,
-              size: IconSize.inline,
-              color: danger ? ds.dangerText : ds.textSecondary,
+            AnswerRisk.gate when this.hold => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Hold', style: Type.caption.copyWith(color: markColor)),
+                const SizedBox(width: Gap.xs),
+                Icon(LucideIcons.triangleAlert, size: IconSize.inline, color: markColor),
+              ],
             ),
+            AnswerRisk.gate => Icon(LucideIcons.triangleAlert, size: IconSize.inline, color: markColor),
             AnswerRisk.elevated => Icon(LucideIcons.shieldHalf, size: IconSize.inline, color: ds.textSecondary),
             AnswerRisk.none => null,
           };

@@ -90,7 +90,7 @@ const codexItemCoverage = <String, String>{
   'ExitedReviewMode': 'shown: note (not captured)',
   'Reasoning': 'ignored: always empty in the log',
   'HookPrompt': 'ignored: text for the model',
-  'FunctionCallOutput': 'ignored: the call\'s output is read from its response_item',
+  'FunctionCallOutput': 'ignored: the call’s output is read from its response_item',
   'CollabAgentToolCall': 'ignored: spawn_agent and wait calls are their own rows',
   'Sleep': 'ignored: a wait, nothing to read',
 };

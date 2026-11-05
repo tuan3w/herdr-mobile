@@ -7,12 +7,16 @@ import 'motion.dart';
 const kMinTap = 44.0;
 
 /// Where chrome bars stop growing with the system text size: their blocks
-/// are fixed height, and three tab cells hold "Machines" at 320 dp at this.
+/// are fixed height, and the batch bar's three cells hold their names at
+/// 320 dp at this.
 const kBarTextScale = 1.15;
 
-/// Press handling shared by every control: feedback on pointer-down (after the
-/// scroll-intent delay, so scrolling a list never flashes rows), commit on up,
-/// cancel by dragging away. No ripple. Optional press scale.
+/// Press handling shared by every control: feedback on pointer-down, at once
+/// (the gesture arena would hold `onTapDown` for 100 ms inside a list, and a tap
+/// quicker than that would report its down and up together and show nothing),
+/// commit on up, cancel by dragging away. A scroll that takes over cancels the
+/// press, so a list shows at most a faint tint for the first moments of a
+/// scroll. No ripple. Optional press scale.
 ///
 /// Semantics (one node per control, never duplicated):
 /// - [semanticLabel] null (default): the visible text inside [builder] merges
@@ -100,25 +104,29 @@ class _PressBuilderState extends State<PressBuilder> {
       // detector below is pointer-only so it adds no second semantics node.
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      child: GestureDetector(
+      child: Listener(
         behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTapDown: enabled ? (_) => _set(true) : null,
-        onTapUp: enabled ? (_) => _set(false) : null,
-        onTapCancel: enabled ? () => _set(false) : null,
-        onTap: widget.onTap == null
-            ? null
-            : () {
-                if (widget.haptic) Haptics.tick();
-                widget.onTap!();
-              },
-        onLongPress: widget.onLongPress == null
-            ? null
-            : () {
-                Haptics.hold();
-                widget.onLongPress!();
-              },
-        child: child,
+        onPointerDown: enabled ? (_) => _set(true) : null,
+        onPointerUp: enabled ? (_) => _set(false) : null,
+        onPointerCancel: enabled ? (_) => _set(false) : null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTapCancel: enabled ? () => _set(false) : null,
+          onTap: widget.onTap == null
+              ? null
+              : () {
+                  if (widget.haptic) Haptics.tick();
+                  widget.onTap!();
+                },
+          onLongPress: widget.onLongPress == null
+              ? null
+              : () {
+                  Haptics.hold();
+                  widget.onLongPress!();
+                },
+          child: child,
+        ),
       ),
     );
   }

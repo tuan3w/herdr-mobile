@@ -170,6 +170,8 @@ class ComposerField extends StatelessWidget {
         // the line is a prompt for an agent.
         autocorrect: autocorrect,
         enableSuggestions: enableSuggestions,
+        // Sentences only where autocorrect is on (a prompt, not a shell line).
+        textCapitalization: autocorrect ? TextCapitalization.sentences : TextCapitalization.none,
         enabled: enabled,
         minLines: 1,
         maxLines: maxLines,
@@ -279,6 +281,7 @@ class ComposerRoundButton extends StatelessWidget {
       onLongPress: ready ? onLongPress : null,
       scale: PressScale.icon,
       semanticLabel: label,
+      button: true,
       builder: (context, pressed) => SizedBox.square(
         dimension: composerButtonHit,
         child: Center(
@@ -296,7 +299,7 @@ class ComposerRoundButton extends StatelessWidget {
             alignment: Alignment.center,
             child: busy
                 ? const BusySpinner()
-                : Icon(icon, size: iconSize, color: ready ? (quiet ? ds.text : ds.onAccent) : ds.textTertiary),
+                : Icon(icon, size: iconSize, color: ready ? (quiet ? ds.text : ds.onAccent) : ds.textMuted),
           ),
         ),
       ),

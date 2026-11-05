@@ -26,7 +26,7 @@ class TerminalPrompt {
 /// What a person is told when [terminalPrompt] gave null: the same sentence in
 /// the chat and in the pane.
 const terminalAttachmentRefusal =
-    'This agent runs in a terminal; this kind of attachment cannot be sent to it. The message was not sent.';
+    'This agent runs in a terminal; this kind of attachment can’t be sent to it. The message wasn’t sent.';
 
 /// [blocks] as what is typed into a terminal; null when a block cannot be
 /// typed: a picture's bytes, embedded text, anything but text and file links,
@@ -105,4 +105,4 @@ Future<void> sendTerminalPrompt(HerdrApi api, String paneId, TerminalPrompt p, {
 /// What a person is told when [sendTerminalPrompt] failed after a picture was
 /// pasted.
 const terminalPromptFailure =
-    "The message was not sent. The agent's input may still hold the picture: check the terminal.";
+    "The message wasn’t sent. The agent’s input may still hold the picture: check the terminal.";

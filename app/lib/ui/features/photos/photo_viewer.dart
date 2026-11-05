@@ -140,7 +140,7 @@ class PhotoViewerState extends State<PhotoViewer> with SingleTickerProviderState
   );
   final _dismiss = ValueNotifier<double>(0);
   late final AnimationController _chrome = AnimationController(vsync: this, duration: Motion.standard, value: 1);
-  late final CurvedAnimation _chromeCurve = Motion.curved(_chrome);
+  late final ExitCurvedAnimation _chromeCurve = Motion.curved(_chrome);
   final _chromeKey = GlobalKey();
   late final ThemeData _theme = AppTheme.dark();
 
@@ -474,7 +474,7 @@ class _FailureView extends StatelessWidget {
       PhotoFailureKind.tooLarge => (LucideIcons.fileWarning, 'Too large to open here'),
       PhotoFailureKind.notAnImage => (HerdrIcons.pictureOff, 'Can’t show this as a picture'),
       PhotoFailureKind.network => (LucideIcons.cloudOff, 'Connection lost'),
-      PhotoFailureKind.unreadable => (LucideIcons.triangleAlert, 'Couldn’t open this photo'),
+      PhotoFailureKind.unreadable => (LucideIcons.circleAlert, 'Couldn’t open this photo'),
     };
     final exporting = entry.exporting;
     final large = failure.kind == PhotoFailureKind.tooLarge && model.canShareLarge;

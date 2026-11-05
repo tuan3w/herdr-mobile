@@ -247,7 +247,7 @@ class _QuestionPanelState extends State<QuestionPanel> with TapGuardState<Questi
             if (schema == null) ...[
               const SizedBox(height: Gap.sm),
               Text(
-                'The agent asked you to open a web page. This app does not open links an agent asks for, so you can only decline.',
+                'The agent asked you to open a web page. This app doesn’t open links an agent asks for, so you can only decline.',
                 style: Type.secondary.copyWith(color: ds.textSecondary),
               ),
             ] else ...[
@@ -340,7 +340,7 @@ class _SecretWarning extends StatelessWidget {
         const SizedBox(width: Gap.sm),
         Expanded(
           child: Text(
-            'The agent marked ${fields.join(', ')} as secret. What you type here goes to the agent in plain text; it is not hidden. Don’t enter a password or key unless you accept that.',
+            'The agent marked ${fields.join(', ')} as secret. What you type here goes to the agent in plain text; it isn’t hidden. Don’t enter a password or key unless you accept that.',
             style: Type.secondary.copyWith(color: ds.dangerText),
           ),
         ),
@@ -513,8 +513,10 @@ class _TextControl extends StatelessWidget {
             minLines: 1,
             maxLines: multiline ? 4 : 1,
             keyboardType: multiline ? TextInputType.multiline : keyboard,
-            autocorrect: false,
-            enableSuggestions: false,
+            // A free-text answer is prose; an email, URL or number is not.
+            autocorrect: multiline,
+            enableSuggestions: multiline,
+            textCapitalization: multiline ? TextCapitalization.sentences : TextCapitalization.none,
             onChanged: (_) => onChanged(),
             style: Type.input.copyWith(color: ds.text),
             cursorColor: ds.accent,

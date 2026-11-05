@@ -1,7 +1,7 @@
 // Renders the swipe between agents mid-gesture on a terminal pane and on an
 // agent session: the next (or previous) agent's card partly in (40 dp), at
-// the commit distance (64), armed past it (110), and the end card where the
-// order stops. Light and
+// the commit distance (64), armed past it (110, `Let go to open`), and the
+// end card where the walk stops. Light and
 // dark, at 412x892 and at 320x640 with text at 1.6x. Off by default; it
 // writes files:
 //
@@ -47,12 +47,12 @@ void main() {
 
   const sizes = [(Size(412, 892), 1.0), (Size(320, 640), 1.6)];
 
-  // The pane needs the person (first in the board's order): left shows the
-  // next agent, right the end. The session is idle and last: right shows the
-  // agent before it, coming in from the left, and left the end.
+  // Each screen is where its walk begins: left shows the next agent that
+  // wants the person (with its place in the walk and what it asks or last
+  // said), right the end (`No previous agent`).
   final screens = [
     (name: 'pane', agent: const PaneAgent('a', 'a1:p1'), toward: -1.0),
-    (name: 'session', agent: const SessionAgent('a/k1'), toward: 1.0),
+    (name: 'session', agent: const SessionAgent('a/k1'), toward: -1.0),
   ];
   final states = [
     (name: 'in40', by: 40.0, end: false),

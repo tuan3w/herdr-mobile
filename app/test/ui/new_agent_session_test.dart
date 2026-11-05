@@ -148,7 +148,7 @@ Future<void> _tapStartAndOpen(WidgetTester tester) async {
 
 void main() {
   group('the form', () {
-    testWidgets('offers every route; the ones the machine cannot run are disabled, with the reason', (tester) async {
+    testWidgets('offers every route; the ones the machine can’t run are disabled, with the reason', (tester) async {
       final e = await _env();
       e.host('a').installed = {'claude', 'codex'};
       await _pumpForm(tester, e);
@@ -209,12 +209,12 @@ void main() {
       await _settle(tester);
 
       expect(_folder(tester), '/srv/app');
-      expect(_selected(tester, 'Codex'), isTrue, reason: 'omp is not on build-box');
+      expect(_selected(tester, 'Codex'), isTrue, reason: 'omp isn’t on build-box');
       expect(find.text('Not installed on build-box: omp, Claude Code, pi'), findsOneWidget);
       await _teardown(tester, e);
     });
 
-    testWidgets('a folder the person typed is not overwritten by switching machines', (tester) async {
+    testWidgets('a folder the person typed isn’t overwritten by switching machines', (tester) async {
       final e = await _env(
         machines: const [(id: 'a', label: 'studio-mac'), (id: 'b', label: 'build-box')],
         memory: const AgentSessionMemory(machineId: 'a', folders: {'a': '/home/dev/a-app', 'b': '/srv/app'}),
@@ -242,7 +242,7 @@ void main() {
       await _teardown(tester, e);
     });
 
-    testWidgets('a machine that cannot be asked says why and still lets the start report', (tester) async {
+    testWidgets('a machine that can’t be asked says why and still lets the start report', (tester) async {
       final e = await _env();
       e.host('a').availableFailure = const AgentHostException('python3 is missing on studio-mac.');
       await _pumpForm(tester, e);
@@ -317,38 +317,38 @@ void main() {
       await _tapStart(tester);
 
       expect(find.text('Couldn’t start the session'), findsOneWidget);
-      expect(find.text('omp is not installed on studio-mac.'), findsOneWidget);
+      expect(find.text('omp isn’t installed on studio-mac.'), findsOneWidget);
       expect(find.byType(NewAgentSessionScreen), findsOneWidget);
       expect(e.host('a').startCalls, 0);
       expect(e.store.memory.folders, isEmpty, reason: 'a failed start remembers nothing');
       await _teardown(tester, e);
     });
 
-    testWidgets('a folder the host cannot use is said in the host\'s words', (tester) async {
+    testWidgets('a folder the host can’t use is said in the host’s words', (tester) async {
       final e = await _env();
       await _pumpForm(tester, e);
       await _type(tester, '/home/dev/gone');
-      e.host('a').startFailure = const AgentHostException('/home/dev/gone does not exist on studio-mac.', fatal: true);
+      e.host('a').startFailure = const AgentHostException('/home/dev/gone doesn’t exist on studio-mac.', fatal: true);
 
       await _tapStart(tester);
 
-      expect(find.text('/home/dev/gone does not exist on studio-mac.'), findsOneWidget);
+      expect(find.text('/home/dev/gone doesn’t exist on studio-mac.'), findsOneWidget);
       expect(e.repo.sessions, isEmpty);
       await _teardown(tester, e);
     });
 
-    testWidgets('an agent that cannot sign in fails the start and leaves no keeper behind', (tester) async {
+    testWidgets('an agent that can’t sign in fails the start and leaves no keeper behind', (tester) async {
       final e = await _env();
       await _pumpForm(tester, e);
       await _type(tester, '/home/dev/api');
       e
           .host('a')
           .attachFailures
-          .add(const AgentHostException('omp is not signed in: run `omp login` on studio-mac', fatal: true));
+          .add(const AgentHostException('omp isn’t signed in: run `omp login` on studio-mac', fatal: true));
 
       await _tapStart(tester);
 
-      expect(find.text('omp is not signed in: run `omp login` on studio-mac'), findsOneWidget);
+      expect(find.text('omp isn’t signed in: run `omp login` on studio-mac'), findsOneWidget);
       expect(e.host('a').killed, hasLength(1));
       expect(e.repo.sessions, isEmpty);
       await _teardown(tester, e);
@@ -359,10 +359,10 @@ void main() {
       await _pumpForm(tester, e);
       await _type(tester, '/home/dev/api');
       final host = e.host('a');
-      host.availableFailure = const AgentHostException('Could not reach studio-mac: connection timed out');
+      host.availableFailure = const AgentHostException('Couldn’t reach studio-mac: connection timed out');
 
       await _tapStart(tester);
-      expect(find.text('Could not reach studio-mac: connection timed out'), findsOneWidget);
+      expect(find.text('Couldn’t reach studio-mac: connection timed out'), findsOneWidget);
 
       host.availableFailure = null;
       await _tapStartAndOpen(tester);

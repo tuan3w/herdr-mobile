@@ -9,7 +9,7 @@ import '../../../data/decision/mode_danger.dart';
 import '../../../data/decision/session_chips.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../../data/repositories/agent_session.dart';
-import '../../../data/repositories/agent_screens.dart' show AgentView, PaneAgent;
+import '../../../data/repositories/agent_screens.dart' show AgentRef, AgentView, PaneAgent;
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/plural.dart';
 import '../../../data/words/place_name.dart';
@@ -21,6 +21,7 @@ import '../create/new_agent_session_screen.dart' show openNewAgentSession;
 import '../create/session_prefill.dart' show SessionPrefill;
 import '../files/files_navigation.dart' show machineSupportsFiles, openFileBrowser;
 import '../agents/agent_navigation.dart' show agentViewAction;
+import '../agents/agent_switcher.dart' show AgentSwitchMark, othersNeedingYou, showAgentSwitcher, switchAgentLabel;
 import 'session_select.dart';
 import 'session_overview.dart' show showSessionOverview;
 import 'session_made.dart' show MadeChip, showSessionMade;
@@ -51,53 +52,70 @@ String sessionWhere(AgentSessionView session, {String? title}) => whereLine(
 
 /// The one slim bar ([AppTopBar]): back, the status glyph beside the title over where the
 /// session lives, and the button for its modes and options (which hold the
-/// way to the terminal of an agent in a pane).
+/// way to the terminal of an agent in a pane, and the session overview).
+///
+/// For a board agent ([agent]) the title is the agent switcher: a chevron,
+/// the count of other agents that need the person, and a tap that lists them
+/// ([showAgentSwitcher]).
 class SessionBar extends StatelessWidget {
-  const SessionBar({super.key, required this.session});
+  const SessionBar({super.key, required this.session, this.agent});
 
   final AgentSessionView session;
 
+  /// The board's agent this chat shows; null for a subagent's transcript,
+  /// which has no switcher.
+  final AgentRef? agent;
+
   @override
-  Widget build(BuildContext context) => SessionSelect<(String, AgentPhase, bool, AgentLink, int?)>(
-    session: session,
-    select: (s) => (s.title, s.phase, s.unseenDone, s.link, contextWarning(s.state.usage)),
-    builder: (context, v) {
-      final (title, phase, unseen, link, contextPercent) = v;
-      return AppTopBar(
-        title: title,
-        subtitle: sessionWhere(session, title: title),
-        // The context window is nearly full: said in words, in the danger
-        // tone, and only then.
-        subtitleAlert: contextPercent == null ? null : 'Context $contextPercent%',
-        glyph: StatusGlyph(
-          status: sessionStatus(phase, unseenDone: unseen),
-          size: IconSize.row,
-          dim: link != AgentLink.live,
+  Widget build(BuildContext context) {
+    final agent = this.agent;
+    // Rebuilds the bar only when the count changes.
+    final others = othersNeedingYou(context, agent);
+    return SessionSelect<(String, AgentPhase, bool, AgentLink, int?)>(
+      session: session,
+      select: (s) => (s.title, s.phase, s.unseenDone, s.link, contextWarning(s.state.usage)),
+      builder: (context, v) => _bar(context, v, agent, others),
+    );
+  }
+
+  Widget _bar(BuildContext context, (String, AgentPhase, bool, AgentLink, int?) v, AgentRef? agent, int others) {
+    final (title, phase, unseen, link, contextPercent) = v;
+    return AppTopBar(
+      title: title,
+      subtitle: sessionWhere(session, title: title),
+      // The context window is nearly full: said in words, in the danger
+      // tone, and only then.
+      subtitleAlert: contextPercent == null ? null : 'Context $contextPercent%',
+      glyph: StatusGlyph(
+        status: sessionStatus(phase, unseenDone: unseen),
+        size: IconSize.row,
+        dim: link != AgentLink.live,
+      ),
+      // The whole title area switches agent; the overview is in the options.
+      onTitleTap: agent == null ? null : () => unawaited(showAgentSwitcher(context, agent)),
+      titleTapLabel: agent == null ? null : switchAgentLabel,
+      titleTrailing: agent == null ? null : AgentSwitchMark(othersNeedYou: others),
+      actions: [
+        CircleButton(
+          icon: LucideIcons.ellipsis,
+          tooltip: 'Session options',
+          onPressed: () => showSessionOptions(context, session),
         ),
-        // The whole title area opens the session overview.
-        onTitleTap: () => unawaited(showSessionOverview(context, session)),
-        actions: [
-          CircleButton(
-            icon: LucideIcons.ellipsis,
-            tooltip: 'Session options',
-            onPressed: () => showSessionOptions(context, session),
-          ),
+      ],
+      // The chips wrap rather than shrink: the subagents chip carries "1
+      // waiting for you" and must not end in an ellipsis to make room for
+      // the Made chip (it did at 320 wide). The background chip only shows
+      // in the compact layout, which is wide.
+      bottom: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SubagentsChip(session: session),
+          BackgroundChip(session: session),
+          MadeChip(session: session),
         ],
-        // The chips wrap rather than shrink: the subagents chip carries "1
-        // waiting for you" and must not end in an ellipsis to make room for
-        // the Made chip (it did at 320 wide). The background chip only shows
-        // in the compact layout, which is wide.
-        bottom: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SubagentsChip(session: session),
-            BackgroundChip(session: session),
-            MadeChip(session: session),
-          ],
-        ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +333,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
             ),
             if (machineSupportsFiles(widget.session.machine))
               SheetActionRow(
-                action: SheetAction(label: 'Files', icon: LucideIcons.folderOpen, onTap: _files),
+                action: SheetAction(label: 'Files', icon: HerdrIcons.folder, onTap: _files),
                 onTap: _files,
               ),
             // Always here: the chip under the title only shows once something

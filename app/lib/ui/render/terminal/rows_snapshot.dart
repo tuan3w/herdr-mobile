@@ -23,6 +23,7 @@ final class RowsSnapshot extends ListBase<String> {
   final int length;
 
   @override
+  // design-lint: allow(voice) a developer error, never shown to a person
   set length(int value) => throw UnsupportedError('Cannot change the length of a RowsSnapshot');
 
   @override
@@ -32,5 +33,6 @@ final class RowsSnapshot extends ListBase<String> {
   }
 
   @override
+  // design-lint: allow(voice) a developer error, never shown to a person
   void operator []=(int index, String value) => throw UnsupportedError('Cannot modify a RowsSnapshot');
 }

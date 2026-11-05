@@ -8,7 +8,7 @@ import '../../data/repositories/fleet_repository.dart';
 import '../../data/repositories/machine_connection.dart';
 import '../../data/repositories/agent_session.dart' show AgentSessions;
 import '../../data/repositories/machine_repository.dart';
-import 'home_tabs.dart';
+import '../shell/home_pages.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -148,12 +148,12 @@ typedef OpenAgentScreen = Future<void> Function(BuildContext context, AgentRef a
 /// answer true wins, and the navigator's own handler would push the link as a
 /// named route, which this app does not have.
 ///
-/// Give [navigatorKey] to the `MaterialApp`. The board link selects the Agents
-/// tab and goes back to it. A link that cannot be followed (an unknown
-/// machine, pane or session, a machine that does not answer) leaves the
-/// person where they are and says why in a toast whose button opens the tab
-/// where the next step is: Machines for a machine to add, switch on or retry,
-/// Agents for an agent that is gone. Going back never closes a screen that
+/// Give [navigatorKey] to the `MaterialApp`. The board link goes back to home,
+/// the Agents board. A link that cannot be followed (an unknown machine, pane
+/// or session, a machine that does not answer) leaves the person where they
+/// are and says why in a toast whose button opens the page where the next
+/// step is: Machines for a machine to add, switch on or retry, the board for
+/// an agent that is gone. Going back never closes a screen that
 /// asks first (a form with unsaved input): its own guard asks, as Back does.
 /// Session links need [sessions]; without them they are not links this app
 /// can open.
@@ -162,7 +162,7 @@ class DeepLinks with WidgetsBindingObserver {
     required this.machines,
     required this.fleet,
     required this.open,
-    this.tabs,
+    this.pages,
     this.sessions,
     this._initialRoute,
     this.patience = Dwell.linkPatience,
@@ -174,9 +174,9 @@ class DeepLinks with WidgetsBindingObserver {
   final OpenAgentScreen open;
   final AgentSessions? sessions;
 
-  /// Turns the home screen to the tab a link means (null in tests without a
-  /// home screen).
-  final HomeTabs? tabs;
+  /// Opens Machines or Settings over home, where a link's toast sends the
+  /// person (null in tests without a home screen: going home is all then).
+  final HomePages? pages;
 
   /// How long to wait for a machine that is still connecting to say whether the
   /// pane exists.
@@ -228,23 +228,23 @@ class DeepLinks with WidgetsBindingObserver {
 
     if (!await _navigatorReady(frames: cold ? coldStartFrames : 0) || stale()) return;
     if (isBoardLink(route)) {
-      unawaited(_show(HomeTab.agents));
+      unawaited(_show(HomePage.agents));
       return;
     }
     final pane = parseAgentLink(route);
     final chat = pane == null ? parseSessionLink(route) : null;
     final machineName = pane?.machine ?? chat?.machine;
     if (machineName == null) {
-      _say("That link isn't one herdr can open.", next: HomeTab.agents);
+      _say("That link isn’t one herdr can open.", next: HomePage.agents);
       return;
     }
     final profile = matchMachine(machines.machines, machineName);
     if (profile == null) {
-      _say('No machine named "$machineName" on this phone.', next: HomeTab.machines);
+      _say('No machine named "$machineName" on this phone.', next: HomePage.machines);
       return;
     }
     if (!profile.enabled) {
-      _say('${profile.label} is switched off.', next: HomeTab.machines);
+      _say('${profile.label} is switched off.', next: HomePage.machines);
       return;
     }
     // A machine saved a moment ago has no connection until the fleet caught up.
@@ -252,7 +252,7 @@ class DeepLinks with WidgetsBindingObserver {
     final connection = fleet.connection(profile.id);
     if (stale()) return;
     if (connection == null || connection.state == LinkState.disabled) {
-      _say('${profile.label} is switched off.', next: HomeTab.machines);
+      _say('${profile.label} is switched off.', next: HomePage.machines);
       return;
     }
 
@@ -264,7 +264,7 @@ class DeepLinks with WidgetsBindingObserver {
       final key = sessionKey = '${profile.id}/${chat!.keeperId}';
       final list = sessions;
       if (list == null) {
-        _say("That link isn't one herdr can open.", next: HomeTab.agents);
+        _say("That link isn’t one herdr can open.", next: HomePage.agents);
         return;
       }
       var first = await _present(connection, () => list.byKey(key) != null);
@@ -287,46 +287,42 @@ class DeepLinks with WidgetsBindingObserver {
           await open(context, SessionAgent(sessionKey!));
         }
       case _Pane.gone:
-        _say('That agent is no longer on ${profile.label}.', next: HomeTab.agents);
+        _say('That agent is no longer on ${profile.label}.', next: HomePage.agents);
       case _Pane.unreachable:
-        _say("Couldn't reach ${profile.label} to open that agent.", next: HomeTab.machines);
+        _say("Couldn’t reach ${profile.label} to open that agent.", next: HomePage.machines);
     }
   }
 
-  /// Brings [tab] of the home screen to the front: the tab first (under
-  /// whatever is in front), then back down to the home screen the way Back
-  /// goes. A screen that asks before it closes (a form with unsaved input) is
-  /// not closed: its own guard asks, and if the person keeps it, it stays, with
-  /// [tab] waiting under it.
-  Future<void> _show(HomeTab tab) async {
-    tabs?.select(tab);
+  /// Brings [page] to the front: back down the way Back goes, until [page]
+  /// is in front (Machines under its own form stops there) or home is, then
+  /// [page] is opened over home. Never a second copy of a page. A screen that
+  /// asks before it closes (a form with unsaved input) is not closed: its own
+  /// guard asks, and if the person keeps it, it stays, and nothing opens.
+  Future<void> _show(HomePage page) async {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     while (nav.mounted) {
-      final top = _top(nav);
-      if (top == null || top.isFirst) return;
+      final top = topRoute(nav);
+      if (top == null || HomePages.isPage(top, page)) return;
+      if (top.isFirst) {
+        final context = _context;
+        if (context != null && context.mounted) pages?.open(context, page);
+        return;
+      }
       final asks = top.popDisposition == RoutePopDisposition.doNotPop;
       await nav.maybePop();
       // Asked (its guard now has the person's attention) or refused to go.
-      if (asks || !nav.mounted || identical(_top(nav), top)) return;
+      if (asks || !nav.mounted || identical(topRoute(nav), top)) return;
     }
   }
 
-  /// The route in front. `popUntil` with a predicate that holds at once
-  /// pops nothing; it is the navigator's one way to name its top route.
-  static Route<dynamic>? _top(NavigatorState nav) {
-    Route<dynamic>? top;
-    nav.popUntil((route) {
-      top = route;
-      return true;
-    });
-    return top;
-  }
-
-  /// Whether [tab] of the home screen is what the person sees now.
-  bool _showing(HomeTab tab) {
+  /// Whether [page] is what the person sees now. Without [pages] (no home
+  /// screen to open them over) home counts as every page.
+  bool _showing(HomePage page) {
     final nav = navigatorKey.currentState;
-    return nav != null && (_top(nav)?.isFirst ?? false) && (tabs == null || tabs!.current == tab);
+    if (nav == null) return false;
+    final front = HomePages.pageInFront(nav);
+    return front == page || (pages == null && front == HomePage.agents);
   }
 
   /// A context under the navigator (and so under the app's providers), once
@@ -386,9 +382,9 @@ class DeepLinks with WidgetsBindingObserver {
   }
 
   /// Says why a link did nothing, over whatever is in front: a form being
-  /// filled in stays as it is. The toast's button opens [next], the tab where
+  /// filled in stays as it is. The toast's button opens [next], the page where
   /// the step that can succeed is, unless the person is already looking at it.
-  void _say(String message, {required HomeTab next}) {
+  void _say(String message, {required HomePage next}) {
     final context = _context;
     if (context == null) return;
     Haptics.tick();
@@ -397,9 +393,9 @@ class DeepLinks with WidgetsBindingObserver {
       action: _showing(next)
           ? null
           : ToastAction(switch (next) {
-              HomeTab.agents => 'Open Agents',
-              HomeTab.machines => 'Open Machines',
-              HomeTab.settings => 'Open Settings',
+              HomePage.agents => 'Open Agents',
+              HomePage.machines => 'Open Machines',
+              HomePage.settings => 'Open Settings',
             }, () => unawaited(_show(next))),
     );
   }

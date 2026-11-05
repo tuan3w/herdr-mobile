@@ -132,7 +132,7 @@ void main() {
       expect(clients.single.executes, 3);
     });
 
-    test('resource shortage means the same, and other refusals keep the host\'s reason', () {
+    test('resource shortage means the same, and other refusals keep the host’s reason', () {
       expect(channelRefusal(SSHChannelOpenError(4, 'no resources'))?.message, contains('Too many sessions'));
       expect(channelRefusal(SSHChannelOpenError(3, 'unknown channel type'))?.message, contains('unknown channel type'));
       expect(channelRefusal(SSHChannelOpenError(3, 'x'))?.fatal, isFalse);
@@ -144,7 +144,7 @@ void main() {
 
       await expectLater(
         t.openExec('x'),
-        throwsA(isA<HerdrTransportException>().having((e) => e.message, 'message', contains('Cannot open channel'))),
+        throwsA(isA<HerdrTransportException>().having((e) => e.message, 'message', contains('Can’t open channel'))),
       );
       expect(clients.single.closed, isTrue);
 
@@ -152,7 +152,7 @@ void main() {
       expect(clients, hasLength(2));
     });
 
-    test('channelRefusal ignores everything that is not a refusal', () {
+    test('channelRefusal ignores everything that isn’t a refusal', () {
       expect(channelRefusal(StateError('x')), isNull);
       expect(channelRefusal(SSHAuthFailError('x')), isNull);
     });
@@ -187,7 +187,7 @@ void main() {
       expect(channel.stderrTail, 'herdr-mobile: no python3');
     });
 
-    test('a multi-byte character cut by the cap does not break the text', () async {
+    test('a multi-byte character cut by the cap doesn’t break the text', () async {
       session.err('${'é' * 3000}x'); // 6001 bytes: the cut falls inside a character
       await Future<void>.delayed(Duration.zero);
 
@@ -258,7 +258,7 @@ void main() {
       expect(session.closeCalls, 1);
     });
 
-    test('close on a command that already ended does not touch stdin', () async {
+    test('close on a command that already ended doesn’t touch stdin', () async {
       session.finish(0);
       await channel.exitCode;
 
@@ -268,7 +268,7 @@ void main() {
       expect(session.closeCalls, 1);
     });
 
-    test('the exit status is the command\'s', () async {
+    test('the exit status is the command’s', () async {
       session.finish(67);
 
       expect(await channel.exitCode, 67);

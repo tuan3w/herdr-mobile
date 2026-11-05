@@ -47,7 +47,7 @@ void main() {
     });
 
     test(
-      'a name the machine would resolve elsewhere is not the machine: the row would say one thing and dial another',
+      'a name the machine would resolve elsewhere isn’t the machine: the row would say one thing and dial another',
       () async {
         // `*.local` reaches other devices on the machine's network; another 127.x
         // or `*.localhost` is not what `localhost:...` on the row reads as.
@@ -65,16 +65,16 @@ void main() {
       },
     );
 
-    test('a link that cannot be opened says so instead of asking the machine', () async {
+    test('a link that can’t be opened says so instead of asking the machine', () async {
       await expectLater(web.forwardUrl(Uri.parse('https://localhost:3000')), throwsA(isA<WebPreviewException>()));
       expect(transport.webBridges, isEmpty);
     });
 
-    test('a port that does not exist says so, not that the address is wrong', () async {
+    test('a port that doesn’t exist says so, not that the address is wrong', () async {
       for (final url in ['http://localhost:0', 'http://localhost:65536']) {
         await expectLater(
           web.forwardUrl(Uri.parse(url)),
-          throwsA(isA<WebPreviewException>().having((e) => e.message, 'message', contains('port number is not valid'))),
+          throwsA(isA<WebPreviewException>().having((e) => e.message, 'message', contains('port number isn’t valid'))),
           reason: url,
         );
       }
@@ -105,12 +105,12 @@ void main() {
       expect(
         url.port,
         51999,
-        reason: 'a connection the browser keeps to port 3000 is the dev server\'s, the token must not ride on it',
+        reason: 'a connection the browser keeps to port 3000 is the dev server’s, the token must not ride on it',
       );
       expect(url.queryParameters['to'], '/app');
     });
 
-    test('an encoded fragment is not encoded twice', () async {
+    test('an encoded fragment isn’t encoded twice', () async {
       final url = await web.forwardUrl(Uri.parse('http://localhost:3000/#a%20b'));
       expect(url.queryParameters['to'], '/#a%20b');
     });
@@ -129,7 +129,7 @@ void main() {
       expect(transport.webBridges.map((s) => s.key).toSet(), {'f|localhost|8080'});
     });
 
-    test('a listener that could not take the target port number tells the person once', () async {
+    test('a listener that couldn’t take the target port number tells the person once', () async {
       final notes = <String>[];
       transport.webInfo = const WebBridgeInfo(port: 51111, token: '0123456789abcdef0123456789abcdef');
       final url = await web.forwardUrl(Uri.parse('http://localhost:3000/x'), onNote: notes.add);
@@ -149,25 +149,25 @@ void main() {
     });
 
     test('a refusal reads as a sentence about this phone', () async {
-      transport.webFailure = const HerdrTransportException('the machine does not allow port forwarding', fatal: true);
+      transport.webFailure = const HerdrTransportException('the machine doesn’t allow port forwarding', fatal: true);
       await expectLater(
         web.forwardUrl(Uri.parse('http://localhost:3000')),
         throwsA(
           isA<WebPreviewException>().having(
             (e) => e.message,
             'message',
-            "Couldn't open on this phone: the machine does not allow port forwarding.",
+            "Couldn’t open on this phone: the machine doesn’t allow port forwarding.",
           ),
         ),
       );
-      transport.webFailure = const HerdrTransportException('Cannot open a local port: SocketException.');
+      transport.webFailure = const HerdrTransportException('Can’t open a local port: SocketException.');
       await expectLater(
         web.forwardUrl(Uri.parse('http://localhost:3000')),
         throwsA(
           isA<WebPreviewException>().having(
             (e) => e.message,
             'message',
-            "Couldn't open on this phone: cannot open a local port: SocketException.",
+            "Couldn’t open on this phone: can’t open a local port: SocketException.",
           ),
         ),
       );
@@ -175,7 +175,7 @@ void main() {
   });
 
   group('an HTML file', () {
-    test('serves the file\'s own folder and opens the file in it', () async {
+    test('serves the file’s own folder and opens the file in it', () async {
       final url = await web.staticUrl(_file('/home/dev/report/out/index.html'), fragment: 'sec 2');
       final spec = transport.webBridges.single as StaticSite;
       expect(spec.root, '/home/dev/report/out');
@@ -194,7 +194,7 @@ void main() {
       expect((transport.webBridges.single as StaticSite).root, '/');
     });
 
-    test('a machine without files says so, a path that is not absolute is refused', () async {
+    test('a machine without files says so, a path that isn’t absolute is refused', () async {
       transport.fs = null;
       await expectLater(
         web.staticUrl(_file('/a/b.html')),
@@ -208,19 +208,19 @@ void main() {
     });
   });
 
-  group('the pages a machine\'s listeners show', () {
-    test('a forward\'s page reads as the machine has it, on the machine\'s own port', () async {
+  group('the pages a machine’s listeners show', () {
+    test('a forward’s page reads as the machine has it, on the machine’s own port', () async {
       transport.webInfo = const WebBridgeInfo(port: 51111, token: '0123456789abcdef0123456789abcdef', entryPort: 51999);
       await web.forwardUrl(Uri.parse('http://localhost:3000/'));
       expect(web.ports, {51111, 51999});
 
       final page = web.machinePage(Uri.parse('http://localhost:51111/page2.html?q=1#b'))!;
-      expect(page.address, 'http://localhost:3000/page2.html?q=1#b', reason: 'never the phone\'s port or token');
+      expect(page.address, 'http://localhost:3000/page2.html?q=1#b', reason: 'never the phone’s port or token');
       expect(page.label, 'localhost:3000/page2.html');
       expect(web.machinePage(Uri.parse('http://localhost:51111/'))!.label, 'localhost:3000');
     });
 
-    test('a static site\'s page is the file on the machine', () async {
+    test('a static site’s page is the file on the machine', () async {
       await web.staticUrl(_file('/home/dev/site/index.html'));
       final page = web.machinePage(Uri.parse('http://localhost:${transport.webInfo.port}/sub/My%20Page.html'))!;
       expect(page.address, '/home/dev/site/sub/My Page.html');
@@ -255,7 +255,7 @@ void main() {
       expect(web.machinePage(Uri.parse('http://localhost:51111/')), isNull);
     });
 
-    test('127.0.0.1 is no page of the machine: the listener\'s cookie is for localhost', () async {
+    test('127.0.0.1 is no page of the machine: the listener’s cookie is for localhost', () async {
       transport.webInfo = const WebBridgeInfo(port: 51111, token: '0123456789abcdef0123456789abcdef', entryPort: 51999);
       await web.forwardUrl(Uri.parse('http://localhost:3000/'));
       expect(web.machinePage(Uri.parse('http://127.0.0.1:51111/')), isNull);
@@ -263,8 +263,8 @@ void main() {
 
     test('a failure keeps its reason alone for a place that says what failed', () {
       expect(
-        const WebPreviewException("Couldn't open on this phone: the machine does not allow port forwarding.").reason,
-        'The machine does not allow port forwarding.',
+        const WebPreviewException("Couldn’t open on this phone: the machine doesn’t allow port forwarding.").reason,
+        'The machine doesn’t allow port forwarding.',
       );
       expect(
         const WebPreviewException('Files are not available on this machine.').reason,

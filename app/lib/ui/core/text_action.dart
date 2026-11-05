@@ -13,7 +13,7 @@ enum TextActionTone {
 }
 
 /// A word that does something, inline with content: `Read all`, `Show more`,
-/// `12 more`, `Mark all reviewed`. No fill and no underline; the colour says
+/// `12 more`, `Mark reviewed`. No fill and no underline; the colour says
 /// it can be tapped. Paints its text only, takes a 44 dp touch target, and
 /// warms to the primary text colour while pressed. A long label wraps to a
 /// second line rather than lose its words. Disabled ([enabled] false) it

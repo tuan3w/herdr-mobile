@@ -1,12 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/session_launcher.dart';
 import '../../../data/services/herdr_api.dart';
-import '../../../data/services/herdr_transport.dart';
+import '../../../data/words/error_words.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -65,10 +63,7 @@ NewSessionError describeLaunchFailure(Object error, MachineConnection machine, S
       'Folder not found',
       '$folder doesn’t exist on $name. Pick a folder that does.',
     ),
-    HerdrApiException(:final message) => NewSessionError('Couldn’t start the session', message),
-    HerdrTransportException(:final message) => NewSessionError('Couldn’t start the session', message),
-    TimeoutException() => const NewSessionError('Couldn’t start the session', 'The machine did not answer in time.'),
-    _ => NewSessionError('Couldn’t start the session', '$error'),
+    _ => NewSessionError('Couldn’t start the session', describeError(error, machine: name)),
   };
 }
 

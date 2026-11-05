@@ -140,7 +140,7 @@ class _BackgroundSheetState extends State<BackgroundSheet> {
       if (running.isNotEmpty) _Head('Running', running.length),
       for (final t in running) _TaskItem(t),
       if (running.isEmpty && work.unknownRunning)
-        const _Note('Details are unavailable: the agent waits on something its log does not list.'),
+        const _Note('Details are unavailable: the agent waits on something its log doesn’t list.'),
       if (finished.isNotEmpty) _Head('Done', finished.length),
       for (final t in shown) _TaskItem(t),
       if (finished.length > finishedShown) _More(finished.length - finishedShown, _moreFinished),

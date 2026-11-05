@@ -156,7 +156,7 @@ class CheckoutField extends StatelessWidget {
             decoration: BoxDecoration(
               color: pressed ? ds.fill : ds.surface,
               borderRadius: BorderRadius.circular(Radii.sm),
-              border: Border.all(color: ds.border),
+              border: Border.all(color: ds.controlBorder),
             ),
             child: Row(
               children: [

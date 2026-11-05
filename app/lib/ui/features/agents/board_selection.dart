@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/attention_set.dart';
 import '../../../data/repositories/batch_actions.dart';
 import '../../../data/repositories/fleet_repository.dart';
 
@@ -17,8 +18,8 @@ String sessionRef(String sessionKey) => 's:$sessionKey';
 
 /// Which board rows are picked for a batch action, and whether the board is
 /// picking at all. Its own small notifier: only the rows (through
-/// [rowSelect]) and the bars listen, so `AgentsOverview` and the sections
-/// never rebuild for a tap. Not saved: a restart starts without it.
+/// [rowSelect]) and the bars listen, so `AgentsOverview` and the board's
+/// layout never rebuild for a tap. Not saved: a restart starts without it.
 class BoardSelection extends ChangeNotifier {
   final Set<String> _refs = {};
   bool _active = false;
@@ -50,6 +51,17 @@ class BoardSelection extends ChangeNotifier {
   void selectAll(Iterable<String> refs) {
     if (_busy != null) return;
     _refs.addAll(refs);
+    _active = true;
+    _notify();
+  }
+
+  /// Picks exactly [refs], dropping anything picked before (the status
+  /// line's `3 to review`).
+  void selectOnly(Iterable<String> refs) {
+    if (_busy != null) return;
+    _refs
+      ..clear()
+      ..addAll(refs);
     _active = true;
     _notify();
   }
@@ -93,6 +105,16 @@ class BoardSelection extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// The selection's names of what [attention] says is to review: finished,
+/// not reviewed and reachable, so a Mark reviewed can act on every one.
+Set<String> toReviewRefs(AttentionSet attention) => {
+  for (final item in attention.toReview)
+    switch (item) {
+      PaneAttention(:final agent) => paneRef('${agent.machine.profile.id}/${agent.pane.id}'),
+      SessionAttention(:final session) => sessionRef(session.key),
+    },
+};
 
 /// What a board row needs of the selection.
 typedef RowSelect = ({bool active, bool selected});
@@ -140,7 +162,7 @@ class SelectableRowFrame extends StatelessWidget {
   }
 }
 
-/// The picked agents as they are right now: the terminal agents by section,
+/// The picked agents as they are right now: the terminal agents by status,
 /// then the agent sessions. A pane or session that is gone is simply not
 /// there.
 List<BatchTarget> resolveBatchTargets({

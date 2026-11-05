@@ -107,7 +107,7 @@ void main() {
       expect(_probe(tester, 'line 250').top, closeTo(before.top, 0.01));
     });
 
-    testWidgets('while following, new history does not detach the view from the bottom', (tester) async {
+    testWidgets('while following, new history doesn’t detach the view from the bottom', (tester) async {
       await _pump(tester, text: _lines(100, 300));
       final bottom = tester.getBottomLeft(terminalRow('line 299')).dy;
 
@@ -129,7 +129,7 @@ void main() {
       expect(after.element, same(before.element));
     });
 
-    testWidgets('the oldest rows being let go does not move what is on screen', (tester) async {
+    testWidgets('the oldest rows being let go doesn’t move what is on screen', (tester) async {
       await _pump(tester, history: _rows(0, 100), text: _lines(100, 300));
       await _scrollUp(tester, 600);
       final before = _probe(tester, 'line 250');
@@ -161,11 +161,11 @@ void main() {
       expect(terminalRow('line 0'), findsOneWidget);
     });
 
-    testWidgets('says why there is no more at herdr\'s limit', (tester) async {
+    testWidgets('says why there is no more at herdr’s limit', (tester) async {
       await _pump(tester, text: _lines(0, 300), top: TerminalTop.serverLimit);
       await _toTop(tester);
 
-      expect(find.textContaining('Earlier output is not available'), findsOneWidget);
+      expect(find.textContaining('Earlier output isn’t available'), findsOneWidget);
       expect(find.textContaining('1000 rows'), findsOneWidget);
     });
 
@@ -173,10 +173,10 @@ void main() {
       await _pump(tester, text: _lines(0, 300), top: TerminalTop.localLimit);
       await _toTop(tester);
 
-      expect(find.textContaining('Earlier output is not kept'), findsOneWidget);
+      expect(find.textContaining('Earlier output isn’t kept'), findsOneWidget);
     });
 
-    testWidgets('is absent when the first row is the pane\'s first', (tester) async {
+    testWidgets('is absent when the first row is the pane’s first', (tester) async {
       await _pump(tester, text: _lines(0, 300));
       await _toTop(tester);
 
@@ -188,11 +188,11 @@ void main() {
       await _pump(tester, text: '${_lines(0, 300)}\r\n${'x' * 300}', top: TerminalTop.serverLimit);
       await _toTop(tester);
 
-      final box = tester.getRect(find.textContaining('Earlier output is not available'));
+      final box = tester.getRect(find.textContaining('Earlier output isn’t available'));
       expect(box.center.dx, closeTo(180, 12));
     });
 
-    testWidgets('cannot be selected along with the output', (tester) async {
+    testWidgets('can’t be selected along with the output', (tester) async {
       await _pump(tester, text: _lines(0, 300), top: TerminalTop.loading);
       await _toTop(tester);
 

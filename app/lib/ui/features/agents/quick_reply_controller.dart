@@ -8,6 +8,7 @@ import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/pane_answerer.dart' show promptDigest;
 import '../../../data/repositories/pane_previews.dart';
 import '../../../data/services/herdr_transport.dart';
+import '../../../data/words/error_words.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -178,9 +179,9 @@ class QuickReplyController extends ChangeNotifier {
     } on _Changed catch (c) {
       return _changed(c);
     } on HerdrApiException catch (e) {
-      return _fail(e.toString());
+      return _fail(describeError(e, machine: machine.profile.label));
     } on HerdrTransportException catch (e) {
-      return _fail(e.message);
+      return _fail(describeError(e, machine: machine.profile.label));
     }
     // An answer is the person dealing with the agent: a finished one is
     // reviewed (a key press that only moves through a menu is not an answer).

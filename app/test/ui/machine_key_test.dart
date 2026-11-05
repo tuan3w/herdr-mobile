@@ -505,14 +505,14 @@ void main() {
 
         await tester.enterText(_field(5), 'wrong');
         await _tapAndWaitForKey(tester, 'Show public key');
-        expect(find.text('That passphrase does not open the saved key.'), findsOneWidget);
+        expect(find.text('That passphrase doesn’t open the saved key.'), findsOneWidget);
         expect(_publicLine, findsNothing);
         expect(find.text('Copy public key'), findsNothing);
 
         await tester.enterText(_field(5), 'right');
         await _tapAndWaitForKey(tester, 'Show public key');
         expect(
-          find.text('That passphrase does not open the saved key.'),
+          find.text('That passphrase doesn’t open the saved key.'),
           findsNothing,
           reason: 'the old message is gone',
         );
@@ -537,7 +537,7 @@ void main() {
 
       await _tapButton(tester, 'Show public key');
 
-      expect(find.text('The saved key could not be read.'), findsOneWidget);
+      expect(find.text('The saved key couldn’t be read.'), findsOneWidget);
       expect(_publicLine, findsNothing);
       await _tearDown(tester);
     });
@@ -638,7 +638,7 @@ void main() {
       await _tapButton(tester, 'Save');
 
       expect(h.tried, [fresh], reason: 'the test used the new key, not the old one');
-      expect(find.text('The new key could not connect'), findsNothing);
+      expect(find.text('The new key couldn’t connect'), findsNothing);
       expect((await repo.secretsFor('k')).privateKeyPem, fresh);
       await _tearDown(tester);
     });
@@ -660,7 +660,7 @@ void main() {
 
       await _tapButton(tester, 'Save');
 
-      expect(find.text('The new key could not connect'), findsOneWidget);
+      expect(find.text('The new key couldn’t connect'), findsOneWidget);
       expect(find.text('Permission denied (publickey).'), findsWidgets);
       expect(find.textContaining('locks this phone out'), findsOneWidget);
       expect(find.widgetWithText(AppButton, 'Save anyway'), findsOneWidget);
@@ -676,10 +676,10 @@ void main() {
 
       await _tapButton(tester, 'Keep the old key');
 
-      expect(find.text('The new key could not connect'), findsNothing);
+      expect(find.text('The new key couldn’t connect'), findsNothing);
       expect(_keyText(tester), isEmpty);
       expect(find.text('Public key'), findsNothing, reason: 'the panel described the discarded key');
-      expect(find.text('Could not connect'), findsNothing, reason: 'the result described the discarded key');
+      expect(find.text('Couldn’t connect'), findsNothing, reason: 'the result described the discarded key');
       expect(find.byType(MachineFormScreen), findsOneWidget, reason: 'still editing');
       expect((await repo.secretsFor('k')).privateKeyPem, old.privateKeyPem);
 
@@ -709,7 +709,7 @@ void main() {
       await tester.tapAt(const Offset(180, 30)); // the barrier above the sheet
       await _flush(tester);
 
-      expect(find.text('The new key could not connect'), findsNothing);
+      expect(find.text('The new key couldn’t connect'), findsNothing);
       expect(_keyText(tester), fresh);
       expect((await repo.secretsFor('k')).privateKeyPem, old.privateKeyPem);
       await _tearDown(tester);
@@ -721,7 +721,7 @@ void main() {
 
       await _tapButton(tester, 'Save');
 
-      expect(find.text('The new key could not connect'), findsOneWidget);
+      expect(find.text('The new key couldn’t connect'), findsOneWidget);
       await _tearDown(tester);
     });
 

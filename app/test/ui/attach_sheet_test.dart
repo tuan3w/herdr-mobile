@@ -138,7 +138,7 @@ void main() {
       expect(find.byKey(AttachTabBar.tabKey(AttachTab.gallery)), findsOneWidget);
       expect(find.byKey(AttachTabBar.tabKey(AttachTab.files)), findsOneWidget);
       expect(find.byKey(AttachTabBar.tabKey(AttachTab.host)), findsOneWidget);
-      expect(find.text('Camera'), findsOneWidget, reason: 'the camera tile does not wait for the library');
+      expect(find.text('Camera'), findsOneWidget, reason: 'the camera tile doesn’t wait for the library');
     });
 
     testWidgets('the permission is asked only after the one-line reason and a tap, and only for the Gallery tab', (
@@ -188,7 +188,7 @@ void main() {
         expect(gallery.requests, 0);
         final before = gallery.thumbCalls;
         await _tapClip(tester);
-        expect(gallery.thumbCalls, lessThan(before + 12), reason: 'opening did not decode the first screenful again');
+        expect(gallery.thumbCalls, lessThan(before + 12), reason: 'opening didn’t decode the first screenful again');
       },
     );
 
@@ -286,7 +286,7 @@ void main() {
       await tester.tap(_circle(3));
       await _wait(tester);
       expect(built['attach:tile'], 1, reason: 'only the tile whose number changed');
-      expect(built['attach:grid'], isNull, reason: 'the grid is not rebuilt for a selection');
+      expect(built['attach:grid'], isNull, reason: 'the grid isn’t rebuilt for a selection');
       expect(built['screen'], isNull);
     });
 
@@ -387,7 +387,7 @@ void main() {
       final fake = FakeKit(gallery: FakeGallery(state: GalleryAccess.unavailable));
       await _open(tester, _session(), fake);
       await _tapClip(tester);
-      expect(find.text('Photos cannot be listed'), findsOneWidget);
+      expect(find.text('Photos can’t be listed'), findsOneWidget);
       expect(find.text('Open the system picker'), findsOneWidget);
     });
 
@@ -727,7 +727,7 @@ void main() {
       expect(find.descendant(of: find.byType(PhotoTile).at(1), matching: find.text('1')), findsOneWidget);
     });
 
-    testWidgets('a second tap on the paperclip while the sheet is up does not push another', (tester) async {
+    testWidgets('a second tap on the paperclip while the sheet is up doesn’t push another', (tester) async {
       final fake = FakeKit();
       await _open(tester, _session(), fake);
       await tester.tap(_clip);

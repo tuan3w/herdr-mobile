@@ -24,7 +24,7 @@ typedef AgentHostFactory = AgentHost Function(MachineConnection machine);
 ///
 /// For each machine that is online it lists the keepers with ONE short `list`
 /// (when the machine connects, when the app comes back to the foreground, on
-/// [refresh], and every [refreshEvery] while the Agents tab is visible: no
+/// [refresh], and every [refreshEvery] while the board is visible: no
 /// timer runs otherwise) and holds one [AcpAgentSession] per keeper. The board
 /// shows every session from that listing (a waiting request, a turn in flight,
 /// a finished turn nobody saw).
@@ -42,7 +42,7 @@ typedef AgentHostFactory = AgentHost Function(MachineConnection machine);
 /// (the same caps and order) and the hosts are listed every
 /// [backgroundRefreshEvery].
 ///
-/// Listeners (the board, the tab badge) are told only when something the board
+/// Listeners (the board, the attention set) are told only when something the board
 /// shows changes: a phase, a link, a title, a waiting request. Streaming text
 /// does not reach them; a screen that wants it listens to its session.
 class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
@@ -86,7 +86,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   /// recently active first.
   final int recentAttached;
 
-  /// How often the Agents tab, while visible, lists the hosts again.
+  /// How often the board, while visible, lists the hosts again.
   final Duration refreshEvery;
 
   /// How often the hosts are listed while the app is in the background and
@@ -215,7 +215,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   _Machine _machineOf(MachineConnection machine) {
     final m = _machines[machine.profile.id];
     if (m == null || !identical(m.connection, machine)) {
-      throw AgentHostException('${machine.profile.label} is not connected.');
+      throw AgentHostException('${machine.profile.label} isn’t connected.');
     }
     return m;
   }
@@ -568,7 +568,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
       throw AgentHostException(_unreachable(machine, e));
     }
     if (!installed.contains(agent)) {
-      throw AgentHostException('${route.label} is not installed on ${machine.profile.label}.', fatal: true);
+      throw AgentHostException('${route.label} isn’t installed on ${machine.profile.label}.', fatal: true);
     }
     return m;
   }
@@ -614,7 +614,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     // past session was named: then it holds a session of its own.
     final other = session.attached && sessionId != null && session.sessionId != sessionId;
     if (!session.attached || other) {
-      final why = other ? 'The session could not be reopened.' : session.error ?? 'The session could not be attached.';
+      final why = other ? 'The session couldn’t be reopened.' : session.error ?? 'The session couldn’t be attached.';
       final fatal = other || session.link == AgentLink.failed;
       session.release();
       if (_sessions[session.key] == session) {
@@ -718,8 +718,8 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   }
 
   static String _unreachable(MachineConnection machine, Object e) => switch (e) {
-    TimeoutException() => '${machine.profile.label} did not answer in time.',
-    _ => 'Could not reach ${machine.profile.label}: $e',
+    TimeoutException() => '${machine.profile.label} didn’t answer in time.',
+    _ => 'Couldn’t reach ${machine.profile.label}: $e',
   };
 
   @override

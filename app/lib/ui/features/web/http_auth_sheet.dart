@@ -58,39 +58,43 @@ class _AuthBodyState extends State<_AuthBody> {
       title: 'Sign in',
       kind: SheetKind.form,
       actions: [AppButton(label: 'Sign in', expand: true, onPressed: _valid ? _submit : null)],
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            realm == null || realm.isEmpty
-                ? 'This page on ${widget.where} asks for a user name and password.'
-                : 'This page on ${widget.where} asks for a user name and password: $realm',
-            style: Type.secondary.copyWith(color: ds.textSecondary),
-          ),
-          const SizedBox(height: Gap.lg),
-          LabeledField(
-            label: 'User name',
-            controller: _user,
-            autofocus: true,
-            textInputAction: TextInputAction.next,
-            onChanged: (_) => setState(() {}),
-          ),
-          LabeledField(
-            label: 'Password',
-            controller: _password,
-            obscure: _obscure,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
-            suffix: CircleButton(
-              icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
-              tooltip: _obscure ? 'Show' : 'Hide',
-              filled: false,
-              size: CircleButton.compact,
-              onPressed: () => setState(() => _obscure = !_obscure),
+      child: AutofillGroup(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              realm == null || realm.isEmpty
+                  ? 'This page on ${widget.where} asks for a user name and password.'
+                  : 'This page on ${widget.where} asks for a user name and password: $realm',
+              style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
-          ),
-        ],
+            const SizedBox(height: Gap.lg),
+            LabeledField(
+              label: 'User name',
+              controller: _user,
+              autofocus: true,
+              autofillHints: const [AutofillHints.username],
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => setState(() {}),
+            ),
+            LabeledField(
+              label: 'Password',
+              controller: _password,
+              obscure: _obscure,
+              autofillHints: const [AutofillHints.password],
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              suffix: CircleButton(
+                icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
+                tooltip: _obscure ? 'Show password' : 'Hide password',
+                filled: false,
+                size: CircleButton.compact,
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

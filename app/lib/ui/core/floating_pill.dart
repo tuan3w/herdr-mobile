@@ -6,7 +6,7 @@ import 'roll_text.dart';
 import 'theme.dart';
 
 enum FloatingPillSize {
-  /// 44 high: a pill in the bottom stack (the triage pill).
+  /// 44 high: a pill in the bottom stack.
   regular,
 
   /// 36 high in a 44 dp target: a pill over content (jump to latest,
@@ -14,8 +14,8 @@ enum FloatingPillSize {
   compact,
 }
 
-/// A small floating control over content or above the bars: the triage pill,
-/// jump to latest, changed on disk. The floating lanes' look (surface,
+/// A small floating control over content or above the bars: jump to latest,
+/// changed on disk. The floating lanes' look (surface,
 /// hairline, the one float shadow, round ends) so it reads as furniture, not
 /// content; a tap presses it a little.
 ///
@@ -68,7 +68,7 @@ class FloatingPill extends StatefulWidget {
   final bool visible;
 
   /// The label rolls when it changes ([RollText]): for a count that is news
-  /// (the triage pill), not for one that ticks with output.
+  /// (an unread count), not for one that ticks with output.
   final bool roll;
 
   static const regularHeight = kMinTap;

@@ -316,7 +316,7 @@ void main() {
         expect(r.host.killed, contains('old1'), reason: 'the exited record is removed from the host');
 
         r.h.refresh();
-        expect(r.h.repo.sessions, [live], reason: 'the old row does not come back with the next listing');
+        expect(r.h.repo.sessions, [live], reason: 'the old row doesn’t come back with the next listing');
       });
     });
 
@@ -333,11 +333,11 @@ void main() {
 
         expect(_texts(live.state).sublist(0, 4), r.original);
         expect(_texts(live.state), contains('user:and then?'));
-        expect(r.host.agentStore, hasLength(1), reason: 'no second session in the agent\'s store');
+        expect(r.host.agentStore, hasLength(1), reason: 'no second session in the agent’s store');
         expect(
           r.host.agentStore['sess-1']!.updates.map((u) => jsonEncode(u)).join(),
           contains('and then?'),
-          reason: 'the agent\'s own record has the new turn',
+          reason: 'the agent’s own record has the new turn',
         );
         live.acquire();
         live.release();
@@ -355,7 +355,7 @@ void main() {
         async.elapse(const Duration(seconds: 1));
 
         final error = resumed.error! as AgentHostException;
-        expect(error.message, 'unknown session', reason: 'the agent\'s own words');
+        expect(error.message, 'unknown session', reason: 'the agent’s own words');
         expect(error.fatal, isTrue);
         expect(r.host.killed, hasLength(1), reason: 'the new keeper, and not the old one');
         expect(r.host.killed, isNot(contains('old1')));
@@ -422,7 +422,7 @@ void main() {
       });
     });
 
-    test('an agent that can only resume keeps the phone\'s transcript, which the agent will not replay', () {
+    test('an agent that can only resume keeps the phone’s transcript, which the agent won’t replay', () {
       fakeAsync((async) {
         final r = afterReboot(async);
         addTearDown(r.h.dispose);
@@ -511,15 +511,15 @@ void main() {
           r.host.installed = {};
           var out = _Outcome(r.h.resume(ResumeTargetOf(r.old)));
           async.elapse(const Duration(seconds: 1));
-          expect((out.error! as AgentHostException).message, 'omp is not installed on studio-a.');
+          expect((out.error! as AgentHostException).message, 'omp isn’t installed on studio-a.');
           expect(r.host.startCalls, startsBefore);
 
           r.host.installed = {'omp'};
-          r.host.startFailure = const AgentHostException('/work/app does not exist on studio-a.', fatal: true);
+          r.host.startFailure = const AgentHostException('/work/app doesn’t exist on studio-a.', fatal: true);
           out = _Outcome(r.h.resume(ResumeTargetOf(r.old)));
           async.elapse(const Duration(seconds: 1));
           final error = out.error! as AgentHostException;
-          expect(error.message, '/work/app does not exist on studio-a.');
+          expect(error.message, '/work/app doesn’t exist on studio-a.');
           expect(error.fatal, isTrue);
           expect(r.h.repo.sessions, [r.old]);
           expect(r.old.resumeTarget, isNotNull);
@@ -529,7 +529,7 @@ void main() {
   });
 
   group('history', () {
-    test('asks the machine\'s host for the agent and folder, and says why when it cannot', () {
+    test('asks the machine’s host for the agent and folder, and says why when it can’t', () {
       fakeAsync((async) {
         final h = _Fleet(async);
         addTearDown(h.dispose);
@@ -543,10 +543,10 @@ void main() {
         expect(asked.value!.sessions.map((s) => s.sessionId), ['old-1']);
         expect(host.historyRequests.single, (agent: 'omp', cwd: '/work/app'));
 
-        host.historyFailure = const AgentHostException('omp did not answer.');
+        host.historyFailure = const AgentHostException('omp didn’t answer.');
         final failed = _Outcome(h.repo.history(machine: h.conn('a'), agent: 'omp'));
         async.elapse(const Duration(milliseconds: 100));
-        expect((failed.error! as AgentHostException).message, 'omp did not answer.');
+        expect((failed.error! as AgentHostException).message, 'omp didn’t answer.');
       });
     });
   });
@@ -593,7 +593,7 @@ void main() {
       ];
     }
 
-    test('a new keeper forwards session/load for an id it does not hold and the stored conversation replays', () async {
+    test('a new keeper forwards session/load for an id it doesn’t hold and the stored conversation replays', () async {
       host.useAgentStore(
         sessions: [
           {
@@ -640,7 +640,7 @@ void main() {
       expect(_texts(s.state), hasLength(4));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('an id the agent does not know fails the attach with the agent\'s words, not a new empty session', () async {
+    test('an id the agent doesn’t know fails the attach with the agent’s words, not a new empty session', () async {
       host.useAgentStore();
       final info = await host.start(agent: 'omp', cwd: host.work);
       final s = session(info)..openPast('never-existed');

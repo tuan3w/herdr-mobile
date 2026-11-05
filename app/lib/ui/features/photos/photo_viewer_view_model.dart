@@ -335,7 +335,7 @@ class PhotoViewerViewModel extends ChangeNotifier {
       entry._bytes = null;
       entry._failure = const PhotoFailure(
         PhotoFailureKind.notAnImage,
-        'This file can’t be shown as a picture. It may be damaged, or in a format Android does not read.',
+        'This file can’t be shown as a picture. It may be damaged, or in a format Android doesn’t read.',
       );
     }
     entry._changed();
@@ -399,7 +399,7 @@ class PhotoViewerViewModel extends ChangeNotifier {
   Future<PhotoActionResult> save() async {
     final entry = currentEntry;
     final bytes = entry._bytes;
-    if (bytes == null) return const PhotoActionResult.failed('The picture is not loaded yet.');
+    if (bytes == null) return const PhotoActionResult.failed('The picture isn’t loaded yet.');
     try {
       await export.saveToGallery(bytes, name: entry.item.name);
       return const PhotoActionResult.ok('Saved to Pictures/herdr');
@@ -412,7 +412,7 @@ class PhotoViewerViewModel extends ChangeNotifier {
   Future<PhotoActionResult> share() async {
     final entry = currentEntry;
     final bytes = entry._bytes;
-    if (bytes == null) return const PhotoActionResult.failed('The picture is not loaded yet.');
+    if (bytes == null) return const PhotoActionResult.failed('The picture isn’t loaded yet.');
     try {
       await export.share(bytes, name: entry.item.name);
       return const PhotoActionResult.ok('');
@@ -432,7 +432,7 @@ class PhotoViewerViewModel extends ChangeNotifier {
     final source = entry.item.source;
     final size = entry.item.size;
     if (source is! RangedPhotoSource || size == null) {
-      return const PhotoActionResult.failed('This picture cannot be shared from here.');
+      return const PhotoActionResult.failed('This picture can’t be shared from here.');
     }
     if (entry._exporting != null) return const PhotoActionResult.ok('');
     entry._exporting = (done: 0, total: size);

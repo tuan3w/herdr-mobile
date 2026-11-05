@@ -225,7 +225,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Made in this session'), findsOneWidget);
-    expect(find.text('q3.html'), findsOneWidget, reason: 'opens on the page: the newest kind that is not a server');
+    expect(find.text('q3.html'), findsOneWidget, reason: 'opens on the page: the newest kind that isn’t a server');
     expect(find.text('reports/'), findsOneWidget);
     await tapChip(tester, 'Apps');
     await _settle(tester);
@@ -251,9 +251,9 @@ void main() {
     expect(find.byType(WebPreviewScreen), findsOneWidget);
     expect(transport.webBridges.single, isA<PortForward>().having((p) => p.port, 'port', 5173));
     expect(web.loaded.first.queryParameters['to'], '/app');
-    expect(launcher.opened, isEmpty, reason: 'not the phone\'s browser');
+    expect(launcher.opened, isEmpty, reason: 'not the phone’s browser');
 
-    await tester.tap(find.byTooltip('Back'));
+    await tester.tap(find.byTooltip('Close page'));
     await _settle(tester);
     expect(find.byType(WebPreviewScreen), findsNothing);
     expect(find.text('Made in this session'), findsOneWidget, reason: 'Back lands on the list, not on the board');
@@ -272,7 +272,7 @@ void main() {
     expect(web.loaded.last.path, '/q3.html', reason: 'the page itself, after the entry');
   });
 
-  testWidgets('a page the agent named that is not on the machine says so', (tester) async {
+  testWidgets('a page the agent named that isn’t on the machine says so', (tester) async {
     final s = session([_say('I wrote reports/gone.html for you.')]);
     await pumpBar(tester, s);
     await tester.tap(find.text('Made'));
@@ -281,8 +281,8 @@ void main() {
     await tester.tap(find.text('gone.html'));
     await _settle(tester);
 
-    expect(find.text('gone.html is not on the machine any more.'), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget, reason: 'said on the page\'s screen, with a way on');
+    expect(find.text('gone.html isn’t on the machine any more.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget, reason: 'said on the page’s screen, with a way on');
     expect(web.loaded, isEmpty);
   });
 
@@ -297,7 +297,7 @@ void main() {
     ],
   );
 
-  testWidgets('a saved copy or a link that is down does not claim anything runs', (tester) async {
+  testWidgets('a saved copy or a link that is down doesn’t claim anything runs', (tester) async {
     final s = session([_say('Serving http://localhost:5173/')]);
     s.setBackground(runningVite());
     await pumpBar(tester, s);
@@ -352,7 +352,7 @@ void main() {
     );
   });
 
-  testWidgets('a port that is not a web server is not opened from the list, and says why', (tester) async {
+  testWidgets('a port that isn’t a web server isn’t opened from the list, and says why', (tester) async {
     final s = session([_say('The database is on http://localhost:5432/ and Docker on localhost:2375')]);
     await pumpBar(tester, s);
     await tester.tap(find.text('Made'));
@@ -381,7 +381,7 @@ void main() {
     expect(find.text('Files are not available on this machine'), findsOneWidget);
   });
 
-  testWidgets('a tap shows the page\'s screen at once, while the connection is made', (tester) async {
+  testWidgets('a tap shows the page’s screen at once, while the connection is made', (tester) async {
     final s = session([_say('Serving http://localhost:5173/')]);
     await pumpBar(tester, s);
     await tester.tap(find.text('Made'));
@@ -623,7 +623,7 @@ void main() {
 
       s.setBackground(runningVite());
       await _settle(tester);
-      expect(find.byType(LinkDot), findsNWidgets(2), reason: 'the row\'s dot and the chip\'s');
+      expect(find.byType(LinkDot), findsNWidgets(2), reason: 'the row’s dot and the chip’s');
       expect(find.descendant(of: find.byType(Segmented<MadeKind>), matching: find.byType(LinkDot)), findsOneWidget);
     },
   );
@@ -726,12 +726,12 @@ void main() {
     await tester.tap(find.text('gone.png'));
     await _settle(tester);
     expect(find.text('Made in this session'), findsOneWidget);
-    expect(find.text('gone.png is not on the machine any more.'), findsOneWidget);
+    expect(find.text('gone.png isn’t on the machine any more.'), findsOneWidget);
     expect(find.byType(PhotoViewer), findsNothing);
   });
 
   testWidgets(
-    'a picture opens over the list with the list\'s other pictures to swipe to, in its order; Back returns to the list',
+    'a picture opens over the list with the list’s other pictures to swipe to, in its order; Back returns to the list',
     (tester) async {
       onMachine(['a', 'b', 'c'].map((n) => '$base/screenshots/$n.png'));
       // Newest first in the grid: gone, c, b, a. The one the grid found gone is not in the viewer.
@@ -846,7 +846,7 @@ void main() {
     expect(stats, lessThanOrEqualTo(4), reason: 'only the few that were already being asked');
   });
 
-  testWidgets('a picture the machine could not be asked about is not shown as gone, and a tap asks again', (
+  testWidgets('a picture the machine couldn’t be asked about isn’t shown as gone, and a tap asks again', (
     tester,
   ) async {
     onMachine(['$base/screenshots/here.png']);
@@ -865,7 +865,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
     expect(find.byType(RawImage), findsOneWidget, reason: 'the tap asked the machine again');
-    expect(find.byType(PhotoViewer), findsNothing, reason: 'and did not open anything yet');
+    expect(find.byType(PhotoViewer), findsNothing, reason: 'and didn’t open anything yet');
   });
 
   testWidgets('the switch stays where it is whatever tab is open, and while a long list scrolls', (tester) async {
@@ -886,12 +886,12 @@ void main() {
     expect(
       tester.getSize(find.byType(CustomScrollView)).height,
       lessThanOrEqualTo(892 * 0.6 + 0.5),
-      reason: 'a long list scrolls inside the sheet, which does not fill the screen',
+      reason: 'a long list scrolls inside the sheet, which doesn’t fill the screen',
     );
 
     await tester.drag(find.text('s27.png'), const Offset(0, -300));
     await _settle(tester);
-    expect(top('Pictures'), pictures, reason: 'the switch does not scroll away with a long list');
+    expect(top('Pictures'), pictures, reason: 'the switch doesn’t scroll away with a long list');
 
     await tapChip(tester, 'Apps');
     await _settle(tester);
@@ -956,7 +956,7 @@ void main() {
       expect(
         find.textContaining('python label_server.py --port 8765'),
         findsOneWidget,
-        reason: 'the page\'s bar says what the app is, not only localhost:8765',
+        reason: 'the page’s bar says what the app is, not only localhost:8765',
       );
     },
   );
@@ -1015,7 +1015,7 @@ void main() {
   );
 
   testWidgets(
-    'nothing found yet but the chat is only read in part: the chip is there, and the sheet does not say nothing came up',
+    'nothing found yet but the chat is only read in part: the chip is there, and the sheet doesn’t say nothing came up',
     (tester) async {
       final s = session([_say('No links here.')], key: 'm/partial-empty')..madeReachValue = MadeReach.partial;
       await pumpBar(tester, s);

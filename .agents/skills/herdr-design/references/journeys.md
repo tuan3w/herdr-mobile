@@ -10,14 +10,14 @@ shape itself changes, update this file.
 
 | Role | Surfaces |
 | --- | --- |
-| Overview | the Agents board (every agent on every machine, by what it needs), the Machines tab |
-| Attention | the needs-you notification, the in-app arrival haptic, the badge, the triage pill and sheet |
+| Overview | the Agents board, the app's home with no bar under it (every agent on every machine in status sections, Needs you, Working, To review, Idle, newest first, each a row saying `repo · branch · agent`; its header's machines chip says how many are online), the Machines page it opens |
+| Attention | the needs-you notification, the in-app arrival haptic, the board's status line, the triage sheet |
 | Answer | the board card's chips, the reply sheet, the pane's answer dock, the session's prompt dock, the notification's buttons |
-| Follow | an agent screen: the terminal pane (live edge, jump pill) or the agent session (transcript, status line, overview, background strip), the swipe to the next agent in the board's order, the options' `Show terminal` / `Show chat` |
+| Follow | an agent screen: the terminal pane (live edge, jump pill) or the agent session (transcript, status line, overview, background strip), the swipe along the agents that want the person, the options' `Show terminal` / `Show chat` |
 | Steer | the composers, the key row, the slash and command palettes, quick phrases, the attach sheet, mode and model |
-| Start | the `+` (Agents tab, machine screen), the new agent session form, Duplicate, past sessions |
-| Review | the done section, swipe to review, Mark all reviewed, the Changed card, the file viewer, the photo viewer |
-| Set up | the machine form (keys, Tailscale, connection test), Settings |
+| Start | the `+` (the board's header, machine screen), the new agent session form, Duplicate, past sessions |
+| Review | the To review section, the status line's `to review` count and the bar's Reviewed, swipe to review, the Changed card, the file viewer, the photo viewer |
+| Set up | the machine form (keys, Tailscale, connection test), Settings (the gear in the board's header) |
 | Trouble | status strips and panels, stale dimming, the session link strip, Retry |
 | Away | the background profile, the Watching notice, notifications |
 
@@ -52,11 +52,16 @@ these already means it.
 ### 2. Glance: is everything all right?
 
 - **Moment.** A habit check, many times a day, a second or two.
-- **Ideal shape.** Open → the board says, without scrolling or reading: how many
-  need me, what is working and for how long, what finished, and which machines
-  are unreachable → close. Zero taps.
+- **Ideal shape.** Open → the board's status line says, without scrolling: how
+  many need me, how many are working, how fresh that is, and how many machines
+  are unreachable; the one decision in front is a card, everything else a
+  quiet row → close. Zero taps. Chrome (filter chips, a floating pill, extra
+  header buttons) costs focus here: most people run on auto-accept, so the
+  common glance finds nothing waiting.
 - **Must hold:**
-  - counts agree everywhere (badge, pill, sections, the Machines tab, notifications);
+  - counts agree everywhere (status line, Needs you, To review, the Machines page, notifications),
+    and each surface says a count once (the board said it four times: a
+    filter chip, the section header, a triage pill and the tab badge);
   - stale data looks stale;
   - a fresh launch paints the last state at once and doesn't announce the
     catch-up as news.
@@ -71,10 +76,15 @@ these already means it.
   doing now and for how long → what changed since they last looked → jump to the
   latest when they want it → swipe to the next agent, or back.
 - **Switching.** One agent per screen; the board is the only list of agents.
-  A sideways swipe inside the screen shows the next (or previous) agent in
-  the board's order, needs-you first, coming in with the finger; letting go
-  far enough (or with a flick) goes there, replacing the screen, so Back
-  always lands on the board; letting go short takes the card back. An agent
+  A sideways swipe inside the screen walks the agents that want the person
+  (needs you in the board's attention order, then To review as the board
+  lists it), coming in with the
+  finger; the walk's order is frozen when it starts, so a swipe back
+  retraces it exactly (read live, answering the agent in front moved it and
+  the way back was lost). Letting go far enough (or with a flick) goes
+  there, replacing the screen, so Back always lands on the board; letting go
+  short takes the card back. Working and idle agents are reached from the
+  title or the board, not the walk. An agent
   with both views has `Show terminal` in the
   chat's options and `Show chat` in the terminal's options; it swaps the view
   in place, and the view chosen and an unsent draft stay with the agent for
@@ -86,7 +96,8 @@ these already means it.
   - the terminal pane and the agent session offer the same jump and since-you-left
     behaviour;
   - the swipe never takes a gesture from content that scrolls sideways or from
-    the system's edge back gesture; at either end nothing moves, and it says so.
+    the system's edge back gesture; at either end nothing moves, and it says so
+    (`All caught up` at the end of the walk).
 
 ### 4. Steer it
 
@@ -106,16 +117,16 @@ these already means it.
 - **Ideal shape.** `+` → machine (defaulted), folder (remembered), agent,
   optional first message → Start (stay, with a toast to open it) or Start and
   open → it runs.
-- **Must hold:** one start form, and the same `+` everywhere: on the Agents tab
+- **Must hold:** one start form, and the same `+` everywhere: on the board
   and a machine's screen it starts an agent session (the machine's own screen
-  has that machine chosen); on the Machines tab it adds a machine. Same icon,
+  has that machine chosen); on the Machines page it adds a machine. Same icon,
   same corner, no menu in between. Nothing is saved until Start. A pane's
   Duplicate and a session's Duplicate open the same form, prefilled.
 
 ### 6. Review finished work
 
 - **Moment.** Agents finished while they were away. They want the outcome and to clear the list.
-- **Ideal shape.** The done section → the answer and what changed, at a glance →
+- **Ideal shape.** The To review section → the answer and what changed, at a glance →
   open a changed file in one tap → mark it reviewed (swipe, tap, or all at once) →
   one Undo covers what they just did.
 - **Must hold:** review is per device and never touches herdr's own state. Every way
@@ -139,8 +150,8 @@ these already means it.
   understand SSH to recover.
 - **Must hold:**
   - every error state has a next step that can actually succeed;
-  - the same machine trouble reads the same on the board, the Machines tab and
-    the machine screen.
+  - the same machine trouble reads the same on the board (its chip and strip),
+    the Machines page and the machine screen.
 
 ### 9. Away from the phone
 
@@ -168,8 +179,9 @@ these already means it.
 - **Moment.** Set it up once, rarely revisited.
 - **Ideal shape.** A few settings that matter (theme, density, terminal font and
   wrap, quick phrases, notifications), applied at once.
-- **Must hold:** a setting that also appears in place (wrap, density) is the same
-  setting in both places.
+- **Must hold:** a setting that also appears in place (wrap) is the same
+  setting in both places. Board density is in Settings only: a header button
+  for it was chrome on the screen people glance at.
 
 ## Seams that recur
 
@@ -180,10 +192,10 @@ for them in every review:
   jump buttons, two forms) that slowly diverge in guards, haptics and words.
 - **Uneven coverage:** a guard, a haptic, an Undo or a reason that one surface
   has and its twin lacks.
-- **Counts that disagree** between the badge, the pill, the sections and the
-  notifications.
+- **Counts that disagree** between the status line, Needs you, To review, the Machines
+  page and the notifications.
 - **Dead ends:** an error whose only action can't succeed, or a link that lands
-  on the wrong tab.
+  on the wrong page.
 - **A second system creeping back:** a `SnackBar`, a dialog, or a second viewer.
 - **Doc drift:** `docs/DESIGN.md` stating a rule or token the code no longer
   follows. Fix whichever one is wrong in the same change.

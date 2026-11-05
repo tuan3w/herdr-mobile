@@ -108,9 +108,9 @@ MermaidResult layoutMermaid(MermaidJob job) {
   };
   if (kind == null) {
     if (type == core.DiagramType.unknown) {
-      return const MermaidFailed("Couldn't tell which kind of diagram this is · showing the source");
+      return const MermaidFailed('Couldn’t tell which kind of diagram this is · showing the source');
     }
-    return MermaidFailed("Can't draw ${_unsupportedName(type)} diagrams yet · showing the source");
+    return MermaidFailed('Can’t draw ${_unsupportedName(type)} diagrams yet · showing the source');
   }
 
   final trimmed = source.trimLeft();
@@ -139,11 +139,12 @@ MermaidResult layoutMermaid(MermaidJob job) {
     return MermaidDrawn(kind: kind, scene: scene, turned: turned, labels: [for (final l in _labels(scene.nodes)) l]);
   } on core.MermaidParseException catch (e) {
     final line = e.line;
-    if (line == null) return MermaidFailed("Couldn't draw this diagram · ${e.message}");
-    return MermaidFailed("Couldn't draw this diagram · line ${_sourceLine(source, profiled, line)}: ${e.message}");
-  } catch (e) {
-    final first = e.toString().split('\n').first;
-    return MermaidFailed("Couldn't draw this diagram · ${first.length > 120 ? '${first.substring(0, 120)}…' : first}");
+    if (line == null) return const MermaidFailed('Couldn’t draw this diagram · showing the source');
+    return MermaidFailed(
+      'Couldn’t draw this diagram · line ${_sourceLine(source, profiled, line)} · showing the source',
+    );
+  } catch (_) {
+    return const MermaidFailed('Couldn’t draw this diagram · showing the source');
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart' show ReadSource;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/words/error_words.dart';
 import 'package:herdr_mobile/ui/render/terminal/terminal_view.dart' show TerminalTop;
 import 'package:herdr_mobile/ui/features/pane/pane_view_model.dart';
 import 'package:herdr_mobile/ui/features/pane/scrollback_history.dart';
@@ -386,7 +387,7 @@ void main() {
       f.activity.add(_pane);
       async.elapse(_ms(200));
       expect(vm.text, 'one');
-      expect(vm.error, 'connection lost');
+      expect(vm.error, describeError(const HerdrTransportException('connection lost')));
       expect(vm.isStale, isTrue);
       expect(notifications, 2);
 
@@ -461,12 +462,12 @@ void main() {
       vm.dispose();
     });
 
-    _scenario('an API error is stale with its code', (async, f) {
+    _scenario('an API error is stale, in words', (async, f) {
       f.readFailure = const HerdrApiException('pane_not_found', 'no such pane');
       final vm = f.vm();
       async.flushMicrotasks();
 
-      expect(vm.error, 'pane_not_found: no such pane');
+      expect(vm.error, describeError(const HerdrApiException('pane_not_found', 'no such pane')));
       expect(vm.isStale, isTrue);
       vm.dispose();
     });
@@ -587,7 +588,7 @@ void main() {
       vm.sendKeys(const ['up']).then((v) => first = v);
       async.flushMicrotasks();
       expect(first, isFalse);
-      expect(vm.error, 'write failed');
+      expect(vm.error, describeError(const HerdrTransportException('write failed')));
 
       f.sendFailure = null;
       bool? second;
@@ -609,7 +610,7 @@ void main() {
       async.flushMicrotasks();
 
       expect(ok, isFalse);
-      expect(vm.error, 'write failed');
+      expect(vm.error, describeError(const HerdrTransportException('write failed')));
       expect(vm.sending, isFalse);
       expect(f.reads, hasLength(1));
       vm.dispose();
@@ -621,14 +622,14 @@ void main() {
       f.sendFailure = const HerdrTransportException('write failed');
       vm.sendLine('hello');
       async.flushMicrotasks();
-      expect(vm.error, 'write failed');
+      expect(vm.error, describeError(const HerdrTransportException('write failed')));
 
       // The polls that follow read fine; the message still never went out.
       final reads = f.reads.length;
       f.text = 'other';
       async.elapse(const Duration(seconds: 10));
       expect(f.reads.length, greaterThan(reads));
-      expect(vm.error, 'write failed');
+      expect(vm.error, describeError(const HerdrTransportException('write failed')));
 
       f.sendFailure = null;
       vm.sendLine('hello');
@@ -648,7 +649,7 @@ void main() {
       f.sendFailure = const HerdrTransportException('write failed');
       vm.sendKeys(const ['esc']);
       async.flushMicrotasks();
-      expect(vm.error, 'write failed');
+      expect(vm.error, describeError(const HerdrTransportException('write failed')));
       notified = 0;
       vm.clearSendError();
       expect(vm.error, isNull);
@@ -656,7 +657,7 @@ void main() {
       vm.dispose();
     });
 
-    _scenario('a failed send with an API error carries the code', (async, f) {
+    _scenario('a failed send with an API error shows its message, not its code', (async, f) {
       final vm = f.vm();
       async.elapse(_ms(500));
       f.sendFailure = const HerdrApiException('pane_closed', 'gone');
@@ -664,7 +665,7 @@ void main() {
       vm.sendKeys(const ['esc']);
       async.flushMicrotasks();
 
-      expect(vm.error, 'pane_closed: gone');
+      expect(vm.error, 'gone');
       vm.dispose();
     });
   });

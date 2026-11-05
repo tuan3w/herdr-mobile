@@ -1,6 +1,6 @@
 // The toast system (ui/core/toast.dart): one toast at a time that replaces the
 // one showing, durations from one place, undo coalescing, motion, haptics, and
-// where it stands (above the tab bar, a form's action bar, or the bottom
+// where it stands (above the batch bar, a form's action bar, or the bottom
 // inset).
 import 'dart:async';
 
@@ -58,7 +58,9 @@ Future<void> _ms(WidgetTester tester, int ms) async {
 /// Time to let a leaving toast finish its exit.
 const _exit = 300;
 
-Widget _tabBarPage() => Scaffold(
+/// A page with a floating bar in the Dock, as home has while the board picks
+/// (the batch bar): a pill that is a toast shelf.
+Widget _dockPage() => Scaffold(
   body: Builder(
     builder: (context) {
       _ctx = context;
@@ -69,13 +71,9 @@ Widget _tabBarPage() => Scaffold(
             left: 0,
             right: 0,
             bottom: 0,
-            child: FloatingTabBar(
-              index: 0,
-              onChanged: (_) {},
-              tabs: const [
-                TabSpec(icon: HerdrIcons.agents, label: 'Agents'),
-                TabSpec(icon: HerdrIcons.settings, label: 'Settings'),
-              ],
+            child: ToastShelf(
+              lift: FloatingBar.clearance(context),
+              child: const FloatingBarSlot(child: FloatingBarPill(child: SizedBox.expand())),
             ),
           ),
         ],
@@ -515,13 +513,13 @@ void main() {
   });
 
   group('where it stands', () {
-    testWidgets('above the tab bar, clear of it', (tester) async {
-      await tester.pumpWidget(_app(home: _tabBarPage()));
+    testWidgets('above a floating bar, clear of it', (tester) async {
+      await tester.pumpWidget(_app(home: _dockPage()));
       await tester.pump();
       _toaster.show('Copied');
       await tester.pumpAndSettle(const Duration(milliseconds: 50));
 
-      final bar = tester.getRect(find.byType(FloatingTabBar));
+      final bar = tester.getRect(find.byType(FloatingBarPill));
       final toast = tester.getRect(_toast);
       expect(toast.bottom, lessThanOrEqualTo(bar.top));
       expect(toast.bottom, bar.top - 8, reason: 'the bar margin again, above the pill');
@@ -532,25 +530,25 @@ void main() {
       await _end(tester);
     });
 
-    testWidgets('above the tab bar and the gesture inset on a phone with a navigation area', (tester) async {
+    testWidgets('above a floating bar and the gesture inset on a phone with a navigation area', (tester) async {
       tester.view.padding = const FakeViewPadding(bottom: 68);
       tester.view.viewPadding = const FakeViewPadding(bottom: 68);
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(_app(home: _tabBarPage()));
+      await tester.pumpWidget(_app(home: _dockPage()));
       await tester.pump();
       _toaster.show('Copied');
       await tester.pumpAndSettle(const Duration(milliseconds: 50));
 
-      expect(tester.getRect(_toast).bottom, lessThanOrEqualTo(tester.getRect(find.byType(FloatingTabBar)).top));
+      expect(tester.getRect(_toast).bottom, lessThanOrEqualTo(tester.getRect(find.byType(FloatingBarPill)).top));
       await _end(tester);
     });
 
-    testWidgets('on a pushed screen there is no tab bar: it stands on the bottom inset', (tester) async {
+    testWidgets('on a pushed screen there is no bar: it stands on the bottom inset', (tester) async {
       tester.view.padding = const FakeViewPadding(bottom: 68); // 34 dp at 2x
       tester.view.viewPadding = const FakeViewPadding(bottom: 68);
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(_app(home: _tabBarPage()));
+      await tester.pumpWidget(_app(home: _dockPage()));
       await tester.pump();
       final home = _ctx;
       unawaited(
@@ -572,8 +570,8 @@ void main() {
       await _end(tester);
     });
 
-    testWidgets('a toast shown on the tab screen steps down when a screen covers the bar', (tester) async {
-      await tester.pumpWidget(_app(home: _tabBarPage()));
+    testWidgets('a toast shown over a bar steps down when a screen covers the bar', (tester) async {
+      await tester.pumpWidget(_app(home: _dockPage()));
       await tester.pump();
       final home = _ctx;
       _toaster.show('Copied', duration: const Duration(seconds: 30));

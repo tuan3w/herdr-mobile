@@ -290,7 +290,7 @@ class _CopyFailed extends StatelessWidget {
       children: [
         StatusPanel(
           color: ds.danger,
-          icon: LucideIcons.triangleAlert,
+          icon: LucideIcons.circleAlert,
           title: 'Couldn\u2019t copy the video',
           message: message,
           trailing: AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: onRetry),
@@ -318,7 +318,7 @@ class _CannotPlay extends StatelessWidget {
       children: [
         StatusPanel(
           color: ds.danger,
-          icon: LucideIcons.triangleAlert,
+          icon: LucideIcons.circleAlert,
           title: 'This phone can\u2019t play this video',
           message:
               'Android couldn\u2019t open it, usually because of its format. Share it to open it in a player that can.',

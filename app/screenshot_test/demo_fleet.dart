@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/ui/support/step_clock.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
@@ -33,10 +34,11 @@ const studioHome = '/Users/maya';
 const projectDir = '$studioHome/code/payments-api';
 const chartPath = '$projectDir/docs/checkout-latency.png';
 
-/// With `worktrees: true` studio-mac's payments-api is a repo with two linked
-/// worktrees open next to its main checkout (herdr groups them).
+/// With `worktrees: true` studio-mac's payments-api is a repo with three
+/// linked worktrees open next to its main checkout (herdr groups them).
 const rateLimitDir = '$studioHome/.herdr/worktrees/payments-api/worktree-fix-rate-limit';
 const refundDir = '$studioHome/.herdr/worktrees/payments-api/worktree-refund-endpoint';
+const ledgerDir = '$studioHome/.herdr/worktrees/payments-api/worktree-ledger-export';
 
 /// Pane id -> (status, minutes in that status). Panes not listed here are idle
 /// from the start, for as long as the app has watched them.
@@ -49,6 +51,7 @@ const _states = {
   'b1:p2': ('done', 25),
   'c1:p1': ('working', 65),
   'e1:p1': ('done', 40),
+  'a5:p1': ('done', 15),
 };
 
 const _titles = {
@@ -57,6 +60,7 @@ const _titles = {
   'a2:p1': 'Upgrade Flutter and fix analyzer warnings',
   'a3:p1': 'Smooth out rate limiter bursts',
   'a4:p1': 'Draft the refund endpoint',
+  'a5:p1': 'Export ledger entries to CSV',
   'b1:p1': 'Remove unused feature flags',
   'b1:p2': 'Rotate staging TLS certificates',
   'b1:p3': 'Triage overnight CI failures',
@@ -132,8 +136,9 @@ class DemoFleet {
   /// their real states, so the board can say how long each has been there. The
   /// app only knows how long a state lasted if it saw it begin.
   ///
-  /// With [worktrees], studio-mac's payments-api has two linked worktrees open
-  /// (`worktree-fix-rate-limit`, `worktree-refund-endpoint`) and answers
+  /// With [worktrees], studio-mac's payments-api has three linked worktrees
+  /// open (`worktree-fix-rate-limit`, `worktree-refund-endpoint`,
+  /// `worktree-ledger-export`) and answers
   /// `worktree.list` and `worktree.remove` like herdr does.
   static Future<DemoFleet> create({Uint8List? chart, bool timed = false, bool worktrees = false}) async {
     String status(String id) => timed ? 'idle' : (_states[id]?.$1 ?? 'idle');
@@ -144,18 +149,23 @@ class DemoFleet {
         pane('a1:p1', 'a1', 'claude'),
         pane('a1:p2', 'a1', 'omp'),
         pane('a2:p1', 'a2', 'codex'),
-        if (worktrees) ...[pane('a3:p1', 'a3', 'omp'), pane('a4:p1', 'a4', 'codex')],
+        if (worktrees) ...[pane('a3:p1', 'a3', 'omp'), pane('a4:p1', 'a4', 'codex'), pane('a5:p1', 'a5', 'claude')],
       ],
       workspaces: [
         (id: 'a1', label: 'payments-api'),
         (id: 'a2', label: 'mobile-app'),
-        if (worktrees) ...[(id: 'a3', label: 'worktree-fix-rate-limit'), (id: 'a4', label: 'worktree-refund-endpoint')],
+        if (worktrees) ...[
+          (id: 'a3', label: 'worktree-fix-rate-limit'),
+          (id: 'a4', label: 'worktree-refund-endpoint'),
+          (id: 'a5', label: 'worktree-ledger-export'),
+        ],
       ],
       title: (id) => _titles[id] ?? '',
       cwd: (id) => switch (id.substring(0, 2)) {
         'a1' => projectDir,
         'a3' => rateLimitDir,
         'a4' => refundDir,
+        'a5' => ledgerDir,
         _ => '$studioHome/code/mobile-app',
       },
     );
@@ -235,6 +245,7 @@ class DemoFleet {
         if (worktrees) ...{
           'a3:p1': ompFlakyTestSession(),
           'a4:p1': idleSession('Refund endpoint drafted: POST /refunds with idempotency keys.'),
+          'a5:p1': idleSession('Ledger export written: 12 412 rows to exports/ledger-2026-10.csv.'),
         },
       });
     transports['b']!
@@ -283,6 +294,15 @@ class DemoFleet {
       await tester.pump(const Duration(milliseconds: 350));
     }
     _skew.ago = Duration.zero;
+    // Back on real time, the machines answer now, as a live board's poll
+    // would: otherwise the board says it last heard from them minutes ago.
+    for (final c in fleet.connections) {
+      unawaited(c.refresh());
+    }
+    await tester.pump(const Duration(milliseconds: 350));
+    // Freshness labels read on the minute step; take one now so they show it.
+    StepClock.minute.steps.value++;
+    await tester.pump();
   }
 
   /// Changes one agent's state now, as it would while the app is open.
@@ -325,7 +345,7 @@ Widget Function(Widget) demoProviders(
         ChangeNotifierProvider.value(value: h.appSettings),
         ChangeNotifierProvider.value(value: h.agentScreens),
         Provider<PanePreviews>.value(value: h.previews),
-        // The shell's badge and the board read it.
+        // The board, the triage and the arrival cue read it.
         attentionSetProvider(),
         ...extra,
         Provider<TransportFactory>.value(
@@ -348,7 +368,12 @@ Map<String, Object> _provenance(String path, {required bool linked}) => {
 /// Marks payments-api's workspaces as one repo group, the way herdr's
 /// `workspace.worktree` does for a primary checkout and its linked ones.
 void _groupPaymentsApi(Map<String, dynamic> snapshot) {
-  const checkouts = {'a1': (projectDir, false), 'a3': (rateLimitDir, true), 'a4': (refundDir, true)};
+  const checkouts = {
+    'a1': (projectDir, false),
+    'a3': (rateLimitDir, true),
+    'a4': (refundDir, true),
+    'a5': (ledgerDir, true),
+  };
   for (final w in snapshot['workspaces'] as List) {
     final ws = w as Map<String, dynamic>;
     if (checkouts[ws['workspace_id']] case (final path, final linked)?) {
@@ -363,7 +388,12 @@ void _groupPaymentsApi(Map<String, dynamic> snapshot) {
 class _WorktreeTransport extends UiTransport {
   _WorktreeTransport(super.snapshot);
 
-  static const _branches = {projectDir: 'main', rateLimitDir: 'fix/rate-limit', refundDir: 'feat/refund-endpoint'};
+  static const _branches = {
+    projectDir: 'main',
+    rateLimitDir: 'fix/rate-limit',
+    refundDir: 'feat/refund-endpoint',
+    ledgerDir: 'feat/ledger-export',
+  };
 
   @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) {

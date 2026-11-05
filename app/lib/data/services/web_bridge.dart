@@ -148,7 +148,7 @@ class WebBridgeHost {
         lastError = e;
       }
     }
-    throw HerdrTransportException('Cannot open a local port: $lastError');
+    throw HerdrTransportException('Can’t open a local port: $lastError');
   }
 
   /// A host that forbids port forwarding says so on the first channel; ask
@@ -209,7 +209,7 @@ class WebBridgeHost {
       return server;
     } on SocketException catch (e) {
       _entryStarting = null;
-      throw HerdrTransportException('Cannot open a local port: $e');
+      throw HerdrTransportException('Can’t open a local port: $e');
     } on Object {
       _entryStarting = null;
       rethrow;
@@ -617,8 +617,8 @@ final class _StaticBridge extends _Bridge {
     _errorPage(
       res,
       502,
-      "Couldn't reach ${site.machineName}",
-      "<p>Couldn't reach ${WebBridgeHost._esc(site.machineName)}. Reload to retry.</p>",
+      "Couldn’t reach ${site.machineName}",
+      "<p>Couldn’t reach ${WebBridgeHost._esc(site.machineName)}. Reload to retry.</p>",
     );
   }
 
@@ -633,7 +633,7 @@ final class _StaticBridge extends _Bridge {
     final rawPath = uri.path.isEmpty ? '/' : uri.path;
     // `//name` parses as a host with no path: no browser sends that to us.
     if (uri.hasAuthority || uri.hasScheme) {
-      return _errorPage(res, 400, 'Bad request', '<p>This address is not one herdr-mobile opens.</p>');
+      return _errorPage(res, 400, 'Bad request', '<p>This address isn’t one herdr-mobile opens.</p>');
     }
 
     final query = WebBridgeHost._query(uri);
@@ -715,8 +715,8 @@ final class _StaticBridge extends _Bridge {
       return _errorPage(
         res,
         502,
-        'Cannot serve this file',
-        "<p>${WebBridgeHost._esc(site.machineName)} did not say how big the file is.</p>",
+        'Can’t serve this file',
+        "<p>${WebBridgeHost._esc(site.machineName)} didn’t say how big the file is.</p>",
       );
     }
 
@@ -783,7 +783,7 @@ final class _StaticBridge extends _Bridge {
       return _errorPage(
         res,
         502,
-        'Cannot serve this file',
+        'Can’t serve this file',
         '<p>The file changed while it was being read. Reload to retry.</p>',
       );
     }
@@ -1083,9 +1083,9 @@ final class _ForwardBridge extends _Bridge {
       unawaited(sub.cancel());
       final why = e is HerdrTransportException && e.fatal
           ? '<p>${WebBridgeHost._esc(e.message)}</p>'
-          : "<p>Couldn't reach <code>localhost:${target.port}</code> on ${WebBridgeHost._esc(target.machineName)}. "
+          : "<p>Couldn’t reach <code>localhost:${target.port}</code> on ${WebBridgeHost._esc(target.machineName)}. "
                 'The server may have stopped. Reload to retry.</p>';
-      return _reply(socket, _errorResponse(502, 'Bad Gateway', "Couldn't reach the server", why));
+      return _reply(socket, _errorResponse(502, 'Bad Gateway', "Couldn’t reach the server", why));
     }
 
     // From here on it is bytes both ways (keep-alive, WebSocket upgrades): one

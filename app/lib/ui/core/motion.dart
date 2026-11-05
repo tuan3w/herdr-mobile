@@ -16,10 +16,10 @@ abstract final class Motion {
   /// first, like the entrance. A plain reverse of [easeOut] would be ease-in.
   static final easeOutExit = easeOut.flipped;
 
-  /// [parent] through [easeOut], and through [easeOutExit] when it reverses.
+  /// [parent] through [easeOut], and through [easeOutExit] when it reverses,
+  /// continuing from where it is if it reverses mid-flight ([ExitCurvedAnimation]).
   /// Every curved animation that can run both ways uses this.
-  static CurvedAnimation curved(Animation<double> parent) =>
-      CurvedAnimation(parent: parent, curve: easeOut, reverseCurve: easeOutExit);
+  static ExitCurvedAnimation curved(Animation<double> parent) => ExitCurvedAnimation(parent);
 
   /// Press-down feedback: snap in.
   static const press = Duration(milliseconds: 100);
@@ -51,10 +51,6 @@ abstract final class Motion {
   /// The check that draws itself after a connection test passes.
   static const draw = Duration(milliseconds: 320);
 
-  /// How long the wash on a card that just changed section takes to fade. A
-  /// fade-out of a highlight, not a movement: it may outlast a transition.
-  static const arrival = Duration(milliseconds: 420);
-
   /// The brand mark drawing itself on first run.
   static const brand = Duration(milliseconds: 420);
 
@@ -83,6 +79,37 @@ abstract final class Motion {
   static Duration pressing(bool down) => down ? press : release;
 }
 
+/// [Motion.easeOut] forward and [Motion.easeOutExit] in reverse, without the
+/// jump a plain `CurvedAnimation(reverseCurve:)` makes when it turns round
+/// mid-flight: it swaps curves at the same controller value, so a toast
+/// replaced a third of the way in goes from ~0.8 shown to ~0.03. The exit
+/// instead starts from what is on screen and runs the exit curve to zero.
+class ExitCurvedAnimation extends Animation<double> with AnimationWithParentMixin<double> {
+  ExitCurvedAnimation(this.parent);
+
+  @override
+  final Animation<double> parent;
+
+  /// The parent's value when the current exit began, once read.
+  double? _from;
+
+  @override
+  double get value {
+    final p = parent.value;
+    if (parent.status != AnimationStatus.reverse) {
+      _from = null;
+      return Motion.easeOut.transform(p);
+    }
+    final from = _from ??= p;
+    if (from <= 0) return 0;
+    return Motion.easeOut.transform(from) * Motion.easeOutExit.transform((p / from).clamp(0.0, 1.0));
+  }
+
+  /// Nothing to release (it holds no listener of its own); kept so it can
+  /// stand in for the `CurvedAnimation` it replaces.
+  void dispose() {}
+}
+
 /// How far a control shrinks under the finger, by its size: the bigger the
 /// surface, the less it moves.
 abstract final class PressScale {
@@ -109,9 +136,6 @@ abstract final class Springs {
   /// Back to rest with no overshoot (a drag cancelled, a double tap).
   static final settle = SpringDescription.withDampingRatio(mass: 1, stiffness: 420, ratio: 1);
 
-  /// A light, quick object (the tab bar's capsule after a scrub).
-  static final snap = SpringDescription.withDampingRatio(mass: 1, stiffness: 1500, ratio: 0.85);
-
   /// A swiped row that did not go far enough, coming back.
   static final recoil = SpringDescription.withDurationAndBounce(
     duration: const Duration(milliseconds: 380),
@@ -127,9 +151,8 @@ abstract final class Springs {
   static const swipe = Tolerance(distance: 0.2, velocity: 8);
 
   /// Seconds of a fling's speed that carry on after the finger lifts, to pick
-  /// where a sheet or the tab capsule lands (Apple's projection).
+  /// where a sheet or a swiped card lands (Apple's projection).
   static const projectSheet = 0.25;
-  static const projectTab = 0.1;
 }
 
 /// Timers, not animations: how long something waits or stays.

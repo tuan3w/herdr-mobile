@@ -69,7 +69,7 @@ Future<void> _pump(WidgetTester tester, _Harness h) async {
 }
 
 void main() {
-  testWidgets('a closed mermaid fence is drawn, and its source is not shown as code', (tester) async {
+  testWidgets('a closed mermaid fence is drawn, and its source isn’t shown as code', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester, _Harness(block: _block(_flow)));
     expect(find.bySemanticsLabel('Diagram, flowchart'), findsOneWidget);
@@ -95,7 +95,7 @@ void main() {
     await _pump(tester, _Harness(block: block));
     expect(find.bySemanticsLabel('Diagram, flowchart'), findsNothing);
     expect(find.text('mermaid'), findsOneWidget, reason: 'the code block header');
-    expect(find.textContaining("Couldn't draw"), findsNothing, reason: 'no layout was asked for');
+    expect(find.textContaining('Couldn’t draw'), findsNothing, reason: 'no layout was asked for');
     semantics.dispose();
   });
 
@@ -118,15 +118,15 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('a kind the app does not draw stays code, with the reason', (tester) async {
+  testWidgets('a kind the app doesn’t draw stays code, with the reason', (tester) async {
     await _pump(tester, _Harness(block: _block('gantt\n title x\n section a\n t1 :a1, 2024-01-01, 3d')));
-    expect(find.text("Can't draw gantt chart diagrams yet · showing the source"), findsOneWidget);
+    expect(find.text("Can’t draw gantt chart diagrams yet · showing the source"), findsOneWidget);
     expect(find.text('mermaid'), findsOneWidget);
   });
 
   testWidgets('a syntax error stays code, with the line', (tester) async {
     await _pump(tester, _Harness(block: _block('flowchart TD\n A-->')));
-    expect(find.textContaining("Couldn't draw this diagram · line 2"), findsOneWidget);
+    expect(find.textContaining('Couldn’t draw this diagram · line 2'), findsOneWidget);
   });
 
   testWidgets('Copy source puts the source as written on the clipboard', (tester) async {

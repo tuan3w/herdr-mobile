@@ -64,7 +64,7 @@ void main() {
       }
     });
 
-    test('is null for what is not a command: text, a path, a dollar sentence', () {
+    test('is null for what isn’t a command: text, a path, a dollar sentence', () {
       final m = model();
       expect(m.unknownCommand('please review it'), isNull);
       expect(m.unknownCommand('/usr/bin/env python'), isNull, reason: 'a path has no space after its first word');
@@ -167,8 +167,8 @@ void main() {
 
       expect(s.sent, isEmpty);
       expect(fieldText(tester), '/clera now', reason: 'nothing is lost');
-      expect(find.textContaining('/clera is not', findRichText: true), findsOneWidget);
-      expect(find.textContaining('is not one of omp', findRichText: true), findsOneWidget);
+      expect(find.textContaining('/clera isn’t', findRichText: true), findsOneWidget);
+      expect(find.textContaining('isn’t one of omp', findRichText: true), findsOneWidget);
       expect(find.text('Send as message'), findsOneWidget);
       await e.tearDown(tester);
     });

@@ -1,5 +1,5 @@
 // One "needs you": the badge, the pill, the board's sections, the triage
-// sheet, the Machines tab and the notifier's count are the same set, in the
+// sheet, the Machines page and the notifier's count are the same set, in the
 // same order, terminal agents and agent sessions alike; what is out of reach
 // is not counted; a handover does not make old waits new.
 import 'dart:async';
@@ -38,8 +38,6 @@ Future<void> _settle(WidgetTester tester, [int steps = 6]) async {
 }
 
 double _top(WidgetTester tester, Finder f) => tester.getTopLeft(f).dy;
-
-Finder _section(String label) => find.byWidgetPredicate((w) => w is SectionLabel && w.label == label);
 
 void main() {
   testWidgets('a blocked pane, a blocked session, a blocked pane offline and a done session: every surface says 2, '
@@ -93,18 +91,14 @@ void main() {
     h.fleet.connection('b')!.goOffline();
     await _settle(tester, 30);
 
-    // The badge.
+    // The board's status line, the one place home counts it.
     expect(
-      tester.getSemantics(find.byKey(FloatingTabBar.tabKey('Agents'))).label,
-      'Agents, 2 need you',
+      statusNeedsYou(tester),
+      '2 need you',
       reason: 'the pane and the session; not the offline pane, not the finished session',
     );
-    // The pill.
-    expect(find.text('2 need you · 1 to review'), findsOneWidget);
-    // The section and its chip.
-    expect(tester.widget<SectionLabel>(_section('Needs you')).count, 2);
     expect(find.text('1 offline'), findsOneWidget, reason: 'the offline pane is listed, last known, and said so');
-    expect(tester.widget<SectionLabel>(_section('Done')).count, 1);
+    expect(toReviewCount(tester), 1, reason: 'the finished session, in the status line');
     // The notifier's "need you".
     expect(notifier.glances.last.blocked, 2);
     // The board's order: longest waiting first, panes and sessions mixed.
@@ -115,7 +109,7 @@ void main() {
     expect(sessionTop, lessThan(offlineTop), reason: 'what cannot be answered comes last');
 
     // The triage sheet walks the same two, in the same order, sessions too.
-    await tester.tap(find.text('2 need you · 1 to review'));
+    await tester.tap(find.byKey(const ValueKey('answer-one-by-one')));
     await _settle(tester);
     expect(find.byType(ReplySheet), findsOneWidget);
     expect(find.text('1 of 2 need you'), findsOneWidget);
@@ -133,9 +127,8 @@ void main() {
     Navigator.of(tester.element(find.byType(ReplySheet))).pop();
     await _settle(tester);
 
-    // The Machines tab.
-    await tester.tap(find.byKey(FloatingTabBar.tabKey('Machines')));
-    await _settle(tester);
+    // Machines.
+    await openHomePage(tester, 'Machines');
     expect(find.bySemanticsLabel(RegExp(r'^studio-mac, .*, 2 need you$')), findsOneWidget);
     expect(
       find.bySemanticsLabel(RegExp(r'^old-box, .*need you')),

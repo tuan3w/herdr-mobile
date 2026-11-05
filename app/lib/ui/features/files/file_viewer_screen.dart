@@ -652,7 +652,7 @@ class _RefreshStrip extends StatelessWidget {
         color: ds.danger,
         title: 'Couldn’t refresh',
         detail: 'Showing the earlier version',
-        leading: Icon(LucideIcons.triangleAlert, size: IconSize.row, color: ds.dangerText),
+        leading: Icon(LucideIcons.circleAlert, size: IconSize.row, color: ds.dangerText),
         action: AppButton(
           label: 'Retry',
           kind: AppButtonKind.secondary,

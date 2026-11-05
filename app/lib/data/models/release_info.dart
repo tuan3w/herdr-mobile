@@ -152,7 +152,7 @@ class ReleaseInfo {
     }
     if (apkUrl == null || size == null || size <= 0) return null;
     if (sha256 == null && sumsUrl == null) {
-      throw UpdateException('Version $v has no checksum, so herdr will not install it.');
+      throw UpdateException('Version $v has no checksum, so herdr won’t install it.');
     }
     final body = json['body'];
     return ReleaseInfo(

@@ -32,8 +32,8 @@ const dockChipLimit = 4;
 /// screen covers it, the pane stops being blocked, or the page goes.
 ///
 /// Its height is the question and its subject ([QuestionWash], compact: at
-/// most two lines of each, `Read all` opens the reply sheet when either is
-/// cut) and [ReplyChips.heightFor] the chip count. It
+/// most two lines of question and three of subject, `Read all` opens the
+/// reply sheet when either is cut) and [ReplyChips.heightFor] its chips. It
 /// reads nothing from the window insets, and the page builds it once, so the
 /// keyboard animation never rebuilds it.
 ///
@@ -153,7 +153,6 @@ class _Dock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chips = ReplyChips.count(prompt, limit: dockChipLimit);
     return Padding(
       padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
       child: Column(
@@ -163,7 +162,7 @@ class _Dock extends StatelessWidget {
           QuestionWash(question: prompt.question, subject: prompt.subject, onReadAll: onMore),
           const SizedBox(height: Gap.sm),
           SizedBox(
-            height: ReplyChips.heightFor(chips),
+            height: ReplyChips.heightFor(prompt, limit: dockChipLimit),
             child: ReplyChips(
               prompt: prompt,
               controller: controller,

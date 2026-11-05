@@ -94,8 +94,10 @@ void main() {
         final h = await _worstCase();
         await pumpUi(tester, h, width: width, textScale: scale);
 
-        await tester.tap(find.byIcon(HerdrIcons.machines));
+        // Machines opens from home's header (the machines chip).
+        await tester.tap(find.byKey(const ValueKey('machine-health')));
         await settle(tester);
+        expect(tester.takeException(), isNull, reason: 'the header holds at this width and text size');
         expect(find.textContaining('build-server-eu-west-2'), findsOneWidget);
         expect(find.text('x'), findsWidgets);
 

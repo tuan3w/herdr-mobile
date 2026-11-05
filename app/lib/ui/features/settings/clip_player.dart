@@ -22,10 +22,8 @@ Future<void> openClipPlayer(BuildContext context, ReleaseClip clip, {required St
         transitionDuration: Motion.page,
         reverseTransitionDuration: Motion.sheetOut,
         pageBuilder: (context, _, _) => ClipPlayerScreen(clip: clip, title: title),
-        transitionsBuilder: (context, animation, _, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Motion.easeOut, reverseCurve: Motion.easeOut),
-          child: child,
-        ),
+        transitionsBuilder: (context, animation, _, child) =>
+            FadeTransition(opacity: Motion.curved(animation), child: child),
       ),
     );
 
@@ -128,7 +126,7 @@ class _Failed extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Couldn\u2019t play the clip. Check the connection and try again.',
+            'Couldn\u2019t play the clip. Check the connection, then Retry.',
             textAlign: TextAlign.center,
             style: Type.secondary.copyWith(color: ds.dangerText),
           ),

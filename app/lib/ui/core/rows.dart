@@ -159,8 +159,9 @@ class ListRow extends StatelessWidget {
 
   static const _leadingGap = Gap.md;
 
-  /// Opacity of a stale row.
-  static const _dimOpacity = 0.55;
+  /// Opacity of a stale row's leading glyph. Its words step down a tone
+  /// instead of fading, so they keep their contrast.
+  static const _dimLeading = 0.45;
 
   /// Where the text column starts: the divider under a row starts here.
   static double textIndent({bool hasLeading = true, double leadingExtent = 32}) =>
@@ -178,7 +179,7 @@ class ListRow extends StatelessWidget {
           title,
           maxLines: titleMaxLines,
           overflow: TextOverflow.ellipsis,
-          style: Type.row.copyWith(color: ds.text),
+          style: Type.row.copyWith(color: dim ? ds.textSecondary : ds.text),
         ),
         if (subtitle != null && subtitle!.isNotEmpty)
           Padding(
@@ -187,7 +188,7 @@ class ListRow extends StatelessWidget {
               subtitle!,
               maxLines: subtitleMaxLines,
               overflow: TextOverflow.ellipsis,
-              style: Type.secondary.copyWith(color: subtitleColor ?? ds.textSecondary),
+              style: Type.secondary.copyWith(color: dim ? ds.textMuted : subtitleColor ?? ds.textSecondary),
             ),
           ),
         if (subtitle2 != null && subtitle2!.isNotEmpty)
@@ -202,6 +203,7 @@ class ListRow extends StatelessWidget {
           ),
       ],
     );
+    Widget dimLeading(Widget w) => dim ? Opacity(opacity: _dimLeading, child: w) : w;
     Widget row = PressRow(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -216,11 +218,11 @@ class ListRow extends StatelessWidget {
               children: [
                 if (leading != null) ...[
                   if (leadingOnTitle)
-                    _TitleLineSlot(width: leadingExtent, lineHeight: titleLine, child: leading!)
+                    _TitleLineSlot(width: leadingExtent, lineHeight: titleLine, child: dimLeading(leading!))
                   else
                     SizedBox(
                       width: leadingExtent,
-                      child: Center(child: leading),
+                      child: Center(child: dimLeading(leading!)),
                     ),
                   const SizedBox(width: _leadingGap),
                 ],
@@ -232,8 +234,6 @@ class ListRow extends StatelessWidget {
         ],
       ),
     );
-    // An Opacity layer only for the rare stale row, never for the usual one.
-    if (dim) row = Opacity(opacity: _dimOpacity, child: row);
     return row;
   }
 }
@@ -409,7 +409,7 @@ class Collapse extends StatefulWidget {
 class _CollapseState extends State<Collapse> with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(vsync: this, value: widget.open ? 1 : 0);
   // Closing is an ease-out in time too, not the opening curve played backwards.
-  late final CurvedAnimation _progress = Motion.curved(_controller);
+  late final ExitCurvedAnimation _progress = Motion.curved(_controller);
 
   /// Lets the child move between wrappers (clip/fade while animating, bare when
   /// fully open) without being rebuilt from scratch.

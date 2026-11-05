@@ -68,6 +68,9 @@ class FakeWebView extends WebViewPlatform {
   int storageCleared = 0;
   int cacheCleared = 0;
 
+  /// How many times the page was reloaded.
+  int reloads = 0;
+
   /// A navigation Android does not ask about (a form POST): it loads.
   void land(String url) => _load(Uri.parse(url));
 
@@ -253,6 +256,7 @@ class _FakeController extends PlatformWebViewController {
 
   @override
   Future<void> reload() async {
+    view.reloads++;
     final s = view.current;
     if (s != null) view._show(s);
   }
