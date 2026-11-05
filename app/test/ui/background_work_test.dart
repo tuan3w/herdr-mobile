@@ -270,16 +270,18 @@ void main() {
       expect(session.sent, ['status?']);
     });
 
-    testWidgets('while its turn runs a terminal agent has Stop, and nothing is sent', (tester) async {
+    testWidgets('while its turn runs a terminal agent has Stop beside Send, and the keyboard send goes through', (
+      tester,
+    ) async {
       final session = waitingTerminal();
       session.backgroundWork = work([task('bg_6')]);
       await pump(tester, session);
       expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
-      expect(find.byIcon(LucideIcons.arrowUp), findsNothing);
+      expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'status?');
       await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pump();
-      expect(session.sent, isEmpty, reason: 'a turn is running: Stop, not Send');
+      expect(session.sent, ['status?'], reason: 'a terminal agent takes a message into its running turn');
     });
 
     testWidgets('Stop stays a plain tap', (tester) async {

@@ -8,8 +8,9 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// What happens to the message in the field if it is sent now, said before it
 /// is sent: it waits for the turn to end (`pi`, or anything already waiting) or
 /// it goes into the running turn (an agent that takes input there: `Claude
-/// Code`, `Codex`, `omp` with steering), where a hold on Send sends it after
-/// the turn instead. Nothing when it would go out at once.
+/// Code`, `Codex`, `omp` with steering, and any agent in a terminal), where a
+/// hold on Send keeps it on the phone and sends it after the turn instead.
+/// Nothing when it would go out at once.
 String? deliveryHint(SendDelivery delivery) => switch (delivery) {
   SendDelivery.now => null,
   SendDelivery.queued => 'Will be queued until the turn ends',

@@ -253,14 +253,19 @@ void main() {
     expect(session.queued, isEmpty);
   });
 
-  testWidgets('an agent in a terminal has no queue: it only stops', (tester) async {
-    final session = working()..observed = true;
+  testWidgets('an agent in a terminal takes a message into its running turn, with Stop beside Send', (tester) async {
+    final session = working()
+      ..observed = true
+      ..steerable = true;
     await pump(tester, session);
     expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
     await tester.enterText(field, 'hello');
     await tester.pump();
-    expect(find.byIcon(LucideIcons.listPlus), findsNothing);
-    expect(find.text('Message Claude Code\u2026'), findsOneWidget);
+    expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget);
+    await tester.tap(find.byIcon(LucideIcons.arrowUp));
+    await settle(tester, 300);
+    expect(session.steeredBlocks, hasLength(1));
+    expect(session.queued, isEmpty);
   });
 
   testWidgets('more than three waiting: three show, the rest are one tap away', (tester) async {

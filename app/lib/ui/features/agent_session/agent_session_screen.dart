@@ -423,9 +423,8 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   /// whatever the agent is doing: an idle one as a prompt, a working one as a
   /// message that waits (or steers the turn, where the agent takes that), see
   /// `AgentSessionView.delivery`. Not while a picture is still being prepared.
-  /// An observed session (an agent in a terminal) only takes one when idle;
-  /// the button is a stop while its turn runs and the keyboard's send key
-  /// still lands here.
+  /// An agent in a terminal steers the turn it is in; the hold on Send keeps
+  /// the message on the phone until the turn has ended, as for any agent.
   ///
   /// The field empties at once (nothing visible waits for the agent); the
   /// haptic follows the outcome, as in the pane: `sent` when the session took
@@ -448,14 +447,6 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (session.link != AgentLink.live) return refuse('Not connected. Try again when it is back');
     final blocked = session.sendBlocked;
     if (blocked != null) return refuse(blocked);
-    // An agent in a terminal says `working` while it waits on a job; that
-    // wait is not a turn, so a message may go.
-    if (session.isObserved &&
-        session.relayNote == null &&
-        session.phase != AgentPhase.idle &&
-        !session.waitingOnBackground) {
-      return refuse('The agent is working. Send it once it is idle');
-    }
     if (!_attachments.canSend) return;
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;

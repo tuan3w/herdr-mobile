@@ -485,16 +485,21 @@ the list: Running, Waiting, then Done (failed first, the newest 8, `Show N
 more`). Each running subagent has `Ask to stop` (hold), and `Stop all` stops them
 all with one message to the agent; a tap on a row opens its conversation.
 
-**Sending while it works.** The message box stays open. omp and pi queue a
-message until the turn ends (the send button becomes `Queue`); Claude Code and
-Codex take it into the running turn. Queued messages show above the box; tap
-one to edit or remove it.
+**Sending while it works.** The message box stays open. `Send` puts the message
+into the running turn for Claude Code, Codex and any agent in a terminal; omp
+and pi started from the app queue it until the turn ends (the button says
+`Queue`). Hold `Send` to keep the message on the phone until the turn ends.
+Queued messages show above the box; tap one to edit or remove it. If the
+terminal is asking something, nothing is typed: answer it first. A message sent
+into a terminal agent shows in the chat when the agent reads it, which for omp
+can be after its current tool call.
 
 **Stop.** While a turn runs, `Stop` sits next to the send button. It ends the
 turn only. Messages waiting in the queue go out together, as one message, as
 soon as the turn has stopped (you queued them to follow this turn; stopping it
 is going on with them). A turn that fails, or is stopped from somewhere else,
-holds them instead, with `Resume`. Work the agent started in the background
+holds them instead, with `Resume` (for an agent in a terminal the phone cannot
+tell a stop in the terminal from a finished turn, so it sends them). Work the agent started in the background
 keeps running: a strip above the message box shows it, and the `Background
 work` sheet lists each job with its own Stop (`Hold to stop`).
 
