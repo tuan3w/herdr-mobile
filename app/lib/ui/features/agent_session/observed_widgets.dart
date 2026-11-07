@@ -1,59 +1,52 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../../data/repositories/agent_session.dart';
 import '../../../data/words/elapsed.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../support/step_clock.dart';
-import 'session_select.dart';
 import '../../render/visible_text.dart';
 
-/// What the pane shows right now, under the transcript, while the agent works
-/// and its log is quiet (the model is writing its next message, which the log
-/// only gets when it is finished). Muted, mono, never part of the transcript:
-/// the real message replaces it in the list above. Takes no room when the
-/// session has nothing to show.
-class LiveOutput extends StatelessWidget {
-  const LiveOutput({super.key, required this.session});
+/// What the pane shows right now, while the agent works and its log is quiet
+/// (the model is writing its next message, which the log only gets when it is
+/// finished): the raw tail of the screen, muted and mono, one tap down in the
+/// background sheet. Never on the chat screen itself: the status, the tool row
+/// and the background strip already say what is going on, and the tail
+/// repeated them in a box taller than the answer.
+class LiveTail extends StatelessWidget {
+  const LiveTail({super.key, required this.rows});
 
-  final AgentSessionView session;
+  final List<String> rows;
 
   @override
-  Widget build(BuildContext context) => SessionSelect<List<String>?>(
-    session: session,
-    select: (s) => s.liveOutput,
-    same: (a, b) => a == null || b == null ? a == b : listEquals(a, b),
-    builder: (context, rows) {
-      if (rows == null || rows.isEmpty) return const SizedBox.shrink();
-      final ds = context.ds;
-      return Padding(
-        padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
-        child: Panel(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm),
-          child: Semantics(
-            label: 'Live output from the terminal',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final row in rows)
-                  ExcludeSemantics(
-                    child: Text(
-                      visibleText(row),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: Mono.small.copyWith(color: ds.textSecondary),
-                    ),
-                  ),
-              ],
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.md, Gap.sm),
+      child: Semantics(
+        label: 'Live output from the terminal',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.xs),
+              child: Text('On the terminal now', style: Type.caption.copyWith(color: ds.textMuted)),
             ),
-          ),
+            for (final row in rows)
+              ExcludeSemantics(
+                child: Text(
+                  visibleText(row),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: Mono.small.copyWith(color: ds.textSecondary),
+                ),
+              ),
+          ],
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 /// `Working · 42s` next to the status glyph while the log is quiet: how long

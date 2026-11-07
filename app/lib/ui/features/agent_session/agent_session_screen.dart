@@ -34,7 +34,6 @@ import 'background_strip.dart';
 import 'continue_button.dart';
 import 'composer.dart';
 import 'danger_announce.dart';
-import 'observed_widgets.dart';
 import '../agents/agent_navigation.dart';
 import '../agents/agent_swipe.dart';
 import '../agents/swipe_review.dart' show markSessionReviewedWithUndo;
@@ -150,7 +149,6 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LiveOutput(session: widget.session),
         _WaitsUntilLive(session: widget.session),
         Flexible(child: PromptDock(session: widget.session)),
       ],

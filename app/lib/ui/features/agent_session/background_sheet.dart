@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -14,6 +15,7 @@ import '../../support/step_clock.dart';
 import 'agent_session_navigation.dart';
 import 'background_controls.dart';
 import 'background_format.dart';
+import 'observed_widgets.dart' show LiveTail;
 import 'session_select.dart';
 import 'subagent_roster.dart' show showSubagents;
 import '../../render/visible_text.dart';
@@ -148,12 +150,13 @@ class _BackgroundSheetState extends State<BackgroundSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => SessionSelect<(BackgroundWork, bool)>(
+  Widget build(BuildContext context) => SessionSelect<(BackgroundWork, bool, List<String>?)>(
     session: _session,
-    select: (s) => (s.backgroundWork, s.link == AgentLink.live),
-    same: (a, b) => identical(a.$1, b.$1) && a.$2 == b.$2,
+    select: (s) => (s.backgroundWork, s.link == AgentLink.live, s.liveOutput),
+    same: (a, b) =>
+        identical(a.$1, b.$1) && a.$2 == b.$2 && (a.$3 == null || b.$3 == null ? a.$3 == b.$3 : listEquals(a.$3, b.$3)),
     builder: (context, snap) {
-      final (work, live) = snap;
+      final (work, live, tail) = snap;
       final ds = context.ds;
       final items = _items(work);
       final sentence = work.running.isEmpty ? null : wakeSentence(work);
@@ -167,6 +170,7 @@ class _BackgroundSheetState extends State<BackgroundSheet> {
       // What comes before the tasks and after them scrolls with them: one
       // lazy list under the pinned title.
       final pre = [
+        if (live && tail != null && tail.isNotEmpty) LiveTail(rows: tail),
         if (sentence != null)
           Padding(
             padding: const EdgeInsets.only(left: Gap.md, top: Gap.xs, right: Gap.md),
