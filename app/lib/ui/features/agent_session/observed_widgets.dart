@@ -37,10 +37,6 @@ class LiveOutput extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ExcludeSemantics(
-                  child: Text('Live from terminal', style: Type.caption.copyWith(color: ds.textMuted)),
-                ),
-                const SizedBox(height: Gap.xs),
                 for (final row in rows)
                   ExcludeSemantics(
                     child: Text(
