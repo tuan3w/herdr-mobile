@@ -243,7 +243,10 @@ void main() {
         block: 8192,
       );
       await files.upload(local('near.bin', 14 * 8192, sparse: true).path, remote).done;
-      expect(server.maxOutstanding, lessThanOrEqualTo(8));
+      // Not exactly 8: a loaded hosted runner measured 9 and 10 (three release
+      // runs in a row failed a limit of 8). What the near link earns is a
+      // window well under the far link's floor of 16 below.
+      expect(server.maxOutstanding, lessThanOrEqualTo(12));
 
       // Far: ~hundreds of 4 KB requests would fill it, so the window climbs to
       // the cap. The long round trip keeps lateness small against it (the climb
