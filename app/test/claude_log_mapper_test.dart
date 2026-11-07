@@ -754,4 +754,52 @@ void main() {
       expect([for (final c in s.commands) c.name], ['ok']);
     });
   });
+
+  group('the model', () {
+    test('the model that wrote the messages becomes the model option, and a model change replaces it', () {
+      final m = ClaudeLogMapper();
+      var s = _feed(m, _lines('ask-chat'));
+      final option = s.configOptions.whereType<SelectConfigOption>().single;
+      expect((option.category, option.value), ('model', 'claude-haiku-5-5'));
+
+      // This real log is written by sonnet first and by haiku after the person
+      // switched models in the terminal.
+      final planMapper = ClaudeLogMapper();
+      final seen = <String>[
+        for (final l in _lines('plan-mode'))
+          for (final u in planMapper.map(l))
+            if (u is ConfigUpdate) (u.options.single as SelectConfigOption).value,
+      ];
+      expect(seen, ['claude-sonnet-5-5', 'claude-haiku-5-5']);
+    });
+
+    test('the same model on the next message sends nothing again', () {
+      final m = ClaudeLogMapper();
+      final lines = _lines('ask-chat');
+      final first = [for (final l in lines) ...m.map(l)].whereType<ConfigUpdate>().length;
+      final again = [for (final l in lines) ...m.map(l)].whereType<ConfigUpdate>().length;
+      expect(first, 1);
+      expect(again, 0, reason: 'a message already seen is not mapped twice');
+    });
+
+    test('a subagent transcript does not set the session model', () {
+      final s = _feed(ClaudeLogMapper(sidechain: true), _lines('ask-chat'));
+      expect(s.configOptions, isEmpty);
+    });
+  });
+
+  group('model names', () {
+    test('an id reads as the words Claude Code uses, other ids stay as they are', () {
+      expect(claudeModelName('claude-opus-5-5'), 'Opus 5.5');
+      expect(claudeModelName('claude-haiku-5-5-20260101'), 'Haiku 5.5');
+      expect(claudeModelName('my-proxy/model'), 'my-proxy/model');
+    });
+
+    test('the option offers only the model in use: a terminal session is read-only', () {
+      final s = _feed(ClaudeLogMapper(), _lines('ask-chat'));
+      final option = s.configOptions.whereType<SelectConfigOption>().single;
+      expect([for (final c in option.choices) c.value], ['claude-haiku-5-5']);
+      expect(option.currentName, 'Haiku 5.5');
+    });
+  });
 }

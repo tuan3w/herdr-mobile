@@ -4,6 +4,28 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.53] - 2026-11-07
+
+### See which model a terminal Claude is using
+
+A Claude Code session in a terminal now shows its model in the chip row above
+the message box, the same chip a chat shows. It reads `Opus 5.5`, not
+`claude-opus-5-5`, and follows a switch you make in the terminal.
+
+> [!TIP]
+> Try it: open a Claude Code session running in a terminal, and look above the
+> box. Switch the model in the terminal with `/model` and send a message: the
+> chip changes with the next answer.
+
+- The chip is read-only. Tap it and the app says to change the model in the
+  terminal.
+- Codex and omp sessions show no model chip yet.
+
+**Fixed**
+
+- The `Live from terminal` caption over the live output is gone. It named what
+  the panel already shows and took a row of height.
+
 ## [0.1.52] - 2026-11-05
 
 ### A stopped omp subagent no longer shows as done
