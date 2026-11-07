@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.54] - 2026-11-07
+
+### The terminal's raw output no longer takes a box on the chat
+
+While an agent in a terminal works and its log is quiet, the chat no longer
+shows a grey box with the last lines of the screen. It repeated what the tool
+row, the status and `1 running in background` already say, in a box taller
+than the answer.
+
+> [!TIP]
+> Try it: while an agent in a terminal waits on a job, tap
+> `1 running in background`. `On the terminal now` is at the top of the sheet.
+
+- The lines are the same, muted and mono, one tap down. Nothing is lost.
+- With no background work there is no box and no sheet row: `Working · 42s`
+  next to the status glyph still says the agent is busy.
+
 ## [0.1.53] - 2026-11-07
 
 ### See which model a terminal Claude is using

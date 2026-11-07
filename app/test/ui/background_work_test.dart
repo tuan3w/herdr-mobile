@@ -742,6 +742,27 @@ void main() {
       expect(sessionStateLabel(w, now), '3m');
     });
   });
+
+  group('the raw tail of the terminal', () {
+    testWidgets('takes no room on the chat screen, and is in the sheet one tap down', (tester) async {
+      final session = waitingTerminal()
+        ..backgroundWork = work([task('bg_1')], wakes: true, label: 'omp')
+        ..live = ['docs and secrets ok', '[Wall: 0.20s | Timeout: 300s]'];
+      await pump(tester, session);
+      expect(find.text('docs and secrets ok'), findsNothing);
+
+      await openSheet(tester);
+      expect(find.text('On the terminal now'), findsOneWidget);
+      expect(find.text('docs and secrets ok'), findsOneWidget);
+    });
+
+    testWidgets('nothing to show, no heading', (tester) async {
+      final session = waitingTerminal()..backgroundWork = work([task('bg_1')], wakes: true, label: 'omp');
+      await pump(tester, session);
+      await openSheet(tester);
+      expect(find.text('On the terminal now'), findsNothing);
+    });
+  });
 }
 
 Duration holdHintWindow() => const Duration(milliseconds: 2500);
