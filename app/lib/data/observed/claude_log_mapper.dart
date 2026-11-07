@@ -41,6 +41,17 @@ import 'observed_contracts.dart';
 /// patches replace, so the same file fed twice (a resume that overlaps, a
 /// reconnect) changes nothing. Reset the mapper together with the state it
 /// feeds.
+final _claudeModelId = RegExp(r'^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-\d{8})?$');
+
+/// `claude-opus-5-5` as `Opus 5.5`, the words Claude Code itself uses; an id
+/// of another shape stays as it is.
+String claudeModelName(String id) {
+  final m = _claudeModelId.firstMatch(id);
+  if (m == null) return id;
+  final family = m[1]!;
+  return '${family[0].toUpperCase()}${family.substring(1)} ${m[2]}.${m[3]}';
+}
+
 class ClaudeLogMapper implements SessionLogMapper {
   ClaudeLogMapper({this.sidechain = false});
 
@@ -65,6 +76,10 @@ class ClaudeLogMapper implements SessionLogMapper {
   final _hidden = <String>{};
 
   PendingAsk? _ask;
+
+  /// The model of the last assistant line, so a chip update goes out only when
+  /// it changes.
+  String? _model;
   String? _cwd;
   String? _lastTyped;
   bool _customTitled = false;
@@ -307,6 +322,23 @@ class ClaudeLogMapper implements SessionLogMapper {
     final msgId = m['id'] is String && (m['id'] as String).isNotEmpty ? m['id'] as String : key;
     final apiIndex = e['apiBlockIndex'];
     final out = <SessionUpdate>[];
+    // The model that wrote this message, shown as the same chip an ACP agent
+    // gets. Only when it changes, and never for a subagent (it runs its own).
+    final model = m['model'];
+    if (!sidechain && model is String && model.isNotEmpty && model != _model) {
+      _model = model;
+      out.add(
+        ConfigUpdate([
+          SelectConfigOption(
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            value: model,
+            choices: [ConfigChoice(value: model, name: claudeModelName(model))],
+          ),
+        ]),
+      );
+    }
     for (var i = 0; i < content.length; i++) {
       final b = content[i];
       if (b is! Map<String, dynamic>) continue;
