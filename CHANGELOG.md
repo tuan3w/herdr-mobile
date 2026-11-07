@@ -4,7 +4,7 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [0.1.54] - 2026-11-07
+## [0.1.55] - 2026-11-07
 
 ### The terminal's raw output no longer takes a box on the chat
 
