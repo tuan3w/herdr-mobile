@@ -10,7 +10,6 @@ import '../../../data/repositories/agent_screens.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-import '../photos/photo_math.dart' show rubberBand;
 import 'agent_navigation.dart';
 import 'agent_peek.dart';
 

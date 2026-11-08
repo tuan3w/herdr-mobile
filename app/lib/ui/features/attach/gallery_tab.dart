@@ -14,12 +14,12 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../agent_session/session_select.dart' show notifyRegionBuilt;
 import '../files/file_format.dart';
+import 'attach_bars.dart' show attachBarsReserve;
 import 'attach_kit.dart';
 import 'gallery_model.dart';
 import 'gallery_preview.dart';
 import 'gallery_thumb.dart';
 import 'selection_circle.dart';
-import 'sheet_frame.dart';
 import 'tray.dart';
 
 /// The gap between tiles; a phone shows three columns, a wider window more
@@ -317,7 +317,7 @@ class _PanelState extends State<_Panel> {
     if (box is! RenderBox || !box.hasSize) return;
     final position = SheetScope.of(context).position;
     // What shows at half height: its height less the grabber and the bars.
-    final room = position.halfHeight - sheetGrabberSpace - Gap.sm - sheetBarsReserve;
+    final room = position.halfHeight - SheetSurface.grabberSpace - Gap.sm - attachBarsReserve;
     if (box.size.height + Gap.lg > room) position.expand();
   }
 
@@ -326,9 +326,8 @@ class _PanelState extends State<_Panel> {
     final clearance = SheetScope.of(context).bottomClearance;
     final primary = widget.primary;
     return SheetScroll(
-      builder: (context, controller, physics) => ListView(
+      builder: (context, controller) => ListView(
         controller: controller,
-        physics: physics,
         padding: EdgeInsets.only(top: Gap.lg, bottom: clearance),
         children: [
           KeyedSubtree(
@@ -391,7 +390,7 @@ class _Grid extends StatefulWidget {
 }
 
 class _GridState extends State<_Grid> {
-  final _scroll = ScrollController();
+  final _scroll = SheetScrollController();
   double _tile = 130;
   int _columns = 3;
   double _lastPixels = 0;
@@ -452,11 +451,10 @@ class _GridState extends State<_Grid> {
         final tail = empty ? 0.0 : clearance;
         return SheetScroll(
           controller: _scroll,
-          builder: (context, controller, physics) => NotificationListener<ScrollNotification>(
+          builder: (context, controller) => NotificationListener<ScrollNotification>(
             onNotification: _onScroll,
             child: CustomScrollView(
               controller: controller,
-              physics: physics,
               // A screenful of tiles is built beyond the edge, never the
               // whole library.
               scrollCacheExtent: ScrollCacheExtent.pixels(_tile * 2),

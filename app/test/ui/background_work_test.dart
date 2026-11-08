@@ -604,7 +604,7 @@ void main() {
       ]);
       await pump(tester, session);
       await openSheet(tester);
-      expect(find.descendant(of: find.byType(BottomSheet), matching: find.byIcon(HerdrIcons.agents)), findsOneWidget);
+      expect(find.descendant(of: find.byType(SheetSurface), matching: find.byIcon(HerdrIcons.agents)), findsOneWidget);
       await tester.tap(find.text('Survey RL frameworks'));
       await settle(tester);
       expect(find.text('Background work \u00b7 1'), findsNothing, reason: 'the sheet closed');

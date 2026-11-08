@@ -190,12 +190,10 @@ class _SwipeToReviewState extends State<SwipeToReview> with SingleTickerProvider
 
   // Past the threshold the row slows down; to the wrong side it hardly moves.
   double _shown(double travel) {
-    if (travel <= 0) return -_rubber(-travel, 36);
+    if (travel <= 0) return -rubberBand(-travel, 36);
     final t = _threshold;
-    return travel <= t ? travel : t + _rubber(travel - t, _width * 0.5);
+    return travel <= t ? travel : t + rubberBand(travel - t, _width * 0.5);
   }
-
-  static double _rubber(double x, double limit) => (1 - 1 / (x * 0.55 / limit + 1)) * limit;
 
   void _down(PointerDownEvent e) {
     _pointers.add(e.pointer);

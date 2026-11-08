@@ -309,7 +309,8 @@ change. Status: **stable** = a catalog entry, a semantics test and this row.
 | `HoldToConfirm` | `hold_confirm.dart` | the hold guard | |
 | `AppTopBar`, `AppBackButton` | `top_bar.dart` | every top bar | seven bars, twelve Backs |
 | `SliverLargeTitle` | `large_title.dart` | a root or list page's title | |
-| `showAppSheet`, `SheetScaffold`, `SheetTitle`, `SheetGrabber`, `showActionSheet`, `showConfirmSheet` | `sheets.dart` | every sheet: four kinds (actions, list, message, form); a confirm sheet takes `hold: true` and its danger button is then a `HoldToConfirm` (a tap says how; a screen reader activates twice), for what deletes something outside the app | 23 sheets with their own paddings |
+| `showAppSheet`, `SheetScaffold`, `SheetTitle`, `SheetGrabber`, `showActionSheet`, `showConfirmSheet` | `sheets.dart` | every app sheet: four kinds (actions, list, message, form); a confirm sheet takes `hold: true` and its danger button is then a `HoldToConfirm` (a tap says how; a screen reader activates twice), for what deletes something outside the app | 23 sheets with their own paddings |
+| `SheetRoute`, `SheetFrame`, `SheetSurface`, `SheetPinned`, `SheetPosition`, `SheetScroll` | `sheet_frame.dart`, `sheet_position.dart` | the one sheet frame and its physics (below), for app sheets and the attach sheet | Material's modal sheet beside a hand-made attach frame |
 | `FloatingBar*`, `BottomStackTransition` | `bottom_stack.dart` | the bottom stack (below) | |
 | `FloatingPill` | `floating_pill.dart` | a pill over content (jump to latest, changed on disk) | three pills |
 | `showToast`, `Toaster`, `ToastShelf`, `ToastCard` | `toast.dart` | the one transient message (`ToastCard` is its picture, for the catalog) | `SnackBar` |
@@ -370,6 +371,39 @@ Renderers live outside the kit: `ui/render/markdown/` (one Markdown renderer,
 `docs/screens/markdown.md`) and `ui/render/terminal/`. Non-visual helpers
 (`TapGuardState`, `SettleGate`, `StepClock`, `DeepLinks`) live in
 `ui/support/`.
+
+### Sheets
+
+One frame (`SheetRoute` / `SheetFrame`) for every sheet, moved by one
+`SheetPosition`. The content is laid out once and moved with a paint offset;
+the scrim's darkness is derived from where the sheet is, never animated on its
+own. The rules come from Emil Kowalski's gesture rules and Apple's fluid
+interfaces:
+
+- **Track, then physics.** While the finger is down the sheet is the finger
+  (1:1, the grab offset kept). Above full height it gives with resistance
+  (`rubberBand`, at most `SheetMath.stretch`, 32 dp) instead of stopping dead.
+- **Release with the finger's speed.** Every release is `Springs.carry` seeded
+  with the release velocity, closing included. The stop comes from
+  `SheetMath.target`: a flick (500 dp/s) moves a stop however short the drag; a
+  slow release goes by where it would stop (`velocity * 0.25 s`), and closes past
+  45% of the travel below the lowest stop. A flick up never closes.
+- **Catchable.** A finger landing stops the sheet where it is: while it rises,
+  settles or leaves after a throw (the route pops only once it is off the
+  screen). A close from code (Back, a button, the scrim) is the timed `sheetOut`
+  from where it is, with no bounce: nothing threw it.
+- **Tall content opens at half.** A sheet whose content fills all the room it
+  may take (a file, a long list) rests at about half the screen and is dragged
+  or scrolled up to show the rest; a flick down from full lands on half, the
+  next closes. A sheet sized to a share of the screen opens whole.
+- **One surface with its scroll.** A scrolling body uses the sheet's
+  `SheetScrollController`: finger up raises the sheet first, finger down scrolls
+  the body to its top first, then the sheet follows.
+- **Buttons stay in reach.** `SheetScaffold`'s actions sit under the scrolling
+  part and are `SheetPinned`, so a tall sheet at half still shows them.
+- **The keyboard lifts the sheet**; content never pads for it. The sheet stops
+  8 dp below the status bar and, sized to its content, is at most 640 dp wide.
+- Reduced motion: every move lands at once; dragging still follows the finger.
 
 ### Toasts
 

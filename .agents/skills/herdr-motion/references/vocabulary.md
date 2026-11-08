@@ -54,9 +54,9 @@ the app deliberately does not use.
 | Ripple | A circle spreads from the touch | not here (press, don't ripple) |
 | Hold to confirm | A fill grows while held | `HoldToConfirm` |
 | Swipe to dismiss / act | Drag something away to act on it | `SwipeToReview` |
-| Rubber-banding | Resistance and snap-back past an edge | `photo_math.dart`, `swipe_review.dart` |
+| Rubber-banding | Resistance and snap-back past an edge | `rubberBand` (`gesture_math.dart`) |
 | Momentum / fling | Motion that carries the release velocity | `SpringSimulation` velocity |
-| Projection | Choosing the rest point from where a fling would stop | `sheet_frame.dart` |
+| Projection | Choosing the rest point from where a fling would stop | `SheetMath.target` |
 | Shake | A quick jitter for a rejected input | not here: a `failed` haptic and words |
 
 ## Easing and springs

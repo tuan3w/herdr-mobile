@@ -632,10 +632,11 @@ MediaStore code, which this app has none of: the share sheet is the way out.
 
 `ui/features/attach/`, `docs/screens/attach.md`.
 
-- It is NOT a Material bottom sheet: the content is laid out once at full
-  height and moved with transforms (`SheetPosition`), so never size a tab from
-  the screen, keep a tab's end clear with `SheetScope.bottomClearance`,
-  top-align its empty states and use `SheetScroll` for its scroll view.
+- It is the app's one sheet with `fill: true` (`SheetRoute`, `SheetFrame`):
+  the content is laid out once at full height and moved with a paint offset
+  (`SheetPosition`), so never size a tab from the screen, keep a tab's end
+  clear with `SheetScope.bottomClearance`, top-align its empty states and use
+  `SheetScroll` for its scroll view.
 - Selection lives in ONE `AttachTray` shared by the tabs; tiles listen to it
   themselves (no per-tile notifier, no grid rebuild per pick).
 - Nothing asks the system for the photo permission except the tap on the

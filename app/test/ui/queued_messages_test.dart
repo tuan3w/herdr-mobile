@@ -83,7 +83,7 @@ void main() {
     await tester.tap(find.text('then run the tests'));
     await settle(tester);
     expect(find.text('Edit queued message'), findsOneWidget);
-    final sheetField = find.descendant(of: find.byType(BottomSheet), matching: find.byType(TextField));
+    final sheetField = find.descendant(of: find.byType(SheetSurface), matching: find.byType(TextField));
     expect(find.widgetWithText(AppButton, 'Save').evaluate(), isNotEmpty);
     expect(
       tester.widget<AppButton>(find.widgetWithText(AppButton, 'Save')).onPressed,
@@ -109,7 +109,7 @@ void main() {
     await queue(tester, 'then run the tests');
     await tester.tap(find.text('then run the tests'));
     await settle(tester);
-    final sheetField = find.descendant(of: find.byType(BottomSheet), matching: find.byType(TextField));
+    final sheetField = find.descendant(of: find.byType(SheetSurface), matching: find.byType(TextField));
     await tester.enterText(sheetField, 'something else');
     await tester.pump();
 

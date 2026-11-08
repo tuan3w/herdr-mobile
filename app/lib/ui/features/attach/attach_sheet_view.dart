@@ -76,30 +76,39 @@ class AttachSheetController {
     ),
   );
 
-  /// The action bar and the tab bar, pinned to the bottom edge.
-  Widget buildBars(BuildContext context) {
+  /// The sheet: the tabs, with the action bar and the tab bar pinned to the
+  /// screen's bottom edge over them ([SheetPinned]).
+  Widget buildSheet(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      buildBody(context),
+      Align(
+        alignment: Alignment.bottomCenter,
+        child: SheetPinned(child: _bars(context)),
+      ),
+    ],
+  );
+
+  Widget _bars(BuildContext context) {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bottom = MediaQuery.paddingOf(context).bottom;
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AttachActionBar(tray: tray, onAttach: () => finish(AttachOutcome.attached)),
-          // The keyboard has the room while a field is being typed in.
-          if (keyboard)
-            const SizedBox(height: FloatingBar.margin)
-          else
-            Padding(
-              padding: EdgeInsets.only(bottom: bottom + FloatingBar.margin),
-              child: ValueListenableBuilder<AttachTab>(
-                valueListenable: tab,
-                builder: (context, t, _) => AttachTabBar(selected: t, onChanged: select),
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AttachActionBar(tray: tray, onAttach: () => finish(AttachOutcome.attached)),
+        // The keyboard has the room while a field is being typed in.
+        if (keyboard)
+          const SizedBox(height: FloatingBar.margin)
+        else
+          Padding(
+            padding: EdgeInsets.only(bottom: bottom + FloatingBar.margin),
+            child: ValueListenableBuilder<AttachTab>(
+              valueListenable: tab,
+              builder: (context, t, _) => AttachTabBar(selected: t, onChanged: select),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }

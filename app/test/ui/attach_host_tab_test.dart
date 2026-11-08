@@ -13,7 +13,6 @@ import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/attach/host_tab.dart';
 import 'package:herdr_mobile/ui/features/attach/selection_circle.dart';
-import 'package:herdr_mobile/ui/features/attach/sheet_frame.dart';
 import 'package:herdr_mobile/ui/features/attach/tray.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_row.dart';

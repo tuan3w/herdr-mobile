@@ -1,5 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/ui/core/kit.dart' show rubberBand;
 import 'package:herdr_mobile/ui/features/photos/photo_math.dart';
 
 /// A 4000 x 3000 photo in a 412 x 892 viewport on a 2.625 dpr screen.

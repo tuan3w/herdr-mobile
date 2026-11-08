@@ -339,15 +339,6 @@ abstract final class AppTheme {
         decoration: BoxDecoration(color: ds.inverseSurface, borderRadius: BorderRadius.circular(Radii.xs)),
         textStyle: Type.caption.copyWith(color: ds.onInverse),
       ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: ds.surface,
-        modalBackgroundColor: ds.surface,
-        modalBarrierColor: ds.scrim,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        showDragHandle: false,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.lg))),
-      ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: ds.textSecondary),
     );
   }

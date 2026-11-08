@@ -6,6 +6,11 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import 'attach_kit.dart';
 import 'tray.dart';
 
+/// Height of the bars region's reserve: the action bar, its 8 dp gap, the tab
+/// pill and the margin under it; tabs add it to their end padding via
+/// [SheetScope.bottomClearance].
+const attachBarsReserve = FloatingBar.height * 2 + Gap.sm + FloatingBar.margin;
+
 extension AttachTabLook on AttachTab {
   String get label => switch (this) {
     AttachTab.gallery => 'Gallery',

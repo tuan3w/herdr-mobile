@@ -6,55 +6,45 @@ import 'buttons.dart';
 import 'hold_confirm.dart';
 import 'motion.dart';
 import 'rows.dart';
+import 'sheet_frame.dart';
+import 'sheet_position.dart';
 import 'tokens.dart';
 
-/// Modal bottom sheet in the app's style: rounded top, [SheetGrabber],
-/// safe-area aware. [builder] returns a [SheetScaffold], which pads, titles
-/// and scrolls the body by its [SheetKind].
+/// Opens a sheet in the app's style: a [SheetRoute] whose [SheetFrame] gives
+/// it the rounded surface, the [SheetGrabber] and the gestures every sheet
+/// shares (see [SheetPosition]): it follows the finger, closes on a throw or a
+/// long pull, can be caught while it moves, and a tall one opens at half
+/// height and is dragged or scrolled up to show the rest. [builder] returns a
+/// [SheetScaffold], which pads, titles and scrolls the body by its
+/// [SheetKind].
 ///
-/// Colours come from the theme (`bottomSheetTheme`, `modalBarrierColor`), so a
-/// light/dark switch while a sheet is open restyles it. A tall sheet stops
-/// below the status bar: the session overview used to grow under the clock,
-/// its grabber and title drawn over the status icons. Its height is capped
-/// rather than `useSafeArea` set, which also takes the side insets off the
-/// sheet itself, so a landscape phone with a side navigation bar showed the
-/// page in a strip beside it. The cap reads the top inset from the navigator
-/// that hosts the sheet (inside the route the sheet's own top padding is
-/// already removed); the size dependency rebuilds it on rotation. The exit
-/// runs the enter curve flipped (never ease-in). Under reduced motion the
-/// sheet appears and goes without sliding (drag to dismiss still works).
-Future<T?> showAppSheet<T>(BuildContext context, {required WidgetBuilder builder, bool dismissible = true}) =>
-    showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: dismissible,
-      sheetAnimationStyle: Motion.reduced(context)
-          ? AnimationStyle.noAnimation
-          : AnimationStyle(
-              curve: Motion.easeOut,
-              reverseCurve: Motion.easeOutExit,
-              duration: Motion.sheetIn,
-              reverseDuration: Motion.sheetOut,
-            ),
-      builder: (ctx) => ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(ctx).height - MediaQuery.paddingOf(Navigator.of(ctx).context).top,
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: Gap.sm),
-                child: SheetGrabber(),
-              ),
-              Flexible(child: builder(ctx)),
-            ],
-          ),
+/// Colours come from the theme, so a light/dark switch while a sheet is open
+/// restyles it. A tall sheet stops below the status bar: the session overview
+/// used to grow under the clock, its grabber and title drawn over the status
+/// icons. The side insets are taken inside the sheet ([SafeArea]), not off
+/// it: a landscape phone with a side navigation bar showed the page in a strip
+/// beside a sheet that had them taken off. The keyboard lifts the sheet; its
+/// content never pads for it. Under reduced motion the sheet appears and goes
+/// without sliding (dragging still works).
+Future<T?> showAppSheet<T>(BuildContext context, {required WidgetBuilder builder}) {
+  final navigator = Navigator.of(context);
+  // Themes set between the opener and the navigator still apply in the sheet.
+  final themes = InheritedTheme.capture(from: context, to: navigator.context);
+  return navigator.push(
+    SheetRoute<T>(
+      reduced: Motion.reduced(context),
+      builder: (ctx) => themes.wrap(
+        Semantics(
+          scopesRoute: true,
+          namesRoute: true,
+          explicitChildNodes: true,
+          label: MaterialLocalizations.of(ctx).dialogLabel,
+          child: SafeArea(top: false, child: builder(ctx)),
         ),
       ),
-    );
+    ),
+  );
+}
 
 /// The handle at the top of every sheet (app sheets and the attach sheet).
 class SheetGrabber extends StatelessWidget {
@@ -90,21 +80,26 @@ enum SheetKind {
   /// Rows of actions (replaces popup menus). Quiet [SheetTitle].
   actions,
 
-  /// A long list: the title stays pinned and the body scrolls, the sheet
-  /// capped at [SheetScaffold.listCap] of the screen. A body that scrolls on
-  /// its own (a lazy list) sets [SheetScaffold.scrolls]; give it `shrinkWrap`
-  /// while it is short.
+  /// A long list: the title stays pinned and the body scrolls. A body that
+  /// scrolls on its own (a lazy list) sets [SheetScaffold.scrolls]; give it
+  /// `shrinkWrap` while it is short.
   list,
 
   /// A short message with buttons. [Type.title] title.
   message,
 
-  /// Fields: like [message], and lifted above the keyboard.
+  /// Fields: like [message]. The sheet stands on the keyboard.
   form,
 }
 
 /// The body of every app sheet: padding, title, scrolling and the closing
 /// [actions] (usually [AppButton]s, stacked full width) by [kind].
+///
+/// The body scrolls with the sheet's [SheetScrollController], so a drag on it
+/// moves the sheet first where it should (up from half height, down from the
+/// top of the body). The [actions] sit under the scrolling part, never inside
+/// it, and are [SheetPinned]: they stay in reach while a tall sheet rests at
+/// half height.
 class SheetScaffold extends StatelessWidget {
   const SheetScaffold({
     super.key,
@@ -131,9 +126,6 @@ class SheetScaffold extends StatelessWidget {
   /// [SectionLabel], full-width rows). The title and [actions] keep theirs.
   final bool bleed;
 
-  /// The tallest a [SheetKind.list] sheet grows, as a share of the screen.
-  static const listCap = 0.9;
-
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
@@ -143,10 +135,8 @@ class SheetScaffold extends StatelessWidget {
     final side = rows ? Gap.xs : Gap.gutter;
     final padding = rows
         ? const EdgeInsets.only(top: Gap.sm, bottom: Gap.md)
-        : EdgeInsets.only(
-            top: Gap.xl,
-            bottom: Gap.lg + (kind == SheetKind.form ? MediaQuery.viewInsetsOf(context).bottom : 0),
-          );
+        : const EdgeInsets.only(top: Gap.xl, bottom: Gap.lg);
+    final scroll = SheetScope.maybeOf(context)?.scroll;
     final heading = title == null
         ? null
         : rows
@@ -161,15 +151,25 @@ class SheetScaffold extends StatelessWidget {
           );
     final buttons = actions.isEmpty
         ? null
-        : Padding(
-            padding: EdgeInsets.fromLTRB(rows ? side + Gap.lg : side, Gap.lg, rows ? side + Gap.lg : side, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < actions.length; i++) ...[if (i > 0) const SizedBox(height: Gap.sm), actions[i]],
-              ],
+        : SheetPinned(
+            color: ds.surface,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                rows ? side + Gap.lg : side,
+                Gap.lg,
+                rows ? side + Gap.lg : side,
+                padding.bottom,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[if (i > 0) const SizedBox(height: Gap.sm), actions[i]],
+                ],
+              ),
             ),
           );
+    // The bottom padding goes under the buttons when there are any.
+    final end = buttons == null ? padding.bottom : 0.0;
     final body = bleed
         ? child
         : Padding(
@@ -177,29 +177,43 @@ class SheetScaffold extends StatelessWidget {
             child: child,
           );
     if (kind == SheetKind.list) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * listCap),
-        child: Padding(
-          padding: padding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ?heading,
-              Flexible(child: scrolls ? body : SingleChildScrollView(child: body)),
-              ?buttons,
-            ],
-          ),
+      return Padding(
+        padding: EdgeInsets.only(top: padding.top, bottom: end),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ?heading,
+            Flexible(
+              child: !scrolls
+                  ? SingleChildScrollView(controller: scroll, child: body)
+                  : scroll == null
+                  ? body
+                  // The lazy list takes the sheet's controller as its primary one.
+                  : PrimaryScrollController(controller: scroll, child: body),
+            ),
+            ?buttons,
+          ],
         ),
       );
     }
-    return SingleChildScrollView(
-      padding: padding,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [?heading, body, ?buttons],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          child: SingleChildScrollView(
+            controller: scroll,
+            padding: EdgeInsets.only(top: padding.top, bottom: end),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [?heading, body],
+            ),
+          ),
+        ),
+        ?buttons,
+      ],
     );
   }
 }

@@ -6,8 +6,8 @@ import '../../../data/repositories/attach_target.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
+import '../attach/attach_bars.dart' show attachBarsReserve;
 import '../attach/attach_sheet_view.dart';
-import '../attach/sheet_frame.dart';
 import '../attach/tray.dart';
 import 'attach_model.dart';
 
@@ -40,7 +40,7 @@ Future<void> showAttachSheet(
   final reduced = MediaQuery.disableAnimationsOf(context);
   late final AttachTray tray;
   late final AttachSheetController controller;
-  late final AttachSheetRoute<AttachOutcome> route;
+  late final SheetRoute<AttachOutcome> route;
   AttachOutcome? outcome;
   tray = AttachTray(
     capacity: attachments.room,
@@ -60,7 +60,12 @@ Future<void> showAttachSheet(
       navigator.pop(o);
     },
   );
-  route = AttachSheetRoute<AttachOutcome>(reduced: reduced, content: controller.buildBody, bars: controller.buildBars);
+  route = SheetRoute<AttachOutcome>(
+    reduced: reduced,
+    fill: true,
+    pinnedReserve: attachBarsReserve,
+    builder: controller.buildSheet,
+  );
   unawaited(navigator.push(route));
   await route.completed;
   attachments.sheetOpen = false;

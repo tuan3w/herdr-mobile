@@ -648,9 +648,14 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      Color sheetColor() => tester
-          .widget<Material>(find.descendant(of: find.byType(BottomSheet), matching: find.byType(Material)).first)
-          .color!;
+      Color sheetColor() =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find.descendant(of: find.byType(SheetSurface), matching: find.byType(DecoratedBox)).first,
+                      )
+                      .decoration
+                  as BoxDecoration)
+              .color!;
       expect(sheetColor(), Ds.paper.surface);
 
       mode.value = ThemeMode.dark;

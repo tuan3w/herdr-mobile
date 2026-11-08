@@ -504,42 +504,39 @@ class _PickerState extends State<_Picker> {
     final ds = context.ds;
     final setting = widget.setting;
     final height = MediaQuery.sizeOf(context).height * 0.6;
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SizedBox(
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PressBuilder(
-              onTap: widget.onBack,
-              semanticLabel: 'Back to options',
-              builder: (context, pressed) => Container(
-                constraints: const BoxConstraints(minHeight: kMinTap),
-                padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.chevronLeft, size: IconSize.bar, color: ds.textSecondary),
-                    const SizedBox(width: Gap.sm),
-                    Expanded(
-                      child: Text(setting.name, style: Type.labelStrong.copyWith(color: ds.textSecondary)),
-                    ),
-                  ],
-                ),
+    return SizedBox(
+      height: height,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PressBuilder(
+            onTap: widget.onBack,
+            semanticLabel: 'Back to options',
+            builder: (context, pressed) => Container(
+              constraints: const BoxConstraints(minHeight: kMinTap),
+              padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+              child: Row(
+                children: [
+                  Icon(LucideIcons.chevronLeft, size: IconSize.bar, color: ds.textSecondary),
+                  const SizedBox(width: Gap.sm),
+                  Expanded(
+                    child: Text(setting.name, style: Type.labelStrong.copyWith(color: ds.textSecondary)),
+                  ),
+                ],
               ),
             ),
-            if (setting.choices.length > _Picker.searchFrom)
-              Padding(
-                padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
-                child: SearchField(
-                  controller: _query,
-                  hint: 'Search ${countOf(setting.choices.length, 'choice')}',
-                  onChanged: (_) => setState(() {}),
-                ),
+          ),
+          if (setting.choices.length > _Picker.searchFrom)
+            Padding(
+              padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
+              child: SearchField(
+                controller: _query,
+                hint: 'Search ${countOf(setting.choices.length, 'choice')}',
+                onChanged: (_) => setState(() {}),
               ),
-            Expanded(child: _list(context)),
-          ],
-        ),
+            ),
+          Expanded(child: _list(context)),
+        ],
       ),
     );
   }

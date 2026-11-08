@@ -7,29 +7,24 @@ The design system (tokens, kit, motion, words) is `docs/DESIGN.md`; this file ho
 
 One bottom sheet for everything that can go with a message, modelled on
 Telegram's: a grabber, a scrim, a content area and a floating pill of tabs at
-the bottom. `showAttachSheet` (agent_session/attach_sheet.dart) pushes
-`AttachSheetRoute` on the frame of the tap (nothing awaited before it); the
-tabs draw what they have (the bars, the camera tile) while the library answers.
+the bottom. `showAttachSheet` (agent_session/attach_sheet.dart) pushes a
+`SheetRoute` (`fill: true`) on the frame of the tap (nothing awaited before
+it); the tabs draw what they have (the bars, the camera tile) while the
+library answers.
 
-- **Frame** (`sheet_frame.dart`). Not a Material bottom sheet, which resizes
-  its content while dragged: the content is laid out ONCE at full height and
-  moved with transforms. `SheetPosition.offset` is the translation from full
-  height (0 = full, `restHalf` = half, ~55% of the screen, `full` = away). The
-  surface follows the finger 1:1, the bars (action bar, tab bar) keep to the
-  screen's bottom while the sheet is between half and full height, a release
-  hands the finger's velocity to a spring (`SpringDescription.withDampingRatio`,
-  stiffness 420, ratio 0.88) and picks the stop from where the sheet would end
-  up (`velocity * 0.25`): between full and half the choice is one of those two
-  (a hard flick down from full lands on half, the next one closes), below half
-  it goes away or comes back. The grid scrolls only at full height (at half a
-  drag on it moves the sheet: `SheetScroll`); at full, a pull down from the top
-  hands over to the sheet. The scrim ignores taps until the sheet has come up
-  (the second tap of a double tap on the paperclip). The keyboard lifts the
-  sheet to full height and the tab bar steps aside. Under reduced motion the
-  sheet appears and every release lands at once. Tabs keep their bottom end
-  clear with `SheetScope.bottomClearance` (the half-height shift that hangs
-  below the screen plus the bars) and are top-aligned, never centred, for the
-  same reason.
+- **Frame**: the app's one sheet (`ui/core/sheet_frame.dart`,
+  `sheet_position.dart`; how every sheet moves is in `docs/DESIGN.md`
+  "Sheets"). This one fills the room (laid out ONCE at full height and moved
+  with a paint offset), so it always has a half-height stop (~55% of the
+  screen), and takes the whole width in landscape. The bars (action bar, tab
+  bar) are `SheetPinned`: they keep to the screen's bottom while the sheet is
+  between half and full height. The grid scrolls with a
+  `SheetScrollController` (`SheetScroll`): at half a drag up raises the sheet
+  first, at full a pull down from the grid's top hands over to the sheet. The
+  keyboard lifts the sheet to full height and the tab bar steps aside. Tabs
+  keep their bottom end clear with `SheetScope.bottomClearance` (the
+  half-height shift that hangs below the screen plus the bars) and are
+  top-aligned, never centred, for the same reason.
 - **Tabs** (`attach_bars.dart`, `attach_sheet_view.dart`): Gallery | Files |
   Machine, each an icon and a label, the selected one in `ds.accentText` on a
   `ds.accentWash` capsule, the app's selection look (`Segmented`), in the

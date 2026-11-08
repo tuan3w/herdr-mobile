@@ -127,7 +127,7 @@ Future<void> _openSwitcher(WidgetTester tester) async {
   await settle(tester);
 }
 
-Finder _inSheet(Finder f) => find.descendant(of: find.byType(BottomSheet), matching: f);
+Finder _inSheet(Finder f) => find.descendant(of: find.byType(SheetSurface), matching: f);
 
 String _onScreen(WidgetTester tester) => tester.widget<PaneScreen>(find.byType(PaneScreen)).agent.paneId;
 
@@ -148,7 +148,7 @@ void main() {
     await _open(tester, _id(4));
 
     await _openSwitcher(tester);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(SheetSurface), findsOneWidget);
     double y(String text) => tester.getTopLeft(_inSheet(find.text(text)).first).dy;
     final order = ['Needs you', 'task 4', 'task 2', 'Working', 'task 3', 'Idle', 'task 1', 'All agents on the board'];
     for (final text in order) {
@@ -165,7 +165,7 @@ void main() {
     expect((tester.getCenter(here).dy - y('task 4')).abs(), lessThan(40), reason: 'on the row of the agent in front');
     await tester.tap(_inSheet(find.text('task 4')));
     await settle(tester);
-    expect(find.byType(BottomSheet), findsOneWidget, reason: 'Here goes nowhere');
+    expect(find.byType(SheetSurface), findsOneWidget, reason: 'Here goes nowhere');
     expect(_onScreen(tester), _id(4));
     await teardownUi(tester, h);
   });
@@ -179,7 +179,7 @@ void main() {
     await _openSwitcher(tester);
     await tester.tap(_inSheet(find.text('task 1')));
     await settle(tester);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(SheetSurface), findsNothing);
     expect(_onScreen(tester), _id(1), reason: 'an idle agent, which the swipe does not reach');
 
     await tester.tap(find.byTooltip('Back'));
@@ -199,7 +199,7 @@ void main() {
     await tester.tap(_inSheet(find.text('All agents on the board')));
     await settle(tester);
     expect(find.byType(PaneScreen), findsNothing);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(SheetSurface), findsNothing);
     expect(find.text('open ${_id(1)}'), findsOneWidget);
     await teardownUi(tester, h);
   });

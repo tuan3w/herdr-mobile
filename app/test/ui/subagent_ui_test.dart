@@ -663,8 +663,11 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      // A tall sheet opens at half height; dragged up it shows all of itself.
+      await tester.drag(find.text('Session overview'), const Offset(0, -600));
+      await tester.pumpAndSettle();
       expect(
-        tester.getRect(find.byType(BottomSheet)).top,
+        tester.getRect(find.byType(SheetSurface)).top,
         greaterThanOrEqualTo(24),
         reason: 'the grabber and the title clear the clock',
       );
@@ -687,7 +690,7 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      final sheet = tester.getRect(find.byType(BottomSheet));
+      final sheet = tester.getRect(find.byType(SheetSurface));
       expect(sheet.left, 0, reason: 'no strip of the page beside the sheet');
       expect(sheet.right, 600);
       expect(sheet.top, greaterThanOrEqualTo(24), reason: 'and still below the status bar');

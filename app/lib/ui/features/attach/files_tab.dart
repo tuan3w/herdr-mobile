@@ -19,7 +19,6 @@ import '../files/file_widgets.dart' show fileIconForName;
 import '../files/middle_ellipsis.dart';
 import 'attach_kit.dart';
 import 'selection_circle.dart';
-import 'sheet_frame.dart';
 import 'tray.dart';
 
 /// The Files tab of the attach sheet: files on the PHONE.
@@ -165,9 +164,8 @@ class _FilesTabState extends State<FilesTab> {
 
     // No fill of its own: the tab sits on the sheet's surface, like Gallery and Host.
     return SheetScroll(
-      builder: (context, controller, physics) => ListView(
+      builder: (context, controller) => ListView(
         controller: controller,
-        physics: physics,
         padding: EdgeInsets.only(top: Gap.sm, bottom: clearance),
         children: [
           _ChooseTile(onTap: _choose),

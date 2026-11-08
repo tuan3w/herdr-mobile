@@ -1,7 +1,7 @@
-// The sheet's physics: it follows the finger 1:1 without laying the grid out
-// again, a release hands the finger's velocity to a spring that picks half
-// height, full height or away, the grid scrolls only at full height, and the
-// keyboard lifts the sheet to full height.
+// The attach sheet in the composer: it opens at half height, follows the
+// finger 1:1 without laying the grid out again, the grid scrolls only at full
+// height, and the keyboard lifts the sheet to full height. The physics shared
+// by every sheet are tested in sheet_test.dart.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -10,7 +10,6 @@ import 'package:herdr_mobile/ui/features/agent_session/session_select.dart';
 import 'package:herdr_mobile/ui/features/attach/attach_bars.dart';
 import 'package:herdr_mobile/ui/features/attach/attach_kit.dart';
 import 'package:herdr_mobile/ui/features/attach/gallery_tab.dart';
-import 'package:herdr_mobile/ui/features/attach/sheet_frame.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../support/attach_fakes.dart';
@@ -51,89 +50,12 @@ ScrollableState grid(WidgetTester tester) => tester.state<ScrollableState>(
 /// Top edge of the album chip (header): moves with the sheet.
 double sheetTop(WidgetTester tester) => tester.getTopLeft(find.text('Recent')).dy;
 
+/// Just under the sheet's top edge, on the grabber strip (moves with the sheet).
+double grabber(WidgetTester tester) => tester.getTopLeft(find.byType(SheetSurface)).dy + 6;
+
 void main() {
   setUpAll(loadAppFonts);
   tearDown(() => debugRegionBuilt = null);
-
-  group('SheetPosition', () {
-    Future<(SheetPosition, List<int>)> make(WidgetTester tester) async {
-      final dismissed = <int>[];
-      final p = SheetPosition(vsync: tester, reduced: () => true, onDismiss: () => dismissed.add(1));
-      addTearDown(p.dispose);
-      p.layout(full: 800, half: 440); // rests 360 down
-      return (p, dismissed);
-    }
-
-    testWidgets('starts at half height', (tester) async {
-      final (p, _) = await make(tester);
-      expect(p.offset.value, 360);
-      expect(p.expanded.value, isFalse);
-    });
-
-    testWidgets('a slow drag to the middle between the stops settles on the nearer one', (tester) async {
-      final (p, d) = await make(tester);
-      p.dragBy(-150); // 210: nearer to full (0) than half (360)? 210 is closer to 360
-      p.release(0);
-      expect(p.offset.value, 360);
-      p.dragBy(-200); // 160
-      p.release(0);
-      expect(p.offset.value, 0);
-      expect(p.expanded.value, isTrue);
-      expect(d, isEmpty);
-    });
-
-    testWidgets('a flick up from half goes to full even from a short drag', (tester) async {
-      final (p, _) = await make(tester);
-      p.dragBy(-40);
-      p.release(-1800);
-      expect(p.offset.value, 0);
-    });
-
-    testWidgets('a flick down from full goes to half, not away', (tester) async {
-      final (p, d) = await make(tester);
-      p.expand();
-      p.dragBy(60);
-      p.release(1600);
-      expect(p.offset.value, 360);
-      expect(d, isEmpty);
-    });
-
-    testWidgets('dragging half height down past the middle of what is left dismisses', (tester) async {
-      final (p, d) = await make(tester);
-      p.dragBy(250); // 610 of 800: past 360 + 0.45 * 440 = 558
-      p.release(0);
-      expect(d, [1]);
-    });
-
-    testWidgets('a short pull down from half comes back', (tester) async {
-      final (p, d) = await make(tester);
-      p.dragBy(80);
-      p.release(0);
-      expect(p.offset.value, 360);
-      expect(d, isEmpty);
-    });
-
-    testWidgets('a fast flick down from half dismisses even from a short drag', (tester) async {
-      final (p, d) = await make(tester);
-      p.dragBy(60);
-      p.release(2400);
-      expect(d, [1]);
-    });
-
-    testWidgets('past full height there is only a little give', (tester) async {
-      final (p, _) = await make(tester);
-      p.expand();
-      p.dragBy(-100);
-      expect(p.offset.value, inInclusiveRange(-30, 0));
-    });
-
-    testWidgets('the room changing (the keyboard) keeps the stop', (tester) async {
-      final (p, _) = await make(tester);
-      p.expand();
-      p.layout(full: 500, half: 440);
-      expect(p.offset.value, 0);
-    });
-  });
 
   group('in the composer', () {
     testWidgets('opens at about 55% of the screen', (tester) async {
@@ -151,7 +73,7 @@ void main() {
       );
       final built = <String, int>{};
       debugRegionBuilt = (r) => built[r] = (built[r] ?? 0) + 1;
-      final g = await tester.startGesture(Offset(206, before - 40));
+      final g = await tester.startGesture(Offset(206, grabber(tester)));
       var last = before;
       for (var i = 1; i <= 10; i++) {
         await g.moveBy(const Offset(0, 12));
@@ -176,7 +98,7 @@ void main() {
 
     testWidgets('a pull down past the threshold closes it; a scrim tap closes it', (tester) async {
       await openSheet(tester);
-      await tester.dragFrom(Offset(206, sheetTop(tester) - 40), const Offset(0, 420));
+      await tester.dragFrom(Offset(206, grabber(tester)), const Offset(0, 420));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(AttachTabBar), findsNothing);
@@ -252,7 +174,7 @@ void main() {
     testWidgets('reduced motion: a release lands on its stop at once', (tester) async {
       await openSheet(tester, reduced: true);
       final half = sheetTop(tester);
-      await tester.dragFrom(Offset(206, half - 40), const Offset(0, -300));
+      await tester.dragFrom(Offset(206, grabber(tester)), const Offset(0, -300));
       await tester.pump();
       expect(sheetTop(tester), lessThan(half - 300));
     });

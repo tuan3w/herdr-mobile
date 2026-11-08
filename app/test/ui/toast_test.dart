@@ -157,7 +157,7 @@ void main() {
       _toaster.show('Copied');
       await _ms(tester, 400);
 
-      unawaited(showModalBottomSheet<void>(context: _ctx, builder: (_) => const SizedBox(height: 200)));
+      unawaited(showAppSheet<void>(_ctx, builder: (_) => const SizedBox(height: 200)));
       await tester.pump();
       await _ms(tester, _exit);
       expect(_toast, findsNothing);

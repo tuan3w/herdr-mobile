@@ -81,13 +81,19 @@ keeps no sub-pixel offset.
 
 ## A sheet the finger drives
 
-App sheets go through `showAppSheet` (`ui/core/sheets.dart`): `sheetIn` /
-`sheetOut` through `Motion.curved`, and no animation under reduced motion (drag
-to dismiss still works). For snap points the attach sheet's `SheetPosition`
-(`ui/features/attach/sheet_frame.dart`) is the model: `Springs.carry`, a
-target picked from the projected fling (`y + velocity * Springs.projectSheet`),
-`animateWith(SpringSimulation(spring,
-current, target, velocity))`, and content laid out once and moved with transforms.
+Every sheet is a `SheetRoute` (`ui/core/sheet_frame.dart`; app sheets through
+`showAppSheet`), moved by `SheetPosition` (`sheet_position.dart`): the content
+laid out once and moved with a paint offset; 1:1 tracking with
+`SheetMath.shown`'s rubber band above full height; a release aimed by
+`SheetMath.target` (a flick, or the projected fling
+`y + velocity * Springs.projectSheet`) and carried by
+`animateWith(SpringSimulation(Springs.carry, current, target, velocity))`,
+closing included (it pops once off the screen, so a finger can catch it on
+the way); a close from code is the timed `sheetOut` from where the sheet is;
+the scrim derived from the position. A body that scrolls uses the sheet's
+`SheetScrollController` so its drags reach the sheet; buttons that must stay
+in reach are `SheetPinned`. Reduced motion: every move lands at once, dragging
+still follows the finger.
 
 ## Pinch, pan and double-tap
 

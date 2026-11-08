@@ -10,7 +10,6 @@ import 'package:herdr_mobile/data/services/phone_files.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/attach/files_tab.dart';
 import 'package:herdr_mobile/ui/features/attach/selection_circle.dart';
-import 'package:herdr_mobile/ui/features/attach/sheet_frame.dart';
 import 'package:herdr_mobile/ui/features/attach/tray.dart';
 
 import '../support/attach_fakes.dart';

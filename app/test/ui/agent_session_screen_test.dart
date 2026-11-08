@@ -919,7 +919,7 @@ void main() {
       await tester.pumpAndSettle();
       // The chips above the composer say the same (they are the quick way in):
       // the sheet's own rows are what this test is about.
-      final sheet = find.byType(BottomSheet);
+      final sheet = find.byType(SheetSurface);
       expect(
         find.descendant(of: sheet, matching: find.text('Model 5')),
         findsOneWidget,

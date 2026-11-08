@@ -120,11 +120,12 @@ Apple's fluid interfaces:
 - **Hand off velocity.** On release, pass the gesture's velocity into the
   `SpringSimulation` so dragging and animating have no seam.
 - **Project momentum.** Choose the snap target from where a fling would stop,
-  not from where the finger lifted (Apple's projection, in `sheet_frame.dart`
-  and `photo_math.dart`). A quick flick is enough; it doesn't have to cross a
-  distance threshold.
+  not from where the finger lifted (Apple's projection, in `SheetMath.target`
+  (`sheet_position.dart`) and `photo_math.dart`). A quick flick is enough; it
+  doesn't have to cross a distance threshold.
 - **Rubber-band at edges.** Resist progressively and never hard-stop
-  (`photo_math.dart`, `swipe_review.dart`).
+  (`rubberBand` in `gesture_math.dart`: the sheet above full height, the photo
+  viewer, `swipe_review.dart`).
 - **Damping.** Critically damped by default (`Springs.settle`, `Springs.out`).
   Use a little bounce (`Springs.carry`, `Springs.snap`: ratio ≥ 0.85) only
   when the gesture itself carried momentum. Snap to the end (`snapToEnd`, a
@@ -140,8 +141,10 @@ Apple's fluid interfaces:
   two-step prime-then-send for a hold).
 
 Use the existing code as models: `swipe_review.dart` (swipe to act, with undo),
-`sheet_frame.dart` (sheet snap points and projection), `photo_stage.dart`
-(pinch, pan, double tap). `photo_math.dart` holds the pure arithmetic and its tests.
+`sheet_position.dart` (snap points, projection, a close that can be caught, a
+scroll view that hands its drags to the sheet), `photo_stage.dart` (pinch, pan,
+double tap). `photo_math.dart` and `SheetMath` hold the pure arithmetic and
+their tests.
 
 ## 6. Interruption
 

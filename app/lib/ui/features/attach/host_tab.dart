@@ -16,7 +16,6 @@ import '../files/file_row.dart';
 import '../files/file_thumb.dart';
 import '../files/file_widgets.dart';
 import 'selection_circle.dart';
-import 'sheet_frame.dart';
 import 'tray.dart';
 
 /// The attach sheet's Machine tab: files on the machine the agent runs on, in
@@ -201,9 +200,8 @@ class _HostTabState extends State<HostTab> {
   }
 
   Widget _unavailable(double clearance) => SheetScroll(
-    builder: (context, controller, physics) => CustomScrollView(
+    builder: (context, controller) => CustomScrollView(
       controller: controller,
-      physics: physics,
       slivers: [
         SliverPadding(
           padding: EdgeInsets.only(bottom: clearance),
@@ -318,9 +316,8 @@ class _HostTabState extends State<HostTab> {
       );
     }
     return SheetScroll(
-      builder: (context, controller, physics) => CustomScrollView(
+      builder: (context, controller) => CustomScrollView(
         controller: controller,
-        physics: physics,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: [
           SliverPadding(

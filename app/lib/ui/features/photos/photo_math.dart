@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/painting.dart' show BoxFit, applyBoxFit;
+import 'package:herdr_mobile/ui/core/kit.dart' show rubberBand;
 
 /// The arithmetic of the photo viewer's gestures, free of widgets so it can be
 /// tested on its own.
@@ -17,16 +18,6 @@ import 'package:flutter/painting.dart' show BoxFit, applyBoxFit;
 /// with the snappier deceleration rate. `v / 1000 * d / (1 - d)`.
 double project(double velocity, {double decelerationRate = 0.99}) =>
     velocity / 1000 * decelerationRate / (1 - decelerationRate);
-
-/// A boundary that gives way instead of stopping: the further past the edge a
-/// drag goes ([overshoot], at least 0), the less the content follows: it starts
-/// at [constant] of the finger's speed and never moves more than [dimension].
-/// Apple's rubber-banding function; callers pass a fraction of the screen as
-/// [dimension] to say how far a boundary may be stretched.
-double rubberBand(double overshoot, double dimension, {double constant = 0.55}) {
-  if (overshoot <= 0 || dimension <= 0) return 0;
-  return (overshoot * dimension * constant) / (dimension + constant * overshoot);
-}
 
 /// [raw] with the part beyond [min]..[max] rubber-banded (symmetric on both
 /// sides). Inside the range it is returned as it is.
