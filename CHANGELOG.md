@@ -4,11 +4,17 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.57] - 2026-11-08
 
-- A video opened in Files no longer stays blank with a small spinner after
-  it was copied to the phone; it plays as soon as the phone's player has it.
-  Before, it showed only after `Save to gallery`.
+### Videos in Files play again
+
+A video you open in Files plays as soon as it is on the phone. Since 0.1.41 it
+could stay grey with a small spinner, and showed only after `Save to gallery`.
+
+- Nothing else about videos changed: a small one still plays without a tap, a
+  big one waits for Play, and the copy is the one Share and the gallery use.
+- Checked in a test that opens the player late, as a phone does; not yet
+  played on a phone.
 
 ## [0.1.56] - 2026-11-08
 
