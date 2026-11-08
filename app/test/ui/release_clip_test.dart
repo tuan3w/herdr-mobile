@@ -6,7 +6,8 @@
 //
 //   RELEASE_CLIP=1 flutter test test/ui/release_clip_test.dart
 //
-// Output: $RELEASE_CLIP_DIR (default /tmp/release_clip)/frames/*.png, touches.json
+// Output: $RELEASE_CLIP_DIR (default /tmp/release_clip)/frames/*.png, touches.json,
+// and still.png (the release's still).
 @TestOn('vm')
 library;
 
@@ -14,45 +15,56 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/repositories/agent_screens.dart' show PaneAgent;
-import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
+import 'package:herdr_mobile/data/acp/acp_models.dart';
+import 'package:herdr_mobile/data/acp/session_state.dart';
+import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 
-import '../../screenshot_test/demo_fleet.dart';
 import '../support/clip_recorder.dart';
+import '../support/fake_agent_session.dart';
 import '../support/shot.dart';
 
-const _esc = '\x1b';
-String _c(int r, int g, int b, String s) => '$_esc[38;2;$r;$g;${b}m$s$_esc[0m';
-String _dim(String s) => '$_esc[2m$s$_esc[0m';
-String _bold(String s) => '$_esc[1m$s$_esc[0m';
-String _row(int bg, String s) => '$_esc[48;2;${bg == 0 ? '30;58;40' : '66;30;34'}m${s.padRight(44)}$_esc[0m';
+/// A believable file, before and after the agent's edit: a retry loop gets a
+/// clock and jitter, every line of it changed.
+(String, String) _file() {
+  final before = <String>[];
+  final after = <String>[];
+  for (var i = 0; i < 40; i++) {
+    before
+      ..add('func (r *Retrier) step$i(ctx context.Context) error {')
+      ..add('  return r.do(ctx, $i)')
+      ..add('}');
+    after
+      ..add('func (r *Retrier) step$i(ctx context.Context) error {')
+      ..add('  return r.doAt(ctx, r.clock.Now(), $i)')
+      ..add('}');
+  }
+  return (before.join('\n'), after.join('\n'));
+}
 
-String _green(String s) => _c(76, 183, 130, s);
+FakeAgentSession _session() {
+  final (before, after) = _file();
+  return FakeAgentSession(
+    state: stateWith(
+      turnActive: true,
+      pending: [
+        PendingPermission(
+          7,
+          permissionRequest(
+            title: 'Edit services/checkout/retry.go',
+            kind: ToolKind.edit,
+            rawInput: {'file_path': 'services/checkout/retry.go'},
+            content: [
+              {'type': 'diff', 'path': 'services/checkout/retry.go', 'oldText': before, 'newText': after},
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
-/// What an agent that finished a change has on screen: a diff in colour, the
-/// test run, and a numbered list of what it could do next.
-String _output() => [
-  ' ${_c(154, 163, 242, '>')} Fix the flaky retry test in checkout.',
-  '',
-  ' ${_green('●')} ${_bold('Update')}(services/checkout/retry.go)',
-  _dim('   └ Updated with 3 additions and 1 removal'),
-  _dim('     31   func NewRetrier(c Clock, cfg Config) {'),
-  _row(1, '     32 -   return &Retrier{cfg: cfg}'),
-  _row(0, '     32 +   r := &Retrier{clock: c, cfg: cfg}'),
-  _row(0, '     33 +   r.jitter = 0'),
-  _row(0, '     34 +   return r'),
-  _dim('     35   }'),
-  '',
-  ' ${_green('●')} ${_bold('Bash')}(go test ./services/checkout)',
-  '   └ ${_green('ok')} payments/checkout ${_dim('0.84s')}',
-  '',
-  ' ${_green('●')} The test now passes 50 runs in a row.',
-  '   I can go on with:',
-  '',
-  '   1. Run the whole checkout suite',
-  '   2. Open a pull request for the fix',
-  '   3. Stop here',
-].join('\n');
+Rect _sheet(WidgetTester t) => t.getRect(find.byType(SheetSurface));
 
 void main() {
   if (Platform.environment['RELEASE_CLIP'] == null) {
@@ -62,47 +74,86 @@ void main() {
   final dir = Platform.environment['RELEASE_CLIP_DIR'] ?? '/tmp/release_clip';
   setUpAll(loadAppFonts);
 
-  // 0.1.42: text selected in a pane shows in a brighter indigo on the dark
-  // terminal (it was almost the colour of the page).
-  testWidgets('0.1.42 walkthrough', (tester) async {
-    final h = await DemoFleet.create();
-    h.transports['a']!.paneTexts['a1:p2'] = _output();
+  // 0.1.56: every sheet follows the finger; a long one opens at half and is
+  // dragged up to show it all; a flick closes it.
+  testWidgets('0.1.56 walkthrough', (tester) async {
     final rec = ClipRecorder(dir);
-
     await shoot(
       tester,
-      PaneScreen(agent: PaneAgent('a', 'a1:p2')),
+      AgentSessionScreen(session: _session()),
       '$dir/last.png',
-      brightness: Brightness.dark,
-      wrap: (app) => demoProviders(h)(rec.wrap(app)),
+      wrap: rec.wrap,
       pump: (t) async {
-        await h.online(t);
-        await h.setStatus(t, 'a1:p2', 'idle');
-        await t.pump(const Duration(seconds: 1));
-        await rec.hold(t, const Duration(milliseconds: 1200));
+        await t.pump(Dwell.tapGuard);
+        await rec.hold(t, const Duration(milliseconds: 1000));
 
-        // 1. Selected text is easy to see.
-        rec.chapter(1, 1, 'Selected text is easy to see');
-        // Rows are ~14.9 dp apart from y = 100: start on the word `Updated` and
-        // end on the last menu row.
-        const from = Offset(85, 145);
-        await rec.hold(t, const Duration(milliseconds: 500));
-        await rec.pressDrag(
+        // 1. A long sheet opens at half the screen.
+        rec.chapter(1, 3, 'A long sheet opens at half', top: true);
+        await rec.tap(t, find.text('Read all'), 'Tap Read all');
+        await rec.hold(t, const Duration(milliseconds: 1400));
+
+        // 2. Drag it up to see all of it, then the list scrolls.
+        rec.chapter(2, 3, 'Drag up to see all of it', top: true);
+        final half = _sheet(t);
+        await rec.drag(
           t,
-          from,
-          const Offset(175, 223),
-          'Press and hold, then drag',
-          press: const Duration(milliseconds: 700),
-          over: const Duration(milliseconds: 1600),
-          // Held under the finger: lifting would open the copy toolbar, which a
-          // test draws in the placeholder font.
-          rest: const Duration(milliseconds: 1500),
+          Offset(half.center.dx, half.top + 40),
+          Offset(0, -(half.top - 60)),
+          'Drag up',
+          over: const Duration(milliseconds: 900),
         );
+        await rec.hold(t, const Duration(milliseconds: 1000));
+        final full = _sheet(t);
+        await rec.drag(
+          t,
+          Offset(full.center.dx, full.top + 500),
+          const Offset(0, -260),
+          'Scroll',
+          over: const Duration(milliseconds: 700),
+        );
+        await rec.hold(t, const Duration(milliseconds: 1000));
+
+        // 3. A flick down closes it, however short.
+        rec.chapter(3, 3, 'A flick down closes it', top: true);
+        final now = _sheet(t);
+        await rec.drag(
+          t,
+          Offset(now.center.dx, now.top + 30),
+          const Offset(0, 300),
+          'Pull down',
+          over: const Duration(milliseconds: 700),
+        );
+        await rec.hold(t, const Duration(milliseconds: 800));
+        final rest = _sheet(t);
+        await rec.drag(
+          t,
+          Offset(rest.center.dx, rest.top + 30),
+          const Offset(0, 90),
+          'Flick',
+          over: const Duration(milliseconds: 100),
+          rest: Duration.zero,
+        );
+        await rec.hold(t, const Duration(milliseconds: 1400));
       },
     );
     rec.finish();
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
-    h.dispose();
+  });
+
+  // The still: the edit's sheet resting at half, on the reference phone.
+  testWidgets('0.1.56 still', (tester) async {
+    await shoot(
+      tester,
+      AgentSessionScreen(session: _session()),
+      '$dir/still.png',
+      pump: (t) async {
+        await t.pump(Dwell.tapGuard);
+        await t.tap(find.text('Read all'));
+        await t.pumpAndSettle();
+      },
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
   });
 }

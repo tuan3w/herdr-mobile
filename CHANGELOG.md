@@ -4,6 +4,31 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.56] - 2026-11-08
+
+[![Watch what's new · 3 changes · 0:12 · 2.5 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.mp4)
+
+### Sheets follow your finger
+
+Every sheet now moves like one thing in your hand: it follows your finger, a
+quick flick closes it, and you can catch it while it closes and pull it back.
+A long one, like everything an edit will change, opens at half the screen and
+shows the rest when you drag it up.
+
+> [!TIP]
+> Try it: when an agent asks to edit a long file, tap `Read all` under the
+> change, then drag the sheet up.
+
+- At the top of a long sheet's list, pull down to bring it back to half; a
+  second pull closes it.
+- A flick down closes a sheet even from a short drag; a slow pull that stops
+  early springs back. A flick up never closes one.
+- A tall sheet's buttons stay on the screen while it rests at half.
+- A sheet with a text field stands on the keyboard.
+- Feel was checked in tests, not on a phone yet.
+
+![The change an agent asks to make, open at half the screen over the chat, with the first lines of the file](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-sheets-follow-finger.png)
+
 ## [0.1.55] - 2026-11-07
 
 ### The terminal's raw output no longer takes a box on the chat
