@@ -4,6 +4,12 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- A video opened in Files no longer stays blank with a small spinner after
+  it was copied to the phone; it plays as soon as the phone's player has it.
+  Before, it showed only after `Save to gallery`.
+
 ## [0.1.56] - 2026-11-08
 
 [![Watch what's new · 3 changes · 0:12 · 2.5 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.mp4)

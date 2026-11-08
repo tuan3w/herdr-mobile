@@ -104,6 +104,10 @@ class _VideoViewState extends State<VideoView> with WidgetsBindingObserver {
       try {
         await video.initialize();
         if (!mounted || _video != video) return;
+        // Opened: show the player. Nothing else redraws this view then, and a
+        // phone's player opens frames after the copy finished, so without this
+        // the spinner stayed until something unrelated (Save to gallery) did.
+        setState(() {});
         // A copy that finished while the app was in the background is ready, not
         // playing: the person taps Play when they are back.
         if (_resumed) await video.play();

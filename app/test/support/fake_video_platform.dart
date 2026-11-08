@@ -10,6 +10,11 @@ class FakeVideoPlatform extends VideoPlayerPlatform {
   /// What a player does when asked to open: throw this instead of opening.
   Object? openFails;
 
+  /// When set, a player says it has opened only once this completes, as a
+  /// phone's player does some frames after it was asked (the instant fake hid
+  /// a view that never redrew when the real one opened).
+  Completer<void>? opening;
+
   /// The calls, in order: `create`, `play`, `pause`, `dispose`.
   final calls = <String>[];
 
@@ -24,13 +29,14 @@ class FakeVideoPlatform extends VideoPlayerPlatform {
   }
 
   @override
-  Stream<VideoEvent> videoEventsFor(int playerId) => Stream.value(
-    VideoEvent(
+  Stream<VideoEvent> videoEventsFor(int playerId) async* {
+    await opening?.future;
+    yield VideoEvent(
       eventType: VideoEventType.initialized,
       duration: const Duration(minutes: 2),
       size: const Size(1280, 720),
-    ),
-  );
+    );
+  }
 
   @override
   Future<void> setLooping(int playerId, bool looping) async {}

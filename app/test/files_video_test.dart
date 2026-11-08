@@ -91,6 +91,20 @@ void main() {
       await leave(tester);
     });
 
+    testWidgets('a player that opens some frames later shows the video then, without another touch', (tester) async {
+      final opening = Completer<void>();
+      platform.opening = opening;
+      fs.addFile('/home/dev/clip.mp4', Uint8List(2000));
+      await _pump(tester, _viewer(fs, '/home/dev/clip.mp4', staging: staging, export: export));
+      await _settle(tester);
+      expect(find.byType(VideoStage), findsNothing, reason: 'still opening');
+
+      opening.complete();
+      await _settle(tester);
+      expect(find.byType(VideoStage), findsOneWidget, reason: 'the video shows as soon as the player has opened');
+      await leave(tester);
+    });
+
     testWidgets('a big video waits for Play, shows the copy under way, and Cancel goes back without a failure', (
       tester,
     ) async {
