@@ -235,50 +235,112 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
   /// cap (which the pinned title and switch share) still applies on a small one.
   static const _bodyShare = 0.6;
 
+  /// The least the scrolling area takes, in rows: a session with one app and
+  /// one with five open to a sheet of the same height, and a lone row is not a
+  /// sliver of a sheet.
+  static const _minRows = 3;
+
+  /// What [text] takes in [style] at [width], ending in an ellipsis after
+  /// [maxLines] like the row's own text.
+  static double _textHeight(String text, TextStyle style, int maxLines, double width, TextScaler scaler) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: maxLines,
+      ellipsis: '…',
+    )..layout(maxWidth: width);
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  /// One list row as [ListRow] lays it out: its padding, the title (two lines
+  /// at most, laid out: a long command wraps) and the line under it, never
+  /// under the icon tile, and the hairline. A one-line guess cut the second
+  /// line of a long app name off at the sheet's bottom edge.
+  static double _rowHeight(String title, String? subtitle, double width, TextScaler scaler, {double trailing = 0}) {
+    final text = width - ListRow.textIndent() - Gap.gutter - trailing;
+    final lines =
+        _textHeight(title, Type.row, 2, text, scaler) +
+        (subtitle == null || subtitle.isEmpty ? 0 : 2 + _textHeight(subtitle, Type.secondary, 1, text, scaler));
+    return math.max(56.0, 2 * Gap.md + lines) + 1;
+  }
+
   /// The height of the scrolling area, the same for every tab and for the
   /// life of the sheet. A bottom sheet grows upward, so a tab with fewer rows
   /// than the last one would pull the switch down from under the thumb (and a
   /// longer one push it up): the switch is pinned above the area, and the area
   /// is as tall as the tallest tab's first batch, or [_bodyShare] of the screen
   /// if that is less, whichever tab is open (a sheet filling the screen around
-  /// a two-row tab is worse than a list that scrolls). `N more` adds rows
-  /// inside the area, it does not grow it. Estimated from the type scale
-  /// rather than measured: the
-  /// tabs that are not open are not built, and a few dp either way only
-  /// leaves a little room under a short tab or scrolls a long one by that
-  /// much.
-  double _bodyHeight(List<MadeAsset> shown, List<MadeKind> kinds, double width, TextScaler scaler, bool files) {
+  /// a two-row tab is worse than a list that scrolls), and never under
+  /// [_minRows] rows. `N more` adds rows inside the area, it does not grow it.
+  /// Estimated, not measured by building: the tabs that are not open are not
+  /// built. Rows are laid out as text (titles wrap), so only the chips under
+  /// an app (one wrapped line assumed) can be off, by a few dp: a little room
+  /// under a short tab, or a long one that scrolls by that much. Stops at
+  /// [cap]: past it the answer is the cap.
+  double _bodyHeight(
+    List<MadeAsset> shown,
+    List<MadeKind> kinds,
+    double width,
+    TextScaler scaler,
+    bool files, {
+    required List<BackgroundTask> tasks,
+    required bool live,
+    required double cap,
+  }) {
     double line(TextStyle s) => scaler.scale(s.fontSize!) * s.height!;
-    // A row: its padding, a title line and a line under it, and the hairline.
-    final row = math.max(56.0, 24 + line(Type.row) + 2 + line(Type.secondary)) + 1;
+    final floor = _minRows * (math.max(56.0, 2 * Gap.md + line(Type.row) + 2 + line(Type.secondary)) + 1);
     final tile =
         (width - (_PictureGrid.columns - 1) * _PictureGrid.gap) / _PictureGrid.columns * 3 / 4 +
         Gap.xs +
         line(Type.caption);
-    var tallest = 0.0;
+    var tallest = floor;
     for (final kind in kinds) {
-      final n = shown.where((a) => a.kind == kind).length;
+      if (tallest >= cap) break;
+      final items = shown.where((a) => a.kind == kind);
+      final n = items.length;
       if (kind == MadeKind.picture) {
         final cells = math.min(n, _gridStep) + (n > _gridStep ? 1 : 0);
         final rows = (cells + _PictureGrid.columns - 1) ~/ _PictureGrid.columns;
         final note = files ? 0.0 : _noteHeight(width, scaler) + Gap.md;
         tallest = math.max(tallest, Gap.md + note + rows * tile + (rows - 1) * Gap.md);
-      } else if (kind == MadeKind.server) {
-        // An app is a row, and a line of chips more when it has pages (one
-        // wrapped line assumed: a longer wrap scrolls inside the area).
-        final apps = madeAppsOf(shown.where((a) => a.kind == kind));
-        final withPages = apps.take(_listStep).where((a) => a.pages.isNotEmpty).length;
-        tallest = math.max(
-          tallest,
-          (math.min(apps.length, _listStep) + (apps.length > _listStep ? 1 : 0)) * row +
-              withPages * (AppChip.height + Gap.sm),
-        );
-      } else {
-        tallest = math.max(tallest, (math.min(n, _listStep) + (n > _listStep ? 1 : 0)) * row);
+        continue;
       }
+      // A row per item, and the `N more` row after the first batch.
+      var sum = 0.0;
+      final apps = kind == MadeKind.server ? madeAppsOf(items) : null;
+      if (apps != null) {
+        for (final app in apps.take(_listStep)) {
+          final t = _AppRow.textOf(app, tasks, live);
+          sum += _rowHeight(
+            t.title,
+            t.subtitle,
+            width,
+            scaler,
+            trailing: t.running ? Gap.md + const LinkDot.live().size : 0,
+          );
+          // A line of chips more when it has pages (one wrapped line assumed).
+          if (t.hasPages) sum += AppChip.height + Gap.sm;
+          if (sum >= cap) break;
+        }
+      } else {
+        for (final a in items.take(_listStep)) {
+          sum += _rowHeight(visibleText(a.title), _FileRow.subtitleOf(a, files), width, scaler);
+          if (sum >= cap) break;
+        }
+      }
+      final total = apps?.length ?? n;
+      if (total > _listStep) sum += _moreRowHeight(scaler);
+      tallest = math.max(tallest, sum);
     }
     return tallest;
   }
+
+  /// `N more`: an icon tile and one line.
+  static double _moreRowHeight(TextScaler scaler) =>
+      math.max(56.0, 2 * Gap.md + scaler.scale(Type.row.fontSize!) * Type.row.height!) + 1;
 
   @override
   Widget build(BuildContext context) {
@@ -407,10 +469,13 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
                     ),
                   if (tab != null)
                     SizedBox(
-                      height: math.min(
-                        _bodyHeight(shown, kinds, box.maxWidth, scaler, files),
-                        MediaQuery.sizeOf(context).height * _bodyShare,
-                      ),
+                      height: () {
+                        final cap = MediaQuery.sizeOf(context).height * _bodyShare;
+                        return math.min(
+                          _bodyHeight(shown, kinds, box.maxWidth, scaler, files, tasks: tasks, live: live, cap: cap),
+                          cap,
+                        );
+                      }(),
                       // A swipe sideways goes to the next kind, as the switch above does.
                       child: tabbed
                           ? PageView(
@@ -637,12 +702,15 @@ class _AppRow extends StatelessWidget {
   final bool divider;
   final ValueChanged<MadeAsset> onOpen;
 
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
+  /// The words of [app]'s row and what shapes its height; the sheet reads them
+  /// to size the list by what is shown.
+  static ({String title, String subtitle, bool running, bool hasPages, bool dim}) textOf(
+    MadeApp app,
+    List<BackgroundTask> tasks,
+    bool live,
+  ) {
     final service = sensitiveServiceOf(app.port);
     final state = serverStateOf(app.entry, tasks, live: live);
-    final running = state == ServerState.running;
     final named = service == null ? serverNameOf(app.entry, tasks) : null;
     final at = app.at;
     final when = at == null ? '' : formatAgo(at, DateTime.now());
@@ -655,17 +723,30 @@ class _AppRow extends StatelessWidget {
             ServerState.stopped => when.isEmpty ? 'Stopped' : 'Stopped · $when',
             ServerState.seen => when.isEmpty ? 'Status unknown' : 'Status unknown · mentioned $when',
           };
-    final row = ListRow(
-      leading: IconTile(icon: HerdrIcons.madeServer, color: running ? ds.done : null),
-      leadingOnTitle: false,
+    return (
       title: visibleText(service ?? named ?? 'App on port ${app.port}'),
       // The fallback name already says the port.
       subtitle: [if (service != null || named != null) 'Port ${app.port}', status].join(' · '),
+      running: state == ServerState.running,
+      hasPages: service == null && app.pages.isNotEmpty,
       dim: state == ServerState.stopped || service != null,
-      onTap: () => onOpen(app.entry),
-      trailing: running ? const LinkDot.live() : null,
     );
-    final pages = service == null && app.pages.isNotEmpty;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final t = textOf(app, tasks, live);
+    final row = ListRow(
+      leading: IconTile(icon: HerdrIcons.madeServer, color: t.running ? ds.done : null),
+      leadingOnTitle: false,
+      title: t.title,
+      subtitle: t.subtitle,
+      dim: t.dim,
+      onTap: () => onOpen(app.entry),
+      trailing: t.running ? const LinkDot.live() : null,
+    );
+    final pages = t.hasPages;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -697,7 +778,9 @@ class _FileRow extends StatelessWidget {
   final bool divider;
   final VoidCallback onTap;
 
-  String? get _subtitle {
+  /// Under the name; the sheet's height reads it too, so a row is measured by
+  /// the text it shows.
+  static String? subtitleOf(MadeAsset asset, bool filesAvailable) {
     if (!filesAvailable) return _noFiles;
     final at = asset.at;
     final when = at == null ? '' : formatAgo(at, DateTime.now());
@@ -718,7 +801,7 @@ class _FileRow extends StatelessWidget {
       ),
       leadingOnTitle: false,
       title: visibleText(asset.title),
-      subtitle: _subtitle,
+      subtitle: subtitleOf(asset, filesAvailable),
       dim: !filesAvailable,
       onTap: filesAvailable ? onTap : null,
     );

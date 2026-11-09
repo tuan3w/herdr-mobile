@@ -961,6 +961,37 @@ void main() {
     },
   );
 
+  testWidgets('an app named by a long command that wraps is shown whole, with the list no shorter than three rows', (
+    tester,
+  ) async {
+    final launch = TranscriptTool(
+      ToolCall(
+        toolCallId: 'launch',
+        kind: ToolKind.execute,
+        status: ToolStatus.completed,
+        rawInput: {'command': 'python3 -m http.server 8765 --bind 0.0.0.0 -d .scratch/shots &'},
+      ),
+    );
+    await openSheet(tester, session([launch, _say('Open http://localhost:8765/')]), size: const Size(360, 800));
+
+    final area = tester.getRect(find.byType(CustomScrollView));
+    final subtitle = tester.getRect(find.text('Port 8765 · Status unknown'));
+    expect(
+      subtitle.bottom,
+      lessThanOrEqualTo(area.bottom),
+      reason: 'the second line of the name pushed it out of view',
+    );
+    expect(
+      tester
+          .state<ScrollableState>(find.descendant(of: find.byType(CustomScrollView), matching: find.byType(Scrollable)))
+          .position
+          .maxScrollExtent,
+      0,
+      reason: 'one app needs no scrolling',
+    );
+    expect(area.height, greaterThanOrEqualTo(3 * 56), reason: 'a lone row is not a sliver of a sheet');
+  });
+
   testWidgets(
     'a machine without files: pages, pictures and documents are dimmed with the reason, and nothing is asked',
     (tester) async {

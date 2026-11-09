@@ -4,6 +4,18 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.59] - 2026-11-09
+
+### Long app names are shown whole in Made
+
+An app that was started with a long command no longer has its second line
+cut off at the bottom of `Made in this session`. Its name wraps to two lines and
+the line under it, `Port 8765 · Status unknown`, stays in view.
+
+- The list is never shorter than three rows, so a session with one app opens a
+  sheet of the same height as one with several.
+- Checked on a rendered sheet at 360 dp wide, not on a phone.
+
 ## [0.1.58] - 2026-11-09
 
 ### What your hooks report, on the board
