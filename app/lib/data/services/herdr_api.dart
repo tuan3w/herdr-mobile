@@ -307,16 +307,23 @@ class HerdrApi {
   /// connection flaps). A test checks this list against the schema.
   ///
   /// With [statusPanes] null the subscription is the full one, `pane.updated`
-  /// included: a working agent causes ~10-30 of those a second, each a wake of
-  /// the radio. With a list (the background profile) `pane.updated` is dropped
+  /// and `workspace.metadata_updated` included: a working agent causes ~10-30
+  /// `pane.updated` a second, each a wake of the radio, and a metadata watcher
+  /// may report every second (herdr also sends the event when a token's TTL
+  /// runs out; it exists since herdr 0.7.4, one release after
+  /// `layout.updated`). With a list (the background profile) both are dropped
   /// and one `pane.agent_status_changed` is asked for per pane id, so only
-  /// structure and a change of status reach the phone. herdr answers
-  /// `pane_not_found` for the WHOLE subscription if one named pane does not
-  /// exist (measured on 0.9.3), so the list must be built from a snapshot that
-  /// is fresh; a pane closed after the subscription started is harmless.
+  /// structure and a change of status reach the phone: token text answers
+  /// none of the attention questions, so it never wakes the radio. herdr
+  /// answers `pane_not_found` for the WHOLE subscription if one named pane does
+  /// not exist (measured on 0.9.3), so the list must be built from a snapshot
+  /// that is fresh; a pane closed after the subscription started is harmless.
   Stream<Map<String, dynamic>> changes({Iterable<String>? statusPanes}) => _transport.events([
     ..._structuralEvents,
-    if (statusPanes == null) const {'type': 'pane.updated'},
+    if (statusPanes == null) ...const [
+      {'type': 'pane.updated'},
+      {'type': 'workspace.metadata_updated'},
+    ],
     if (statusPanes != null)
       for (final id in statusPanes) {'type': 'pane.agent_status_changed', 'pane_id': id},
   ]);

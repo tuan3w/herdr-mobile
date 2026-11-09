@@ -40,7 +40,7 @@ PaneTitle paneTitle(MachineConnection? machine, String machineId, String paneId,
     );
   }
   final task = named ?? pane.title.trim();
-  final agent = agentName(pane.agent);
+  final agent = agentLabelOf(pane);
   final title = task.isNotEmpty ? task : agent;
   return (
     title: title,

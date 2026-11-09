@@ -59,7 +59,8 @@ double _lineOf(TextStyle style, TextScaler scaler) => scaler.scale(style.fontSiz
 /// with `Reply…` between the person and what needed them.
 ///
 /// The card's height depends only on the prompt (its question,
-/// its subject and how its answers group, see `ReplyLayout`), never on how many lines have arrived or
+/// its subject and how its answers group, see `ReplyLayout`) and on whether
+/// the agent has a meta line, never on how many lines have arrived or
 /// on the state of the chips, so the board does not jump while a preview fills
 /// in. It watches its pane's preview only while it is built and on a screen
 /// the person can see (a virtualised list builds the ones near the screen; a
@@ -249,6 +250,11 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
                   padding: const EdgeInsets.only(left: _glyphColumn),
                   child: _Subtitle(text: a.subtitle),
                 ),
+                if (a.meta.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: _glyphColumn),
+                    child: _Subtitle(text: a.meta, quiet: true),
+                  ),
                 if (stackTime)
                   Padding(
                     padding: const EdgeInsets.only(left: _glyphColumn),
@@ -366,6 +372,7 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
     _agent.status.label,
     _agent.title,
     if (_agent.subtitle.isNotEmpty) _agent.subtitle,
+    if (_agent.meta.isNotEmpty) _agent.meta,
     if (_agent.stale) 'offline',
     if (prompt != null)
       'Asks: ${prompt.question.replaceAll('\n', ' ')}'
@@ -472,9 +479,12 @@ class StateTime extends StatelessWidget {
 }
 
 class _Subtitle extends StatelessWidget {
-  const _Subtitle({required this.text});
+  const _Subtitle({required this.text, this.quiet = false});
 
   final String text;
+
+  /// The quieter third line (the agent's own report), in the muted colour.
+  final bool quiet;
 
   @override
   Widget build(BuildContext context) {
@@ -485,7 +495,7 @@ class _Subtitle extends StatelessWidget {
         text,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Type.secondary.copyWith(color: context.ds.textSecondary),
+        style: Type.secondary.copyWith(color: quiet ? context.ds.textMuted : context.ds.textSecondary),
       ),
     );
   }
@@ -646,6 +656,7 @@ class AgentCompactRow extends StatelessWidget {
             leading: StatusGlyph(status: agent.status, size: IconSize.lead),
             title: agent.title,
             subtitle: agent.subtitle,
+            subtitle2: agent.meta,
             titleMaxLines: 2,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -660,7 +671,13 @@ class AgentCompactRow extends StatelessWidget {
             dim: agent.stale,
             // Merged from the glyph and the texts, plus what dimming only implies.
             semanticLabel: agent.stale
-                ? [agent.status.label, agent.title, if (agent.subtitle.isNotEmpty) agent.subtitle, 'offline'].join(', ')
+                ? [
+                    agent.status.label,
+                    agent.title,
+                    if (agent.subtitle.isNotEmpty) agent.subtitle,
+                    if (agent.meta.isNotEmpty) agent.meta,
+                    'offline',
+                  ].join(', ')
                 : null,
             onTap: sel.active
                 ? pick

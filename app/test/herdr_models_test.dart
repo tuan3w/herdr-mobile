@@ -236,6 +236,72 @@ void main() {
       expect(machine.branchOf(path), isNull);
     });
   });
+
+  group('host metadata', () {
+    Map<String, dynamic> pane(Map<String, dynamic> extra) => {..._wirePane(), ...extra};
+
+    test('tokens are kept in key order, whatever order herdr sent them in', () {
+      final w = Workspace.fromJson({
+        ...wireWorkspace('w1'),
+        'tokens': {'stage': '🤖 building 24/165 ↻2', 'row': 'some-feature'},
+      });
+      expect(w.tokens.keys, ['row', 'stage']);
+
+      // herdr's map is a Rust HashMap: the next snapshot may list it the other way.
+      final reversed = Workspace.fromJson({
+        ...wireWorkspace('w1'),
+        'tokens': {'row': 'some-feature', 'stage': '🤖 building 24/165 ↻2'},
+      });
+      expect(reversed, w);
+      expect(reversed.hashCode, w.hashCode);
+      expect(w, isNot(Workspace.fromJson(wireWorkspace('w1'))), reason: 'a token change is a change');
+    });
+
+    test('host text is one safe line: no bidi override, no newline, nothing empty', () {
+      final w = Workspace.fromJson({
+        ...wireWorkspace('w1'),
+        'tokens': {'evil': 'build \u202Eok\u202C\nnext  line', 'empty': '  \n ', 'odd': 42},
+      });
+      expect(w.tokens, {'evil': 'build ok next line'});
+    });
+
+    test('the name the person gave wins over a hook\'s title, which wins over the terminal\'s', () {
+      expect(Pane.fromJson(pane({'title': 'Hook title', 'label': 'Mine', 'terminal_title': 'zsh'})).title, 'Mine');
+      expect(Pane.fromJson(pane({'title': 'Hook title', 'terminal_title': 'zsh'})).title, 'Hook title');
+      expect(Pane.fromJson(pane({'terminal_title': 'zsh'})).title, 'zsh');
+    });
+
+    test('a hook\'s title is never generic, so a session name never replaces it', () {
+      expect(_agent(Pane.fromJson(pane({'terminal_title': 'omp'}))).hasGenericTitle, isTrue);
+      expect(_agent(Pane.fromJson(pane({'title': 'omp', 'terminal_title': 'omp'}))).hasGenericTitle, isFalse);
+    });
+
+    test('survives the launch cache and the status and completion copies', () {
+      final p = Pane.fromJson(
+        pane({
+          'title': 'Migrate the ledger',
+          'display_agent': 'Codex (gpt-5.5 high)',
+          'state_labels': {'working': 'Running tests'},
+          'tokens': {'ci': '142/165'},
+          'restore_error': 'Saved directory is unavailable.',
+        }),
+      );
+      expect(Pane.fromJson(p.toJson()), p);
+      final copied = p.withStatus(AgentStatus.blocked).withCompletionSeq(4);
+      expect(copied.metadataTitle, p.metadataTitle);
+      expect(copied.displayAgent, p.displayAgent);
+      expect(copied.stateLabels, p.stateLabels);
+      expect(copied.tokens, p.tokens);
+      expect(copied.restoreError, p.restoreError);
+
+      final w = Workspace.fromJson({
+        ...wireWorkspace('w1'),
+        'tokens': {'stage': 'building'},
+      });
+      expect(Workspace.fromJson(w.toJson()), w);
+      expect(w.withStatus(AgentStatus.blocked).tokens, w.tokens);
+    });
+  });
 }
 
 /// A map that notes which keys were looked up.

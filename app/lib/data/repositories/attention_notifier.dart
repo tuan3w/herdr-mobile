@@ -364,9 +364,8 @@ class AttentionNotifier {
             NotifyKind.needsYou,
             reachable: !a.stale,
             id: () => notificationIdFor(key),
-            title: () =>
-                _title(a.betterTitle ?? pane.title, _folder(a.machine.places, pane.cwd), agentName(pane.agent)),
-            body: () => 'needs you · ${whereLine(agent: agentName(pane.agent), machine: machine.label)}',
+            title: () => _title(a.betterTitle ?? pane.title, _folder(a.machine.places, pane.cwd), agentLabelOf(pane)),
+            body: () => 'needs you · ${whereLine(agent: agentLabelOf(pane), machine: machine.label)}',
             link: () => agentLinkFor(machine.id, pane.id),
             pane: (machineId: machine.id, paneId: pane.id),
           ),
@@ -378,9 +377,8 @@ class AttentionNotifier {
             NotifyKind.finished,
             reachable: !a.stale,
             id: () => notificationIdFor(key),
-            title: () =>
-                _title(a.betterTitle ?? pane.title, _folder(a.machine.places, pane.cwd), agentName(pane.agent)),
-            body: () => 'done · ${whereLine(agent: agentName(pane.agent), machine: machine.label)}',
+            title: () => _title(a.betterTitle ?? pane.title, _folder(a.machine.places, pane.cwd), agentLabelOf(pane)),
+            body: () => 'done · ${whereLine(agent: agentLabelOf(pane), machine: machine.label)}',
             link: () => agentLinkFor(machine.id, pane.id),
           ),
         );

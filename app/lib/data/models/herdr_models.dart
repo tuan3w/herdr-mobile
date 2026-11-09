@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, mapEquals;
 
 /// What was logged already: a row that stays unreadable is met again at every
 /// refresh, and the log should say it once.
@@ -23,6 +23,35 @@ String cleanTerminalTitle(String raw) {
   if (t.startsWith('π')) t = t.substring(1);
   return t.replaceFirst(_leadingNoise, '').trim();
 }
+
+final _bidiControls = RegExp(r'[\u202A-\u202E\u2066-\u2069]');
+final _whitespaceRun = RegExp(r'\s+');
+
+/// Text a host reported for display (a hook's title, a metadata token), as one
+/// safe line, or null when there is none. herdr strips control characters and
+/// caps values at 80 chars, but bidi overrides get through and could reorder
+/// a row's words, and a newline would break a one-line row.
+String? _hostText(Object? v) {
+  if (v is! String) return null;
+  final t = v.replaceAll(_bidiControls, '').replaceAll(_whitespaceRun, ' ').trim();
+  return t.isEmpty ? null : t;
+}
+
+/// A host's string map (`tokens`, `state_labels`) with unreadable or empty
+/// values left out, in sorted key order: herdr serialises a Rust `HashMap`,
+/// whose order is not stable from one snapshot to the next, and the order
+/// shown must not come from it.
+Map<String, String> _textMap(Object? json) {
+  if (json is! Map) return const {};
+  final kept = <String, String>{};
+  for (final key in json.keys.whereType<String>().toList()..sort()) {
+    final value = _hostText(json[key]);
+    if (value != null) kept[key] = value;
+  }
+  return kept.isEmpty ? const {} : Map.unmodifiable(kept);
+}
+
+int _mapHash(Map<String, String> m) => Object.hashAllUnordered(m.entries.map((e) => Object.hash(e.key, e.value)));
 
 /// Agent status as reported by herdr. `done` means idle and not yet seen.
 enum AgentStatus {
@@ -130,6 +159,7 @@ class Workspace {
     required this.tabCount,
     required this.status,
     this.worktree,
+    this.tokens = const {},
   });
 
   factory Workspace.fromJson(Map<String, dynamic> j) => Workspace(
@@ -141,6 +171,7 @@ class Workspace {
     tabCount: (j['tab_count'] as num?)?.toInt() ?? 0,
     status: AgentStatus.parse(j['agent_status']),
     worktree: WorkspaceWorktree.tryParse(j['worktree']),
+    tokens: _textMap(j['tokens']),
   );
 
   final String id;
@@ -152,6 +183,10 @@ class Workspace {
   final AgentStatus status;
   final WorkspaceWorktree? worktree;
 
+  /// What `herdr workspace report-metadata` set (a build stage, a branch),
+  /// by key, in key order; empty when nothing was reported or it expired.
+  final Map<String, String> tokens;
+
   Map<String, dynamic> toJson() => {
     'workspace_id': id,
     'number': number,
@@ -161,6 +196,7 @@ class Workspace {
     'tab_count': tabCount,
     'agent_status': status.name,
     if (worktree != null) 'worktree': worktree!.toJson(),
+    if (tokens.isNotEmpty) 'tokens': tokens,
   };
 
   Workspace withStatus(AgentStatus status) => Workspace(
@@ -172,6 +208,7 @@ class Workspace {
     tabCount: tabCount,
     status: status,
     worktree: worktree,
+    tokens: tokens,
   );
 
   @override
@@ -184,10 +221,11 @@ class Workspace {
       other.paneCount == paneCount &&
       other.tabCount == tabCount &&
       other.status == status &&
-      other.worktree == worktree;
+      other.worktree == worktree &&
+      mapEquals(other.tokens, tokens);
 
   @override
-  int get hashCode => Object.hash(id, number, label, focused, paneCount, tabCount, status, worktree);
+  int get hashCode => Object.hash(id, number, label, focused, paneCount, tabCount, status, worktree, _mapHash(tokens));
 }
 
 class Tab {
@@ -309,24 +347,38 @@ class Pane {
     this.label,
     this.completionSeq,
     this.session,
+    this.metadataTitle,
+    this.displayAgent,
+    this.stateLabels = const {},
+    this.tokens = const {},
+    this.restoreError,
   });
 
   factory Pane.fromJson(Map<String, dynamic> j) {
     final title = (j['terminal_title_stripped'] ?? j['terminal_title']) as String?;
     final label = (j['label'] as String?)?.trim();
+    final given = label != null && label.isNotEmpty ? label : null;
+    final metadataTitle = _hostText(j['title']);
     return Pane(
       id: j['pane_id'] as String,
       workspaceId: j['workspace_id'] as String,
       tabId: j['tab_id'] as String,
       focused: j['focused'] == true,
       cwd: (j['foreground_cwd'] ?? j['cwd']) as String?,
-      // A name the person gave the pane wins over whatever the program set.
-      title: label != null && label.isNotEmpty ? label : cleanTerminalTitle(title ?? ''),
+      // A name the person gave the pane wins over a title a hook reported,
+      // which wins over whatever the program set. herdr's desktop puts the
+      // hook's title first; here the person's own word comes first on purpose.
+      title: given ?? metadataTitle ?? cleanTerminalTitle(title ?? ''),
       agent: j['agent'] as String?,
       status: AgentStatus.parse(j['agent_status']),
-      label: label != null && label.isNotEmpty ? label : null,
+      label: given,
       completionSeq: (j['completion_seq'] as num?)?.toInt(),
       session: AgentSessionRef.tryParse(j['agent_session']),
+      metadataTitle: metadataTitle,
+      displayAgent: _hostText(j['display_agent']),
+      stateLabels: _textMap(j['state_labels']),
+      tokens: _textMap(j['tokens']),
+      restoreError: _hostText(j['restore_error']),
     );
   }
 
@@ -354,6 +406,23 @@ class Pane {
   /// [AgentSessionRef]); null for plain terminals and agents that name none.
   final AgentSessionRef? session;
 
+  /// The title a hook reported (`herdr pane report-metadata --title`), if any.
+  final String? metadataTitle;
+
+  /// The agent's name as a hook reported it, shown in place of the detected
+  /// kind's word (see `agentLabelOf`); null when none was reported.
+  final String? displayAgent;
+
+  /// A hook's own word per status, keyed by [AgentStatus.name]; key order.
+  final Map<String, String> stateLabels;
+
+  /// What `herdr pane report-metadata --token` set, by key, in key order.
+  final Map<String, String> tokens;
+
+  /// Why herdr could not bring the pane back after it restarted; null for a
+  /// running pane. Such a pane stays listed but answers no `pane.read`.
+  final String? restoreError;
+
   bool get isAgent => agent != null;
 
   Map<String, dynamic> toJson() => {
@@ -368,6 +437,11 @@ class Pane {
     'label': label,
     if (completionSeq != null) 'completion_seq': completionSeq,
     if (session != null) 'agent_session': session!.toJson(),
+    if (metadataTitle != null) 'title': metadataTitle,
+    if (displayAgent != null) 'display_agent': displayAgent,
+    if (stateLabels.isNotEmpty) 'state_labels': stateLabels,
+    if (tokens.isNotEmpty) 'tokens': tokens,
+    if (restoreError != null) 'restore_error': restoreError,
   };
 
   @override
@@ -383,11 +457,32 @@ class Pane {
       other.status == status &&
       other.label == label &&
       other.completionSeq == completionSeq &&
-      other.session == session;
+      other.session == session &&
+      other.metadataTitle == metadataTitle &&
+      other.displayAgent == displayAgent &&
+      mapEquals(other.stateLabels, stateLabels) &&
+      mapEquals(other.tokens, tokens) &&
+      other.restoreError == restoreError;
 
   @override
-  int get hashCode =>
-      Object.hash(id, workspaceId, tabId, focused, cwd, title, agent, status, label, completionSeq, session);
+  int get hashCode => Object.hash(
+    id,
+    workspaceId,
+    tabId,
+    focused,
+    cwd,
+    title,
+    agent,
+    status,
+    label,
+    completionSeq,
+    session,
+    metadataTitle,
+    displayAgent,
+    _mapHash(stateLabels),
+    _mapHash(tokens),
+    restoreError,
+  );
 
   Pane withStatus(AgentStatus status) => Pane(
     id: id,
@@ -401,6 +496,11 @@ class Pane {
     label: label,
     completionSeq: completionSeq,
     session: session,
+    metadataTitle: metadataTitle,
+    displayAgent: displayAgent,
+    stateLabels: stateLabels,
+    tokens: tokens,
+    restoreError: restoreError,
   );
 
   Pane withCompletionSeq(int? seq) => Pane(
@@ -415,6 +515,11 @@ class Pane {
     label: label,
     completionSeq: seq,
     session: session,
+    metadataTitle: metadataTitle,
+    displayAgent: displayAgent,
+    stateLabels: stateLabels,
+    tokens: tokens,
+    restoreError: restoreError,
   );
 }
 
@@ -434,6 +539,11 @@ const paneWireFields = <String, Object>{
   'agent_status': true,
   'completion_seq': true,
   'agent_session': true,
+  'title': true,
+  'display_agent': true,
+  'state_labels': true,
+  'tokens': true,
+  'restore_error': true,
 };
 
 /// What of a `session.snapshot` the models above read, as a projection the
@@ -459,6 +569,7 @@ const snapshotWireFields = <String, Object>{
       'repo_name': true,
       'repo_root': true,
     },
+    'tokens': true,
   },
   'tabs': <String, Object>{
     'tab_id': true,

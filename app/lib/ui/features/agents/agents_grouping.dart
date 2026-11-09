@@ -85,6 +85,10 @@ typedef AgentRowData = ({
   // machine when there are several ([agentWhere]). Last items are the first
   // to be cut off.
   String subtitle,
+
+  // The agent's and its workspace's own report (state label, pane tokens,
+  // workspace tokens), empty when there is none ([metaLine]).
+  String meta,
   bool stale,
 
   // When the state began, as far as known: sorts a section newest first
@@ -167,7 +171,7 @@ class AgentsOverview {
 
 AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
   final pane = a.pane;
-  final kind = agentName(pane.agent);
+  final kind = agentLabelOf(pane);
   // A pane whose own title says nothing (omp's `π > <folder>`) is named by what
   // its session log says, when that was read (`PaneSessionNames`).
   final named = a.betterTitle;
@@ -181,6 +185,7 @@ AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
   if (pane.status == AgentStatus.idle && active != null && (since == null || !since.exact)) {
     since = StatusTime.exact(active);
   }
+  final subtitle = agentWhere(a.machine, pane.cwd, agent: kind, title: title, showMachine: showMachine);
   return (
     key: '${a.machine.profile.id}/${pane.id}',
     machine: a.machine,
@@ -188,11 +193,32 @@ AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
     status: pane.status,
     // A pane with no title is named after its agent.
     title: title,
-    subtitle: agentWhere(a.machine, pane.cwd, agent: kind, title: title, showMachine: showMachine),
+    subtitle: subtitle,
+    meta: metaLine(a, title: title, subtitle: subtitle),
     stale: a.stale,
     since: since,
     quietMinutes: pane.status == AgentStatus.working ? a.machine.quietMinutes(pane.id) : 0,
   );
+}
+
+/// The quiet third line of a terminal agent's row: what its hook and its
+/// workspace report about themselves, `🤖 building 24/165 · some-feature`.
+/// The hook's word for the current state first (herdr's `state_labels` keys
+/// are [AgentStatus] names), then the pane's tokens, then the workspace's, in
+/// key order. A value the [title] or a part of the [subtitle] already says is
+/// left out, and so is one said already; empty when nothing is left. Agent
+/// sessions get none: a session has no herdr workspace to read it from.
+String metaLine(FleetAgent a, {required String title, required String subtitle}) {
+  final said = {title.trim().toLowerCase(), for (final part in subtitle.split(' · ')) part.trim().toLowerCase()};
+  final parts = <String>[];
+  for (final value in [
+    ?a.pane.stateLabels[a.pane.status.name],
+    ...a.pane.tokens.values,
+    ...?a.workspace?.tokens.values,
+  ]) {
+    if (said.add(value.toLowerCase())) parts.add(value);
+  }
+  return parts.join(' · ');
 }
 
 /// Which feature an agent works on, on the line under its title:

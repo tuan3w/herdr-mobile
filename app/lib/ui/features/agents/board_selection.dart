@@ -5,6 +5,7 @@ import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/attention_set.dart';
 import '../../../data/repositories/batch_actions.dart';
 import '../../../data/repositories/fleet_repository.dart';
+import '../../../data/words/agent_names.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -181,7 +182,7 @@ List<BatchTarget> resolveBatchTargets({
             machine: byKey[r.key]!.machine,
             paneId: r.paneId,
             title: r.title,
-            agent: byKey[r.key]!.pane.agent ?? 'terminal',
+            agent: agentLabelOf(byKey[r.key]!.pane),
             status: r.status,
           ),
   ];

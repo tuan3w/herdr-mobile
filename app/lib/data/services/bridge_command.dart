@@ -214,7 +214,10 @@ def delta(q,d,have):
             for x in box.get(k) or []:
                 if k=="panes" and x.get("pane_id") in cs:
                     x["completion_seq"]=cs[x["pane_id"]]
-                rows.append(c+json.dumps(x,ensure_ascii=False,separators=(",",":")))
+                # sort_keys: herdr's token maps come from a Rust HashMap whose
+                # order can change between snapshots; an unchanged row must
+                # read the same or it is resent in every delta.
+                rows.append(c+json.dumps(x,ensure_ascii=False,separators=(",",":"),sort_keys=True))
     else:
         text=box.get("text")
         if not isinstance(text,str) or len(text)<$muxDeltaMin:
