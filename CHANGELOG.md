@@ -4,25 +4,39 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.58] - 2026-11-09
 
-- What your herdr hooks report shows on the board: a quiet third line under
-  an agent holds its own word for what it is doing and the tokens set with
-  `herdr pane report-metadata` and `herdr workspace report-metadata` (a build
-  stage, a branch). It follows the hook within about 2 seconds while the app is
-  open, and a token that expires goes away. A title or agent name a hook
-  reports names the agent everywhere; a name you gave the pane still wins.
+### What your hooks report, on the board
+
+Labels that hooks and scripts on your computers give herdr now show under each
+agent on the board: the agent's own word for what it is doing, a test count, a
+build stage. They follow the hook within about 2 seconds while the app is open.
+
+> [!TIP]
+> Try it: on your computer, run herdr workspace report-metadata with a
+> --token, then look at the board.
+
+- A title or agent name a hook reports names the agent on the board, in the
+  pane and in notifications; a name you gave the pane still wins.
+- A label that expires goes away. In the background the app fetches nothing
+  for labels, to save the battery.
+- Without such hooks the board looks as it did.
+
+![The board with working agents, each with a grey line its hook reported: CI 142 of 165 passing, Removing 14 of 31 flags](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.58/0.1.58-hooks-on-board.png)
+
+**Fixed**
+
 - A pane herdr couldn't bring back after it restarted now says `Not running`
   and herdr's reason, and offers `Close pane`. It no longer says the pane is
   gone while it is still listed, and the app no longer keeps reading it.
-- A message from the chat, the board or `Message` to several agents no longer
-  lands in a question that opened a moment before: herdr now checks that the
-  agent is at its prompt as it types, and if it isn't the message isn't sent
-  and the app says why. `Send anyway` still types into the question.
-- An agent that starts needing you while the app connects is shown at once,
+- A message from a chat or from `Message` to several agents no longer lands in
+  a question that opened a moment before: herdr checks that the agent is at
+  its prompt as it types, and if it isn't, the message isn't sent and the app
+  says why. `Send anyway` still types into the question.
+- An agent that starts needing you while the app connects shows at once,
   instead of up to 20 seconds later.
-- Checked against herdr 0.9.5 on this machine, not on a phone. The refusal
-  when an agent waits for an answer was not seen live.
+- Checked against herdr 0.9.5 on a computer, not on a phone. The refusal when
+  an agent waits for an answer was not seen live.
 
 ## [0.1.57] - 2026-11-08
 
