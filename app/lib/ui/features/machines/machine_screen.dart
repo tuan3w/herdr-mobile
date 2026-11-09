@@ -15,6 +15,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import '../create/management_sheets.dart';
 import '../create/new_agent_session_screen.dart';
 import '../files/files_navigation.dart';
+import 'closed_worktrees.dart';
 import 'machine_pane_rows.dart';
 import 'machine_repo_section.dart';
 
@@ -55,7 +56,7 @@ class _MachineViewState extends State<_MachineView> {
     // Branches are decoration read once on arrival and on pull-to-refresh: no
     // timer, no subscription.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(context.read<MachineConnection>().loadBranches());
+      if (mounted) unawaited(context.read<MachineConnection>().loadBranches(every: true));
     });
   }
 
@@ -102,7 +103,7 @@ class _MachineViewState extends State<_MachineView> {
         onRefresh: () async {
           if (machine.isLive) {
             await machine.refresh();
-            unawaited(machine.loadBranches());
+            unawaited(machine.loadBranches(every: true));
           } else {
             machine.retry();
           }
@@ -230,6 +231,7 @@ class _WorkspaceSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = machine.isLive;
+    final place = machine.places.ofWorkspace(workspace.id);
 
     // These are row descriptions only: [Collapse] builds nothing for a
     // workspace that is closed.
@@ -267,7 +269,13 @@ class _WorkspaceSection extends StatelessWidget {
         ),
         Collapse(
           open: open,
-          child: RowColumn(rows: rows),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              RowColumn(rows: rows),
+              if (place != null) ClosedWorktreesRow(machine: machine, repoKey: place.repoKey, repoName: place.repoName),
+            ],
+          ),
         ),
       ],
     );

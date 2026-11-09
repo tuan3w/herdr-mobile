@@ -156,6 +156,29 @@ leaves the checkout's folder on the row. A checkout opened later is named by
 its folder until the machine screen or the start form reads it. The board
 rebuilds when a branch is learnt (`AgentsOverview.branches`).
 
+**Closed worktrees** (`MachineConnection.closedCheckouts`, `ClosedWorktreesRow`
+under a repo's checkouts on the machine screen). `Close workspace` on a worktree
+leaves its folder, so the disk space stays used and nothing else listed it.
+The machine screen reads `worktree.list` with `loadBranches(every: true)`: on
+arrival and pull-to-refresh, one per repo herdr knows by its git provenance (a
+repo down to one open checkout included, so a worktree closed on its own does
+not vanish where it can be removed), and after a removal or closing a worktree
+workspace; the board still asks once per repo with several open checkouts. A
+checkout is closed when it is linked, has no `open_workspace_id` and the
+snapshot has no workspace at its path; a repo whose main checkout is not in the
+list (bare) offers none. Removing a closed one is `worktree.open` with `cwd` = the
+repo's main checkout, `path` = the folder, `focus:false`, then `worktree.remove`
+by the workspace that returned. Measured on herdr 0.9.5: `path` alone is
+`worktree_not_found`, a linked `cwd` is `linked_worktree_source`, and opening
+also opens the main checkout's workspace when it was closed. So the phone closes
+again what the removal opened and the person did not (the opened workspace when
+git refuses a dirty folder, the main checkout's when it was closed before). The
+hold, the never-forced removal and the dirty wording are the same as for an open
+worktree (`confirmRemoveWorktree`). The agent screen's `Session options` reads
+`worktree.list` for the session's folder once when it opens (no row when the
+folder is not in a linked worktree, the lookup fails or the repo has no main
+checkout) and its confirm adds `This session runs there and will lose its folder.`
+
 What went with project grouping: group headers and their summaries, the
 per-project fold (`folded-groups`), start order (herdr's pane counters and
 `AgentSessionView.startedAt`), `Place.repoRoot` (a group's key) and

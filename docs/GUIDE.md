@@ -144,7 +144,11 @@ machine to see its workspaces, tabs and panes. A repo with several worktrees
 open in herdr is one section: the repo, then its checkouts (`Main checkout`
 and one per worktree, with the branch), with the agents in each; the `+` on the
 repo starts an agent in its main checkout and `⋯` on a checkout can start one
-there or remove the worktree (held, never forced). `Browse files` and the `+`
+there or remove the worktree (held, never forced). A worktree whose workspace
+herdr has closed keeps its folder on the computer; under its repo
+`Closed worktrees · N` lists them, and a tap on one removes it the same way.
+An agent's `Session options` has `Remove worktree` when it runs in a linked
+worktree. `Browse files` and the `+`
 (`New agent session` on that machine) are at the top.
 
 ## 4. The board

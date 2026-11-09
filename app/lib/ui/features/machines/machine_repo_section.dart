@@ -11,6 +11,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import '../create/management_sheets.dart';
 import '../create/new_agent_session_screen.dart';
 import '../create/session_prefill.dart';
+import 'closed_worktrees.dart';
 import 'machine_pane_rows.dart';
 
 /// A repo with several open checkouts: one header with the roll-up and a ＋
@@ -82,6 +83,7 @@ class MachineRepoSection extends StatelessWidget {
                   showAll: showAll(block.workspace.id),
                   onShowAll: () => onShowAll(block.workspace.id),
                 ),
+              ClosedWorktreesRow(machine: machine, repoKey: group.repoKey, repoName: group.repoName),
             ],
           ),
         ),

@@ -173,6 +173,23 @@ class HerdrApi {
     );
   }
 
+  /// Opens the existing checkout at [path] as a shell workspace (never
+  /// focused: the desktop's view is not the phone's to move); [alreadyOpen]
+  /// when herdr had it open. Removing a checkout herdr has closed needs this
+  /// first: `worktree.remove` takes a workspace id only. [repoPath] is the
+  /// repo's main checkout: herdr starts open (and new) worktree actions from
+  /// the repo's parent workspace, refuses a linked folder
+  /// (`linked_worktree_source`) and cannot find [path] without it
+  /// (`worktree_not_found`), as measured on herdr 0.9.5. It also opens the
+  /// main checkout's workspace when that was closed.
+  Future<({String workspaceId, bool alreadyOpen})> openWorktree({
+    required String repoPath,
+    required String path,
+  }) async {
+    final r = await _call('worktree.open', {'cwd': repoPath, 'path': path, 'focus': false});
+    return (workspaceId: _id(r, 'workspace', 'workspace_id'), alreadyOpen: r['already_open'] == true);
+  }
+
   /// Removes the linked worktree open as [workspaceId]: its folder goes, its
   /// branch stays. herdr refuses a checkout with uncommitted changes. There is
   /// no `force` here on purpose: the phone never throws work away.

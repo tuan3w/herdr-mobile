@@ -55,13 +55,15 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
     final ok = await showConfirmSheet(
       navigator.context,
       title: 'Close $name?',
-      message: panes <= 1
-          ? 'What is running in it stops. This can’t be undone.'
-          : 'Its $panes panes and whatever runs in them stop. This can’t be undone.',
+      message:
+          '${panes <= 1 ? 'What is running in it stops. This can’t be undone.' : 'Its $panes panes and whatever runs in them stop. This can’t be undone.'}'
+          '${workspace.worktree?.isLinked == true ? ' The folder stays on disk: remove it from Closed worktrees.' : ''}',
       confirmLabel: 'Close workspace',
     );
     if (!ok) return;
     if (await actions.closeWorkspace(workspace.id) case final error?) toast(error);
+    // A closed worktree's folder is still there: the Closed worktrees list shows it.
+    if (workspace.worktree != null && machine.isLive) unawaited(machine.loadBranches(every: true));
   }
 
   void newSessionHere(WorkspaceWorktree worktree) {
@@ -73,28 +75,6 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
         prefill: SessionPrefill(machineId: machine.profile.id, folder: worktree.checkoutPath),
       ),
     );
-  }
-
-  Future<void> removeWorktree(WorkspaceWorktree worktree) async {
-    final folder = worktree.checkoutPath;
-    final worktreeName = machine.places.ofWorkspace(workspace.id)?.checkoutName ?? name;
-    final branch = machine.branchOf(folder);
-    final working = _agentsWorkingIn(machine, workspace.id);
-    final ok = await showConfirmSheet(
-      navigator.context,
-      title: 'Remove $worktreeName?',
-      confirmLabel: 'Remove worktree',
-      hold: true,
-      message:
-          'Deletes the folder ${shortPath(folder)} on ${machine.profile.label}. '
-          '${branch == null ? 'The branch stays. ' : 'The branch $branch stays. '}'
-          '${working.stop > 0 ? '${countOf(working.stop, 'agent')} working there will stop. ' : ''}'
-          '${working.lose > 0 ? '${countOf(working.lose, 'phone session')} running there will lose the folder. ' : ''}'
-          'If it has uncommitted changes, git refuses and nothing is deleted.',
-    );
-    if (!ok) return;
-    if (await actions.removeWorktree(workspace) case final error?) return toast(error);
-    toaster.show('Removed $worktreeName');
   }
 
   final worktree = workspace.worktree;
@@ -125,7 +105,14 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
           label: 'Remove worktree',
           icon: LucideIcons.gitBranchMinus,
           destructive: true,
-          onTap: () => removeWorktree(worktree),
+          onTap: () => confirmRemoveWorktree(
+            navigator.context,
+            machine,
+            path: worktree.checkoutPath,
+            workspaceId: workspace.id,
+            name: machine.places.ofWorkspace(workspace.id)?.checkoutName ?? name,
+            toaster: toaster,
+          ),
         ),
       SheetAction(
         label: 'Close workspace',
@@ -136,6 +123,56 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
       ),
     ],
   );
+}
+
+/// Asks (with a hold, never forced) and removes the linked worktree at [path]:
+/// its folder goes, its branch stays. [workspaceId] is the workspace herdr has
+/// open for it; null when herdr has it closed, and then [repoPath] (the repo's
+/// main checkout) is how herdr opens it to remove it. [note] is one sentence added to
+/// what is lost (the agent screen says this session loses its folder). Says
+/// in a toast what happened. [toaster]: one taken before a gap, for a
+/// [context] that is the navigator's own.
+Future<void> confirmRemoveWorktree(
+  BuildContext context,
+  MachineConnection machine, {
+  required String path,
+  String? workspaceId,
+  String? repoPath,
+  String? name,
+  String? note,
+  Toaster? toaster,
+}) async {
+  final toasts = toaster ?? Toaster.of(context);
+  final worktreeName =
+      name ?? (workspaceId == null ? null : machine.places.ofWorkspace(workspaceId)?.checkoutName) ?? _folderName(path);
+  final branch = machine.branchOf(path);
+  final lost = workspaceId != null ? _agentsWorkingIn(machine, workspaceId) : _agentsInFolder(machine, path);
+  final ok = await showConfirmSheet(
+    context,
+    title: 'Remove $worktreeName?',
+    confirmLabel: 'Remove worktree',
+    hold: true,
+    message:
+        'Deletes the folder ${shortPath(path)} on ${machine.profile.label}. '
+        '${branch == null ? 'The branch stays. ' : 'The branch $branch stays. '}'
+        '${lost.stop > 0 ? '${countOf(lost.stop, 'agent')} working there will stop. ' : ''}'
+        '${lost.lose > 0 ? '${countOf(lost.lose, 'phone session')} running there will lose the folder. ' : ''}'
+        '${note == null ? '' : '$note '}'
+        'If it has uncommitted changes, git refuses and nothing is deleted.',
+  );
+  if (!ok) return;
+  if (await MachineActions(machine).removeWorktree(path: path, workspaceId: workspaceId, repoPath: repoPath)
+      case final error?) {
+    toasts.show(error, kind: ToastKind.failed);
+    return;
+  }
+  toasts.show('Removed $worktreeName');
+}
+
+/// The last folder of [path]: what the person sees on disk.
+String _folderName(String path) {
+  final parts = path.split('/').where((s) => s.isNotEmpty);
+  return parts.isEmpty ? path : parts.last;
 }
 
 /// The agents working or blocked under the checkout [workspaceId] on the
@@ -167,6 +204,20 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
     }
   }
   return (stop: stop, lose: lose);
+}
+
+/// The agents working or blocked anywhere on the machine in [path] or below,
+/// for a checkout herdr has no workspace for: none of them stops with it (no
+/// workspace of the checkout is closed), they all lose the folder.
+({int stop, int lose}) _agentsInFolder(MachineConnection machine, String path) {
+  final prefix = path.endsWith('/') ? path : '$path/';
+  var lose = 0;
+  for (final p in machine.snapshot.panes) {
+    final cwd = p.cwd;
+    final busy = p.agent != null && (p.status == AgentStatus.working || p.status == AgentStatus.blocked);
+    if (busy && cwd != null && (cwd == path || cwd.startsWith(prefix))) lose++;
+  }
+  return (stop: 0, lose: lose);
 }
 
 /// Asks before closing [pane] (it stops what runs there, and the last pane

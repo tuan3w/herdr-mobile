@@ -169,6 +169,13 @@ void main() {
           'label': 'x',
           'is_linked_worktree': true,
         },
+        // herdr closed this one: its folder is still on the machine.
+        {
+          'path': _wt(_repo1, 'worktree-closed-old-3f2a'),
+          'branch': 'old/experiment-with-a-very-long-branch-name',
+          'label': 'x',
+          'is_linked_worktree': true,
+        },
         {'path': _root2, 'branch': 'main', 'label': 'x', 'is_linked_worktree': false},
       ],
     };
@@ -238,6 +245,33 @@ void main() {
   testWidgets(
     'machine: offline dims everything and turns the buttons off',
     (tester) => machineShot(tester, 'machine-offline-dark-412', brightness: Brightness.dark, offline: true),
+  );
+  testWidgets(
+    'machine: the Closed worktrees row, light 412',
+    (tester) => machineShot(
+      tester,
+      'machine-closed-row-light-412',
+      after: (t) async {
+        await t.ensureVisible(find.text('Closed worktrees · 1').first);
+        await settle(t);
+      },
+    ),
+  );
+  testWidgets(
+    'machine: the Closed worktrees sheet, dark 320 at 2x',
+    (tester) => machineShot(
+      tester,
+      'machine-closed-sheet-dark-320-2x',
+      brightness: Brightness.dark,
+      size: const Size(320, 640),
+      scale: 2,
+      after: (t) async {
+        await t.ensureVisible(find.text('Closed worktrees · 1').first);
+        await settle(t);
+        await t.tap(find.text('Closed worktrees · 1').first);
+        await settle(t);
+      },
+    ),
   );
 
   // The release still: the invented demo fleet's studio-mac, where payments-api

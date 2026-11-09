@@ -83,6 +83,25 @@ void main() {
     test('a plain workspace is in no group', () {
       expect(index([wireWorkspace('w3')]).groupOf('w3'), isNull);
     });
+
+    test('a repo with one open checkout is an anchor too, and an open checkout is told from a closed one', () {
+      final lone = PlaceIndex.of(
+        snapshotOf(
+          workspaces: [
+            wireWorkspace('w1', worktree: wirePrimaryWorktree),
+            wireWorkspace('w3'),
+          ],
+        ),
+      );
+      expect(lone.repos, isEmpty);
+      expect(lone.anchors.map((p) => p.workspaceId), ['w1'], reason: 'a plain workspace has no repo to ask about');
+
+      final idx = index();
+      expect(idx.anchors.map((p) => p.workspaceId), ['w1'], reason: 'one anchor per repo, not per checkout');
+      expect(idx.isOpenCheckout(linked), isTrue);
+      expect(idx.isOpenCheckout('$linked/'), isTrue);
+      expect(idx.isOpenCheckout('/home/u/.herdr/worktrees/herdr-mobile/closed-one'), isFalse);
+    });
   });
 
   group('the one place name', () {

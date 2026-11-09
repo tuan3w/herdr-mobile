@@ -45,24 +45,25 @@ String _trimSlash(String path) => path.length > 1 && path.endsWith('/') ? path.s
 /// provenance. Built per snapshot; one instance answers every where-line, so
 /// the board, the notification and the toast name a folder the same way.
 class PlaceIndex {
-  PlaceIndex._(this.repos, this._places, this._groupOf);
+  PlaceIndex._(this.repos, this._places, this._groupOf, this.anchors);
 
   factory PlaceIndex.of(Snapshot s) {
     final byRepo = <String, List<Workspace>>{};
     final places = <Place>[];
+    final anchors = <String, Place>{};
     for (final w in s.workspaces) {
       final wt = w.worktree;
       if (wt == null) continue;
       byRepo.putIfAbsent(wt.repoKey, () => []).add(w);
-      places.add(
-        Place(
-          repoKey: wt.repoKey,
-          repoName: wt.repoName,
-          checkoutPath: _trimSlash(wt.checkoutPath),
-          workspaceId: w.id,
-          isLinked: wt.isLinked,
-        ),
+      final place = Place(
+        repoKey: wt.repoKey,
+        repoName: wt.repoName,
+        checkoutPath: _trimSlash(wt.checkoutPath),
+        workspaceId: w.id,
+        isLinked: wt.isLinked,
       );
+      places.add(place);
+      anchors.putIfAbsent(wt.repoKey, () => place);
     }
     final repos = <RepoGroup>[];
     final groupOf = <String, RepoGroup>{};
@@ -79,7 +80,7 @@ class PlaceIndex {
         groupOf[w.id] = group;
       }
     }
-    return PlaceIndex._(repos, places, groupOf);
+    return PlaceIndex._(repos, places, groupOf, anchors.values.toList(growable: false));
   }
 
   /// Repos with two or more open checkouts, in the order herdr lists them.
@@ -87,6 +88,22 @@ class PlaceIndex {
   final List<RepoGroup> repos;
   final List<Place> _places;
   final Map<String, RepoGroup> _groupOf;
+
+  /// One checkout per repo herdr knows by its git provenance, repos with a
+  /// single open checkout included: a workspace to ask `worktree.list` about.
+  final List<Place> anchors;
+
+  /// The workspace herdr has open for the checkout at [path]; null when none.
+  String? workspaceAt(String path) {
+    final dir = _trimSlash(path);
+    for (final p in _places) {
+      if (p.checkoutPath == dir) return p.workspaceId;
+    }
+    return null;
+  }
+
+  /// Whether herdr has a workspace open for the checkout at [path].
+  bool isOpenCheckout(String path) => workspaceAt(path) != null;
 
   /// The checkout [cwd] is in: the longest checkout path that is [cwd] or a
   /// parent of it at a `/` boundary (`/r/app` does not contain `/r/app-2`).

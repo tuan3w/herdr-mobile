@@ -296,6 +296,24 @@ void main() {
       ]);
     });
 
+    test('open sends the main checkout as cwd, the folder and focus:false, and says whether it was open', () async {
+      t.on['worktree.open'] = (_) => {
+        'type': 'worktree_opened',
+        'workspace': {'workspace_id': 'w9'},
+        'tab': {'tab_id': 'w9:t1'},
+        'root_pane': {'pane_id': 'w9:p1'},
+        'worktree': info('/wt/closed', branch: 'feat', open: 'w9'),
+        'already_open': false,
+      };
+
+      final r = await api.openWorktree(repoPath: '/r/app', path: '/wt/closed');
+
+      expect(t.paramsOf('worktree.open'), [
+        {'cwd': '/r/app', 'path': '/wt/closed', 'focus': false},
+      ]);
+      expect((r.workspaceId, r.alreadyOpen), ('w9', false));
+    });
+
     test('list drops bare and prunable checkouts and keeps one herdr has not opened', () async {
       t.on['worktree.list'] = (_) => {
         'type': 'worktree_list',

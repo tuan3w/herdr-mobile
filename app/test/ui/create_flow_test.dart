@@ -16,8 +16,10 @@ import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
 import 'package:provider/provider.dart';
 import 'package:herdr_mobile/ui/features/create/management_sheets.dart';
+import 'package:herdr_mobile/ui/features/agent_session/session_bar.dart' show showSessionOptions;
 
 import '../support/create_harness.dart';
+import '../support/fake_agent_session.dart';
 import '../support/fake_fs.dart';
 import '../support/fake_transport.dart';
 import '../support/herdr_stub.dart';
@@ -610,6 +612,242 @@ void main() {
       expect(find.text('Remove worktree'), findsNothing);
       expect(find.text('Worktrees are open · close them first'), findsNothing);
       await _tearDown(tester, plain);
+    });
+
+    group('a worktree herdr has closed keeps its folder', () {
+      /// The fixture of [open] plus `worktree-b`, linked, with no workspace: what
+      /// `Close workspace` leaves behind. `removed` flips when herdr removes it.
+      Future<({CreateHarness h, HerdrStub t, List<bool> removed})> withClosed(
+        WidgetTester tester, {
+        bool alreadyOpen = false,
+      }) async {
+        final h = await open(tester);
+        final t = h.stubs['a']!;
+        final removed = [false];
+        Map<String, dynamic> info(String path, {required bool linked, String? open, String? branch}) => {
+          'path': path,
+          'label': 'x',
+          'is_linked_worktree': linked,
+          'branch': branch,
+          'open_workspace_id': open,
+        };
+        t.on['worktree.list'] = (_) => {
+          'type': 'worktree_list',
+          'worktrees': [
+            info('/work/w1', linked: false, open: 'w1', branch: 'main'),
+            info('/work/wt/worktree-a', linked: true, open: 'w2'),
+            if (!removed.single) info('/work/wt/worktree-b', linked: true, branch: 'feat/b'),
+          ],
+        };
+        t.on['worktree.open'] = (_) => {
+          'type': 'worktree_opened',
+          'workspace': {'workspace_id': 'w9'},
+          'tab': {'tab_id': 'w9:t1'},
+          'root_pane': {'pane_id': 'w9:p1'},
+          'worktree': info('/work/wt/worktree-b', linked: true, open: 'w9', branch: 'feat/b'),
+          'already_open': alreadyOpen,
+        };
+        t.on['worktree.remove'] = (_) {
+          removed[0] = true;
+          return {'type': 'worktree_removed', 'workspace_id': 'w9', 'path': '/work/wt/worktree-b', 'forced': false};
+        };
+        await _pump(tester, h, MachineScreen(machine: h.connection('a')));
+        return (h: h, t: t, removed: removed);
+      }
+
+      Future<void> askToRemoveClosed(WidgetTester tester) async {
+        await _tap(tester, find.text('Closed worktrees · 1'));
+        await _tap(tester, find.text('worktree-b'));
+      }
+
+      testWidgets('is a row under its repo, and the sheet names it with its branch', (tester) async {
+        final (:h, :t, removed: _) = await withClosed(tester);
+
+        expect(find.text('Closed worktrees · 1'), findsOneWidget, reason: 'w2 is open, so only worktree-b counts');
+        expect(t.paramsOf('worktree.list'), isNotEmpty);
+        await _tap(tester, find.text('Closed worktrees · 1'));
+
+        expect(find.text('worktree-b'), findsOneWidget);
+        expect(find.text('feat/b'), findsOneWidget);
+        expect(find.text('worktree-a'), findsNothing, reason: 'an open worktree is on the screen, not in this list');
+        await _tearDown(tester, h);
+      });
+
+      testWidgets('removing opens it first, removes it by that workspace and never forces; the row goes', (
+        tester,
+      ) async {
+        final (:h, :t, removed: _) = await withClosed(tester);
+        await askToRemoveClosed(tester);
+
+        expect(find.text('Remove worktree-b?'), findsOneWidget);
+        expect(find.textContaining('Deletes the folder'), findsOneWidget);
+        expect(find.textContaining('The branch feat/b stays'), findsOneWidget);
+        expect(find.byType(HoldToConfirm), findsOneWidget);
+        expect(t.paramsOf('worktree.open'), isEmpty, reason: 'asking opens nothing');
+
+        await holdFor(tester, find.byType(HoldToConfirm));
+        await _flush(tester);
+
+        expect(t.paramsOf('worktree.open'), [
+          {'cwd': '/work/w1', 'path': '/work/wt/worktree-b', 'focus': false},
+        ]);
+        expect(t.paramsOf('worktree.remove'), [
+          {'workspace_id': 'w9'},
+        ]);
+        expect(find.text('Removed worktree-b'), findsOneWidget);
+        expect(find.text('No closed worktrees.'), findsOneWidget, reason: 'the sheet stays and the list is empty now');
+        await _tearDown(tester, h);
+      });
+
+      testWidgets('a refused removal closes again the workspace it opened, and says why', (tester) async {
+        final (:h, :t, removed: _) = await withClosed(tester);
+        t.on['worktree.remove'] = (_) => throw const HerdrApiException(
+          'dirty_worktree_requires_force',
+          "fatal: contains modified or untracked files, use --force to delete it",
+        );
+        await askToRemoveClosed(tester);
+
+        await holdFor(tester, find.byType(HoldToConfirm));
+        await _flush(tester);
+
+        expect(find.text('It has uncommitted changes. Nothing was removed.'), findsOneWidget);
+        expect(find.textContaining('--force'), findsNothing);
+        expect(t.paramsOf('workspace.close'), [
+          {'workspace_id': 'w9'},
+        ]);
+        await _tearDown(tester, h);
+      });
+
+      testWidgets('a refused removal leaves open a workspace herdr already had open', (tester) async {
+        final (:h, :t, removed: _) = await withClosed(tester, alreadyOpen: true);
+        t.on['worktree.remove'] = (_) => throw const HerdrApiException('dirty_worktree_requires_force', 'dirty');
+        await askToRemoveClosed(tester);
+
+        await holdFor(tester, find.byType(HoldToConfirm));
+        await _flush(tester);
+
+        expect(t.paramsOf('workspace.close'), isEmpty);
+        await _tearDown(tester, h);
+      });
+
+      testWidgets('opening a closed worktree also opens the main checkout when it was closed: it is closed again', (
+        tester,
+      ) async {
+        final (:h, :t, removed: _) = await withClosed(tester);
+        final machine = h.connection('a');
+        // Only w2 is open: the main checkout's workspace (w1) is closed.
+        final workspaces = t.snapshot['workspaces'] as List;
+        final main = Map<String, Object>.from(workspaces.firstWhere((w) => (w as Map)['workspace_id'] == 'w1') as Map);
+        workspaces.removeWhere((w) => (w as Map)['workspace_id'] == 'w1');
+        await machine.refresh();
+        await machine.loadBranches(every: true);
+        await _flush(tester);
+        // herdr opens the repo's parent workspace as a side effect of the open (measured on 0.9.5).
+        final open = t.on['worktree.open']!;
+        t.on['worktree.open'] = (params) {
+          workspaces.add(main);
+          return open(params);
+        };
+        await askToRemoveClosed(tester);
+
+        await holdFor(tester, find.byType(HoldToConfirm));
+        await _flush(tester);
+
+        expect(t.paramsOf('worktree.remove'), [
+          {'workspace_id': 'w9'},
+        ]);
+        expect(
+          t.paramsOf('workspace.close'),
+          [
+            {'workspace_id': 'w1'},
+          ],
+          reason: 'the main checkout the person did not open goes again; the removed worktree is gone with its folder',
+        );
+        await _tearDown(tester, h);
+      });
+
+      testWidgets('closing a worktree workspace says where its folder can be removed, and lists it after', (
+        tester,
+      ) async {
+        final (:h, :t, removed: _) = await withClosed(tester);
+        final machine = h.connection('a');
+        expect(machine.isLive, isTrue);
+        // herdr closes w2: its checkout is then no workspace, and the list says closed.
+        t.on['workspace.close'] = (_) {
+          final snap = t.snapshot;
+          (snap['workspaces'] as List).removeWhere((w) => (w as Map)['workspace_id'] == 'w2');
+          return {'type': 'ok'};
+        };
+        t.on['worktree.list'] = (_) => {
+          'type': 'worktree_list',
+          'worktrees': [
+            {'path': '/work/w1', 'label': 'x', 'is_linked_worktree': false, 'open_workspace_id': 'w1'},
+            {'path': '/work/wt/worktree-a', 'label': 'x', 'is_linked_worktree': true},
+            {'path': '/work/wt/worktree-b', 'label': 'x', 'is_linked_worktree': true},
+          ],
+        };
+        // The second `⋯` is w2's (the primary's block comes first).
+        await _tap(tester, find.byTooltip('Checkout actions').at(1));
+        await _tap(tester, find.text('Close workspace'));
+        expect(find.textContaining('The folder stays on disk: remove it from Closed worktrees.'), findsOneWidget);
+
+        await _tap(tester, _button('Close workspace'));
+
+        expect(find.text('Closed worktrees · 2'), findsOneWidget);
+        await _tearDown(tester, h);
+      });
+
+      group('on the agent screen', () {
+        Future<void> options(WidgetTester tester, CreateHarness h, String cwd) async {
+          final session = FakeAgentSession(machine: h.connection('a'), cwd: cwd);
+          await _pump(
+            tester,
+            h,
+            Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => showSessionOptions(context, session),
+                  child: const Text('open options'),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(find.text('open options'));
+          await _flush(tester);
+        }
+
+        testWidgets('Session options offers Remove worktree for the closed worktree the agent runs in', (tester) async {
+          final (:h, :t, removed: _) = await withClosed(tester);
+          await options(tester, h, '/work/wt/worktree-b/app');
+
+          expect(t.paramsOf('worktree.list').last, {'cwd': '/work/wt/worktree-b/app'});
+          await _tap(tester, find.text('Remove worktree'));
+
+          expect(find.text('Remove worktree-b?'), findsOneWidget);
+          expect(find.textContaining('This session runs there and will lose its folder.'), findsOneWidget);
+          await holdFor(tester, find.byType(HoldToConfirm));
+          await _flush(tester);
+          expect(t.paramsOf('worktree.remove'), [
+            {'workspace_id': 'w9'},
+          ]);
+          await _tearDown(tester, h);
+        });
+
+        testWidgets('has no such row in the main checkout, in a folder git does not know, or when the lookup fails', (
+          tester,
+        ) async {
+          final (:h, :t, removed: _) = await withClosed(tester);
+          await options(tester, h, '/work/w1/app');
+          expect(find.text('Remove worktree'), findsNothing, reason: 'the main checkout is not a linked worktree');
+          await tester.pumpWidget(const SizedBox());
+
+          t.on['worktree.list'] = (_) => throw const HerdrApiException('not_a_repo', 'not a git repository');
+          await options(tester, h, '/tmp/scratch');
+          expect(find.text('Remove worktree'), findsNothing);
+          expect(find.text('Session overview'), findsOneWidget, reason: 'the sheet itself is fine');
+          await _tearDown(tester, h);
+        });
+      });
     });
   });
 }

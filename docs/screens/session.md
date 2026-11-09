@@ -9,7 +9,7 @@ The design system (tokens, kit, motion, words) is `docs/DESIGN.md`; this file ho
 Slim bar like the pane bar (status glyph by phase, title over
 `agent · machine · folder`, a tap on the title area opens the agent
 switcher (`docs/screens/agent-screens.md`), `Session options`, which holds the
-session overview and `Show terminal` for a followed pane's chat); plan header (`1 of 3` + the
+session overview, `Remove worktree` (when the folder is in a linked worktree) and `Show terminal` for a followed pane's chat); plan header (`1 of 3` + the
 current step); a virtualized transcript stuck to the bottom with Jump to
 latest; the permission dock; the composer (send becomes stop while a turn
 runs). The permission dock is a safety surface: the command is always visible

@@ -240,24 +240,66 @@ class MachineConnection extends ChangeNotifier {
   String? branchOf(String checkoutPath) => _branches[checkoutPath];
 
   /// Reads the branches of every repo with several open checkouts, one
-  /// `worktree.list` per repo. A failure leaves the branches out: they are
-  /// decoration, nothing is retried and nothing is shown about it. Only on a
-  /// live link: a request on a dead one would start a connection attempt of
-  /// its own, outside the link's retry and back-off.
-  Future<void> loadBranches() async {
-    if (!isLive) return;
-    final groups = places.repos;
-    if (groups.isEmpty) return;
+  /// `worktree.list` per repo, and which of a repo's linked checkouts herdr has
+  /// closed (their folders are still on the machine: [closedCheckouts]).
+  /// [every] reads every repo herdr knows by its git provenance, a repo down
+  /// to one open checkout included (the machine screen asks so: a worktree
+  /// closed on its own would otherwise disappear exactly where it can be
+  /// removed). A failure leaves what was known: the branches are decoration,
+  /// nothing is retried and nothing is shown about it. Only on a live link: a
+  /// request on a dead one would start a connection attempt of its own,
+  /// outside the link's retry and back-off.
+  Future<void> loadBranches({bool every = false}) async {
+    final reads = every
+        ? [for (final p in places.anchors) (p.repoKey, p.workspaceId)]
+        : [for (final g in places.repos) (g.repoKey, g.checkouts.first.id)];
+    if (!isLive || reads.isEmpty) return;
     final lists = await Future.wait([
-      for (final g in groups)
+      for (final (_, workspaceId) in reads)
         api
-            .listWorktrees(workspaceId: g.checkouts.first.id)
+            .listWorktrees(workspaceId: workspaceId)
+            .then<List<WorktreeInfo>?>((l) => l)
             .catchError(
-              (Object _) => const <WorktreeInfo>[],
+              (Object _) => null,
               test: (e) => e is HerdrApiException || e is HerdrTransportException || e is TimeoutException,
             ),
     ]);
-    noteBranches([for (final l in lists) ...l]);
+    noteBranches([for (final l in lists) ...?l]);
+    for (final (i, list) in lists.indexed) {
+      if (list != null) _noteClosed(reads[i].$1, list);
+    }
+  }
+
+  final Map<String, List<WorktreeInfo>> _closed = {};
+  final Map<String, String> _repoRoots = {};
+
+  /// The linked checkouts of [repoKey] that herdr has closed, as last read
+  /// (their folders are still on the machine). Empty before the first read
+  /// and for a repo with none.
+  List<WorktreeInfo> closedCheckouts(String repoKey) => _closed[repoKey] ?? const [];
+
+  /// The main checkout of [repoKey], as last read: what herdr needs to open a
+  /// closed one of its worktrees ([HerdrApi.openWorktree]).
+  String? repoRootOf(String repoKey) => _repoRoots[repoKey];
+
+  void _noteClosed(String repoKey, List<WorktreeInfo> list) {
+    final root = list.where((w) => !w.isLinked).firstOrNull?.path;
+    if (root != null) _repoRoots[repoKey] = root;
+    // `open_workspace_id` is herdr's word; a checkout the snapshot lists as a
+    // workspace is open whatever a list says. Without the main checkout (a
+    // bare repo) a closed one cannot be opened, so it is not offered.
+    final closed = [
+      for (final w in list)
+        if (root != null && w.isLinked && w.openWorkspaceId == null && !places.isOpenCheckout(w.path)) w,
+    ];
+    final before = _closed[repoKey] ?? const <WorktreeInfo>[];
+    if (listEquals([for (final w in before) w.path], [for (final w in closed) w.path])) return;
+    if (closed.isEmpty) {
+      _closed.remove(repoKey);
+    } else {
+      _closed[repoKey] = closed;
+    }
+    if (!_disposed) notifyListeners();
   }
 
   bool _branchesAsked = false;

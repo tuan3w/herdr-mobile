@@ -8,6 +8,7 @@ import '../../../data/acp/session_state.dart';
 import '../../../data/decision/mode_danger.dart';
 import '../../../data/decision/session_chips.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
+import '../../../data/models/worktrees.dart' show WorktreeInfo;
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/agent_screens.dart' show AgentRef, AgentView, PaneAgent;
 import '../../../data/words/agent_names.dart';
@@ -18,6 +19,7 @@ import '../../../data/words/where_line.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../create/new_agent_session_screen.dart' show openNewAgentSession;
+import '../create/management_sheets.dart' show confirmRemoveWorktree;
 import '../create/session_prefill.dart' show SessionPrefill;
 import '../files/files_navigation.dart' show machineSupportsFiles, openFileBrowser;
 import '../agents/agent_navigation.dart' show agentViewAction;
@@ -232,6 +234,48 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     final chip => chip.settingId,
   };
 
+  /// The linked worktree the session's folder is in, once the machine has said
+  /// (one `worktree.list` when the sheet opens); null for a plain folder, a
+  /// folder git does not know, or while it is not known.
+  WorktreeInfo? _checkout;
+
+  /// The main checkout of that repo: how herdr opens a closed worktree to remove it.
+  String? _repoPath;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_lookUpCheckout());
+  }
+
+  /// Any failure (not a git folder, an old herdr, a machine that does not
+  /// answer) leaves the row out: it is never an error, as in the start form.
+  Future<void> _lookUpCheckout() async {
+    final session = widget.session;
+    final cwd = session.cwd;
+    if (cwd.isEmpty || !session.machine.isLive) return;
+    final List<WorktreeInfo> list;
+    try {
+      list = await session.machine.api.listWorktrees(cwd: cwd);
+    } on Exception {
+      return;
+    }
+    WorktreeInfo? best;
+    for (final w in list) {
+      if (!w.isLinked) continue;
+      final inside = cwd == w.path || cwd.startsWith(w.path.endsWith('/') ? w.path : '${w.path}/');
+      if (inside && (best == null || w.path.length > best.path.length)) best = w;
+    }
+    final main = list.where((w) => !w.isLinked).firstOrNull;
+    // A closed worktree is opened from its repo's main checkout: without one (a bare repo) there is no way.
+    if (mounted && best != null && (best.openWorkspaceId != null || main != null)) {
+      setState(() {
+        _checkout = best;
+        _repoPath = main?.path;
+      });
+    }
+  }
+
   void _pick(_Setting setting, ConfigChoice choice) {
     if (setting.id == _modeId) {
       widget.session.setMode(choice.value);
@@ -294,6 +338,26 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     // copyText finds the toaster in the app's overlay, so it outlives the sheet.
     unawaited(copyText(context, sessionLinkOf(widget.session), what: 'Session link copied'));
     Navigator.of(context).pop();
+  }
+
+  /// Deletes the worktree this session runs in (held, never forced); the
+  /// chat stays readable, the session loses its folder.
+  void _removeWorktree() {
+    final session = widget.session;
+    final checkout = _checkout!;
+    final toaster = Toaster.of(context);
+    final navigator = Navigator.of(context)..pop();
+    unawaited(
+      confirmRemoveWorktree(
+        navigator.context,
+        session.machine,
+        path: checkout.path,
+        workspaceId: checkout.openWorkspaceId,
+        repoPath: _repoPath,
+        note: 'This session runs there and will lose its folder.',
+        toaster: toaster,
+      ),
+    );
   }
 
   @override
@@ -376,6 +440,16 @@ class _OptionsSheetState extends State<_OptionsSheet> {
                     onTap: _duplicate,
                   );
                 },
+              ),
+            if (_checkout != null)
+              SheetActionRow(
+                action: SheetAction(
+                  label: 'Remove worktree',
+                  icon: LucideIcons.gitBranchMinus,
+                  destructive: true,
+                  onTap: _removeWorktree,
+                ),
+                onTap: _removeWorktree,
               ),
             if (widget.session.terminalPaneId case final paneId?)
               SheetActionRow(

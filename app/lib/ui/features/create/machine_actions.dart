@@ -26,15 +26,32 @@ class MachineActions {
 
   Future<String?> closePane(String paneId) => _run(() => machine.api.closePane(paneId), goneIsFine: true);
 
-  /// Removes the linked worktree that [workspace] is: its folder goes, its
-  /// branch stays. Never forced: a checkout with uncommitted changes is
-  /// refused by git and nothing is deleted. herdr's own refusal
-  /// (`dirty_worktree_requires_force`, measured on 0.9.3) tells the reader to
-  /// pass `--force`, which this app has no way to do, so it is said otherwise.
-  Future<String?> removeWorktree(Workspace workspace) async {
+  /// Removes the linked worktree at [path]: its folder goes, its branch stays.
+  /// [workspaceId] is the workspace herdr has open for it. When herdr has it
+  /// closed ([workspaceId] null) it is opened first, from [repoPath] (the
+  /// repo's main checkout, required then: [HerdrApi.openWorktree]), because
+  /// herdr removes a checkout by workspace. Opening it also opens the main
+  /// checkout's workspace if that was closed, and a refused removal leaves
+  /// the opened one: both are closed again, so nothing the person did not
+  /// open is left on Machines. Never forced: a checkout with uncommitted
+  /// changes is refused by git and nothing is deleted. herdr's own refusal
+  /// (`dirty_worktree_requires_force`, measured on 0.9.3 and 0.9.5) tells the
+  /// reader to pass `--force`, which this app has no way to do, so it is said
+  /// otherwise.
+  Future<String?> removeWorktree({required String path, String? workspaceId, String? repoPath}) async {
+    assert(workspaceId != null || repoPath != null, 'a closed checkout is opened from its repo');
+    final mainWasOpen = repoPath == null || machine.places.isOpenCheckout(repoPath);
+    // The workspace this call opened for the checkout.
+    String? openedHere;
     final error = await _run(() async {
+      var id = workspaceId;
+      if (id == null) {
+        final opened = await machine.api.openWorktree(repoPath: repoPath!, path: path);
+        id = opened.workspaceId;
+        if (!opened.alreadyOpen) openedHere = id;
+      }
       try {
-        await machine.api.removeWorktree(workspace.id);
+        await machine.api.removeWorktree(id);
       } on HerdrApiException catch (e) {
         if (e.code == 'dirty_worktree_requires_force') {
           throw HerdrApiException(e.code, 'It has uncommitted changes. Nothing was removed.');
@@ -42,6 +59,26 @@ class MachineActions {
         rethrow;
       }
     });
+    final stray = [
+      if (error != null) ?openedHere,
+      if (workspaceId == null && !mainWasOpen) ?machine.places.workspaceAt(repoPath),
+    ];
+    if (stray.isNotEmpty) {
+      for (final id in stray) {
+        try {
+          await machine.api.closeWorkspace(id);
+        } on Exception {
+          // The person can close it.
+        }
+      }
+      try {
+        await machine.refresh().timeout(Dwell.refreshTimeout);
+      } on Exception {
+        // Offline or slow: events bring the lists up to date when it returns.
+      }
+    }
+    // What the closed list shows is what is really there.
+    if (machine.isLive) unawaited(machine.loadBranches(every: true));
     if (error == null) return null;
     return error.trim().isEmpty ? 'It may have uncommitted changes. Nothing was removed.' : error;
   }
