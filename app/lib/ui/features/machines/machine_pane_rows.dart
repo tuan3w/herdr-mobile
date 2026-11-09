@@ -112,16 +112,21 @@ class MachinePaneRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final agent = pane.agent;
-    final name = agentName(agent);
+    final name = agentLabelOf(pane);
     final title = pane.title.isNotEmpty ? pane.title : name;
-    // whereLine's drop rules for the agent and the folder; the tab sits
-    // between them, since a workspace with several tabs needs it as well as
-    // the folder.
-    final subtitle = [
-      whereLine(agent: agent != null ? name : null, title: title),
-      ?tabLabel,
-      whereLine(folder: folder, title: title),
-    ].where((s) => s.isNotEmpty).join(' · ');
+    final restoreError = pane.restoreError;
+    // A pane herdr could not bring back says why; the tap still opens the
+    // pane screen, which explains and offers Close.
+    final subtitle = restoreError != null
+        ? 'Not running · $restoreError'
+        // whereLine's drop rules for the agent and the folder; the tab sits
+        // between them, since a workspace with several tabs needs it as well
+        // as the folder.
+        : [
+            whereLine(agent: agent != null ? name : null, title: title),
+            ?tabLabel,
+            whereLine(folder: folder, title: title),
+          ].where((s) => s.isNotEmpty).join(' · ');
 
     return ListRow(
       leading: agent != null

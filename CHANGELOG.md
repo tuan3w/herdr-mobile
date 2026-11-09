@@ -12,12 +12,17 @@ release.
   stage, a branch). It follows the hook within about 2 seconds while the app is
   open, and a token that expires goes away. A title or agent name a hook
   reports names the agent everywhere; a name you gave the pane still wins.
+- A pane herdr couldn't bring back after it restarted now says `Not running`
+  and herdr's reason, and offers `Close pane`. It no longer says the pane is
+  gone while it is still listed, and the app no longer keeps reading it.
 - A message from the chat, the board or `Message` to several agents no longer
   lands in a question that opened a moment before: herdr now checks that the
   agent is at its prompt as it types, and if it isn't the message isn't sent
   and the app says why. `Send anyway` still types into the question.
 - An agent that starts needing you while the app connects is shown at once,
   instead of up to 20 seconds later.
+- Checked against herdr 0.9.5 on this machine, not on a phone. The refusal
+  when an agent waits for an answer was not seen live.
 
 ## [0.1.57] - 2026-11-08
 
