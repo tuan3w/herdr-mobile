@@ -4,14 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.61] - 2026-11-09
 
-- Delete a worktree to give its disk space back. An agent's `Session options`
-  has `Remove worktree` when it runs in a linked worktree. On a machine's
-  screen, `Closed worktrees · N` under a repo lists the worktrees herdr has
-  closed (`Close workspace` leaves their folder on the computer), and a tap on
-  one removes it. It is held like any removal and never forced: a folder with
-  uncommitted changes is refused and nothing is deleted.
+### Delete a worktree to give its disk space back
+
+A worktree keeps its folder on the computer, and `Close workspace` did not
+delete it, so the space stayed used and nothing listed it. You can now remove
+one from the agent that worked in it, or from a list of the closed ones.
+
+> [!TIP]
+> Try it: open an agent that runs in a worktree, then `Session options` >
+> `Remove worktree`. Or open the machine and tap `Closed worktrees` under the
+> repo.
+
+- A machine's screen lists the worktrees herdr has closed under their repo
+  (`Closed worktrees · 2`); a tap on one asks, and holding removes it.
+- Removal is held like any other and never forced: a folder with uncommitted
+  changes is refused and nothing is deleted. The branch stays.
 - `Close workspace` on a worktree now says its folder stays on the computer.
 - Checked against herdr 0.9.5 on a scratch repo and in tests, not on a phone.
 
