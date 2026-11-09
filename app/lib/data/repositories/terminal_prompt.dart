@@ -88,15 +88,28 @@ String? _token(String name) {
 
 /// Types [p] into [paneId]: each picture's path alone, a moment for the agent
 /// to take them, then the line and enter. An empty line only presses enter.
+/// [guarded]: the line goes as a message to the agent ([HerdrApi.prompt]), so
+/// herdr refuses it when the agent is not at its prompt; for a sender that
+/// does not see the terminal. Unguarded is for the pane's own composer, whose
+/// person may be typing into a dialog on purpose.
 /// A [HerdrApiException] propagates; one after a paste leaves the picture in
 /// the agent's input.
-Future<void> sendTerminalPrompt(HerdrApi api, String paneId, TerminalPrompt p, {Duration settle = pasteSettle}) async {
+Future<void> sendTerminalPrompt(
+  HerdrApi api,
+  String paneId,
+  TerminalPrompt p, {
+  Duration settle = pasteSettle,
+  bool guarded = false,
+}) async {
   for (final path in p.pastes) {
     await api.sendInput(paneId, path);
   }
   if (p.pastes.isNotEmpty) await Future<void>.delayed(settle);
   if (p.line.trim().isEmpty) {
+    // `agent.prompt` refuses empty text.
     await api.sendInput(paneId, '', keys: const ['enter']);
+  } else if (guarded) {
+    await api.prompt(paneId, p.line);
   } else {
     await api.sendLine(paneId, p.line);
   }

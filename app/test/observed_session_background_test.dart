@@ -398,13 +398,10 @@ void main() {
         final (rig, s) = await open(waitingLog);
         final result = await s.stopBackground('bg_6');
         expect(result, isA<BackgroundStopped>().having((r) => r.asked, 'asked', isTrue));
-        expect(rig.sent('pane.send_input'), [
-          {
-            'pane_id': 'w1:p1',
-            'text': 'Stop these background job now: bg_6 (write proc://bg_6/kill). Do nothing else.',
-            'keys': ['enter'],
-          },
+        expect(rig.sent('agent.prompt'), [
+          {'target': 'w1:p1', 'text': 'Stop these background job now: bg_6 (write proc://bg_6/kill). Do nothing else.'},
         ]);
+        expect(rig.sent('pane.send_input'), isEmpty);
         expect(rig.sent('pane.send_keys'), isEmpty);
         expect(rig.sent('pane.send_text'), isEmpty);
         expect(s.waitingOnBackground, isTrue, reason: 'nothing is confirmed until the log says so');
@@ -415,7 +412,7 @@ void main() {
         expect(await s.stopBackground('bg_6'), isA<BackgroundAlreadyDone>());
         expect(await s.stopBackground('bg_77'), isA<BackgroundAlreadyDone>());
         expect(await s.stopBackground(''), isA<BackgroundAlreadyDone>());
-        expect(rig.sent('pane.send_input'), isEmpty);
+        expect(rig.sent('agent.prompt'), isEmpty);
       });
 
       test('a hostile id from the log is listed but never sent', () async {
@@ -437,11 +434,11 @@ void main() {
         ]);
         expect(s.backgroundWork.running.map((t) => t.id), ['bg_1', 'bg_1; rm -rf ~']);
         expect(await s.stopBackground('bg_1; rm -rf ~'), isA<BackgroundNotStoppable>());
-        expect(rig.sent('pane.send_input'), isEmpty);
+        expect(rig.sent('agent.prompt'), isEmpty);
 
         final all = await s.stopAllBackground();
         expect(all, isA<BackgroundStopped>());
-        final text = rig.sent('pane.send_input').single['text'] as String;
+        final text = rig.sent('agent.prompt').single['text'] as String;
         expect(text, 'Stop these background job now: bg_1 (write proc://bg_1/kill). Do nothing else.');
         expect(text, isNot(contains('rm -rf')));
       });
@@ -458,7 +455,7 @@ void main() {
         ]);
         final result = await s.stopAllBackground();
         expect(result, isA<BackgroundStopped>());
-        expect(rig.sent('pane.send_input').map((p) => p['text']), [
+        expect(rig.sent('agent.prompt').map((p) => p['text']), [
           'Stop these background jobs now: bg_1 (write proc://bg_1/kill), bg_3 (write proc://bg_3/kill). Do nothing else.',
         ]);
       });
@@ -490,7 +487,7 @@ void main() {
         ]);
         final result = await s.stopAllBackground(only: BackgroundKind.agent);
         expect(result, isA<BackgroundStopped>());
-        expect(rig.sent('pane.send_input').map((p) => p['text']), [
+        expect(rig.sent('agent.prompt').map((p) => p['text']), [
           'Stop these background job now: Alpha (write proc://Alpha/kill). Do nothing else.',
         ]);
         expect(
@@ -498,20 +495,20 @@ void main() {
           isA<BackgroundAlreadyDone>(),
           reason: 'nothing of that kind runs',
         );
-        expect(rig.sent('pane.send_input'), hasLength(1));
+        expect(rig.sent('agent.prompt'), hasLength(1));
       });
 
       test('stop all with nothing running is already done', () async {
         final (rig, s) = await open([sessionLine(), userLine('u1', 'go'), assistantLine('a1', 'ok')]);
         expect(await s.stopAllBackground(), isA<BackgroundAlreadyDone>());
-        expect(rig.sent('pane.send_input'), isEmpty);
+        expect(rig.sent('agent.prompt'), isEmpty);
       });
 
       test('a pane that waits for the person refuses, and the reason comes back', () async {
         final (rig, s) = await open(waitingLog, status: 'blocked');
         final result = await s.stopBackground('bg_6');
         expect(result, isA<BackgroundStopFailed>().having((r) => r.reason, 'reason', isNotEmpty));
-        expect(rig.sent('pane.send_input'), isEmpty);
+        expect(rig.sent('agent.prompt'), isEmpty);
       });
 
       test('an unreachable machine fails with the transport\'s reason, never throws', () async {
@@ -527,6 +524,7 @@ void main() {
         await eventually(() => rig.sent('pane.send_keys').isNotEmpty, reason: 'esc sent');
         expect(rig.sent('pane.send_keys').single['keys'], ['esc']);
         expect(rig.sent('pane.send_input'), isEmpty);
+        expect(rig.sent('agent.prompt'), isEmpty);
       });
     });
   });

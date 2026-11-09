@@ -5,6 +5,7 @@ import '../models/herdr_models.dart';
 import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart';
 import '../words/agent_names.dart';
+import '../words/error_words.dart';
 import '../words/where_line.dart';
 import 'agent_session.dart';
 import 'machine_connection.dart';
@@ -15,8 +16,8 @@ enum BatchAction {
   /// agent session its `cancel()`. Working agents only.
   stop('Stopped'),
 
-  /// One text to everyone: `pane.send_input` for a terminal (the way the pane
-  /// composer sends a line), a prompt for an agent session.
+  /// One text to everyone: `agent.prompt` for a terminal (herdr refuses it
+  /// when the agent is not at its prompt), a prompt for an agent session.
   message('Messaged'),
 
   /// Closes the pane, ends the session. Finished or idle agents only.
@@ -68,7 +69,13 @@ class BatchTarget {
     unreachable: machine.isLive ? null : 'offline',
     stop: () => machine.api.sendKeys(paneId, const ['esc']),
     message: (text) async {
-      await machine.api.sendLine(paneId, text);
+      // A blocked target reaches the run only through "Send anyway": the
+      // person chose to type into its dialog, which `agent.prompt` refuses.
+      if (status == AgentStatus.blocked) {
+        await machine.api.sendLine(paneId, text);
+      } else {
+        await machine.api.prompt(paneId, text);
+      }
       machine.markReviewed(paneId);
     },
     close: () async {
@@ -324,7 +331,7 @@ Future<BatchResult> runBatch(BatchPlan plan, {String text = ''}) async {
 String _words(Exception e) {
   final text = switch (e) {
     HerdrUnsupportedException() => 'this herdr can’t do that, update it',
-    HerdrApiException(:final message) => message,
+    HerdrApiException() => describeError(e),
     HerdrTransportException(:final message) => message,
     AgentHostException(:final message) => message,
     TimeoutException() => 'no answer in time',

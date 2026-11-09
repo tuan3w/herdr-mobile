@@ -311,7 +311,7 @@ void main() {
   group('a message with pictures and files goes into the terminal as a person would type it', () {
     const picture = 'file:///h/.herdr-mobile/inbox/ab/x.jpg';
 
-    test('the picture path is pasted alone, then the text and enter', () async {
+    test('the picture path is pasted alone, then the text goes as a message herdr checks', () async {
       final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
       final ok = await session.sendBlocks([
         const TextBlock('look'),
@@ -321,11 +321,9 @@ void main() {
       expect(ok, isTrue);
       expect(rig.sent('pane.send_input'), [
         {'pane_id': 'w1:p1', 'text': '/h/.herdr-mobile/inbox/ab/x.jpg'},
-        {
-          'pane_id': 'w1:p1',
-          'text': ' look',
-          'keys': ['enter'],
-        },
+      ]);
+      expect(rig.sent('agent.prompt'), [
+        {'target': 'w1:p1', 'text': ' look'},
       ]);
     });
 
@@ -335,25 +333,29 @@ void main() {
         const TextBlock('read'),
         const ResourceLinkBlock(uri: 'file:///w/lib/a.dart', name: 'lib/a.dart'),
       ]);
-      expect(rig.sent('pane.send_input'), [
-        {
-          'pane_id': 'w1:p1',
-          'text': 'read @lib/a.dart',
-          'keys': ['enter'],
-        },
+      expect(rig.sent('agent.prompt'), [
+        {'target': 'w1:p1', 'text': 'read @lib/a.dart'},
       ]);
     });
 
-    test('text alone is one line, as before', () async {
+    test('text alone is one message', () async {
       final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
       expect(await session.sendBlocks([const TextBlock('hello')]), isTrue);
-      expect(rig.sent('pane.send_input'), [
-        {
-          'pane_id': 'w1:p1',
-          'text': 'hello',
-          'keys': ['enter'],
-        },
+      expect(rig.sent('agent.prompt'), [
+        {'target': 'w1:p1', 'text': 'hello'},
       ]);
+      expect(rig.sent('pane.send_input'), isEmpty);
+    });
+
+    // A dialog that opened after herdr last said "idle" took a typed line
+    // and its enter as the answer; herdr refuses the message instead.
+    test('herdr refusing the message says why in words, and nothing else is typed', () async {
+      final (rig, session) = await _open(_log(const []), status: 'idle', screen: '');
+      rig.transport.onInput = (_) =>
+          throw const HerdrApiException('agent_blocked', 'agent w1:p1 is blocked and requires interactive input');
+      expect(await session.sendBlocks([const TextBlock('hello')]), isFalse);
+      expect(session.error, allOf(isNotNull, isNot(contains('agent_blocked'))));
+      expect(rig.sent('pane.send_input'), isEmpty);
     });
 
     test('a picture sent as bytes is refused, with the reason, and nothing is typed', () async {
@@ -363,6 +365,7 @@ void main() {
       expect(ok, isFalse);
       expect(session.error, contains('can’t be sent to it'));
       expect(rig.sent('pane.send_input'), isEmpty);
+      expect(rig.sent('agent.prompt'), isEmpty);
     });
 
     test('a failure after the paste says the input may still hold the picture', () async {
@@ -398,6 +401,7 @@ void main() {
       expect(child.attachMode, AttachMode.none);
       expect(await child.sendBlocks([const ResourceLinkBlock(uri: picture, name: 'x.jpg')]), isFalse);
       expect(rig.sent('pane.send_input'), isEmpty);
+      expect(rig.sent('agent.prompt'), isEmpty);
     });
   });
 }

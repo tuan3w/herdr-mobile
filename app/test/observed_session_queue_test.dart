@@ -49,7 +49,8 @@ Future<(ObservedRig, ObservedAgentSession)> _open({String status = 'working', vo
   return (rig, session);
 }
 
-List<String> _typed(ObservedRig rig) => [for (final p in rig.sent('pane.send_input')) p['text'] as String];
+/// The messages typed into the pane (herdr's `agent.prompt`).
+List<String> _typed(ObservedRig rig) => [for (final p in rig.sent('agent.prompt')) p['text'] as String];
 
 void main() {
   test('Send while the turn runs types the message into the pane at once', () async {

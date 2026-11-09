@@ -97,6 +97,22 @@ class HerdrApi {
     {'pane_id': paneId, if (text.isNotEmpty) 'text': text, if (keys.isNotEmpty) 'keys': keys},
   );
 
+  /// Types [text] into the agent in [paneId] as a message and presses enter,
+  /// through `agent.prompt`: herdr refuses, checked as it types, when the
+  /// agent is waiting for an answer (`agent_blocked`), not at its prompt yet
+  /// or no longer the pane's program (`agent_not_ready`), or gone
+  /// (`agent_not_found`), and waits 300 ms before the enter. Without that
+  /// check a stale send's enter lands on a dialog and accepts its default.
+  /// For a message to an agent only: an answer to a dialog uses [sendLine] or
+  /// [sendInput]. A herdr that predates the method gets [sendLine].
+  Future<void> prompt(String paneId, String text) async {
+    try {
+      await _call('agent.prompt', {'target': paneId, 'text': text});
+    } on HerdrUnsupportedException {
+      await sendLine(paneId, text);
+    }
+  }
+
   /// Creates a workspace (with one tab and one pane) running a login shell in
   /// [cwd]. Never focuses it unless asked: [focus] moves the desktop user's
   /// view, which a phone has no business doing.

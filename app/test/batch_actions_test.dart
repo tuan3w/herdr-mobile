@@ -9,8 +9,11 @@ import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/batch_actions.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/models/machine_profile.dart';
 
 import 'support/fake_agent_session.dart';
+import 'support/fake_transport.dart';
 
 /// A target whose three actions write to [log] (`start a1`, `done a1`, ...),
 /// wait for [gate] when given, and throw [fail] when given.
@@ -345,6 +348,53 @@ void main() {
     test('a machine that isn’t online makes it unreachable', () {
       final s = FakeAgentSession();
       expect(BatchTarget.session(session: s, status: AgentStatus.idle).unreachable, 'offline');
+    });
+  });
+
+  group('a terminal agent as a target', () {
+    /// A machine that is online, so its targets are reachable.
+    Future<MachineConnection> online(FakeTransport t) async {
+      final m = MachineConnection(
+        profile: const MachineProfile(id: 'm', label: 'box', host: 'h', username: 'u'),
+        api: HerdrApi(t),
+      )..start();
+      addTearDown(m.dispose);
+      await eventually(() => m.isLive, reason: 'online');
+      return m;
+    }
+
+    BatchTarget target(MachineConnection m, AgentStatus status) =>
+        BatchTarget.terminal(machine: m, paneId: 'w1:p1', title: 'refactor', agent: 'Claude Code', status: status);
+
+    /// What reached the pane (not the snapshots that keep the machine fresh).
+    List<(String, Map<String, dynamic>)> input(FakeTransport t) => [
+      for (final c in t.calls)
+        if (c.$1.startsWith('agent.') || c.$1.startsWith('pane.')) c,
+    ];
+
+    // A stale send's Enter landed on a dialog that opened meanwhile and
+    // accepted its default; herdr checks the agent as it types.
+    test('a message goes as a prompt herdr checks, not as typed keys', () async {
+      final t = FakeTransport();
+      final m = await online(t);
+      await runBatch(BatchPlan.of(BatchAction.message, [target(m, AgentStatus.working)]), text: 'go on');
+      expect(input(t).single.$1, 'agent.prompt');
+      expect(input(t).single.$2, {'target': 'w1:p1', 'text': 'go on'});
+    });
+
+    test('"send anyway" types into the dialog of a blocked agent, as the person chose', () async {
+      final t = FakeTransport();
+      final m = await online(t);
+      await runBatch(BatchPlan.of(BatchAction.message, [target(m, AgentStatus.blocked)], sendAnyway: true), text: '2');
+      expect([for (final c in input(t)) c.$1], ['pane.send_input']);
+    });
+
+    test('herdr refusing the prompt reads as words, not as its code', () async {
+      final t = FakeTransport();
+      final m = await online(t);
+      t.failure = const HerdrApiException('agent_blocked', 'agent w1:p1 is blocked and requires interactive input');
+      final result = await runBatch(BatchPlan.of(BatchAction.message, [target(m, AgentStatus.working)]), text: 'go on');
+      expect(result.failed.single.message, isNot(contains('agent_blocked')));
     });
   });
 }
