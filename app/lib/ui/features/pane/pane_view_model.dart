@@ -55,6 +55,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     this._wrap = false,
     this.clock = DateTime.now,
     this.machineName,
+    this._notRunning,
   }) {
     WidgetsBinding.instance.addObserver(this);
     // The fallback poll covers a failed activity stream.
@@ -73,6 +74,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
     wrap: wrap,
     machineName: machine.profile.label,
+    notRunning: () => machine.paneById(paneId)?.restoreError != null,
   );
 
   final String paneId;
@@ -83,6 +85,11 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   final Future<void> Function(String text) _sendLine;
   final Future<void> Function(TerminalPrompt prompt) _sendPrompt;
   final Future<void> Function(List<String> keys) _sendKeys;
+
+  /// The pane is listed but herdr could not bring it back after a restart: a
+  /// read would only answer `pane_not_found`, so none is made. When herdr
+  /// restarts it, its activity schedules a read again.
+  final bool Function()? _notRunning;
 
   /// The time of day, for [lastRead]; a test passes its own.
   final DateTime Function() clock;
@@ -224,7 +231,7 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _schedule() {
-    if (_disposed || !_active || _fatal) return;
+    if (_disposed || !_active || _fatal || (_notRunning?.call() ?? false)) return;
     if (_inFlight || _cooldown != null) {
       _pending = true;
       return;

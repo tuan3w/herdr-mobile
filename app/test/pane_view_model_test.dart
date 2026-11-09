@@ -74,6 +74,7 @@ class _Fake {
     Duration deepRevertDelay = const Duration(seconds: 2),
     Duration fallbackInterval = const Duration(seconds: 4),
     bool wrap = false,
+    bool Function()? notRunning,
   }) => PaneViewModel(
     activity: activity.stream,
     paneId: _pane,
@@ -92,6 +93,7 @@ class _Fake {
     fallbackInterval: fallbackInterval,
     wrap: wrap,
     clock: clock,
+    notRunning: notRunning,
   );
 
   /// Wall-clock time on the fake clock, so `lastRead` is exact.
@@ -148,6 +150,23 @@ void main() {
         ..add('');
       async.elapse(_ms(1000));
 
+      expect(f.reads, hasLength(1));
+      vm.dispose();
+    });
+
+    // herdr lists a pane it could not restore but answers `pane_not_found`
+    // for every read of it: the screen re-read it forever.
+    _scenario('a pane that is not running is never read, and reads resume once it runs', (async, f) {
+      var notRunning = true;
+      final vm = f.vm(notRunning: () => notRunning);
+      async.elapse(const Duration(seconds: 20));
+      f.activity.add(_pane);
+      async.elapse(const Duration(seconds: 5));
+      expect(f.reads, isEmpty, reason: 'no read across several fallback intervals or on activity');
+
+      notRunning = false;
+      f.activity.add(_pane);
+      async.flushMicrotasks();
       expect(f.reads, hasLength(1));
       vm.dispose();
     });

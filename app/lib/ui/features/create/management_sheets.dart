@@ -169,6 +169,28 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
   return (stop: stop, lose: lose);
 }
 
+/// Asks before closing [pane] (it stops what runs there, and the last pane
+/// takes its workspace along), closes it, and says so when that failed.
+/// [toaster]: one taken before a gap, for a [context] that is the navigator's
+/// own (above its overlay, so it has none to toast in).
+Future<void> confirmClosePane(BuildContext context, MachineConnection machine, Pane pane, {Toaster? toaster}) async {
+  final toasts = toaster ?? Toaster.of(context);
+  final last = (machine.snapshot.workspace(pane.workspaceId)?.paneCount ?? 2) <= 1;
+  final ok = await showConfirmSheet(
+    context,
+    title: 'Close this pane?',
+    message: last
+        ? 'It is the last pane in its workspace, so the workspace closes too. '
+              'What is running in it stops.'
+        : 'What is running in it stops. This can’t be undone.',
+    confirmLabel: 'Close pane',
+  );
+  if (!ok) return;
+  if (await MachineActions(machine).closePane(pane.id) case final error?) {
+    toasts.show(error, kind: ToastKind.failed);
+  }
+}
+
 /// What can be done to a pane: a new name, closing it.
 Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pane pane, {required String title}) {
   final actions = MachineActions(machine);
@@ -190,20 +212,7 @@ Future<void> showPaneActions(BuildContext context, MachineConnection machine, Pa
     if (await actions.renamePane(pane.id, label) case final error?) toast(error);
   }
 
-  Future<void> close() async {
-    final last = (machine.snapshot.workspace(pane.workspaceId)?.paneCount ?? 2) <= 1;
-    final ok = await showConfirmSheet(
-      navigator.context,
-      title: 'Close this pane?',
-      message: last
-          ? 'It is the last pane in its workspace, so the workspace closes too. '
-                'What is running in it stops.'
-          : 'What is running in it stops. This can’t be undone.',
-      confirmLabel: 'Close pane',
-    );
-    if (!ok) return;
-    if (await actions.closePane(pane.id) case final error?) toast(error);
-  }
+  Future<void> close() => confirmClosePane(navigator.context, machine, pane, toaster: toaster);
 
   return showActionSheet(
     context,

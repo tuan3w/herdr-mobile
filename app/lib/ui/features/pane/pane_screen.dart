@@ -38,6 +38,7 @@ import '../attach/attach_kit.dart';
 import '../composer/composer_frame.dart';
 import '../create/new_agent_session_screen.dart' show openNewAgentSession;
 import '../create/session_prefill.dart' show SessionPrefill;
+import '../create/management_sheets.dart' show confirmClosePane;
 import '../dictation/dictation_language_sheet.dart';
 import '../dictation/dictation_session.dart';
 import '../files/files_navigation.dart';
@@ -809,15 +810,19 @@ class _TerminalPanel extends StatelessWidget {
           child: Builder(
             builder: (context) {
               final (fontSize, wrap) = context.select<TerminalSettings, (double, bool)>((s) => (s.fontSize, s.wrap));
-              // What it shows is a pane that is gone, or a link or read that
-              // is down: dimmed, not live. A closed pane is not "stale".
-              final machine = context.select<MachineConnection, ({bool closed, bool linkDown, bool blocked})>(
-                (m) => (
-                  closed: m.isLive && m.paneById(paneId) == null,
-                  linkDown: !m.isLive,
-                  blocked: m.isLive && m.paneById(paneId)?.status == AgentStatus.blocked,
-                ),
-              );
+              // What it shows is a pane that is gone, one herdr could not
+              // bring back, or a link or read that is down: dimmed, not live.
+              // A closed pane is not "stale".
+              final machine = context
+                  .select<MachineConnection, ({bool closed, bool linkDown, bool blocked, String? restoreError})>(
+                    (m) => (
+                      closed: m.isLive && m.paneById(paneId) == null,
+                      linkDown: !m.isLive,
+                      blocked: m.isLive && m.paneById(paneId)?.status == AgentStatus.blocked,
+                      restoreError: m.paneById(paneId)?.restoreError,
+                    ),
+                  );
+              final restoreError = machine.restoreError;
               final read = context.select<PaneViewModel, ({bool failed, bool streaming})>(
                 (v) => (failed: v.isStale, streaming: v.streaming),
               );
@@ -844,11 +849,26 @@ class _TerminalPanel extends StatelessWidget {
                     onFontSizeChanged: settings.previewFontSize,
                     onFontSizeEnd: (size) => unawaited(settings.setFontSize(size)),
                   ),
-                  if (closed || stale)
+                  if (closed || stale || restoreError != null)
                     IgnorePointer(
                       child: ColoredBox(
                         // design-lint: allow(raw-alpha) a veil of the terminal's own background (no Ds role: the terminal palette is the person's)
                         color: palette.background.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  // A pane herdr could not bring back has no screen to show:
+                  // its place says why, whole (the strip above has room for
+                  // a title and Close only, and herdr's reason is the
+                  // instruction).
+                  if (restoreError != null)
+                    Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(Gap.xl),
+                        child: Text(
+                          'herdr couldn’t bring this pane back after it restarted.\n\n$restoreError',
+                          textAlign: TextAlign.center,
+                          style: Type.secondary.copyWith(color: palette.foreground),
+                        ),
                       ),
                     ),
                   // Inside the 1 px outline, which is drawn over the content.
@@ -873,16 +893,26 @@ class _TerminalPanel extends StatelessWidget {
   }
 }
 
-/// What is wrong, if anything: the link, a pane that is gone, or the last
-/// read or send.
+/// What is wrong, if anything: the link, a pane that is gone or not running,
+/// or the last read or send.
 class _Problem {
-  const _Problem({required this.title, this.detail, required this.color, required this.icon, required this.retry});
+  const _Problem({
+    required this.title,
+    this.detail,
+    required this.color,
+    required this.icon,
+    required this.retry,
+    this.action,
+  });
 
   final String title;
   final String? detail;
   final Color color;
   final IconData icon;
   final bool retry;
+
+  /// What the strip offers in place of Retry.
+  final Widget? action;
 }
 
 /// One strip under the top bar. It remembers the last problem so that it can
@@ -904,8 +934,13 @@ class _BannerState extends State<_Banner> {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final id = widget.paneId;
-    final link = context.select<MachineConnection, ({LinkState state, String? error, bool open})>(
-      (m) => (state: m.state, error: m.error, open: m.paneById(id) != null),
+    final link = context.select<MachineConnection, ({LinkState state, String? error, bool open, bool notRunning})>(
+      (m) => (
+        state: m.state,
+        error: m.error,
+        open: m.paneById(id) != null,
+        notRunning: m.paneById(id)?.restoreError != null,
+      ),
     );
     final readError = context.select<PaneViewModel, String?>((v) => v.error);
 
@@ -932,6 +967,27 @@ class _BannerState extends State<_Banner> {
         icon: LucideIcons.squareX,
         retry: false,
       );
+    } else if (link.notRunning) {
+      // herdr lists the pane but could not bring it back after it restarted
+      // (its folder is gone, say): it answers no read. herdr's reason fills
+      // the terminal's place (`_TerminalPanel`); the strip offers the one
+      // thing that can be done from here.
+      problem = _Problem(
+        title: 'Not running',
+        color: ds.textSecondary,
+        icon: LucideIcons.squareX,
+        retry: false,
+        action: AppButton(
+          label: 'Close pane',
+          kind: AppButtonKind.secondary,
+          compact: true,
+          onPressed: () {
+            final machine = context.read<MachineConnection>();
+            final pane = machine.paneById(id);
+            if (pane != null) unawaited(confirmClosePane(context, machine, pane));
+          },
+        ),
+      );
     } else if (readError != null) {
       problem = _Problem(title: readError, color: ds.danger, icon: LucideIcons.circleAlert, retry: true);
     } else {
@@ -951,9 +1007,16 @@ class _BannerState extends State<_Banner> {
                 leading: Icon(shown.icon, size: IconSize.bar, color: shown.color),
                 title: shown.title,
                 detail: shown.detail,
-                action: shown.retry
-                    ? AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: widget.onRetry)
-                    : null,
+                action:
+                    shown.action ??
+                    (shown.retry
+                        ? AppButton(
+                            label: 'Retry',
+                            kind: AppButtonKind.secondary,
+                            compact: true,
+                            onPressed: widget.onRetry,
+                          )
+                        : null),
               ),
             ),
     );
@@ -993,16 +1056,21 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (state, open, agent) = context.select<MachineConnection, (LinkState, bool, String?)>((m) {
+    final (state, open, agent, notRunning) = context.select<MachineConnection, (LinkState, bool, String?, bool)>((m) {
       final pane = m.paneById(paneId);
-      return (m.state, pane != null, pane?.agent);
+      return (m.state, pane != null, pane?.agent, pane?.restoreError != null);
     });
     final sending = context.select<PaneViewModel, bool>((v) => v.sending);
-    final enabled = state == LinkState.online && open;
+    final enabled = state == LinkState.online && open && !notRunning;
     final hint = composerHint(
       agent == null || agent.isEmpty ? null : agentName(agent),
       linkWord: switch (state) {
-        LinkState.online => open ? null : 'Pane closed',
+        LinkState.online =>
+          !open
+              ? 'Pane closed'
+              : notRunning
+              ? 'Not running'
+              : null,
         LinkState.connecting => 'Connecting…',
         LinkState.approval => 'Waiting for sign-in approval',
         LinkState.reconnecting || LinkState.offline => 'Offline · reconnecting',

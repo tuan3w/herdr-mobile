@@ -375,8 +375,12 @@ class MachineConnection extends ChangeNotifier {
     ];
   }
 
-  /// Whether input can reach pane [id]: the machine is live and the pane exists.
-  bool acceptsInput(String id) => isLive && paneById(id) != null;
+  /// Whether input can reach pane [id]: the machine is live and the pane
+  /// exists and runs (one herdr could not restore answers no input).
+  bool acceptsInput(String id) {
+    final pane = paneById(id);
+    return isLive && pane != null && pane.restoreError == null;
+  }
 
   /// Uses [reviewed] to show finished agents the person has looked at as idle.
   void attachReviewed(ReviewedState? reviewed) {
