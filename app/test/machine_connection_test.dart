@@ -27,13 +27,15 @@ MachineConnection _connection(FakeTransport t) => MachineConnection(
 );
 
 /// `fakeAsync` tests: production throttle defaults, and a backoff so long
-/// that any reconnect that happens must have skipped it.
-MachineConnection _slow(FakeTransport t, {SnapshotCache? cache}) => MachineConnection(
+/// that any reconnect that happens must have skipped it. [async] puts the
+/// connection's clock on the fake one, so nothing reads the wall clock.
+MachineConnection _slow(FakeTransport t, {SnapshotCache? cache, FakeAsync? async}) => MachineConnection(
   profile: _profile,
   api: HerdrApi(t),
   cache: cache,
   backoff: (_) => const Duration(seconds: 30),
   pollInterval: const Duration(hours: 1),
+  clock: async == null ? DateTime.now : () => DateTime(2026).add(async.elapsed),
 );
 
 const _structural = Duration(milliseconds: 150);
@@ -177,6 +179,27 @@ void main() {
         expect(t.snapshotCalls, before + 1);
         c.dispose();
       });
+    });
+  });
+
+  // herdr streams only what happens after it accepts a subscription, and the
+  // first snapshot came before that: a change in between waited for the
+  // safety poll (20 s in front, 4 min behind).
+  test('herdr accepting the subscription refreshes once, closing the gap', () {
+    fakeAsync((async) {
+      final t = FakeTransport(snapshotJson(panes: [_pane('w1:p1', 'working')]));
+      final c = _slow(t, async: async);
+      _online(async, c);
+      async.elapse(const Duration(seconds: 1));
+      final before = t.snapshotCalls;
+
+      t.snapshot = snapshotJson(panes: [_pane('w1:p1', 'blocked')]);
+      t.emit(const {'event': subscriptionStartedEvent});
+      async.elapse(_structural + const Duration(milliseconds: 10));
+
+      expect(t.snapshotCalls, before + 1);
+      expect(c.snapshot.agentPanes.single.status, AgentStatus.blocked);
+      c.dispose();
     });
   });
 

@@ -4,6 +4,11 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- An agent that starts needing you while the app connects is shown at once,
+  instead of up to 20 seconds later.
+
 ## [0.1.57] - 2026-11-08
 
 ### Videos in Files play again
