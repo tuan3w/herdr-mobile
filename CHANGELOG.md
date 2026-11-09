@@ -6,6 +6,12 @@ release.
 
 ## [Unreleased]
 
+- What your herdr hooks report shows on the board: a quiet third line under
+  an agent holds its own word for what it is doing and the tokens set with
+  `herdr pane report-metadata` and `herdr workspace report-metadata` (a build
+  stage, a branch). It follows the hook within about 2 seconds while the app is
+  open, and a token that expires goes away. A title or agent name a hook
+  reports names the agent everywhere; a name you gave the pane still wins.
 - A message from the chat, the board or `Message` to several agents no longer
   lands in a question that opened a moment before: herdr now checks that the
   agent is at its prompt as it types, and if it isn't the message isn't sent

@@ -887,6 +887,12 @@ class MachineConnection extends ChangeNotifier {
     }
     _events++;
     _lastHeard = _clock();
+    if (event['event'] == 'workspace_metadata_updated') {
+      // Token text answers none of the attention questions: it shares the
+      // churn throttle with `pane_updated`, and only while the app is in front.
+      if (!_background) refresher.schedule(urgent: false);
+      return;
+    }
     if (event['event'] != 'pane_updated') {
       refresher.schedule(urgent: true);
       return;

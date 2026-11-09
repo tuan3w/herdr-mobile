@@ -1151,6 +1151,7 @@ void main() {
       status: status,
       title: pane,
       subtitle: '',
+      meta: '',
       stale: false,
       since: since,
       quietMinutes: quiet,

@@ -86,9 +86,9 @@ void main() {
   const second = Duration(seconds: 1);
 
   group('the subscription', () {
-    test('is the full one in the foreground: pane.updated, and no status entry', () {
+    test('is the full one in the foreground: pane.updated and workspace metadata, and no status entry', () {
       _run((r) {
-        expect(r.types, {..._structural, 'pane.updated'});
+        expect(r.types, {..._structural, 'pane.updated', 'workspace.metadata_updated'});
         expect(r.named, isEmpty);
       }, [_agent('w1:p1', 'working')]);
     });
@@ -101,6 +101,7 @@ void main() {
         expect(r.transport.subscribed, hasLength(2));
         expect(r.types, {..._structural, 'pane.agent_status_changed'});
         expect(r.types, isNot(contains('pane.updated')));
+        expect(r.types, isNot(contains('workspace.metadata_updated')), reason: 'token text never wakes the radio');
         expect(r.named, {'w1:p1', 'w1:p2'}, reason: 'a plain terminal has no agent to watch');
         // Every entry herdr must accept: only status entries carry a pane id.
         for (final s in r.lastSubscription) {
@@ -144,7 +145,7 @@ void main() {
         r.herdr([_agent('w1:p1', 'idle')]);
         r.connection.setBackground(false);
         r.elapse(second);
-        expect(r.types, {..._structural, 'pane.updated'});
+        expect(r.types, {..._structural, 'pane.updated', 'workspace.metadata_updated'});
         expect(r.named, isEmpty);
         expect(r.transport.snapshotCalls, calls + 1);
         expect(r.connection.paneById('w1:p1')!.status.name, 'idle');

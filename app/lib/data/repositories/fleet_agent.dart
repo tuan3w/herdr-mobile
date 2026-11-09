@@ -55,9 +55,11 @@ class FleetAgent {
   }
 
   /// True when [title] says nothing about the work here: see
-  /// [isGenericPaneTitle]. A name the person gave the pane is never generic.
+  /// [isGenericPaneTitle]. A name the person gave the pane, or a title a hook
+  /// reported, is never generic.
   bool isGenericTitle(String title) =>
       pane.label == null &&
+      pane.metadataTitle == null &&
       isGenericPaneTitle(title, agent: pane.agent, folder: paneFolder(pane.cwd), workspace: workspace?.label);
 
   /// The pane's own title says nothing about the work (and the person did not

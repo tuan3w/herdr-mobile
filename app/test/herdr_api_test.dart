@@ -25,6 +25,8 @@ void main() {
     final subscriptions = transport.subscribed.single;
 
     expect(subscriptions, isNotEmpty);
+    // Token text on the board follows the watcher while the app is in front.
+    expect([for (final s in subscriptions) s['type']], contains('workspace.metadata_updated'));
     for (final subscription in subscriptions) {
       final type = subscription['type'] as String;
       final entry = byType[type];
@@ -47,7 +49,9 @@ void main() {
     HerdrApi(transport).changes(statusPanes: ['w1:p1', 'w2:p3']).listen((_) {});
     final subscriptions = transport.subscribed.single;
 
+    // Neither churn wakes the radio in the background.
     expect([for (final s in subscriptions) s['type']], isNot(contains('pane.updated')));
+    expect([for (final s in subscriptions) s['type']], isNot(contains('workspace.metadata_updated')));
     expect(
       [
         for (final s in subscriptions)

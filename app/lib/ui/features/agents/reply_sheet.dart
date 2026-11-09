@@ -536,7 +536,10 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
           field: ComposerField(
             controller: _input,
             enabled: live,
-            hint: composerHint(agentName(a.machine.paneById(a.paneId)?.agent), linkWord: live ? null : 'Offline'),
+            hint: composerHint(switch (a.machine.paneById(a.paneId)) {
+              final p? => agentLabelOf(p),
+              null => agentName(null),
+            }, linkWord: live ? null : 'Offline'),
             onSubmit: _submit,
             // A line for the agent's prompt, in the terminal's font.
             mono: true,

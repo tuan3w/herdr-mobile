@@ -1,4 +1,5 @@
 import '../acp/agent_host.dart' show agentRouteById;
+import '../models/herdr_models.dart' show Pane;
 
 /// What the person reads for an agent kind, everywhere: the board, a pane's
 /// bar, a session's bar, a composer hint, a notification. One name per agent:
@@ -12,3 +13,8 @@ String agentName(String? id) {
   if (kind.isEmpty) return 'Shell';
   return agentRouteById(kind)?.label ?? kind;
 }
+
+/// What the person reads for the agent in [pane]: the name its hook reported
+/// (`display_agent`), else the detected kind's [agentName]. For words only;
+/// logic keys on [Pane.agent].
+String agentLabelOf(Pane pane) => pane.displayAgent ?? agentName(pane.agent);

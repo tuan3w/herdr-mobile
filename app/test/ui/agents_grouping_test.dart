@@ -2,6 +2,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/words/elapsed.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart' show AgentStatus;
+import 'package:herdr_mobile/data/models/herdr_models.dart' as herdr show Pane, Workspace;
+import 'package:herdr_mobile/data/repositories/fleet_agent.dart';
+import 'package:herdr_mobile/data/services/herdr_api.dart';
+
+import '../support/fake_transport.dart';
+
 import 'package:herdr_mobile/data/models/worktrees.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart' show AgentSessionState;
@@ -46,6 +52,7 @@ AgentRowData _row(String key, AgentStatus status, MachineConnection machine) => 
   status: status,
   title: key,
   subtitle: '',
+  meta: '',
   stale: false,
   since: null,
   quietMinutes: 0,
@@ -101,6 +108,55 @@ void main() {
 
       expect(AgentsOverview.of(h.fleet), AgentsOverview.of(h.fleet));
       expect(AgentsOverview.of(h.fleet).hashCode, AgentsOverview.of(h.fleet).hashCode);
+    });
+  });
+
+  group('the meta line', () {
+    FleetAgent agent({
+      String status = 'working',
+      Map<String, String> labels = const {},
+      Map<String, String> paneTokens = const {},
+      Map<String, String> workspaceTokens = const {},
+    }) {
+      final machine = MachineConnection(profile: _machine('a', 'box'), api: HerdrApi(FakeTransport()));
+      addTearDown(machine.dispose);
+      return FleetAgent(
+        machine: machine,
+        pane: herdr.Pane.fromJson({
+          'pane_id': 'w1:p1',
+          'workspace_id': 'w1',
+          'tab_id': 'w1:t1',
+          'agent': 'claude',
+          'agent_status': status,
+          'state_labels': labels,
+          'tokens': paneTokens,
+        }),
+        workspace: herdr.Workspace.fromJson({'workspace_id': 'w1', 'tokens': workspaceTokens}),
+      );
+    }
+
+    test('the hook\'s word for the state, then the pane\'s tokens, then the workspace\'s', () {
+      final a = agent(
+        labels: {'working': 'Running tests', 'blocked': 'Waiting'},
+        paneTokens: {'ci': '142/165'},
+        workspaceTokens: {'stage': '🤖 building 24/165'},
+      );
+      expect(
+        metaLine(a, title: 'Fix it', subtitle: 'repo · Claude Code'),
+        'Running tests · 142/165 · 🤖 building 24/165',
+      );
+    });
+
+    test('what the title or the line above already says is not said again, nor a repeat', () {
+      final a = agent(
+        paneTokens: {'branch': 'fix/login', 'title': 'fix it', 'x': 'Shared'},
+        workspaceTokens: {'row': 'shared', 'stage': 'building'},
+      );
+      expect(metaLine(a, title: 'Fix it', subtitle: 'repo · fix/login · Claude Code'), 'Shared · building');
+    });
+
+    test('nothing reported is no line', () {
+      expect(metaLine(agent(), title: 'Fix it', subtitle: 'repo · Claude Code'), '');
     });
   });
 
@@ -317,6 +373,7 @@ void main() {
       status: status,
       title: key,
       subtitle: '',
+      meta: '',
       stale: stale,
       since: ago == null ? null : StatusTime.exact(noon.subtract(ago)),
       quietMinutes: 0,
@@ -640,6 +697,7 @@ void main() {
               status: row.status,
               title: row.title,
               subtitle: row.subtitle,
+              meta: '',
               stale: false,
               since: null,
               quietMinutes: 14,

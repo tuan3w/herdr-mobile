@@ -203,6 +203,30 @@ void main() {
     });
   });
 
+  test('workspace metadata changes share the churn throttle, and only in front', () {
+    fakeAsync((async) {
+      final t = FakeTransport(snapshotJson(panes: [_pane('w1:p1', 'working')]));
+      final c = _slow(t, async: async);
+      _online(async, c);
+      async.elapse(const Duration(seconds: 1));
+      final before = t.snapshotCalls;
+
+      t.emit(const {'event': 'workspace_metadata_updated'});
+      t.emit(const {'event': 'workspace_metadata_updated'});
+      async.elapse(const Duration(seconds: 3));
+      expect(t.snapshotCalls, before + 1, reason: 'two reports inside the churn window: one refresh');
+
+      c.setBackground(true);
+      // Going behind replaces the subscription: let that settle first.
+      async.elapse(const Duration(seconds: 1));
+      final behind = t.snapshotCalls;
+      t.emit(const {'event': 'workspace_metadata_updated'});
+      async.elapse(const Duration(seconds: 3));
+      expect(t.snapshotCalls, behind, reason: 'token text never wakes the radio in the background');
+      c.dispose();
+    });
+  });
+
   test('refreshes are coalesced, not one per event', () async {
     final t = FakeTransport();
     final c = _connection(t)..start();
