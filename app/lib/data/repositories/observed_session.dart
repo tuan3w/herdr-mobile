@@ -36,6 +36,7 @@ import 'prompt_detector.dart';
 import 'slash_catalog.dart';
 import 'terminal_prompt.dart';
 import '../words/agent_names.dart';
+import '../words/error_words.dart';
 
 /// Opens the stream of an agent's session log on a machine.
 typedef LogSourceFor = SessionLogSource Function(MachineConnection machine);
@@ -2070,12 +2071,12 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
 
   /// Types [text] into the pane as the composer of the terminal screen does;
   /// null when it went, else why not.
-  Future<String?> _sendPrompt(String text) => _deliver(() => machine.api.sendLine(paneId, text));
+  Future<String?> _sendPrompt(String text) => _deliver(() => machine.api.prompt(paneId, text));
 
   /// Types a message with pictures into the pane: their paths pasted, then the
   /// line ([sendTerminalPrompt]).
   Future<String?> _sendTerminal(TerminalPrompt p) => _deliver(
-    () => sendTerminalPrompt(machine.api, paneId, p),
+    () => sendTerminalPrompt(machine.api, paneId, p, guarded: true),
     // A failure after the paste leaves the picture in the agent's input.
     failure: p.pastes.isEmpty ? null : terminalPromptFailure,
   );
@@ -2099,7 +2100,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       await go();
       return null;
     } on HerdrApiException catch (e) {
-      return failure ?? e.toString();
+      return failure ?? describeError(e, machine: machine.profile.label);
     } on HerdrTransportException catch (e) {
       return failure ?? e.message;
     }

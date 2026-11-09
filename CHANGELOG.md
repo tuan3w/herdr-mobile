@@ -6,6 +6,10 @@ release.
 
 ## [Unreleased]
 
+- A message from the chat, the board or `Message` to several agents no longer
+  lands in a question that opened a moment before: herdr now checks that the
+  agent is at its prompt as it types, and if it isn't the message isn't sent
+  and the app says why. `Send anyway` still types into the question.
 - An agent that starts needing you while the app connects is shown at once,
   instead of up to 20 seconds later.
 

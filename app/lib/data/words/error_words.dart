@@ -33,6 +33,13 @@ String _apiWords(String code, String message) {
       return 'That workspace is gone. Go back to the board.';
     case 'tab_not_found':
       return 'That tab is gone. Go back to the board.';
+    // `agent.prompt` refusals: herdr checks them as it types the message.
+    case 'agent_blocked':
+      return 'The agent is waiting for an answer, so the message wasn’t sent. Answer it first.';
+    case 'agent_not_ready':
+      return 'The agent isn’t at its prompt, so the message wasn’t sent.';
+    case 'agent_not_found':
+      return 'No agent runs in that pane any more, so the message wasn’t sent.';
   }
   final text = message.trim();
   // herdr's own words, unless it sent nothing or a placeholder.

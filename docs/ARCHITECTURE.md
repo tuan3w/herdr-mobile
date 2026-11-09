@@ -264,7 +264,10 @@ These go over the mux as JSON, never as a shell command line:
 
 - `ping`, `session.snapshot` and `pane.read`, to read state.
 - `pane.send_input`, `pane.send_keys` and `pane.send_text`, for what you type
-  or tap (`herdr_api.dart:76-97`).
+  or tap (`herdr_api.dart:76-98`).
+- `agent.prompt`, for a message to an agent from the chat, the board or a
+  batch: herdr refuses it when the agent waits for an answer or is not at its
+  prompt, checked as it types (`HerdrApi.prompt`).
 - `workspace.create`, `tab.create`, `pane.split`, the `*.rename` methods and
   the `*.close` methods, for actions you start.
 - `events.subscribe`, for the event stream.
@@ -324,9 +327,9 @@ Remote paths handled by the file screens and uploads go through SFTP as
 protocol arguments and never through a shell. The commands that need a host
 path all quote it as described above: the keeper's folder, a session log to
 follow, the socket path, and the sign-in `cd`. Text you type into a terminal
-pane goes to herdr as a JSON field of `pane.send_input`. It reaches that pane's
-program as keystrokes, which is the point, and is never part of an SSH command
-line.
+pane goes to herdr as a JSON field of `pane.send_input` (or of `agent.prompt`
+for a message to an agent). It reaches that pane's program as keystrokes,
+which is the point, and is never part of an SSH command line.
 
 ## 4. Data model and state
 

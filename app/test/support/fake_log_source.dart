@@ -261,23 +261,28 @@ String toolResultLine(String id, String callId, String name, String text, {Map<S
 // -- a machine with one omp pane ----------------------------------------------
 
 /// `pane.read` answers the current [screen] (or the next of [screens] per
-/// `pane.send_input`/`pane.send_keys`, the last one repeating).
+/// input request, the last one repeating). An input request is what types
+/// into the pane: `pane.send_input`, `pane.send_keys`, and `agent.prompt`
+/// (herdr types the message, then enter).
 class ScreenTransport extends FakeTransport {
   ScreenTransport(super.snapshot);
 
   String screen = '';
 
   /// When set, the screen is what this says, read at every `pane.read` (a model
-  /// of a dialog that reacts to the keys), and [onInput] sees every
-  /// `pane.send_input` and `pane.send_keys`.
+  /// of a dialog that reacts to the keys), and [onInput] sees every input
+  /// request.
   String Function()? liveScreen;
   void Function(Map<String, dynamic> params)? onInput;
 
   /// When set, the screen is `screens[min(sends, last)]`, `sends` counting
-  /// the input and key requests so far.
+  /// the input requests so far.
   List<String>? screens;
 
-  int get sends => calls.where((c) => c.$1 == 'pane.send_input' || c.$1 == 'pane.send_keys').length;
+  static bool _isInput(String method) =>
+      method == 'pane.send_input' || method == 'pane.send_keys' || method == 'agent.prompt';
+
+  int get sends => calls.where((c) => _isInput(c.$1)).length;
 
   /// Requests of [method], oldest first.
   List<Map<String, dynamic>> of(String method) => [
@@ -287,7 +292,7 @@ class ScreenTransport extends FakeTransport {
 
   @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) {
-    if (method == 'pane.send_input' || method == 'pane.send_keys') onInput?.call(params);
+    if (_isInput(method)) onInput?.call(params);
     if (method != 'pane.read') return super.request(method, params);
     calls.add((method, params));
     final list = screens;

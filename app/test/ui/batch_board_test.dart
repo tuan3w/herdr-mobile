@@ -150,7 +150,10 @@ List<Map<String, dynamic>> _sent(BoardHarness h, String machine, String method) 
     if (m == method) p,
 ];
 
-List<String> _panesOf(List<Map<String, dynamic>> calls) => [for (final c in calls) c['pane_id'] as String];
+/// The panes [calls] went to: `pane_id`, or an `agent.prompt`'s `target`.
+List<String> _panesOf(List<Map<String, dynamic>> calls) => [
+  for (final c in calls) (c['pane_id'] ?? c['target']) as String,
+];
 
 Finder _selected(int n) => find.text('$n selected');
 
@@ -582,7 +585,7 @@ void main() {
   });
 
   group('message', () {
-    testWidgets('one line to each idle pane through send_input, the text exactly as typed', (tester) async {
+    testWidgets('one message to each idle pane, as a prompt herdr checks, the text exactly as typed', (tester) async {
       final h = await _studio(_ten());
       await _pump(tester, h);
       await _pick(tester, ['task 8', 'task 9']);
@@ -597,11 +600,11 @@ void main() {
       expect(tester.widget<AppButton>(_confirm('Message 2 agents')).onPressed, isNotNull);
 
       await _tap(tester, find.text('Message 2 agents'));
-      final inputs = _sent(h, 'a', 'pane.send_input');
+      final inputs = _sent(h, 'a', 'agent.prompt');
       expect(_panesOf(inputs), ['w1:p8', 'w1:p9']);
       expect([for (final i in inputs) i['text']], everyElement(text));
-      expect([for (final i in inputs) i['keys']], everyElement(['enter']));
-      expect(_sent(h, 'a', 'pane.send_keys'), isEmpty, reason: 'one request carries the text and its Enter');
+      expect(_sent(h, 'a', 'pane.send_input'), isEmpty);
+      expect(_sent(h, 'a', 'pane.send_keys'), isEmpty, reason: 'herdr presses the Enter of the message itself');
       expect(find.text('Messaged 2'), findsOneWidget);
       await teardownBoard(tester, h);
     });
@@ -620,7 +623,8 @@ void main() {
       expect(_confirm('Message 1 agent'), findsOneWidget);
 
       await _tap(tester, find.text('Message 1 agent'));
-      expect(_panesOf(_sent(h, 'a', 'pane.send_input')), ['w1:p8'], reason: 'task 4 shows a prompt');
+      expect(_panesOf(_sent(h, 'a', 'agent.prompt')), ['w1:p8'], reason: 'task 4 shows a prompt');
+      expect(_sent(h, 'a', 'pane.send_input'), isEmpty);
       expect(find.text('Messaged 1 · 1 skipped'), findsOneWidget);
       await teardownBoard(tester, h);
     });
@@ -639,7 +643,10 @@ void main() {
       expect(find.text('Will be typed into its question'), findsOneWidget);
 
       await _tap(tester, find.text('Message 2 agents'));
-      expect(_panesOf(_sent(h, 'a', 'pane.send_input')), unorderedEquals(['w1:p4', 'w1:p8']));
+      // The person chose to type into task 4's question, which a checked
+      // prompt refuses; task 8 still gets one.
+      expect(_panesOf(_sent(h, 'a', 'pane.send_input')), ['w1:p4']);
+      expect(_panesOf(_sent(h, 'a', 'agent.prompt')), ['w1:p8']);
       await teardownBoard(tester, h);
     });
 
@@ -657,7 +664,7 @@ void main() {
       expect(find.text('Waiting for an answer (skipped)'), findsOneWidget);
 
       await _tap(tester, find.text('Message 1 agent'));
-      expect(_panesOf(_sent(h, 'a', 'pane.send_input')), ['w1:p2']);
+      expect(_panesOf(_sent(h, 'a', 'agent.prompt')), ['w1:p2']);
       await teardownBoard(tester, h);
     });
 
@@ -701,7 +708,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       await _tap(tester, find.text('Message 1 agent'));
-      expect(_sent(h, 'a', 'pane.send_input').single['text'], text);
+      expect(_sent(h, 'a', 'agent.prompt').single['text'], text);
       await teardownBoard(tester, h);
     });
   });
