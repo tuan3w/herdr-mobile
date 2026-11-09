@@ -14,9 +14,10 @@ import '../../render/visible_text.dart';
 /// The folded work log of a finished turn, one line:
 /// `▸ Worked 42s · 3 files · 4 commands · 1 failed`. Made of counts, times and
 /// exit codes the app has (`workSummaryParts`), never of words a model wrote;
-/// the part that counts failures is in the danger text tone. A tap opens the
-/// log in place (the toggle lives with the transcript, so it survives the row
-/// scrolling away), and the caret turns.
+/// the count of failures is quiet like the rest: a failure the agent got past
+/// is only counted, and one that stays is marked on its own row. A tap opens
+/// the log in place (the toggle lives with the transcript, so it survives the
+/// row scrolling away), and the caret turns.
 class FoldRow extends StatelessWidget {
   const FoldRow({
     super.key,
@@ -63,10 +64,7 @@ class FoldRow extends StatelessWidget {
                     children: [
                       for (final (i, part) in parts.indexed) ...[
                         if (i > 0) const TextSpan(text: ' \u00b7 '),
-                        TextSpan(
-                          text: part,
-                          style: part.endsWith(' failed') ? base.copyWith(color: ds.dangerText) : null,
-                        ),
+                        TextSpan(text: part),
                       ],
                     ],
                   ),

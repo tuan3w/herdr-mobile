@@ -112,6 +112,45 @@ bool toolBreaksOut(ToolCall call, Set<String> waiting) =>
     (call.status == ToolStatus.cancelled && !toolSkipped(call)) ||
     waiting.contains(call.toolCallId);
 
+/// The calls of [tools] (one turn, in order) that failed and were then done
+/// again with success: the agent got past them. A failure stays out of this
+/// when nothing later did the same work, so a turn that ended on one, or an
+/// unrelated call that happened to succeed, never hides it.
+///
+/// "The same work": same kind, and for a command the same words (at least
+/// [_sameCommand] of them shared: a retry changes a flag or a path, not the
+/// program), for anything else the same name (the file, the pattern, the host).
+Set<String> recoveredCalls(List<TranscriptTool> tools) {
+  Set<String>? out;
+  for (var i = 0; i < tools.length; i++) {
+    final failed = tools[i].call;
+    if (!toolFailed(failed)) continue;
+    for (var j = i + 1; j < tools.length; j++) {
+      final later = tools[j].call;
+      if (later.status == ToolStatus.completed && !toolFailed(later) && _sameWork(failed, later)) {
+        (out ??= {}).add(failed.toolCallId);
+        break;
+      }
+    }
+  }
+  return out ?? const {};
+}
+
+/// The share of a command's words a retry keeps, at least.
+const _sameCommand = 0.6;
+
+bool _sameWork(ToolCall a, ToolCall b) {
+  // A call known by its title alone (a subagent's `Task`, a thought) says too little
+  // to tell a retry from other work.
+  if (a.kind != b.kind || a.kind == ToolKind.think || a.kind == ToolKind.move) return false;
+  if (a.kind == ToolKind.switchMode || a.kind == ToolKind.other) return false;
+  final x = toolSummary(a), y = toolSummary(b);
+  if (x.text.isEmpty || y.text.isEmpty) return false;
+  if (a.kind != ToolKind.execute) return x.text == y.text && x.hint == y.hint;
+  final p = x.text.split(RegExp(r'\s+')).toSet(), q = y.text.split(RegExp(r'\s+')).toSet();
+  return p.intersection(q).length / p.union(q).length >= _sameCommand;
+}
+
 ToolSummary _summarize(ToolCall call) {
   switch (call.kind) {
     case ToolKind.read || ToolKind.delete:

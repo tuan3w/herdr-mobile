@@ -4,6 +4,29 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.60] - 2026-11-09
+
+### A failed command the agent got past no longer alarms
+
+When a command fails and the agent runs it again and it works, the failure is
+no longer shown in red under the answer. It stays in the count on the folded
+line (`Worked · 14 commands · 2 failed`) and in the log when you open it.
+
+- A failure that nothing repeated, such as a `git push` that was refused,
+  still stays under the answer, with one red cross. An unrelated command that
+  happened to work later does not hide it.
+- `exit 1` and the last line the command printed are grey now, and so is
+  `2 failed` on the folded line. The red cross is the one red mark.
+- Checked in tests and on a rendered chat, not on a phone. What counts as the
+  same command again is a guess from its words: a retry that changes more than
+  about 40% of them still shows the first failure.
+
+**Fixed**
+
+- A failed command that had returned a picture no longer gives the picture's
+  placeholder as the reason it failed; it shows no reason when the output has
+  none.
+
 ## [0.1.59] - 2026-11-09
 
 ### Long app names are shown whole in Made

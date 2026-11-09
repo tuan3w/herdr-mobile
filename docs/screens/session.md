@@ -275,7 +275,8 @@ view, so they survive a row scrolling away.
 - **The fold.** A finished turn shows its log as ONE line, `▸ Worked 42s · 3
   files · 4 commands · 1 failed` (`workSummaryParts`: counts, times and exit
   codes the app has; a part that is zero is left out; the duration is left out
-  when the turn was replayed; `failed` is in `dangerText`; `Plan 3 of 3 done`
+  when the turn was replayed; `failed` stays in the fold line's own grey: red
+  there said the same thing a second time; `Plan 3 of 3 done`
   when the plan finished in that turn). A small caret (a rotation), a 44 dp
   target; a tap opens the log in place and the rows it brings are revealed over
   `Motion.expand` (opacity and a few pixels of slide; closing just goes; reduced
@@ -283,12 +284,27 @@ view, so they survive a row scrolling away.
   fold line; when it ends it folds. The list keeps the row at the start of its
   newer slivers by key, and the first built row keeps its place, so rows that
   appear or go above what the reader is looking at do not move it.
-- **What breaks out of the fold.** A failed call (the agent said `failed`, or the
-  command exited non-zero), a cancelled one, a call that waits for the
+- **What breaks out of the fold.** A failed call that nothing did again with
+  success (the agent said `failed`, or the command exited non-zero), a
+  cancelled one, a call that waits for the
   person's permission (not a call the agent only skipped: omp marks a `wait` it
   interrupted or that had nothing to wait for as an error, 48 times in one session,
   and `toolSkipped` keeps those in the fold, cancelled, with their text), a stop row and a note are ordinary rows after the
   answer, never folded; in an open log they stand in their place, once.
+  **A failure the agent got past folds** (`Turn.recovered`,
+  `recoveredCalls`): a later call of the same turn that succeeded did the same
+  work again (the same kind and, for a command, at least 60% of its words:
+  a retry changes a flag or a path, not the program; for a file or a pattern,
+  the same name and folder). It is still counted in the fold line (`2 failed`)
+  and shown in place in the open log. Why (owner decision): agents retry a
+  failed call and carry on, and a red cross under every one read as an alarm
+  about something already handled. It never goes by time or by a later
+  success of something else: a turn that ended on a failure, or an unrelated
+  call that happened to succeed, leaves the failure under the answer. A
+  failure shows ONE red mark, the cross: its `exit 1` and the last line it
+  printed are grey (as in the session overview), and a line that only stands
+  for a picture the command returned (`[image: image/webp]`) is not taken as
+  the reason.
 - **The log's rows.** Tool calls are quiet rows (no chevron): the icon of the
   kind, ONE `toolSummary` line, ~44 dp, and a state shape only when the call
   has not succeeded (waiting ring, running half ring, failed cross,

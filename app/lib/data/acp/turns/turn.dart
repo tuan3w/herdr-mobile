@@ -241,14 +241,24 @@ class Turn {
 
   // -- what breaks out of the fold ----------------------------------------------
 
-  /// What stays visible when the log folds, in order: calls that failed or
-  /// were cancelled (not one the agent only skipped: [toolSkipped]), calls that wait for the person's permission ([waiting]:
-  /// `AgentSessionState.waitingToolIds`), and the stop rows. The answer and
-  /// the notes are visible anyway and not listed.
+  /// What stays visible when the log folds, in order: calls that failed (and
+  /// were not done again with success: [recovered]) or were cancelled (not one
+  /// the agent only skipped: [toolSkipped]), calls that wait for the person's
+  /// permission ([waiting]: `AgentSessionState.waitingToolIds`), and the stop
+  /// rows. The answer and the notes are visible anyway and not listed.
   List<TranscriptItem> breakouts([Set<String> waiting = const {}]) => [
     for (final item in items)
-      if ((item is TranscriptTool && toolBreaksOut(item.call, waiting)) || item is TranscriptStop) item,
+      if ((item is TranscriptTool && breaksOut(item, waiting)) || item is TranscriptStop) item,
   ];
+
+  /// The failed calls of this turn that a later call did again with success
+  /// ([recoveredCalls]): counted in the fold line, not shown under the answer.
+  late final Set<String> recovered = recoveredCalls(tools);
+
+  /// Whether [tool] stays visible when this turn folds ([toolBreaksOut], less
+  /// a failure the agent got past).
+  bool breaksOut(TranscriptTool tool, Set<String> waiting) =>
+      toolBreaksOut(tool.call, waiting) && !recovered.contains(tool.call.toolCallId);
 
   /// A tool call of the turn needs a look: [breakouts] is not empty.
   bool needsAttention([Set<String> waiting = const {}]) => breakouts(waiting).isNotEmpty;

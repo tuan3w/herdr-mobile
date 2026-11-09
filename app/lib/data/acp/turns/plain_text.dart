@@ -80,16 +80,20 @@ bool _isSeparator(int unit) => unit == 0x2F || unit == 0x5C;
 
 /// The last line of [text] that says something: not blank, not a fence of a
 /// code block, not a `Wall time:` footer (omp appends one to every command's
-/// output). Null when there is none.
+/// output), not the `[image: image/webp]` line that stands for a picture the
+/// command returned (it says nothing about why the command failed). Null when
+/// there is none.
 String? lastMeaningfulLine(String text) {
   final lines = text.split('\n');
   for (var i = lines.length - 1; i >= 0; i--) {
     final line = lines[i].trim();
-    if (line.isEmpty || line.startsWith('```') || line.startsWith('Wall time:')) continue;
+    if (line.isEmpty || line.startsWith('```') || line.startsWith('Wall time:') || _imageLine.hasMatch(line)) continue;
     return line;
   }
   return null;
 }
+
+final _imageLine = RegExp(r'^\[image(?:: [^\]]*)?\]$');
 
 /// The first line of [text] that is not blank, trimmed; null when none.
 String? firstLine(String text) {

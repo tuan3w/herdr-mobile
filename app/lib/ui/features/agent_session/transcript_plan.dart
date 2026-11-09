@@ -461,7 +461,7 @@ class _Planner {
     // the calls in their place.
     for (final item in t.items) {
       switch (item) {
-        case TranscriptTool() when !open && _breaksOut(item):
+        case TranscriptTool() when !open && t.breaksOut(item, waiting):
           add(PlanRow(item.key, TranscriptRowKind.tool, gapAbove(previous, TranscriptRowKind.tool), item: item), [
             item,
           ]);
@@ -477,8 +477,6 @@ class _Planner {
       }
     }
   }
-
-  bool _breaksOut(TranscriptTool tool) => toolBreaksOut(tool.call, waiting);
 
   /// The open log: per stretch between two pieces of narration, one thinking
   /// line, then the calls (adjacent reads and searches grouped); the

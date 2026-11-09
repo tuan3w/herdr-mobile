@@ -869,6 +869,46 @@ void main() {
       );
     });
 
+    test('a failure the agent got past (the same work, done again with success) folds; any other stays', () {
+      Map<String, Object?> run(String id, String status, String command) =>
+          _tool(id, status, rawInput: {'command': command});
+      final r = _Run()
+        ..add(run('shoot1', 'failed', 'node scripts/shoot.mjs --viewport 390x844'))
+        ..add(run('shoot2', 'completed', 'node scripts/shoot.mjs --viewport 390x844 --wait 800'))
+        ..add(run('push', 'failed', 'git push origin main'))
+        ..add(run('ls', 'completed', 'ls -la'))
+        ..add(_tool('edit1', 'failed', kind: 'edit', rawInput: {'path': '/w/lib/a.dart'}))
+        ..add(_tool('edit2', 'completed', kind: 'edit', rawInput: {'path': '/w/lib/a.dart'}))
+        ..add(_tool('edit3', 'failed', kind: 'edit', rawInput: {'path': '/w/lib/b.dart'}))
+        ..add(_tool('edit4', 'completed', kind: 'edit', rawInput: {'path': '/w/lib/c.dart'}))
+        ..add(_agentText('Pushed nothing.'));
+      r.end();
+      final turn = r.turn;
+      expect(turn.recovered, {'shoot1', 'edit1'});
+      expect(turn.failedCount, 4, reason: 'the fold line still counts every failure');
+      expect(turn.breakouts().map((i) => i.key), [
+        'tool:push',
+        'tool:edit3',
+      ], reason: 'the ls and the other file are not a retry');
+    });
+
+    test('a failure is not recovered by a call that was done before it, or that failed again', () {
+      Map<String, Object?> run(String id, String status) => _tool(id, status, rawInput: {'command': 'make test'});
+      final r = _Run()
+        ..add(run('first', 'completed'))
+        ..add(run('second', 'failed'))
+        ..add(run('third', 'failed'));
+      r.end();
+      expect(r.turn.recovered, isEmpty);
+      expect(r.turn.breakouts().map((i) => i.key), ['tool:second', 'tool:third']);
+    });
+
+    test('the line a failed command is said by is never the stand-in for a picture it returned', () {
+      expect(lastMeaningfulLine('shot written\n[image: image/webp]'), 'shot written');
+      expect(lastMeaningfulLine('[image]\nWall time: 1s'), isNull);
+      expect(lastMeaningfulLine('see [image: x] above'), 'see [image: x] above');
+    });
+
     test('memoized by list identity; streaming into the live message costs no rebuild; unchanged turns are the same object', () {
       final r = _Run('one')
         ..add(_agentText('first '))
@@ -1017,7 +1057,10 @@ void main() {
         expect(turn.tools.map((t) => t.call.toolCallId).toSet(), ids.difference(owned));
         expect(turn.toolCounts.values.fold<int>(0, (a, b) => a + b), ids.length - owned.length);
         expect(turn.unfinishedCount, 0, reason: 'the turn ended');
-        expect(turn.breakouts().length, turn.failedCount + turn.cancelledCount + turn.stops.length);
+        expect(
+          turn.breakouts().length,
+          turn.failedCount - turn.recovered.length + turn.cancelledCount + turn.stops.length,
+        );
 
         // Times: from the prompt to the last event; the answer settled when the turn ended.
         final asked = traceTime(facts.promptLine.tMs);

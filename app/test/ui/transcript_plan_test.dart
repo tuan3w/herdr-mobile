@@ -184,6 +184,28 @@ void main() {
       expect(keys(calm), ['u', 'u:log', 'tool:bad', 'tool:cut', 'stop', 'note']);
     });
 
+    test(
+      'a failure the agent got past folds with its turn; one that ended the turn stays, and the open log shows both',
+      () {
+        final items = <TranscriptItem>[
+          userMsg('u', 'go'),
+          failedRun('bad'),
+          toolItem('again', title: 'flutter test test/a_test.dart', kind: ToolKind.execute),
+          agentMsg('a', 'Fixed.'),
+          userMsg('v', 'ship'),
+          toolItem('tag', title: 'git tag v1', kind: ToolKind.execute),
+          toolItem('push', title: 'git push', kind: ToolKind.execute, status: ToolStatus.failed),
+          agentMsg('b', 'The push was refused.'),
+        ];
+        expect(keys(TranscriptPlan()..update(items)), ['u', 'u:log', 'a#0', 'v', 'v:log', 'b#0', 'tool:push']);
+        expect(
+          keys(TranscriptPlan(open: {'turn:u:log'})..update(items)),
+          containsAllInOrder(['u:log', 'tool:bad', 'tool:again', 'a#0']),
+          reason: 'in the open log every call is in its place',
+        );
+      },
+    );
+
     test('an open log shows the exceptions in their place, once', () {
       final open = {'turn:u:log'};
       final plan = TranscriptPlan(open: open)

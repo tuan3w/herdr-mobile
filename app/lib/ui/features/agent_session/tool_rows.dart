@@ -316,13 +316,13 @@ class _ToolLine extends StatelessWidget {
               if (code != null)
                 TextSpan(
                   text: code,
-                  style: Type.captionStrong.copyWith(color: ds.dangerText),
+                  style: Type.captionStrong.copyWith(color: ds.textSecondary),
                 ),
               if (code != null && why != null) const TextSpan(text: '  '),
               if (why != null)
                 TextSpan(
                   text: why,
-                  style: Mono.base.copyWith(color: ds.dangerText),
+                  style: Mono.base.copyWith(color: ds.textMuted),
                 ),
             ],
           ),
