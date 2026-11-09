@@ -604,6 +604,7 @@ class SshTransport implements HerdrTransport {
                 if (!acked) {
                   unwrapResponse(line); // throws on API error
                   acked = true;
+                  out.add(const {'event': subscriptionStartedEvent});
                   return;
                 }
                 final decoded = jsonDecode(line);

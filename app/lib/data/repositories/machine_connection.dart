@@ -876,6 +876,15 @@ class MachineConnection extends ChangeNotifier {
   ///  * status or agent changed (e.g. working -> blocked)    -> refresh now;
   ///  * anything else (title, cwd)                            -> throttled.
   void _onEvent(Map<String, dynamic> event, _RefreshScheduler refresher) {
+    if (event['event'] == subscriptionStartedEvent) {
+      // herdr streams only what happens after it accepts the subscription,
+      // and the snapshot was taken before that: one refresh closes the gap,
+      // instead of a "needs you" waiting for the safety poll. Not counted as
+      // an event: a stream that acks and then dies proves nothing (see `_run`).
+      _lastHeard = _clock();
+      refresher.schedule(urgent: true);
+      return;
+    }
     _events++;
     _lastHeard = _clock();
     if (event['event'] != 'pane_updated') {

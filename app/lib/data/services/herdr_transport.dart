@@ -67,6 +67,12 @@ abstract interface class ExecChannel {
   Future<void> close();
 }
 
+/// The marker event a transport emits first from [HerdrTransport.events] once
+/// herdr has accepted the subscription: herdr streams only what happens after
+/// that, so whatever changed between the caller's snapshot and this moment
+/// needs one refresh.
+const subscriptionStartedEvent = 'subscription_started';
+
 /// Request/response and event-stream access to one herdr server.
 ///
 /// herdr's own socket serves one request per connection, but implementations
@@ -81,7 +87,9 @@ abstract interface class HerdrTransport {
 
   /// Subscribes to event [types] (e.g. `pane.updated`).
   /// Emits each event object; errors with [HerdrTransportException] if the
-  /// channel drops. Cancelling the subscription closes the channel.
+  /// channel drops. Cancelling the subscription closes the channel. A
+  /// transport that knows when herdr accepted the subscription first emits
+  /// `{'event': subscriptionStartedEvent}` (see [subscriptionStartedEvent]).
   Stream<Map<String, dynamic>> events(List<Map<String, dynamic>> subscriptions);
 
   /// The app is in the background (true) watching agents for notifications,
