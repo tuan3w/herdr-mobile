@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://tuan3w.github.io/herdr-mobile/sitemap.xml

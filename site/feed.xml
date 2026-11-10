@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>herdr mobile releases</title>
+  <link href="https://tuan3w.github.io/herdr-mobile/feed.xml" rel="self"/>
+  <link href="https://tuan3w.github.io/herdr-mobile/"/>
+  <id>https://tuan3w.github.io/herdr-mobile/</id>
+  <updated>2026-11-09T00:00:00Z</updated>
+  <author><name>Tuan Nguyen</name></author>
+  <entry>
+    <title>Delete a worktree to give its disk space back (0.1.61)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.61"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.61</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <summary>A worktree keeps its folder on the computer, and Close workspace did not delete it, so the space stayed used and nothing listed it. You can now remove one from the agent that worked in it, or from a list of the closed ones.</summary>
+  </entry>
+  <entry>
+    <title>A failed command the agent got past no longer alarms (0.1.60)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.60"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.60</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <summary>When a command fails and the agent runs it again and it works, the failure is no longer shown in red under the answer. It stays in the count on the folded line (Worked · 14 commands · 2 failed) and in the log when you open it.</summary>
+  </entry>
+  <entry>
+    <title>Long app names are shown whole in Made (0.1.59)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.59"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.59</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <summary>An app that was started with a long command no longer has its second line cut off at the bottom of Made in this session. Its name wraps to two lines and the line under it, Port 8765 · Status unknown, stays in view.</summary>
+  </entry>
+  <entry>
+    <title>What your hooks report, on the board (0.1.58)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.58"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.58</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <summary>Labels that hooks and scripts on your computers give herdr now show under each agent on the board: the agent&#x27;s own word for what it is doing, a test count, a build stage. They follow the hook within about 2 seconds while the app is open.</summary>
+  </entry>
+  <entry>
+    <title>Videos in Files play again (0.1.57)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.57"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.57</id>
+    <updated>2026-11-08T00:00:00Z</updated>
+    <summary>A video you open in Files plays as soon as it is on the phone. Since 0.1.41 it could stay grey with a small spinner, and showed only after Save to gallery.</summary>
+  </entry>
+  <entry>
+    <title>Sheets follow your finger (0.1.56)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.56"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.56</id>
+    <updated>2026-11-08T00:00:00Z</updated>
+    <summary>[![Watch what&#x27;s new · 3 changes · 0:12 · 2.5 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.56/0.1.56-whats-new.mp4)</summary>
+  </entry>
+  <entry>
+    <title>The terminal&#x27;s raw output no longer takes a box on the chat (0.1.55)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.55"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.55</id>
+    <updated>2026-11-07T00:00:00Z</updated>
+    <summary>While an agent in a terminal works and its log is quiet, the chat no longer shows a grey box with the last lines of the screen. It repeated what the tool row, the status and 1 running in background already say, in a box taller than the answer.</summary>
+  </entry>
+  <entry>
+    <title>See which model a terminal Claude is using (0.1.53)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.53"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.53</id>
+    <updated>2026-11-07T00:00:00Z</updated>
+    <summary>A Claude Code session in a terminal now shows its model in the chip row above the message box, the same chip a chat shows. It reads Opus 5.5, not claude-opus-5-5, and follows a switch you make in the terminal.</summary>
+  </entry>
+  <entry>
+    <title>A stopped omp subagent no longer shows as done (0.1.52)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.52"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.52</id>
+    <updated>2026-11-05T00:00:00Z</updated>
+    <summary>An omp subagent that failed, or that its parent stopped, shows as failed in the subagents chip and list. It used to show done.</summary>
+  </entry>
+  <entry>
+    <title>See what you sent into a terminal agent (0.1.51)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.51"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.51</id>
+    <updated>2026-11-05T00:00:00Z</updated>
+    <summary>A message you send into a terminal agent&#x27;s running turn now shows above the box as Sent to the terminal · not read yet, until the agent reads it and the chat shows it. Before, it left the box and showed nothing, which for omp can be minutes behind a long tool call.</summary>
+  </entry>
+  <entry>
+    <title>Message an agent in a terminal while it works (0.1.50)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.50"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.50</id>
+    <updated>2026-11-05T00:00:00Z</updated>
+    <summary>Claude Code, Codex and omp running in a terminal now take a message while they work. Send puts it into the turn; hold Send to keep it on the phone until the turn ends.</summary>
+  </entry>
+  <entry>
+    <title>A waiting omp subagent no longer shows as done (0.1.49)</title>
+    <link href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.49"/>
+    <id>https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.49</id>
+    <updated>2026-11-04T00:00:00Z</updated>
+    <summary>A subagent that started a long background job and waits for it stays running in the subagents chip and list. It used to turn done after about 30 seconds of silence, while omp still listed it as running.</summary>
+  </entry>
+</feed>
