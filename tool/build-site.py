@@ -6,7 +6,7 @@ Run from anywhere:  python3 -I tool/build-site.py [--assets]
 Always (cheap, no inputs beyond the repo):
   - site/feed.xml            Atom feed of the newest CHANGELOG.md releases
   - site/sitemap.xml         lastmod = newest release date
-  - site/index.html          the version number and the "What's new" cards
+  - site/index.html          the version number and the latest-release line
 
 With --assets (needs Pillow and ffmpeg; the outputs are committed):
   - site/img/*.webp          the app's renders, resized (needs HERDR_RAW_DIR)
@@ -83,17 +83,9 @@ def page(rels):
     v = rels[0]["version"]
     src = re.sub(r'"softwareVersion": "[^"]*"', f'"softwareVersion": "{v}"', src)
     src = re.sub(r"(<span data-version>)[^<]*(</span>)", rf"\g<1>{v}\g<2>", src)
-    cards = []
-    for r in rels[:3]:
-        cards.append(
-            f'        <li><a href="{REPO}/releases/tag/v{r["version"]}">'
-            f'<time datetime="{r["date"]}">{r["date"]}</time>'
-            f'<h3>{html.escape(plain(r["title"]))}</h3>'
-            f'<p>{html.escape(plain(r["summary"]))}</p>'
-            f'<span class="ver">{r["version"]}</span></a></li>'
-        )
-    block = "<!--changelog:start-->\n" + "\n".join(cards) + "\n        <!--changelog:end-->"
-    src = re.sub(r"<!--changelog:start-->.*?<!--changelog:end-->", lambda _: block, src, flags=re.S)
+    r = rels[0]
+    latest = (f'<a href="{REPO}/releases/tag/v{r["version"]}">{r["version"]} · {html.escape(plain(r["title"]))}</a>')
+    src = re.sub(r"<!--latest:start-->.*?<!--latest:end-->", lambda _: f"<!--latest:start-->{latest}<!--latest:end-->", src, flags=re.S)
     path.write_text(src)
 
 
