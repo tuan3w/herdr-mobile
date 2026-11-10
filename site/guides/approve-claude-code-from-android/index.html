@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Approve Claude Code from an Android phone: setup guide</title>
+<meta name="description" content="Set up herdr mobile to read the exact command Claude Code asks about and approve it from an Android phone over SSH or Tailscale. No relay, no account.">
+<link rel="canonical" href="https://tuan3w.github.io/herdr-mobile/guides/approve-claude-code-from-android/">
+<meta name="theme-color" content="#1b1e36">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="herdr mobile">
+<meta property="og:title" content="Approve Claude Code from an Android phone">
+<meta property="og:description" content="Read the exact command, hold to approve. Over SSH or Tailscale, no relay, no account.">
+<meta property="og:url" content="https://tuan3w.github.io/herdr-mobile/guides/approve-claude-code-from-android/">
+<meta property="og:image" content="https://tuan3w.github.io/herdr-mobile/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="../../favicon.png">
+<link rel="stylesheet" href="../guide.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "Approve Claude Code from an Android phone",
+      "description": "Set up herdr mobile to read the exact command Claude Code asks about and approve it from an Android phone over SSH or Tailscale.",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "image": "https://tuan3w.github.io/herdr-mobile/img/og.jpg",
+      "mainEntityOfPage": "https://tuan3w.github.io/herdr-mobile/guides/approve-claude-code-from-android/",
+      "author": { "@type": "Person", "name": "Tuan Nguyen", "url": "https://github.com/tuan3w" },
+      "about": { "@id": "https://tuan3w.github.io/herdr-mobile/#app" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "herdr mobile", "item": "https://tuan3w.github.io/herdr-mobile/" },
+        { "@type": "ListItem", "position": 2, "name": "Approve Claude Code from an Android phone" }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="../../"><img src="../../img/icon-192.png" width="28" height="28" alt="">herdr mobile</a>
+  <a class="dl" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download</a>
+</div></header>
+
+<main><div class="wrap">
+  <p class="crumb"><a href="../../">herdr mobile</a> / Guide</p>
+  <h1>Approve Claude Code from an Android phone</h1>
+  <p class="lede">Claude Code stops and asks before it runs a command. If you are away from your desk, it waits. This sets up your phone to show who is waiting, the exact command, and a way to answer.</p>
+  <p class="meta">Updated 10 November 2026 · about 10 minutes · free, open source</p>
+
+  <div class="note"><b>What is tested.</b> Claude Code has had one full turn with a permission request checked through the app's own client on a computer. It has not been verified on a phone yet. omp is the agent verified end to end on a phone. Read <a href="#limits">the limits</a> before you rely on it.</div>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>An Android 7.0 or newer phone (32- or 64-bit ARM). There is no iPhone version.</li>
+    <li>A Linux or macOS computer that runs your agents, with <code>sshd</code> the phone can reach: same network, a VPN, or <a href="https://tailscale.com">Tailscale</a>. Windows computers are not supported.</li>
+    <li><a href="https://herdr.dev">herdr</a> running on that computer. herdr is the terminal workspace the app reads agents from.</li>
+    <li>Claude Code installed on the computer, as you already have it.</li>
+  </ul>
+  <p>There is no relay, no public port and no account. If the phone can reach the computer's SSH port, the app works. If it can't, nothing else can either.</p>
+
+  <h2>1. Run Claude Code inside herdr</h2>
+  <p>Start <code>claude</code> in a herdr pane as you normally would. herdr then sees the agent and the app can list it. For Claude Code, herdr's hook has to report the session if you also want the chat view. The app offers to install it from the terminal's pane options.</p>
+
+  <h2>2. Install the app</h2>
+  <ol>
+    <li>On the phone, open the <a href="https://github.com/tuan3w/herdr-mobile/releases/latest">latest release</a> and download <code>herdr-mobile-&lt;version&gt;.apk</code>.</li>
+    <li>Optional, recommended: check it against the release's <code>SHA256SUMS</code> on a computer.
+<pre><code>sha256sum --check --ignore-missing SHA256SUMS</code></pre></li>
+    <li>Open the APK and allow installs from that source. Later versions update from inside the app.</li>
+  </ol>
+
+  <h2>3. Add your computer</h2>
+  <p>In the app, open Machines and tap +. Fill in a name, the host the phone can reach, the SSH port and the user that runs herdr. Then pick how to sign in:</p>
+  <ul>
+    <li><b>Tailscale.</b> Nothing is stored. The Tailscale app must be connected, and the computer must run Tailscale SSH. A Mac using the Tailscale apps cannot, so use a key or password with its Tailscale address.</li>
+    <li><b>Private key.</b> Tap Generate key. The app makes an Ed25519 key on the phone and copies a one-line command. Run it once on the computer:
+<pre><code>mkdir -p ~/.ssh &amp;&amp; chmod 700 ~/.ssh &amp;&amp; echo 'ssh-ed25519 AAAA… herdr-mobile@name' &gt;&gt; ~/.ssh/authorized_keys &amp;&amp; chmod 600 ~/.ssh/authorized_keys</code></pre></li>
+    <li><b>Password.</b> The SSH password, kept in the Android keychain.</li>
+  </ul>
+  <p>Tap Test connection. It should say Connected with the herdr version. The first connection pins the computer's host key, and a changed key later is a hard stop.</p>
+  <div class="shots">
+    <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../../img/tailscale-dark.webp"><img src="../../img/tailscale-light.webp" width="620" height="1342" alt="Adding a machine with Tailscale SSH selected and a prompt to approve the sign-in." loading="lazy"></picture><figcaption>Adding a machine with Tailscale.</figcaption></figure>
+  </div>
+
+  <h2>4. See who is waiting</h2>
+  <p>The board lists every agent on every computer, grouped by what it needs: needs you, working, to review, idle. When Claude Code asks a question the app understands, its options appear as buttons on the card, with the command it wants to run under the question.</p>
+  <div class="shots">
+    <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../../img/board-dark.webp"><img src="../../img/board-light.webp" width="620" height="1342" alt="The Agents list on a phone: one agent needs you and shows its question and answer buttons." loading="lazy"></picture><figcaption>One agent needs you, with its command and answers on the card.</figcaption></figure>
+    <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../../img/chat-dark.webp"><img src="../../img/chat-light.webp" width="620" height="1342" alt="Claude Code asks to push a branch, with the exact command and Allow once, Always allow and Reject." loading="lazy"></picture><figcaption>Open the agent to read the full request.</figcaption></figure>
+  </div>
+
+  <h2>5. Approve, with a hold for risky answers</h2>
+  <ul>
+    <li><b>Read the command first.</b> It stays on screen. A long command says how many lines are below and opens in full.</li>
+    <li><b>Harmless answers send on a tap.</b></li>
+    <li><b>Risky answers need a hold of about 0.7 seconds.</b> A push, a delete, or "always allow" will not send on a tap. A tap only shows the reason.</li>
+    <li><b>Nothing is approved for you.</b> There is no approval on a timeout and none by default.</li>
+    <li><b>The app re-reads the question just before it sends.</b> If you already answered on your computer, nothing is sent and you see the new question.</li>
+  </ul>
+  <p>You can try the hold in your browser on <a href="../../#try">the home page</a>.</p>
+
+  <h2>6. Optional: notifications</h2>
+  <p>Notifications are off by default. Turn them on in Settings, Notifications. Android then shows a quiet "Watching" notice while agents work or wait, and the app keeps its connections open. Tapping a notification opens that agent. This costs battery while agents work, and that cost has not been measured. Without notifications, connections close about 90 seconds after you leave the app, and your agents keep running on the computer.</p>
+
+  <h2 id="limits">Limits</h2>
+  <ul>
+    <li>Android only. Linux and macOS computers only.</li>
+    <li>Claude Code approvals are verified on a computer, not on a phone yet. Codex chat works but its approvals are unverified. pi is built and has no verified turn.</li>
+    <li>Answer buttons on notifications have not been tested on a real phone.</li>
+    <li>A terminal pane is read-only text, with herdr's 1,000 rows of scrollback at most.</li>
+  </ul>
+
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the APK</a>
+    <a class="btn" href="../ways-to-approve-claude-code-from-your-phone/">Compare the ways to do this</a>
+    <a class="btn" href="https://github.com/tuan3w/herdr-mobile/blob/main/docs/GUIDE.md">Full user guide</a>
+  </div>
+</div></main>
+
+<footer><div class="wrap">
+  <a href="../../">herdr mobile</a>
+  <a href="../ways-to-approve-claude-code-from-your-phone/">Ways to approve Claude Code from your phone</a>
+  <a href="https://github.com/tuan3w/herdr-mobile">GitHub</a>
+  <a href="../../feed.xml">Atom feed</a>
+</div></footer>
+</body>
+</html>

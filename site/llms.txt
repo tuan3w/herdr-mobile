@@ -1,0 +1,22 @@
+# herdr mobile
+
+> A free, open-source Android app that shows every coding agent (Claude Code, Codex, omp, pi) on every computer you run herdr on, lets you read the exact command an agent wants to run, and approve it from your phone over SSH. No relay, no account.
+
+## Guides
+- [Approve Claude Code from an Android phone](https://tuan3w.github.io/herdr-mobile/guides/approve-claude-code-from-android/): setup, step by step, with the limits stated.
+- [Ways to approve Claude Code from your phone, compared](https://tuan3w.github.io/herdr-mobile/guides/ways-to-approve-claude-code-from-your-phone/): Remote Control, hook plus ntfy, SSH terminal apps, hosted apps and herdr mobile.
+
+## Project
+- [Home](https://tuan3w.github.io/herdr-mobile/): what it is, an interactive demo, install.
+- [User guide](https://github.com/tuan3w/herdr-mobile/blob/main/docs/GUIDE.md): every screen and setting.
+- [Architecture and security model](https://github.com/tuan3w/herdr-mobile/blob/main/docs/ARCHITECTURE.md): what runs where.
+- [Releases](https://github.com/tuan3w/herdr-mobile/releases): the APK and checksums.
+- [Changelog](https://github.com/tuan3w/herdr-mobile/blob/main/CHANGELOG.md)
+
+## Facts
+- Android 7.0 or newer only. No iPhone version. Computers must be Linux or macOS (no Windows) with sshd and herdr running.
+- The phone connects straight to each computer over SSH (key, password or Tailscale SSH). There is no relay, no public port and no account.
+- Nothing is approved automatically or on a timeout. Risky answers (a push, a delete, always allow) need a hold of about 0.7 seconds. The app re-reads the question just before it sends an answer.
+- Notifications are off by default. Without them, connections close about 90 seconds after you leave the app.
+- Agent status: omp is verified on a phone. Claude Code is checked on a computer, not yet on a phone. Codex chat works with approvals unverified. pi is built with no verified turn.
+- Licence: GPL-3.0-only. Source: https://github.com/tuan3w/herdr-mobile

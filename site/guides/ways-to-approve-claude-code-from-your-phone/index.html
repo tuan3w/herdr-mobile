@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ways to approve Claude Code from your phone, compared</title>
+<meta name="description" content="Remote Control, ntfy hooks, SSH terminal apps, hosted apps and herdr mobile compared: what each needs, who sits in the middle, and where each falls short.">
+<link rel="canonical" href="https://tuan3w.github.io/herdr-mobile/guides/ways-to-approve-claude-code-from-your-phone/">
+<meta name="theme-color" content="#1b1e36">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="herdr mobile">
+<meta property="og:title" content="Ways to approve Claude Code from your phone, compared">
+<meta property="og:description" content="Five approaches, what each needs and where each falls short. Checked 10 November 2026.">
+<meta property="og:url" content="https://tuan3w.github.io/herdr-mobile/guides/ways-to-approve-claude-code-from-your-phone/">
+<meta property="og:image" content="https://tuan3w.github.io/herdr-mobile/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="../../favicon.png">
+<link rel="stylesheet" href="../guide.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "Ways to approve Claude Code from your phone, compared",
+      "description": "Remote Control, hook notifications with ntfy, an SSH terminal, hosted apps and herdr mobile compared by what each needs and where each falls short.",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "image": "https://tuan3w.github.io/herdr-mobile/img/og.jpg",
+      "mainEntityOfPage": "https://tuan3w.github.io/herdr-mobile/guides/ways-to-approve-claude-code-from-your-phone/",
+      "author": { "@type": "Person", "name": "Tuan Nguyen", "url": "https://github.com/tuan3w" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "herdr mobile", "item": "https://tuan3w.github.io/herdr-mobile/" },
+        { "@type": "ListItem", "position": 2, "name": "Ways to approve Claude Code from your phone" }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="../../"><img src="../../img/icon-192.png" width="28" height="28" alt="">herdr mobile</a>
+  <a class="dl" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download</a>
+</div></header>
+
+<main><div class="wrap">
+  <p class="crumb"><a href="../../">herdr mobile</a> / Guide</p>
+  <h1>Ways to approve Claude Code from your phone</h1>
+  <p class="lede">There are five common ways. The right one depends on whether you want a push alert, a terminal, or a list of every agent you run. I make herdr mobile, so read this knowing that.</p>
+  <p class="meta">Checked 10 November 2026 from each project's own docs · tell me if something is out of date</p>
+
+  <h2>At a glance</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Approach</th><th>You install</th><th>Between phone and computer</th><th>Account</th></tr></thead>
+    <tbody>
+      <tr><td>Remote Control (Anthropic)</td><td>The Claude app, on a computer already signed in to Claude Code</td><td>Anthropic's service</td><td>claude.ai login on a paid plan</td></tr>
+      <tr><td>Hook plus ntfy</td><td>A small script as a Claude Code hook, and the ntfy app</td><td>An ntfy server, public or your own</td><td>None required</td></tr>
+      <tr><td>SSH terminal app</td><td>Termius, Termux or similar, plus Tailscale or a VPN</td><td>Your own SSH connection</td><td>Depends on the app</td></tr>
+      <tr><td>Hosted mobile apps</td><td>A wrapper command on the computer, plus the app</td><td>Varies: some pair by QR and use a relay</td><td>Varies</td></tr>
+      <tr><td>herdr mobile</td><td>herdr on the computer, plus the Android app</td><td>Nothing, direct SSH</td><td>None</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Remote Control from Anthropic</h2>
+  <p><b>Good when</b> you only use Claude Code, you have a paid Claude plan, and you want the official route with an iPhone or Android app. <b>Falls short when</b> you want other agents, no account, or one list across several computers. It works through Anthropic's service, so your computer needs to reach it.</p>
+
+  <h2>Hook notifications with ntfy</h2>
+  <p>Small projects such as claude-remote-approver and claude-push turn a Claude Code permission request into a push notification with Allow and Deny. <b>Good when</b> you want the least moving parts and are happy with a notification and two buttons. <b>Falls short when</b> you want to see the whole session, other agents, or files. Notifications go through an ntfy server, so self-host it if that matters to you. Check each project for what it does when you do not answer in time.</p>
+
+  <h2>An SSH terminal on your phone</h2>
+  <p>Termius, or Termux with Tailscale and tmux, gives you a full terminal. <b>Good when</b> you want complete control and already live in the terminal. <b>Falls short when</b> you want an approval screen: you type everything on a phone keyboard, and nothing tells you an agent is waiting.</p>
+
+  <h2>Hosted mobile apps for coding agents</h2>
+  <p>Several apps, including Happy Coder and Paseo, add a mobile client for Claude Code and other agents, often with a wrapper command and QR pairing. <b>Good when</b> you want push, voice or a polished client and accept their pairing and relay model. <b>Check</b> for each one: does a relay or account sit in the middle, what is its licence, and which phones it supports. Their docs answer this better than I can.</p>
+
+  <h2>herdr mobile</h2>
+  <p>An Android app that reads agents from <a href="https://herdr.dev">herdr</a> over direct SSH. <b>Good when</b> you run several agents on several computers, want one list of who is waiting, want to read the exact command before approving, and want no relay and no account. A risky answer, such as a push or an <code>always allow</code>, needs a hold, and nothing is approved for you or on a timeout.</p>
+  <p><b>Falls short when</b> you use an iPhone or a Windows computer, want push by default (notifications are off by default and cost battery), or need Claude Code approvals verified on a phone. Today they are checked on a computer, not a phone. It needs herdr on the computer.</p>
+
+  <h2>Which one</h2>
+  <ul>
+    <li><b>Claude Code only, official, paid plan:</b> Remote Control.</li>
+    <li><b>Just an alert with two buttons:</b> a hook with ntfy.</li>
+    <li><b>You like the terminal:</b> an SSH app.</li>
+    <li><b>Several agents on several computers, on Android, no account:</b> herdr mobile.</li>
+  </ul>
+
+  <div class="cta">
+    <a class="btn primary" href="../approve-claude-code-from-android/">Set up herdr mobile</a>
+    <a class="btn" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the APK</a>
+    <a class="btn" href="https://github.com/tuan3w/herdr-mobile/issues">Report a correction</a>
+  </div>
+</div></main>
+
+<footer><div class="wrap">
+  <a href="../../">herdr mobile</a>
+  <a href="../approve-claude-code-from-android/">Approve Claude Code from an Android phone</a>
+  <a href="https://github.com/tuan3w/herdr-mobile">GitHub</a>
+  <a href="../../feed.xml">Atom feed</a>
+</div></footer>
+</body>
+</html>

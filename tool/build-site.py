@@ -69,11 +69,17 @@ def feed(rels):
     )
 
 
+GUIDES = ["guides/approve-claude-code-from-android/", "guides/ways-to-approve-claude-code-from-your-phone/"]
+
+
 def sitemap(rels):
+    day = rels[0]["date"]
+    urls = [f"  <url><loc>{BASE}</loc><lastmod>{day}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>"]
+    for g in GUIDES:
+        urls.append(f"  <url><loc>{BASE}{g}</loc><lastmod>2026-11-10</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>")
     (SITE / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        f"  <url><loc>{BASE}</loc><lastmod>{rels[0]['date']}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>\n"
-        "</urlset>\n"
+        + "\n".join(urls) + "\n</urlset>\n"
     )
 
 
