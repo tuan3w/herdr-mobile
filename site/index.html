@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>herdr mobile: run and approve your coding agents from your phone</title>
-<meta name="description" content="Android app for herdr. See every Claude Code, Codex, omp and pi agent on every machine and approve the exact command from your phone. Over SSH, no account.">
+<title>Approve coding agents from your Android phone | herdr mobile</title>
+<meta name="description" content="Free Android app. See every Claude Code, Codex and omp agent on every machine, read the exact command, and approve it over SSH. No relay, no account.">
 <link rel="canonical" href="https://tuan3w.github.io/herdr-mobile/">
 <meta name="theme-color" content="#1b1e36">
 <meta name="color-scheme" content="light dark">
@@ -14,16 +14,16 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="herdr mobile">
-<meta property="og:title" content="herdr mobile: your coding agents, in your pocket">
-<meta property="og:description" content="Every agent on every machine, one board. Told the moment one needs you. Answer safely in seconds, then put the phone away.">
+<meta property="og:title" content="Approve your coding agents from your phone">
+<meta property="og:description" content="Free, open source Android app. Read the exact command, hold to approve. Over SSH, no relay, no account.">
 <meta property="og:url" content="https://tuan3w.github.io/herdr-mobile/">
 <meta property="og:image" content="https://tuan3w.github.io/herdr-mobile/img/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="herdr mobile: your coding agents, in your pocket, beside a phone showing the Agents board.">
+<meta property="og:image:alt" content="herdr mobile: your coding agents, in your pocket, beside a phone showing the Agents list.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="herdr mobile: your coding agents, in your pocket">
-<meta name="twitter:description" content="Run and approve Claude Code, Codex, omp and pi agents from your phone. Over SSH, no relay, no account.">
+<meta name="twitter:title" content="Approve your coding agents from your phone">
+<meta name="twitter:description" content="Free, open source Android app. Read the exact command, hold to approve. Over SSH, no relay, no account.">
 <meta name="twitter:image" content="https://tuan3w.github.io/herdr-mobile/img/og.jpg">
 
 <link rel="icon" type="image/png" href="favicon.png">
@@ -57,24 +57,35 @@ try{if(!sessionStorage.getItem('hm-intro')&&!matchMedia('(prefers-reduced-motion
       "screenshot": [
         "https://tuan3w.github.io/herdr-mobile/img/board-light.webp",
         "https://tuan3w.github.io/herdr-mobile/img/chat-dark.webp",
-        "https://tuan3w.github.io/herdr-mobile/img/pane-dark.webp"
+        "https://tuan3w.github.io/herdr-mobile/img/pane-dark.webp",
+        "https://tuan3w.github.io/herdr-mobile/img/files-dark.webp"
       ],
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "author": { "@type": "Person", "name": "Tuan Nguyen", "url": "https://github.com/tuan3w" }
     },
     {
       "@type": "WebSite",
+      "@id": "https://tuan3w.github.io/herdr-mobile/#site",
       "name": "herdr mobile",
       "url": "https://tuan3w.github.io/herdr-mobile/"
     },
     {
+      "@type": "VideoObject",
+      "name": "herdr mobile: approve a coding agent from your phone",
+      "description": "A 24 second film made from the app's own screens: the list of agents, a held approval being sent, the exact command shown first, and a swipe to the next agent.",
+      "thumbnailUrl": "https://tuan3w.github.io/herdr-mobile/video/poster.webp",
+      "contentUrl": "https://tuan3w.github.io/herdr-mobile/video/herdr-mobile.mp4",
+      "uploadDate": "2026-11-10",
+      "duration": "PT24S"
+    },
+    {
       "@type": "FAQPage",
       "mainEntity": [
-        {"@type": "Question", "name": "Which agents does it work with?", "acceptedAnswer": {"@type": "Answer", "text": "Claude Code, Codex, omp, pi, or any agent running in herdr. See the table."}},
-        {"@type": "Question", "name": "Is there an iPhone version?", "acceptedAnswer": {"@type": "Answer", "text": "No. Android only."}},
-        {"@type": "Question", "name": "Does it work with Windows?", "acceptedAnswer": {"@type": "Answer", "text": "No. Your computer needs Linux or macOS."}},
-        {"@type": "Question", "name": "Does it drain my battery?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing runs 90 seconds after you leave, unless you turn on notifications."}},
-        {"@type": "Question", "name": "Is it free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Open source under GPL-3.0."}}
+        {"@type": "Question", "name": "Can I approve Claude Code from my phone?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, from an Android phone. You read the exact command first. Claude Code is tested on a computer, not yet on a phone."}},
+        {"@type": "Question", "name": "Does it need an account or a relay?", "acceptedAnswer": {"@type": "Answer", "text": "No. Your phone connects straight to your computer over SSH."}},
+        {"@type": "Question", "name": "Will it ever approve for me?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing is approved without you, and risky commands need a hold."}},
+        {"@type": "Question", "name": "Does it send notifications or drain the battery?", "acceptedAnswer": {"@type": "Answer", "text": "Notifications are off by default. Nothing runs 90 seconds after you leave, unless you turn them on."}},
+        {"@type": "Question", "name": "Is it free, and what does it run on?", "acceptedAnswer": {"@type": "Answer", "text": "Free and open source (GPL-3.0). It needs an Android 7+ phone and a Linux or macOS computer running herdr. No iPhone or Windows."}}
       ]
     }
   ]
@@ -528,8 +539,8 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section class="navy hero" aria-labelledby="h1">
   <div class="wrap">
     <p class="badge fu" style="--i:0"><i aria-hidden="true"></i>Android · Free · Open source</p>
-    <h1 id="h1"><span class="hl"><span style="--i:0">Answer your coding agents</span></span><span class="hl"><span style="--i:1">from your phone.</span></span></h1>
-    <p class="lede fu" style="--i:1;margin-top:24px">See who is waiting. Read the command. Tap yes.</p>
+    <h1 id="h1"><span class="hl"><span style="--i:0">Approve your coding agents</span></span><span class="hl"><span style="--i:1">from your phone.</span></span></h1>
+    <p class="lede fu" style="--i:1;margin-top:24px">See who is waiting. Read the exact command. Then approve.</p>
     <div class="cta fu" style="--i:2">
       <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
@@ -551,7 +562,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section id="try" aria-labelledby="try-h">
   <div class="wrap try">
     <div>
-      <h2 class="h2" id="try-h">Try it.</h2>
+      <h2 class="h2" id="try-h">Try an approval.</h2>
       <p class="lede">An agent wants to run a command. Press and hold <b>Yes</b>.</p>
     </div>
     <div class="dev-w">
@@ -594,7 +605,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section id="watch" class="film" aria-labelledby="watch-h">
   <div class="wrap">
     <div class="film-head">
-      <h2 class="h2" id="watch-h">24 seconds.</h2>
+      <h2 class="h2" id="watch-h">See it in 24 seconds.</h2>
     </div>
     <div class="player">
       <video id="film" muted loop playsinline preload="none" poster="video/poster.webp" width="1280" height="720" aria-label="A 24 second film of herdr mobile: the board with one agent needing you, a held answer being sent, the exact command shown before approval, and a swipe from one agent to the next.">
@@ -610,27 +621,27 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Story -->
 <section id="features" aria-labelledby="features-h">
   <div class="wrap">
-    <h2 class="h2" id="features-h">How it works.</h2>
+    <h2 class="h2" id="features-h">How you approve from your phone.</h2>
     <div class="story" id="story">
       <div class="steps-col">
         <article class="step on" data-s="board">
           <h3>Every agent in one list.</h3>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents screen: one agent is waiting for you, four are working." loading="lazy"></picture></div></div></div>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents list on a phone: one agent needs you, four are working." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="chat">
           <h3>Read the command, then allow.</h3>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="An agent asks to push a branch. The exact command is shown with Allow once, Always allow and Reject." loading="lazy"></picture></div></div></div>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="Claude Code asks to push a branch, with the exact command and Allow once, Always allow and Reject." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="pane">
           <h3>Chat, or watch it live.</h3>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal view of an agent at work." loading="lazy"></picture></div></div></div>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal view of an agent's tool calls with a red and green diff." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="files">
           <h3>See what it made.</h3>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/files-light.webp"><img src="img/files-dark.webp" width="620" height="1342" alt="A source file opened from the computer." loading="lazy"></picture></div></div></div>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/files-light.webp"><img src="img/files-dark.webp" width="620" height="1342" alt="A source file the agent made, opened on the phone." loading="lazy"></picture></div></div></div>
         </article>
       </div>
       <div class="sticky" aria-hidden="true">
@@ -649,7 +660,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Trust -->
 <section class="band" aria-labelledby="trust-h">
   <div class="wrap">
-    <h2 class="h2" id="trust-h">Private.</h2>
+    <h2 class="h2" id="trust-h">No relay, no account.</h2>
     <div class="cards">
       <div class="card"><h3>Straight to your computer over SSH</h3></div>
       <div class="card"><h3>No account</h3></div>
@@ -663,7 +674,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Works with -->
 <section id="agents" aria-labelledby="agents-h">
   <div class="wrap">
-    <h2 class="h2" id="agents-h">Works with.</h2>
+    <h2 class="h2" id="agents-h">Works with Claude Code, Codex and omp.</h2>
     <div class="table-wrap">
       <table>
         <thead><tr><th scope="col">Agent</th><th scope="col">Status</th></tr></thead>
@@ -682,7 +693,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Install -->
 <section id="install" class="band" aria-labelledby="install-h">
   <div class="wrap">
-    <h2 class="h2" id="install-h">Install.</h2>
+    <h2 class="h2" id="install-h">Install on Android.</h2>
     <ol class="steps">
       <li><h3>Get the APK</h3><p>Android 7 or newer.</p></li>
       <li><h3>Install herdr on your computer</h3><p><a href="https://herdr.dev">herdr.dev</a>. Linux or macOS.</p></li>
@@ -702,24 +713,24 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
     <h2 class="h2" id="faq-h">Questions.</h2>
     <div class="faq">
       <details>
-        <summary>Which agents does it work with?</summary>
-        <p>Claude Code, Codex, omp, pi, or any agent running in herdr. See the table.</p>
+        <summary>Can I approve Claude Code from my phone?</summary>
+        <p>Yes, from an Android phone. You read the exact command first. Claude Code is tested on a computer, not yet on a phone.</p>
       </details>
       <details>
-        <summary>Is there an iPhone version?</summary>
-        <p>No. Android only.</p>
+        <summary>Does it need an account or a relay?</summary>
+        <p>No. Your phone connects straight to your computer over SSH.</p>
       </details>
       <details>
-        <summary>Does it work with Windows?</summary>
-        <p>No. Your computer needs Linux or macOS.</p>
+        <summary>Will it ever approve for me?</summary>
+        <p>No. Nothing is approved without you, and risky commands need a hold.</p>
       </details>
       <details>
-        <summary>Does it drain my battery?</summary>
-        <p>No. Nothing runs 90 seconds after you leave, unless you turn on notifications.</p>
+        <summary>Does it send notifications or drain the battery?</summary>
+        <p>Notifications are off by default. Nothing runs 90 seconds after you leave, unless you turn them on.</p>
       </details>
       <details>
-        <summary>Is it free?</summary>
-        <p>Yes. Open source under GPL-3.0.</p>
+        <summary>Is it free, and what does it run on?</summary>
+        <p>Free and open source (GPL-3.0). It needs an Android 7+ phone and a Linux or macOS computer running herdr. No iPhone or Windows.</p>
       </details>
     </div>
   </div>
@@ -728,7 +739,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Final CTA -->
 <section class="navy final" aria-labelledby="final-h">
   <div class="wrap">
-    <h2 id="final-h">Let the agents work.</h2>
+    <h2 id="final-h">Get it for Android.</h2>
     <div class="cta">
       <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the APK</a>
       <a class="btn btn-ghost" href="https://github.com/tuan3w/herdr-mobile">Star on GitHub</a>
