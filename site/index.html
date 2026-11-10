@@ -179,24 +179,24 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 
 /* ---------- Hero ---------- */
 .navy { background: var(--navy); color: var(--navy-ink); }
-.hero { position: relative; padding-block: clamp(44px, 7vw, 88px) 0; text-align: center; overflow: hidden; background: linear-gradient(180deg, #1b1e36, #141629 85%); background:
+.hero { position: relative; padding-block: clamp(32px, 4.5vw, 60px) 0; text-align: center; overflow: hidden; background: linear-gradient(180deg, #1b1e36, #141629 85%); background:
   radial-gradient(60% 50% at 50% 62%, oklch(.40 .13 275 / .55), transparent 70%),
   radial-gradient(40% 30% at 84% 8%, oklch(.40 .10 40 / .20), transparent 70%),
   linear-gradient(180deg, #1b1e36, #141629 85%); }
 .hero::after { content: ""; position: absolute; inset: auto 0 0; height: 130px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklch, var(--bg) 10%, transparent) 40%, var(--bg)); z-index: 7; }
-.hero .badge { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 14px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--navy-muted); font-size: 14px; font-weight: 500; margin-bottom: 28px; }
+.hero .badge { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 14px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--navy-muted); font-size: 14px; font-weight: 500; margin-bottom: 22px; }
 .hero .badge i { width: 8px; height: 8px; border-radius: 50%; background: #f0905f; }
 .hero h1 { font-size: clamp(38px, 10vw, 76px); letter-spacing: -0.04em; line-height: 1.02; max-width: 17ch; margin-inline: auto; }
-@media (min-width: 700px) { .hero h1 { font-size: clamp(52px, 6.6vw, 76px); } }
+@media (min-width: 700px) { .hero h1 { font-size: clamp(48px, 5.4vw, 72px); max-width: 22ch; } }
 .hl { display: block; overflow: hidden; padding-bottom: .1em; margin-bottom: -.1em; }
 .hl > span { display: inline-block; }
-.hero .lede { color: var(--navy-muted); margin-inline: auto; max-width: 52ch; }
-.cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 34px; }
+.hero .lede { color: var(--navy-muted); margin-inline: auto; max-width: 60ch; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 28px; }
 .trust { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; margin: 26px 0 0; padding: 0; list-style: none; color: var(--navy-muted); font-size: 14px; }
 .trust li { display: flex; align-items: center; gap: 7px; }
 .trust svg { width: 15px; height: 15px; color: #7fd6a2; }
 
-.stage { position: relative; margin: clamp(36px, 6vw, 64px) auto 0; width: min(100%, 980px); height: clamp(280px, 52vw, 560px); }
+.stage { position: relative; margin: clamp(32px, 4.5vw, 48px) auto 0; width: min(100%, 980px); height: clamp(280px, 52vw, 560px); }
 .stage .slot { position: absolute; top: 0; width: 31%; --r: 0deg; translate: calc(var(--px, 0) * var(--k, 0px)) calc(var(--py, 0) * var(--k, 0px)); }
 .stage .slot .dev-w { rotate: var(--r); transform-origin: 50% 100%; }
 .stage .s1 .dev-w, .stage .s3 .dev-w { filter: brightness(.82) saturate(.9); }
@@ -276,6 +276,8 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .ui .row { display: flex; gap: calc(var(--u) * 12); align-items: flex-start; padding: calc(var(--u) * 12) 0; border-top: 1px solid var(--d-line); }
 .ui .row:first-of-type { border-top: 0; }
 .ui .row .spin { flex: none; width: calc(var(--u) * 20); height: calc(var(--u) * 20); border-radius: 50%; border: calc(var(--u) * 2.4) solid #e0a52a; border-right-color: transparent; margin-top: 1px; }
+.ui .row .done { flex: none; width: calc(var(--u) * 20); height: calc(var(--u) * 20); border-radius: 50%; background: var(--d-ok); margin-top: 1px; position: relative; }
+.ui .row .done::after { content: ""; position: absolute; left: 32%; top: 22%; width: 30%; height: 50%; border: solid #fff; border-width: 0 calc(var(--u) * 2.2) calc(var(--u) * 2.2) 0; transform: rotate(40deg); }
 .ui .row b { display: block; font-weight: 500; font-size: calc(var(--u) * 15); letter-spacing: -.01em; }
 .ui .row small { display: block; color: var(--d-muted); font-size: calc(var(--u) * 12); margin-top: 2px; }
 .ui .row time { margin-left: auto; color: var(--d-muted); font-size: calc(var(--u) * 12); padding-left: 8px; white-space: nowrap; }
@@ -505,6 +507,11 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
             <div class="row"><i class="spin"></i><div><b>Upgrade Flutter and fix analyzer warnings</b><small>mobile-app · Codex · studio-mac</small></div><time>6m</time></div>
             <div class="row"><i class="spin"></i><div><b>Remove unused feature flags</b><small>infra · omp · build-server</small></div><time>9m</time></div>
             <div class="row"><i class="spin"></i><div><b>Fix flaky retry test in checkout</b><small>payments-api · omp · studio-mac</small></div><time>18m</time></div>
+          </div>
+          <div class="sec">To review</div>
+          <div>
+            <div class="row"><i class="done"></i><div><b>Rotate staging TLS certificates</b><small>infra · Claude Code · build-server</small></div><time>25m</time></div>
+            <div class="row"><i class="done"></i><div><b>Calibrate the temperature sensors</b><small>sensors · omp · raspi-lab</small></div><time>40m</time></div>
           </div>
           <div class="hint" id="why" role="status">Hold to send · runs a migration on staging</div>
           <button class="reset" id="reset" type="button">Try again</button>
