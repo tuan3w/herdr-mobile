@@ -203,10 +203,37 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .stage .s3 { right: 0; --r: 7deg; --k: 6px; top: 12%; z-index: 1; }
 .notif { position: absolute; z-index: 8; left: 50%; top: -3%; width: min(88%, 360px); margin-left: calc(min(88%, 360px) / -2); display: flex; gap: 12px; align-items: center; text-align: left; padding: 12px 16px; border-radius: 18px; background: rgba(252,252,255,.84); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: #14152a; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.2), 0 14px 28px -6px rgba(0,0,0,.4), 0 0 44px rgba(240,144,95,.2); font-size: 14px; line-height: 1.3; }
 .notif i { flex: none; width: 36px; height: 36px; border-radius: 10px; background: url(img/icon-192.png) center / cover; }
-.notif b { display: block; font-weight: 700; }
+.notif > div { min-width: 0; }
+.notif b { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif s { text-decoration: none; }
 .notif span { color: #5b5c70; }
 .notif em { font-style: normal; font-weight: 700; color: #b8431a; }
-@media (max-width: 640px) { .stage { height: 340px; } .stage .s1, .stage .s3 { display: none; } .stage .s2 { left: 21%; width: 58%; top: 10%; } .notif { top: -4%; font-size: 12.5px; padding: 10px 12px; } .notif i { width: 30px; height: 30px; } header .btn { width: auto; } }
+@keyframes recede { to { scale: .94; opacity: .55; } }
+@media (max-width: 640px) {
+  .hero { padding-block: 22px 0; background:
+    radial-gradient(70% 38% at 50% 78%, oklch(.46 .17 275 / .75), transparent 72%),
+    radial-gradient(50% 20% at 88% 6%, oklch(.40 .10 40 / .22), transparent 70%),
+    linear-gradient(180deg, #1b1e36, #141629 90%); }
+  .hero .badge { margin-bottom: 14px; min-height: 28px; font-size: 13px; }
+  .hero h1 { font-size: 38px; }
+  .hero .lede { font-size: 17px; margin-top: 14px !important; }
+  .hero .cta { flex-wrap: nowrap; margin-top: 20px; gap: 10px; }
+  .hero .cta .btn { width: auto; flex: 1 1 0; padding: 0 12px; }
+  .hero .cta .btn-primary { flex: 1.45 1 0; }
+  .hero .cta .btn svg { display: none; }
+  .stage { height: 400px; margin-top: 22px; }
+  .stage .s1, .stage .s3 { display: none; }
+  .stage .s2 { left: 13%; width: 74%; top: 34px; }
+  .notif { top: 0; width: min(94%, 340px); font-size: 13px; padding: 10px 14px; border-radius: 18px; }
+  .notif s { display: none; }
+  .notif i { width: 34px; height: 34px; }
+  header .btn { width: auto; }
+}
+@supports (animation-timeline: view()) {
+  @media (max-width: 640px) and (prefers-reduced-motion: no-preference) {
+    .stage .s2 { animation: recede linear both; animation-timeline: view(); animation-range: exit 10% exit 90%; }
+  }
+}
 
 /* intro: runs once per session; at rest everything is already in place */
 @keyframes up { from { transform: translateY(105%); } to { transform: none; } }
@@ -423,7 +450,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
     </div>
 
     <div class="stage" id="stage">
-      <div class="notif" role="img" aria-label="Notification: Approve migration for payments ledger, payments-api, needs you for 4 minutes"><i aria-hidden="true"></i><div><b>Approve migration for payments ledger</b><span>payments-api · Claude Code · <em>needs you 4m</em></span></div></div>
+      <div class="notif" role="img" aria-label="Notification: Approve migration for payments ledger, payments-api, needs you for 4 minutes"><i aria-hidden="true"></i><div><b>Approve migration for payments ledger</b><span><s>payments-api · Claude Code · </s><em>needs you 4m</em></span></div></div>
       <div class="slot s1" style="--i:1"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="An agent session in which Claude Code asks to push a branch, showing the exact command, a warning that pushes to a remote, and the buttons Allow once, Always allow and Reject." decoding="async"></picture></div></div></div></div>
       <div class="slot s3" style="--i:2"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal pane showing an agent's tool calls with a red and green diff." decoding="async"></picture></div></div></div></div>
       <div class="slot s2" style="--i:0"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents board: one agent needs you with one-tap answers, four are working." fetchpriority="high" decoding="async"></picture></div></div></div></div>
