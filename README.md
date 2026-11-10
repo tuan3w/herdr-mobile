@@ -1,5 +1,7 @@
 # herdr mobile
 
+**[tuan3w.github.io/herdr-mobile](https://tuan3w.github.io/herdr-mobile/)** · [Download](https://github.com/tuan3w/herdr-mobile/releases/latest) · [User guide](docs/GUIDE.md)
+
 Your coding agents, in your pocket. herdr mobile shows every agent on every
 machine you run [herdr](https://herdr.dev) on, tells you the moment one needs
 you, and lets you answer from wherever you are. It's built for a phone on a bad network,
