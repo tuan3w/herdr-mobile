@@ -9,14 +9,14 @@ Always (cheap, no inputs beyond the repo):
   - site/index.html          the version number and the "What's new" cards
 
 With --assets (needs Pillow and ffmpeg; the outputs are committed):
-  - site/img/*.webp          screenshots cropped to the phone, resized
-  - site/img/og.jpg          1200x630 social card
-  - site/video/board.*       the board loop (webm + mp4 + poster)
+  - site/img/*.webp          the app's renders, resized (needs HERDR_RAW_DIR)
+  - site/video/*, og.jpg     the film, transcoded (needs HERDR_FILM=<rendered mp4>)
 
 Why committed outputs: GitHub Pages just serves site/, so the deploy needs no
 toolchain and a reviewer sees exactly what ships.
 """
 import html
+import os
 import re
 import subprocess
 import sys
@@ -104,46 +104,36 @@ def assets():
     vid = SITE / "video"
     img.mkdir(parents=True, exist_ok=True)
     vid.mkdir(parents=True, exist_ok=True)
-    shots = ROOT / "docs" / "screenshots"
 
-    # Phone screenshots: drop the baked-in caption (the page has real text) and
-    # keep the phone. 560 px wide is 2x the 280 px they display at.
-    for name in ["board", "chat", "pane", "files", "machines", "new-session", "reply", "links", "tailscale", "image"]:
-        im = Image.open(shots / f"{name}.png").convert("RGB")
-        im = im.crop((0, 560, im.width, im.height))
-        im = im.resize((560, round(im.height * 560 / im.width)), Image.LANCZOS)
-        im.save(img / f"{name}.webp", quality=80, method=6)
-
-    hero = Image.open(shots / "hero.png").convert("RGB")
-    phones = hero.crop((0, 330, hero.width, hero.height))  # below the baked-in title
-    for w in (1600, 800):
-        phones.resize((w, round(phones.height * w / phones.width)), Image.LANCZOS).save(
-            img / f"hero-{w}.webp", quality=80, method=6)
-
-    og = hero.resize((1200, 750), Image.LANCZOS).crop((0, 0, 1200, 630))
-    og.save(img / "og.jpg", quality=86, optimize=True)
+    # Screens: the renders `tool/screenshots/run.sh` makes from the demo fleet through the real
+    # widgets (raw, unframed, light and dark). The page frames them in CSS.
+    # Regenerate them first:  cd app && HERDR_RAW_DIR=/tmp/herdr_raw flutter test screenshot_test/store_shots_test.dart
+    raw = Path(os.environ.get("HERDR_RAW_DIR", "/tmp/herdr_raw"))
+    for name in ["board", "chat", "pane", "links", "reply", "files", "image", "new-session", "machines", "tailscale", "browser"]:
+        for theme in ("light", "dark"):
+            im = Image.open(raw / f"{name}_{theme}.png").convert("RGB")
+            im = im.resize((620, round(im.height * 620 / im.width)), Image.LANCZOS)
+            im.save(img / f"{name}-{theme}.webp", quality=78, method=6)
 
     icon = Image.open(ROOT / "app/web/icons/Icon-512.png").convert("RGBA")
     icon.resize((180, 180), Image.LANCZOS).save(SITE / "apple-touch-icon.png")
     icon.resize((192, 192), Image.LANCZOS).save(img / "icon-192.png")
     icon.resize((64, 64), Image.LANCZOS).save(SITE / "favicon.png")
 
-    poster = img / "demo-poster-src.jpg"  # the YouTube thumbnail, fetched once
-    if poster.exists():
-        p = Image.open(poster).convert("RGB").resize((960, 540), Image.LANCZOS)
-        p.save(img / "demo-poster.webp", quality=78, method=6)
-        poster.unlink()
-
-    src = ROOT / "local/release-media/0.1.58/clip-whats-new/assets/recording.mp4"
-    if src.exists():
-        base = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-an", "-vf", "scale=540:-2,fps=24"]
-        subprocess.run(base + ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", str(vid / "board.webm")], check=True)
-        subprocess.run(base + ["-c:v", "libx264", "-crf", "30", "-preset", "slow", "-pix_fmt", "yuv420p",
-                               "-movflags", "+faststart", str(vid / "board.mp4")], check=True)
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-frames:v", "1",
-                        "-vf", "scale=540:-2", str(vid / "poster.png")], check=True)
-        Image.open(vid / "poster.png").convert("RGB").save(img / "board-poster.webp", quality=80, method=6)
-        (vid / "poster.png").unlink()
+    # The film: render site-film/ with HyperFrames (see site-film/README.md), then pass the mp4.
+    film = os.environ.get("HERDR_FILM")
+    if film:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", film, "-an", "-vf", "scale=1280:-2,fps=30",
+                        "-c:v", "libx264", "-crf", "27", "-preset", "slow", "-pix_fmt", "yuv420p",
+                        "-movflags", "+faststart", str(vid / "herdr-mobile.mp4")], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", film, "-an", "-vf", "scale=1280:-2,fps=30",
+                        "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", str(vid / "herdr-mobile.webm")], check=True)
+        frame = vid / "frame.png"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "1.9", "-i", film, "-frames:v", "1", str(frame)], check=True)
+        f = Image.open(frame).convert("RGB")
+        f.resize((1280, 720), Image.LANCZOS).save(vid / "poster.webp", quality=80, method=6)
+        f.resize((1200, 675), Image.LANCZOS).crop((0, 22, 1200, 652)).save(img / "og.jpg", quality=86, optimize=True)
+        frame.unlink()
 
 
 if __name__ == "__main__":

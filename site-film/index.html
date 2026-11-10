@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      /* herdr mobile, 24 s. Navy ground from the app's own hero art; the one loud colour is the
+         "needs you" orange, used only where the app uses it. Indigo is the app's hold fill. */
+      :root {
+        --ground: #1b1e36;
+        --ink: #f3f3fa;
+        --muted: #a6a9c8;
+        --attention: #f0905f;
+        --hold: #6b78e8;
+        --ok: #62c58a;
+        --font-display: "Inter", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); }
+      #root { position: absolute; inset: 0; font-family: var(--font-display); color: var(--ink); overflow: hidden;
+        background: radial-gradient(1200px 900px at 78% 55%, #262a4d 0%, #1b1e36 62%); }
+
+      .copy { position: absolute; left: 150px; width: 800px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+      .eyebrow { font-weight: 700; font-size: 26px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+      .h { font-weight: 700; font-size: 112px; line-height: 1.02; letter-spacing: -0.04em; }
+      .h.m { font-size: 96px; }
+      .sub { font-size: 38px; line-height: 1.35; color: var(--muted); max-width: 680px; }
+      .sub b { color: var(--ink); font-weight: 700; }
+      .or { color: var(--attention); }
+      .line { display: block; overflow: hidden; padding-bottom: .08em; }
+      .line > span { display: inline-block; }
+
+      /* the phone */
+      #phone { position: absolute; left: 1150px; top: 77px; width: 440px; height: 926px; border-radius: 64px; background: #07080f; padding: 12px; box-shadow: 0 0 0 2px #323658, 0 60px 120px rgba(0,0,0,.55); }
+      #screen { position: relative; width: 416px; height: 902px; border-radius: 54px; overflow: hidden; background: #0f1017; }
+      #screen img { position: absolute; left: 0; top: 0; width: 416px; height: 901px; display: block; opacity: 0; }
+      #screen img.first { opacity: 1; }
+      #ov { position: absolute; inset: 0; }
+      .ring { position: absolute; border: 3px solid var(--attention); border-radius: 12px; opacity: 0; }
+      #fill { position: absolute; left: 30px; top: 428px; width: 356px; height: 45px; border-radius: 12px; background: var(--hold); opacity: 0; transform-origin: left center; }
+      #touch { position: absolute; left: 210px; top: 452px; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: rgba(255,255,255,.28); border: 2px solid rgba(255,255,255,.7); opacity: 0; }
+      #sent { position: absolute; left: 50%; top: 300px; display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-radius: 999px; background: #f3f3fa; color: #14152a; font-weight: 700; font-size: 22px; white-space: nowrap; opacity: 0; }
+      #sent i { display: block; width: 22px; height: 22px; border-radius: 50%; background: var(--ok); }
+      #hint { position: absolute; left: 50%; top: 600px; padding: 12px 22px; border-radius: 14px; background: #f3f3fa; color: #14152a; font-weight: 700; font-size: 20px; white-space: nowrap; opacity: 0; }
+      #hint em { font-style: normal; color: #b8431a; }
+      #tag { position: absolute; left: 1700px; top: 330px; width: 150px; font-size: 24px; line-height: 1.3; color: var(--muted); opacity: 0; }
+
+      /* end card */
+      #end { position: absolute; inset: 0; background: var(--ground); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; text-align: center; opacity: 0; }
+      #end .h { font-size: 132px; }
+      #end .url { font-family: var(--font-mono); font-size: 40px; color: var(--ink); padding: 18px 34px; border: 2px solid #3a3e66; border-radius: 18px; }
+      #end .fine { font-size: 28px; color: var(--muted); letter-spacing: .02em; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="24" data-width="1920" data-height="1080">
+
+      <!-- 1 · title -->
+      <div id="c1" class="copy clip" data-start="0" data-duration="3.7" data-track-index="1">
+        <p class="eyebrow" id="c1e">herdr mobile</p>
+        <h1 class="h"><span class="line"><span id="c1a">Your coding agents,</span></span><span class="line"><span id="c1b">in your pocket.</span></span></h1>
+      </div>
+
+      <!-- 2 · board -->
+      <div id="c2" class="copy clip" data-start="3.7" data-duration="4.5" data-track-index="1">
+        <p class="eyebrow">The board</p>
+        <h2 class="h m"><span class="line"><span id="c2a">One board.</span></span><span class="line"><span id="c2b">Every machine.</span></span></h2>
+        <p class="sub" id="c2s">Every agent on every machine, with one count of what <b class="or">needs you</b>.</p>
+      </div>
+
+      <!-- 3 · hold -->
+      <div id="c3" class="copy clip" data-start="8.2" data-duration="4.8" data-track-index="1">
+        <p class="eyebrow">Answer from the board</p>
+        <h2 class="h m"><span class="line"><span id="c3a">Risky answers</span></span><span class="line"><span id="c3b">are held, not tapped.</span></span></h2>
+        <p class="sub" id="c3s">A push, a delete, a migration, “always allow”: press and hold. Let go early and nothing is sent.</p>
+      </div>
+
+      <!-- 4 · command -->
+      <div id="c4" class="copy clip" data-start="13" data-duration="4.4" data-track-index="1">
+        <p class="eyebrow">Safe by construction</p>
+        <h2 class="h m"><span class="line"><span id="c4a">You see the</span></span><span class="line"><span id="c4b">exact command.</span></span></h2>
+        <p class="sub" id="c4s">Nothing is ever approved for you, by default or on a timeout.</p>
+      </div>
+
+      <!-- 5 · terminal -->
+      <div id="c5" class="copy clip" data-start="17.4" data-duration="3.6" data-track-index="1">
+        <p class="eyebrow">Watch and steer</p>
+        <h2 class="h m"><span class="line"><span id="c5a">Live terminal.</span></span><span class="line"><span id="c5b">One swipe on.</span></span></h2>
+        <p class="sub" id="c5s">Swipe to the next agent that needs you.</p>
+      </div>
+
+      <!-- phone -->
+      <div id="phone" class="clip" data-start="0" data-duration="21" data-track-index="2">
+        <div id="screen">
+          <img id="i-board" class="first" src="assets/board_dark.png" alt="" />
+          <img id="i-chat" src="assets/chat_dark.png" alt="" />
+          <img id="i-pane" src="assets/pane_dark.png" alt="" />
+          <img id="i-next" src="assets/new-session_dark.png" alt="" />
+          <div id="ov">
+            <div id="r-status" class="ring clip" data-start="4.6" data-duration="3.4" data-track-index="3" style="left:12px;top:126px;width:98px;height:28px"></div>
+            <div id="r-card" class="ring clip" data-start="5.6" data-duration="2.4" data-track-index="3" style="left:14px;top:238px;width:388px;height:260px"></div>
+            <div id="fill" class="clip" data-start="8.8" data-duration="3.6" data-track-index="3"></div>
+            <div id="sent" class="clip" data-start="10.9" data-duration="2" data-track-index="3"><i></i>Sent</div>
+            <div id="hint" class="clip" data-start="9.2" data-duration="1.2" data-track-index="3">Hold to send · <em>runs a migration on staging</em></div>
+            <div id="r-cmd" class="ring clip" data-start="13.8" data-duration="3.4" data-track-index="3" style="left:14px;top:486px;width:388px;height:122px"></div>
+            <div id="touch" class="clip" data-start="8.9" data-duration="2.6" data-track-index="4"></div>
+            <div id="touch2" class="clip" data-start="18.6" data-duration="1.6" data-track-index="4" style="position:absolute;left:330px;top:480px;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:rgba(255,255,255,.28);border:2px solid rgba(255,255,255,.7);opacity:0"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6 · end -->
+      <div id="end" class="clip" data-start="20.9" data-duration="3.1" data-track-index="5">
+        <h2 class="h"><span class="line"><span id="e1">herdr mobile</span></span></h2>
+        <p class="sub" id="e2" style="max-width:none">Free and open source. Android 7.0+. Over SSH, no relay, no account.</p>
+        <p class="url" id="e3">tuan3w.github.io/herdr-mobile</p>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const IN = { y: 70, opacity: 0, duration: 0.7, ease: "power4.out" };
+      const rise = (sel, t) => tl.from(sel, IN, t);
+      const fade = (sel, t, d = 0.45) => tl.from(sel, { y: 22, opacity: 0, duration: d, ease: "power3.out" }, t);
+      const out = (sel, t) => tl.to(sel, { opacity: 0, y: -18, duration: 0.3, ease: "power2.in" }, t);
+
+      // phone arrives
+      tl.from("#phone", { y: 140, opacity: 0, duration: 1.1, ease: "power4.out" }, 0.5);
+
+      // 1
+      fade("#c1e", 0.1); rise("#c1a", 0.25); rise("#c1b", 0.4);
+      out("#c1", 3.35);
+
+      // 2 · board; status line and card get ringed (the one thing that needs you)
+      fade("#c2 .eyebrow", 3.8); rise("#c2a", 3.9); rise("#c2b", 4.02); fade("#c2s", 4.35);
+      tl.fromTo("#r-status", { opacity: 0, scale: 1.12 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 4.7);
+      tl.fromTo("#r-card", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, 5.8);
+      tl.to("#r-card", { opacity: 0.35, duration: 0.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 6.4);
+      tl.to(["#r-status", "#r-card"], { opacity: 0, duration: 0.3 }, 7.6);
+      out("#c2", 7.85);
+
+      // 3 · hold: touch lands on "1. Yes", ring fills over 1.3 s (slowed so it reads), then Sent
+      fade("#c3 .eyebrow", 8.3); rise("#c3a", 8.4); rise("#c3b", 8.52); fade("#c3s", 8.9);
+            tl.fromTo("#touch", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power3.out" }, 9.0);
+      tl.fromTo("#hint", { opacity: 0, y: 10, xPercent: -50 }, { opacity: 1, y: 0, xPercent: -50, duration: 0.25, ease: "power3.out" }, 9.15);
+      tl.to("#hint", { opacity: 0, duration: 0.2 }, 10.2);
+      tl.fromTo("#fill", { opacity: 1, scaleX: 0 }, { scaleX: 1, opacity: 1, duration: 1.4, ease: "none" }, 9.4);
+      tl.to("#touch", { scale: 0.8, opacity: 0, duration: 0.3, ease: "power2.in" }, 10.9);
+      tl.fromTo("#sent", { opacity: 0, y: 14, xPercent: -50 }, { opacity: 1, y: 0, xPercent: -50, duration: 0.3, ease: "back.out(2)" }, 11.0);
+      tl.to(["#fill", "#sent"], { opacity: 0, duration: 0.35 }, 12.4);
+      out("#c3", 12.7);
+
+      // 4 · crossfade to the chat; ring the command
+      tl.to("#i-board", { opacity: 0, duration: 0.5 }, 12.9);
+      tl.to("#i-chat", { opacity: 1, duration: 0.5 }, 12.9);
+      fade("#c4 .eyebrow", 13.1); rise("#c4a", 13.2); rise("#c4b", 13.32); fade("#c4s", 13.7);
+      tl.fromTo("#r-cmd", { opacity: 0, scale: 1.04 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 14.0);
+      tl.to("#r-cmd", { opacity: 0.4, duration: 0.6, yoyo: true, repeat: 1, ease: "sine.inOut" }, 15.2);
+      tl.to("#r-cmd", { opacity: 0, duration: 0.3 }, 17.0);
+      out("#c4", 17.05);
+
+      // 5 · terminal, then a swipe takes the screen to the next agent
+      tl.to("#i-chat", { opacity: 0, duration: 0.45 }, 17.3);
+      tl.to("#i-pane", { opacity: 1, duration: 0.45 }, 17.3);
+      fade("#c5 .eyebrow", 17.5); rise("#c5a", 17.6); rise("#c5b", 17.72); fade("#c5s", 18.0);
+            tl.fromTo("#touch2", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 18.65);
+      tl.to("#touch2", { x: -240, duration: 0.55, ease: "power2.inOut" }, 18.9);
+      tl.to("#touch2", { opacity: 0, duration: 0.2 }, 19.4);
+      tl.to("#i-pane", { opacity: 0, x: -60, duration: 0.5, ease: "power2.inOut" }, 19.3);
+      tl.fromTo("#i-next", { x: 60 }, { opacity: 1, x: 0, duration: 0.5, ease: "power2.out" }, 19.3);
+      out("#c5", 20.65);
+
+      // 6 · end card
+      tl.to("#end", { opacity: 1, duration: 0.45, ease: "power2.out" }, 20.95);
+      rise("#e1", 21.1); fade("#e2", 21.45); fade("#e3", 21.65);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
