@@ -217,7 +217,7 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
   .hero .badge { margin-bottom: 14px; min-height: 28px; font-size: 13px; }
   .hero h1 { font-size: 38px; }
   .hero .lede { font-size: 17px; margin-top: 14px !important; }
-  .hero .cta { flex-wrap: nowrap; margin-top: 20px; gap: 10px; }
+  .hero .cta { flex-direction: row; flex-wrap: nowrap; margin-top: 20px; gap: 10px; }
   .hero .cta .btn { width: auto; flex: 1 1 0; padding: 0 12px; }
   .hero .cta .btn-primary { flex: 1.45 1 0; }
   .hero .cta .btn svg { display: none; }
@@ -226,6 +226,7 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
   .stage .s2 { left: 13%; width: 74%; top: 34px; }
   .notif { top: 0; width: min(94%, 340px); font-size: 13px; padding: 10px 14px; border-radius: 18px; }
   .notif s { display: none; }
+  .notif b s { display: none; }
   .notif i { width: 34px; height: 34px; }
   header .btn { width: auto; }
 }
@@ -234,6 +235,19 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
     .stage .s2 { animation: recede linear both; animation-timeline: view(); animation-range: exit 10% exit 90%; }
   }
 }
+
+/* The hero phone presses and holds its own Yes once, then says Sent. One run, then it stays still. */
+.hold-ov { position: absolute; z-index: 3; left: 7.2%; top: 47.5%; width: 85.6%; height: 4.9%; pointer-events: none; display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .hold-ov { display: block; }
+  .hold-ov .hf { position: absolute; inset: 0; border-radius: 2.4cqw; background: var(--d-hold); opacity: 0; transform: scaleX(0); transform-origin: left; animation: holdfill 2.4s linear 1.9s both; }
+  .hold-ov .hd { position: absolute; left: 50%; top: 50%; width: 11cqw; height: 11cqw; margin: -5.5cqw 0 0 -5.5cqw; border-radius: 50%; background: rgba(255,255,255,.32); border: .5cqw solid rgba(255,255,255,.85); opacity: 0; animation: holddot 2.4s ease-out 1.9s both; }
+  .hold-ov .hs { position: absolute; left: 50%; bottom: 170%; display: flex; align-items: center; gap: 2cqw; padding: 2cqw 4cqw; border-radius: 99cqw; background: #f3f3fa; color: #14152a; font: 700 4cqw/1 var(--font); white-space: nowrap; opacity: 0; translate: -50% 0; animation: holdsent 2.4s var(--ease) 1.9s both; }
+  .hold-ov .hs b { width: 3.6cqw; height: 3.6cqw; border-radius: 50%; background: #2e8b57; }
+}
+@keyframes holdfill { 0% { opacity: 0; transform: scaleX(0); } 8% { opacity: .92; transform: scaleX(0); } 62% { opacity: .92; transform: scaleX(1); } 88% { opacity: .92; transform: scaleX(1); } 100% { opacity: 0; transform: scaleX(1); } }
+@keyframes holddot { 0% { opacity: 0; transform: scale(1.5); } 8% { opacity: 1; transform: scale(1); } 66% { opacity: 1; transform: scale(1); } 76% { opacity: 0; transform: scale(.8); } 100% { opacity: 0; } }
+@keyframes holdsent { 0%, 60% { opacity: 0; transform: translateY(8px); } 70% { opacity: 1; transform: none; } 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
 /* intro: runs once per session; at rest everything is already in place */
 @keyframes up { from { transform: translateY(105%); } to { transform: none; } }
@@ -450,10 +464,10 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
     </div>
 
     <div class="stage" id="stage">
-      <div class="notif" role="img" aria-label="Notification: Approve migration for payments ledger, payments-api, needs you for 4 minutes"><i aria-hidden="true"></i><div><b>Approve migration for payments ledger</b><span><s>payments-api · Claude Code · </s><em>needs you 4m</em></span></div></div>
+      <div class="notif" role="img" aria-label="Notification: Approve migration for payments ledger, payments-api, needs you for 4 minutes"><i aria-hidden="true"></i><div><b>Approve migration<s> for payments ledger</s></b><span><s>payments-api · Claude Code · </s><em>needs you 4m</em></span></div></div>
       <div class="slot s1" style="--i:1"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="An agent session in which Claude Code asks to push a branch, showing the exact command, a warning that pushes to a remote, and the buttons Allow once, Always allow and Reject." decoding="async"></picture></div></div></div></div>
       <div class="slot s3" style="--i:2"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal pane showing an agent's tool calls with a red and green diff." decoding="async"></picture></div></div></div></div>
-      <div class="slot s2" style="--i:0"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents board: one agent needs you with one-tap answers, four are working." fetchpriority="high" decoding="async"></picture></div></div></div></div>
+      <div class="slot s2" style="--i:0"><div class="dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents board: one agent needs you with one-tap answers, four are working." fetchpriority="high" decoding="async"></picture><div class="hold-ov" aria-hidden="true"><i class="hf"></i><i class="hd"></i><span class="hs"><b></b>Sent</span></div></div></div></div></div>
     </div>
   </div>
 </section>
