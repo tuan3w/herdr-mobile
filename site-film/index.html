@@ -65,30 +65,25 @@
 
       <!-- 2 · board -->
       <div id="c2" class="copy clip" data-start="3.7" data-duration="4.5" data-track-index="1">
-        <p class="eyebrow">The board</p>
-        <h2 class="h m"><span class="line"><span id="c2a">One board.</span></span><span class="line"><span id="c2b">Every machine.</span></span></h2>
-        <p class="sub" id="c2s">Every agent on every machine, with one count of what <b class="or">needs you</b>.</p>
+        <h2 class="h m"><span class="line"><span id="c2a">One list.</span></span><span class="line"><span id="c2b">Every computer.</span></span></h2>
+        <p class="sub" id="c2s">Who is <b class="or">waiting</b> for you, at a glance.</p>
       </div>
 
       <!-- 3 · hold -->
       <div id="c3" class="copy clip" data-start="8.2" data-duration="4.8" data-track-index="1">
-        <p class="eyebrow">Answer from the board</p>
-        <h2 class="h m"><span class="line"><span id="c3a">Risky answers</span></span><span class="line"><span id="c3b">are held, not tapped.</span></span></h2>
-        <p class="sub" id="c3s">A push, a delete, a migration, “always allow”: press and hold. Let go early and nothing is sent.</p>
+        <h2 class="h m"><span class="line"><span id="c3a">Risky? Hold</span></span><span class="line"><span id="c3b">to send.</span></span></h2>
+        <p class="sub" id="c3s">Let go early and nothing is sent.</p>
       </div>
 
       <!-- 4 · command -->
       <div id="c4" class="copy clip" data-start="13" data-duration="4.4" data-track-index="1">
-        <p class="eyebrow">Safe by construction</p>
-        <h2 class="h m"><span class="line"><span id="c4a">You see the</span></span><span class="line"><span id="c4b">exact command.</span></span></h2>
-        <p class="sub" id="c4s">Nothing is ever approved for you, by default or on a timeout.</p>
+        <h2 class="h m"><span class="line"><span id="c4a">Read the</span></span><span class="line"><span id="c4b">command first.</span></span></h2>
+        <p class="sub" id="c4s">Nothing is allowed without your yes.</p>
       </div>
 
       <!-- 5 · terminal -->
       <div id="c5" class="copy clip" data-start="17.4" data-duration="3.6" data-track-index="1">
-        <p class="eyebrow">Watch and steer</p>
-        <h2 class="h m"><span class="line"><span id="c5a">Live terminal.</span></span><span class="line"><span id="c5b">One swipe on.</span></span></h2>
-        <p class="sub" id="c5s">Swipe to the next agent that needs you.</p>
+        <h2 class="h m"><span class="line"><span id="c5a">Watch it live.</span></span><span class="line"><span id="c5b">Swipe to the next.</span></span></h2>
       </div>
 
       <!-- phone -->
@@ -114,7 +109,7 @@
       <!-- 6 · end -->
       <div id="end" class="clip" data-start="20.9" data-duration="3.1" data-track-index="5">
         <h2 class="h"><span class="line"><span id="e1">herdr mobile</span></span></h2>
-        <p class="sub" id="e2" style="max-width:none">Free and open source. Android 7.0+. Over SSH, no relay, no account.</p>
+        <p class="sub" id="e2" style="max-width:none">Free · Open source · Android</p>
         <p class="url" id="e3">tuan3w.github.io/herdr-mobile</p>
       </div>
     </div>
@@ -134,16 +129,14 @@
       fade("#c1e", 0.1); rise("#c1a", 0.25); rise("#c1b", 0.4);
       out("#c1", 3.35);
 
-      // 2 · board; status line and card get ringed (the one thing that needs you)
-      fade("#c2 .eyebrow", 3.8); rise("#c2a", 3.9); rise("#c2b", 4.02); fade("#c2s", 4.35);
+      // 2 · board; status line and card get ringed (the one thing that needs you) rise("#c2a", 3.9); rise("#c2b", 4.02); fade("#c2s", 4.35);
       tl.fromTo("#r-status", { opacity: 0, scale: 1.12 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 4.7);
       tl.fromTo("#r-card", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, 5.8);
       tl.to("#r-card", { opacity: 0.35, duration: 0.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 6.4);
       tl.to(["#r-status", "#r-card"], { opacity: 0, duration: 0.3 }, 7.6);
       out("#c2", 7.85);
 
-      // 3 · hold: touch lands on "1. Yes", ring fills over 1.3 s (slowed so it reads), then Sent
-      fade("#c3 .eyebrow", 8.3); rise("#c3a", 8.4); rise("#c3b", 8.52); fade("#c3s", 8.9);
+      // 3 · hold: touch lands on "1. Yes", ring fills over 1.3 s (slowed so it reads), then Sent rise("#c3a", 8.4); rise("#c3b", 8.52); fade("#c3s", 8.9);
             tl.fromTo("#touch", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power3.out" }, 9.0);
       tl.fromTo("#hint", { opacity: 0, y: 10, xPercent: -50 }, { opacity: 1, y: 0, xPercent: -50, duration: 0.25, ease: "power3.out" }, 9.15);
       tl.to("#hint", { opacity: 0, duration: 0.2 }, 10.2);
@@ -155,8 +148,7 @@
 
       // 4 · crossfade to the chat; ring the command
       tl.to("#i-board", { opacity: 0, duration: 0.5 }, 12.9);
-      tl.to("#i-chat", { opacity: 1, duration: 0.5 }, 12.9);
-      fade("#c4 .eyebrow", 13.1); rise("#c4a", 13.2); rise("#c4b", 13.32); fade("#c4s", 13.7);
+      tl.to("#i-chat", { opacity: 1, duration: 0.5 }, 12.9); rise("#c4a", 13.2); rise("#c4b", 13.32); fade("#c4s", 13.7);
       tl.fromTo("#r-cmd", { opacity: 0, scale: 1.04 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 14.0);
       tl.to("#r-cmd", { opacity: 0.4, duration: 0.6, yoyo: true, repeat: 1, ease: "sine.inOut" }, 15.2);
       tl.to("#r-cmd", { opacity: 0, duration: 0.3 }, 17.0);
@@ -164,8 +156,7 @@
 
       // 5 · terminal, then a swipe takes the screen to the next agent
       tl.to("#i-chat", { opacity: 0, duration: 0.45 }, 17.3);
-      tl.to("#i-pane", { opacity: 1, duration: 0.45 }, 17.3);
-      fade("#c5 .eyebrow", 17.5); rise("#c5a", 17.6); rise("#c5b", 17.72); fade("#c5s", 18.0);
+      tl.to("#i-pane", { opacity: 1, duration: 0.45 }, 17.3); rise("#c5a", 17.6); rise("#c5b", 17.72); 
             tl.fromTo("#touch2", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 18.65);
       tl.to("#touch2", { x: -240, duration: 0.55, ease: "power2.inOut" }, 18.9);
       tl.to("#touch2", { opacity: 0, duration: 0.2 }, 19.4);

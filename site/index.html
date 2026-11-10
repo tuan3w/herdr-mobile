@@ -68,11 +68,11 @@ try{if(!sessionStorage.getItem('hm-intro')&&!matchMedia('(prefers-reduced-motion
     {
       "@type": "FAQPage",
       "mainEntity": [
-        {"@type": "Question", "name": "Which agents does it work with?", "acceptedAnswer": {"@type": "Answer", "text": "Any agent running in a herdr pane shows on the board. Chat sessions start omp, Claude Code, Codex or pi. omp is verified on a phone; Claude Code was checked on a desktop, Codex chat works with approvals unverified, and pi is built with no turn verified."}},
-        {"@type": "Question", "name": "Is there an iPhone version?", "acceptedAnswer": {"@type": "Answer", "text": "No. It is an Android app for Android 7.0 and newer."}},
-        {"@type": "Question", "name": "Does it work with Windows machines?", "acceptedAnswer": {"@type": "Answer", "text": "No. Your machines need a POSIX shell, so Linux or macOS."}},
-        {"@type": "Question", "name": "Does it drain my battery?", "acceptedAnswer": {"@type": "Answer", "text": "Not when you are not looking. 90 seconds after you leave, nothing runs, unless you turn on notifications, which use a small background service."}},
-        {"@type": "Question", "name": "Is it free and open source?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. It is GPL-3.0 and the source is on GitHub."}}
+        {"@type": "Question", "name": "Which agents does it work with?", "acceptedAnswer": {"@type": "Answer", "text": "Claude Code, Codex, omp, pi, or any agent running in herdr. See the table."}},
+        {"@type": "Question", "name": "Is there an iPhone version?", "acceptedAnswer": {"@type": "Answer", "text": "No. Android only."}},
+        {"@type": "Question", "name": "Does it work with Windows?", "acceptedAnswer": {"@type": "Answer", "text": "No. Your computer needs Linux or macOS."}},
+        {"@type": "Question", "name": "Does it drain my battery?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing runs 90 seconds after you leave, unless you turn on notifications."}},
+        {"@type": "Question", "name": "Is it free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Open source under GPL-3.0."}}
       ]
     }
   ]
@@ -192,9 +192,6 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .hl > span { display: inline-block; }
 .hero .lede { color: var(--navy-muted); margin-inline: auto; max-width: 60ch; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 28px; }
-.trust { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; margin: 26px 0 0; padding: 0; list-style: none; color: var(--navy-muted); font-size: 14px; }
-.trust li { display: flex; align-items: center; gap: 7px; }
-.trust svg { width: 15px; height: 15px; color: #7fd6a2; }
 
 .stage { position: relative; margin: clamp(32px, 4.5vw, 48px) auto 0; width: min(100%, 980px); height: clamp(280px, 52vw, 560px); }
 .stage .slot { position: absolute; top: 0; width: 31%; --r: 0deg; translate: calc(var(--px, 0) * var(--k, 0px)) calc(var(--py, 0) * var(--k, 0px)); }
@@ -233,15 +230,6 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 
 /* ---------- Try it: the interactive board ---------- */
 .try { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: clamp(32px, 7vw, 96px); align-items: center; }
-.checks { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 14px; }
-.checks li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: center; color: var(--muted); transition: color 250ms ease-out; }
-.checks li b { display: block; color: var(--ink); font-weight: 600; }
-.checks .tick { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; transition: background-color 250ms ease-out, border-color 250ms ease-out; }
-.checks .tick svg { width: 14px; height: 14px; stroke: var(--bg); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 22; stroke-dashoffset: 22; transition: stroke-dashoffset 350ms ease-out 120ms; }
-.checks li.on { color: var(--ink); }
-.checks li.on .tick { background: var(--ok); border-color: var(--ok); }
-.checks li.on .tick svg { stroke-dashoffset: 0; }
-.try-note { margin-top: 22px; font-size: 14.5px; color: var(--muted); }
 
 .ui { --u: .245cqw; position: absolute; inset: 0; font-family: var(--font); color: var(--d-ink); background: var(--d-bg); padding: calc(var(--u) * 52) calc(var(--u) * 18) 0; overflow: hidden; user-select: none; -webkit-user-select: none; font-size: calc(var(--u) * 15); line-height: 1.3; }
 .ui .bar { display: flex; align-items: center; justify-content: space-between; color: var(--d-muted); font-size: calc(var(--u) * 13); }
@@ -307,14 +295,9 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .story-head { max-width: 760px; }
 .story { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: clamp(32px, 8vw, 120px); margin-top: clamp(40px, 6vw, 72px); align-items: start; }
 .steps-col { display: grid; }
-.step { min-height: 72vh; display: flex; flex-direction: column; justify-content: center; padding-block: 40px; opacity: .45; transform: translateY(8px); transition: opacity 320ms var(--ease-sheet), transform 320ms var(--ease-sheet); }
+.step { min-height: 56vh; display: flex; flex-direction: column; justify-content: center; padding-block: 40px; opacity: .45; transform: translateY(8px); transition: opacity 320ms var(--ease-sheet), transform 320ms var(--ease-sheet); }
 .step.on, .step:only-child { opacity: 1; transform: none; }
 .step h3 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.028em; }
-.step .lead { margin-top: 16px; color: var(--muted); max-width: 46ch; }
-.points { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 12px; max-width: 52ch; }
-.points li { position: relative; padding-left: 30px; }
-.points li::before { content: ""; position: absolute; left: 0; top: .5em; width: 14px; height: 8px; border-left: 2.5px solid var(--ok); border-bottom: 2.5px solid var(--ok); transform: translateY(-50%) rotate(-48deg) scale(.92); }
-.points b { font-weight: 600; }
 .sticky .rail { order: 2; }
 .sticky { position: sticky; top: calc(76px + env(safe-area-inset-top, 0px)); height: calc(100svh - 100px); display: grid; align-items: center; justify-items: center; grid-template-columns: 1fr 14px; gap: 18px; }
 .sticky .dev-w { width: min(100%, calc((100svh - 130px) / 2.12)); margin-inline: auto; }
@@ -324,12 +307,6 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .sticky .dev .in picture { opacity: 0; transform: translateY(14px) scale(.985); transition: opacity 320ms var(--ease-sheet), transform 320ms var(--ease-sheet); }
 .sticky .dev .in picture.on { opacity: 1; transform: none; }
 .inline-dev { display: none; }
-.chipline { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 10px; }
-.chip2 { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14.5px; font-weight: 500; }
-.chip2 i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.chip2.need { background: var(--attention-bg); border-color: transparent; color: var(--attention); }
-.chip2.need i { background: var(--attention); }
-.chip2.ok i { background: var(--ok); }
 @media (max-width: 900px) {
   .story { grid-template-columns: 1fr; }
   .sticky { display: none; }
@@ -346,8 +323,6 @@ header .btn { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius:
 .fine-print { margin-top: 20px; color: var(--muted); font-size: 14.5px; }
 @media (max-width: 900px) { .cards { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
-.hero .fine { margin-top: 14px; color: var(--navy-muted); font-size: 15px; }
-.hero .fine a { text-underline-offset: 3px; }
 .latest { margin-top: 28px; color: var(--muted); font-size: 15px; }
 .latest a { text-underline-offset: 3px; }
 
@@ -378,18 +353,7 @@ td span.s i { width: 9px; height: 9px; border-radius: 50%; }
 .steps li::before { content: counter(s); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: var(--bg); font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 20px; }
 .steps h3 { font-size: 21px; letter-spacing: -.015em; line-height: 1.2; }
 .steps p { margin-top: 10px; color: var(--muted); font-size: 16px; line-height: 1.55; }
-.code { position: relative; margin-top: 16px; border-radius: 12px; background: #171826; color: #e8e8f2; }
-.code pre { margin: 0; padding: 14px 52px 14px 16px; overflow-x: auto; font: 13.5px/1.55 var(--mono); }
-.code pre::-webkit-scrollbar { height: 8px; }
-.code pre::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 4px; }
-.copy-btn { position: absolute; top: 4px; right: 4px; width: 44px; height: 44px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 10px; color: #b9bbd6; cursor: pointer; transition: color 150ms ease-out, transform 120ms ease-out; touch-action: manipulation; }
-.copy-btn:active { transform: scale(.92); }
-@media (hover: hover) { .copy-btn:hover { color: #fff; } }
-.copy-btn:focus-visible { outline-color: #fff; }
-.copy-btn svg { width: 18px; height: 18px; }
-.copy-btn .ok { display: none; color: #7fd6a2; }
-.copy-btn[data-done] .ok { display: block; } .copy-btn[data-done] .cp { display: none; }
-@media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+@media (hover: hover) { @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
 
 /* ---------- FAQ ---------- */
 .faq { max-width: 780px; margin-top: 40px; border-top: 1px solid var(--line); }
@@ -448,9 +412,8 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section class="navy hero" aria-labelledby="h1">
   <div class="wrap">
     <p class="badge fu" style="--i:0"><i aria-hidden="true"></i>Android · Free · Open source</p>
-    <h1 id="h1"><span class="hl"><span style="--i:0">Run your coding agents</span></span><span class="hl"><span style="--i:1">from your phone.</span></span></h1>
-    <p class="lede fu" style="--i:1;margin-top:24px">Every agent, every machine. Approve the exact command from your phone.</p>
-    <p class="fine fu" style="--i:1">For <a href="https://herdr.dev">herdr</a>, the terminal workspace for coding agents.</p>
+    <h1 id="h1"><span class="hl"><span style="--i:0">Answer your coding agents</span></span><span class="hl"><span style="--i:1">from your phone.</span></span></h1>
+    <p class="lede fu" style="--i:1;margin-top:24px">See who is waiting. Read the command. Tap yes.</p>
     <div class="cta fu" style="--i:2">
       <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
@@ -458,11 +421,6 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
       </a>
       <a class="btn btn-ghost" href="#try">Try it now</a>
     </div>
-    <ul class="trust fu" style="--i:3" aria-label="At a glance">
-      <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>Over SSH only</li>
-      <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>No account</li>
-      <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>Android 7+ · v<span data-version>0.1.61</span></li>
-    </ul>
 
     <div class="stage" id="stage">
       <div class="notif" role="img" aria-label="Notification: Approve migration for payments ledger, payments-api, needs you for 4 minutes"><i aria-hidden="true"></i><div><b>Approve migration for payments ledger</b><span>payments-api · Claude Code · <em>needs you 4m</em></span></div></div>
@@ -477,13 +435,8 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section id="try" aria-labelledby="try-h">
   <div class="wrap try">
     <div>
-      <h2 class="h2" id="try-h">Hold to approve.</h2>
-      <p class="lede">Press and hold <b>1. Yes</b>. Let go early and nothing is sent.</p>
-      <ul class="checks" id="checks" aria-live="polite">
-        <li data-k="read"><span class="tick"><svg viewBox="0 0 16 16"><path d="m3 8.5 3.2 3L13 4.5"/></svg></span><b>The command stays on the card</b></li>
-        <li data-k="hold"><span class="tick"><svg viewBox="0 0 16 16"><path d="m3 8.5 3.2 3L13 4.5"/></svg></span><b>A tap only explains why</b></li>
-        <li data-k="sent"><span class="tick"><svg viewBox="0 0 16 16"><path d="m3 8.5 3.2 3L13 4.5"/></svg></span><b>Re-checked just before it sends</b></li>
-      </ul>
+      <h2 class="h2" id="try-h">Try it.</h2>
+      <p class="lede">An agent wants to run a command. Press and hold <b>Yes</b>.</p>
     </div>
     <div class="dev-w">
       <div class="dev"><div class="in">
@@ -525,7 +478,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <section id="watch" class="film" aria-labelledby="watch-h">
   <div class="wrap">
     <div class="film-head">
-      <h2 class="h2" id="watch-h">Watch it in 24 seconds.</h2>
+      <h2 class="h2" id="watch-h">24 seconds.</h2>
     </div>
     <div class="player">
       <video id="film" muted loop playsinline preload="none" poster="video/poster.webp" width="1280" height="720" aria-label="A 24 second film of herdr mobile: the board with one agent needing you, a held answer being sent, the exact command shown before approval, and a swipe from one agent to the next.">
@@ -534,58 +487,35 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
       </video>
       <button class="pbtn" id="film-toggle" type="button" hidden>Pause</button>
     </div>
-    <p class="film-note">Demo data, drawn from the real app. Silent.</p>
+    <p class="film-note">Demo data.</p>
   </div>
 </section>
 
 <!-- Story -->
 <section id="features" aria-labelledby="features-h">
   <div class="wrap">
-    <h2 class="h2" id="features-h">Built for the seconds you have.</h2>
+    <h2 class="h2" id="features-h">How it works.</h2>
     <div class="story" id="story">
       <div class="steps-col">
-
         <article class="step on" data-s="board">
-          <h3>Every agent, one board.</h3>
-          <p class="lead">Grouped by what needs you.</p>
-          <ul class="points">
-            <li>One count: needs you, working, to review</li>
-            <li>Unreachable machines stay listed, dimmed</li>
-          </ul>
-          <div class="chipline" aria-hidden="true"><span class="chip2 need"><i></i>Needs you · 1</span><span class="chip2"><i></i>Working · 4</span><span class="chip2 ok"><i></i>To review · 2</span></div>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents board with one agent needing you." loading="lazy"></picture></div></div></div>
+          <h3>Every agent in one list.</h3>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/board-light.webp"><img src="img/board-dark.webp" width="620" height="1342" alt="The Agents screen: one agent is waiting for you, four are working." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="chat">
-          <h3>Answer with the command in view.</h3>
-          <p class="lead">One-tap chips on the card. Risky ones are held.</p>
-          <ul class="points">
-            <li>Push, delete, always allow: hold 0.7 s</li>
-            <li>Answers that just moved ignore taps</li>
-          </ul>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="An agent asks to push a branch, with the exact command shown." loading="lazy"></picture></div></div></div>
+          <h3>Read the command, then allow.</h3>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/chat-light.webp"><img src="img/chat-dark.webp" width="620" height="1342" alt="An agent asks to push a branch. The exact command is shown with Allow once, Always allow and Reject." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="pane">
-          <h3>Steer from anywhere.</h3>
-          <p class="lead">Chat or live terminal. Swipe to the next agent.</p>
-          <ul class="points">
-            <li>Message an agent while it works</li>
-            <li>Start one in a new worktree</li>
-          </ul>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal pane." loading="lazy"></picture></div></div></div>
+          <h3>Chat, or watch it live.</h3>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/pane-light.webp"><img src="img/pane-dark.webp" width="620" height="1342" alt="A live terminal view of an agent at work." loading="lazy"></picture></div></div></div>
         </article>
 
         <article class="step" data-s="files">
-          <h3>Read what it made.</h3>
-          <p class="lead">Files, diffs, pictures and apps, from the host.</p>
-          <ul class="points">
-            <li>Source, Markdown, JSON, images, video</li>
-            <li>Dev-server links open from the answer</li>
-          </ul>
-          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/files-light.webp"><img src="img/files-dark.webp" width="620" height="1342" alt="A source file opened from the host." loading="lazy"></picture></div></div></div>
+          <h3>See what it made.</h3>
+          <div class="inline-dev dev-w"><div class="dev"><div class="in"><picture><source media="(prefers-color-scheme: light)" srcset="img/files-light.webp"><img src="img/files-dark.webp" width="620" height="1342" alt="A source file opened from the computer." loading="lazy"></picture></div></div></div>
         </article>
-
       </div>
       <div class="sticky" aria-hidden="true">
         <div class="rail"><i class="on"></i><i></i><i></i><i></i></div>
@@ -603,30 +533,30 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Trust -->
 <section class="band" aria-labelledby="trust-h">
   <div class="wrap">
-    <h2 class="h2" id="trust-h">Your SSH. Your keys. No relay.</h2>
+    <h2 class="h2" id="trust-h">Private.</h2>
     <div class="cards">
-      <div class="card"><h3>Host keys pinned</h3><p>A changed key is a hard stop.</p></div>
-      <div class="card"><h3>Secrets in the keychain</h3><p>Never in preferences.</p></div>
-      <div class="card"><h3>Never approved on a timeout</h3><p>Every request shows its command.</p></div>
-      <div class="card"><h3>Stale is shown as stale</h3><p>A saved copy never answers anything.</p></div>
+      <div class="card"><h3>Straight to your computer over SSH</h3></div>
+      <div class="card"><h3>No account</h3></div>
+      <div class="card"><h3>Never says yes for you</h3></div>
+      <div class="card"><h3>Keys stay in the Android keychain</h3></div>
     </div>
-    <p class="fine-print">Notifications are optional and off by default. Agent chat installs a small keeper script on your machine.</p>
+    <p class="fine-print">Chat sessions run a small helper on your computer.</p>
   </div>
 </section>
 
 <!-- Works with -->
 <section id="agents" aria-labelledby="agents-h">
   <div class="wrap">
-    <h2 class="h2" id="agents-h">Which agents.</h2>
+    <h2 class="h2" id="agents-h">Works with.</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th scope="col">Agent</th><th scope="col">Chat from the phone</th></tr></thead>
+        <thead><tr><th scope="col">Agent</th><th scope="col">Status</th></tr></thead>
         <tbody>
-          <tr><td>omp</td><td><span class="s ok"><i></i>Verified on a phone</span></td></tr>
-          <tr><td>Claude Code</td><td><span class="s part"><i></i>Checked on desktop, not phone</span></td></tr>
-          <tr><td>Codex</td><td><span class="s part"><i></i>Chat works, approvals unverified</span></td></tr>
-          <tr><td>pi</td><td><span class="s no"><i></i>Built, no turn verified</span></td></tr>
-          <tr><td>Any terminal agent</td><td><span class="s ok"><i></i>Shown on the board</span></td></tr>
+          <tr><td>omp</td><td><span class="s ok"><i></i>Tested on a phone</span></td></tr>
+          <tr><td>Claude Code</td><td><span class="s part"><i></i>Tested on a computer, not a phone yet</span></td></tr>
+          <tr><td>Codex</td><td><span class="s part"><i></i>Chat works, approving untested</span></td></tr>
+          <tr><td>pi</td><td><span class="s no"><i></i>Not tested yet</span></td></tr>
+          <tr><td>Any terminal agent</td><td><span class="s ok"><i></i>Shows in the list</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -636,24 +566,11 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
 <!-- Install -->
 <section id="install" class="band" aria-labelledby="install-h">
   <div class="wrap">
-    <h2 class="h2" id="install-h">Three steps.</h2>
+    <h2 class="h2" id="install-h">Install.</h2>
     <ol class="steps">
-      <li>
-        <h3>Install the APK</h3>
-        <p>Android 7+. Check it against <code>SHA256SUMS</code>.</p>
-        <div class="code"><pre><code>sha256sum -c SHA256SUMS</code></pre><button class="copy-btn" type="button" aria-label="Copy command"><svg class="cp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></button></div>
-      </li>
-      <li>
-        <h3>Check your machine</h3>
-        <p>It needs sshd, <a href="https://herdr.dev">herdr</a> and, for chat, python3.</p>
-        <div class="code"><pre><code>herdr --version
-python3 --version</code></pre><button class="copy-btn" type="button" aria-label="Copy commands"><svg class="cp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></button></div>
-      </li>
-      <li>
-        <h3>Add it</h3>
-        <p>Machines, then +. Key, password or Tailscale.</p>
-        <p style="margin-top:14px"><a href="https://github.com/tuan3w/herdr-mobile/blob/main/docs/GUIDE.md" style="font-weight:600;text-underline-offset:4px">User guide</a></p>
-      </li>
+      <li><h3>Get the APK</h3><p>Android 7 or newer.</p></li>
+      <li><h3>Install herdr on your computer</h3><p><a href="https://herdr.dev">herdr.dev</a>. Linux or macOS.</p></li>
+      <li><h3>Add your computer</h3><p>In the app: Machines, then +.</p></li>
     </ol>
     <div class="cta" style="justify-content:flex-start">
       <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the latest APK</a>
@@ -670,23 +587,23 @@ python3 --version</code></pre><button class="copy-btn" type="button" aria-label=
     <div class="faq">
       <details>
         <summary>Which agents does it work with?</summary>
-        <p>Any agent running in a herdr pane shows on the board. Chat sessions start omp, Claude Code, Codex or pi. omp is verified on a phone; see the table for the rest.</p>
+        <p>Claude Code, Codex, omp, pi, or any agent running in herdr. See the table.</p>
       </details>
       <details>
         <summary>Is there an iPhone version?</summary>
-        <p>No. It is an Android app for Android 7.0 and newer.</p>
+        <p>No. Android only.</p>
       </details>
       <details>
-        <summary>Does it work with Windows machines?</summary>
-        <p>No. Your machines need a POSIX shell, so Linux or macOS.</p>
+        <summary>Does it work with Windows?</summary>
+        <p>No. Your computer needs Linux or macOS.</p>
       </details>
       <details>
         <summary>Does it drain my battery?</summary>
-        <p>Not when you are not looking. 90 seconds after you leave, nothing runs, unless you turn on notifications, which use a small background service.</p>
+        <p>No. Nothing runs 90 seconds after you leave, unless you turn on notifications.</p>
       </details>
       <details>
-        <summary>Is it free and open source?</summary>
-        <p>Yes. It is <a href="https://github.com/tuan3w/herdr-mobile/blob/main/LICENSE">GPL-3.0</a> and the <a href="https://github.com/tuan3w/herdr-mobile">source is on GitHub</a>.</p>
+        <summary>Is it free?</summary>
+        <p>Yes. Open source under GPL-3.0.</p>
       </details>
     </div>
   </div>
@@ -695,7 +612,7 @@ python3 --version</code></pre><button class="copy-btn" type="button" aria-label=
 <!-- Final CTA -->
 <section class="navy final" aria-labelledby="final-h">
   <div class="wrap">
-    <h2 id="final-h">Let the agents work. Answer when it matters.</h2>
+    <h2 id="final-h">Let the agents work.</h2>
     <div class="cta">
       <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the APK</a>
       <a class="btn btn-ghost" href="https://github.com/tuan3w/herdr-mobile">Star on GitHub</a>
@@ -846,14 +763,6 @@ python3 --version</code></pre><button class="copy-btn" type="button" aria-label=
     Object.keys(links).forEach(function (k) { var el = document.getElementById(k); if (el) nio.observe(el); });
   }
 
-  /* Copy buttons confirm for 1.5 s. */
-  document.querySelectorAll('.copy-btn').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var text = b.parentNode.querySelector('code').textContent;
-      var done = function () { b.setAttribute('data-done', ''); setTimeout(function () { b.removeAttribute('data-done'); }, 1500); };
-      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
-    });
-  });
 })();
 </script>
 </body>
