@@ -6,11 +6,13 @@ release.
 
 ## [0.1.63] - 2026-11-11
 
-### The desktop viewer is back
+### The desktop viewer lists the new agents
 
-The `herdr-tui` viewer builds that 0.1.62 lacked are published again, and the
-viewer lists the same agents as the app: `Kimi`, `OpenCode`, `Cursor`,
-`Copilot`, `Antigravity`, `Hermes` and `DeepSeek`.
+The `herdr-tui` viewer now lists the same agents as the app: `Kimi`,
+`OpenCode`, `Cursor`, `Copilot`, `Antigravity`, `Hermes` and `DeepSeek`. Its
+binaries are still not published with this release: the Linux build jobs
+cannot reach the Ubuntu package mirrors, and none of the releases 0.1.60 to
+0.1.63 carries them.
 
 **Fixed**
 
