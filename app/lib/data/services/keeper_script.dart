@@ -1018,6 +1018,9 @@ def cursor_plan_to_permission(params, session_id):
             "kind": "switch_mode",
             "status": "pending",
             "content": [{"type": "content", "content": {"type": "text", "text": text}}],
+            # What the phone's permission card reads first (the plan is shown
+            # from it once), and a terminal view prints.
+            "rawInput": {"plan": text},
         },
         "options": [
             {"optionId": "accept", "name": "Approve plan", "kind": "allow_once"},
@@ -1076,6 +1079,29 @@ def cursor_task_update(params, session_id):
     if isinstance(ms, (int, float)) and not isinstance(ms, bool):
         task["durationMs"] = ms
     return {"sessionUpdate": "tool_call_update", "toolCallId": tcid, "_meta": {"cursor": {"task": task}}}
+
+
+def cursor_sign_in_reason(err):
+    """Why `authenticate` failed, for the person: the agent's reason (Cursor puts
+    it in data.message, after a generic "Invalid params"), cut before any link
+    (it points at a browser on that computer and dies with the agent) and to its
+    first sentence, then the next step."""
+    err = err if isinstance(err, dict) else {}
+    data = err.get("data")
+    more = data.get("message") if isinstance(data, dict) else None
+    if isinstance(more, str):
+        cut = more.find("http")
+        if cut >= 0:
+            more = more[:cut]
+        more = more.strip()
+        dot = more.find(". ")
+        if dot >= 0:
+            more = more[:dot]
+        more = more.rstrip(" :;,.")
+    if not more:
+        more = err.get("message") if isinstance(err.get("message"), str) and err["message"].strip() else "no reason given"
+    more = trunc(more.strip().rstrip("."), 300)
+    return "%s. Sign in on that computer first (run the agent's login command), then start again." % more
 
 
 def herdr_result(out):
@@ -1933,13 +1959,7 @@ class Keeper(object):
                 # any session/update.
                 p = msg.get("params")
                 p = p if isinstance(p, dict) else {}
-                entries = cursor_todo_entries(p.get("todos"), p.get("merge") is True, self.cursor_todos)
-                upd = {
-                    "jsonrpc": "2.0", "method": "session/update",
-                    "params": {"sessionId": self.session_id, "update": {"sessionUpdate": "plan", "entries": entries}},
-                }
-                data = enc(upd)
-                self.on_agent_notification(upd, data[:-1])
+                self.cursor_plan_update(p.get("todos"), p.get("merge") is True)
                 return
             if method == "cursor/task" and self.session_id is not None:
                 # What a finished subagent task says rides its launching call.
@@ -1951,6 +1971,16 @@ class Keeper(object):
                 self.on_agent_notification(upd, enc(upd)[:-1])
                 return
             self.broadcast(raw + b"\n")
+
+    def cursor_plan_update(self, todos, merge):
+        """The todo list after a change, as the `plan` session/update every
+        client gets (and the log keeps)."""
+        entries = cursor_todo_entries(todos, merge, self.cursor_todos)
+        upd = {
+            "jsonrpc": "2.0", "method": "session/update",
+            "params": {"sessionId": self.session_id, "update": {"sessionUpdate": "plan", "entries": entries}},
+        }
+        self.on_agent_notification(upd, enc(upd)[:-1])
 
     def on_agent_request(self, msg):
         method = msg["method"]
@@ -1968,6 +1998,9 @@ class Keeper(object):
             sid = self.session_id
             if sid is None and isinstance(orig, dict):
                 sid = orig.get("sessionId")
+            if xlate == "plan" and isinstance(orig, dict) and isinstance(orig.get("todos"), list) and self.session_id is not None:
+                # The plan's own todos are the list a later merging update_todos adds to.
+                self.cursor_plan_update(orig["todos"], False)
             if xlate == "ask":
                 params = cursor_ask_to_elicitation(orig, sid)
                 method = "elicitation/create"
@@ -2296,14 +2329,13 @@ class Keeper(object):
         err = msg.get("error")
         # An agent that does not know `authenticate` has nothing to sign in to.
         if "error" in msg and not (isinstance(err, dict) and err.get("code") == -32601):
-            text = err.get("message") if isinstance(err, dict) else "no reason given"
-            # Cursor's reason ("Failed to open browser for login ...") is in data.message.
-            more = err.get("data", {}).get("message") if isinstance(err, dict) and isinstance(err.get("data"), dict) else None
-            if isinstance(more, str) and more:
-                text = "%s: %s" % (text, trunc(more, 300))
-            self.fail_start("the agent refused to sign in: %s" % text, EX_FAILED)
+            self.fail_start("the agent refused to sign in: %s" % cursor_sign_in_reason(err), EX_FAILED)
             return
         self.finish_init(self.pending_init)
+
+    def init_stage(self):
+        """What the agent owes an answer to while the start waits for it."""
+        return "authenticate (sign-in)" if self.pending_init is not None else "initialize"
 
     def finish_init(self, res):
         self.pending_init = None
@@ -2560,7 +2592,7 @@ class Keeper(object):
         self.kill_group(signal.SIGKILL)
         code = rc if rc >= 0 else 128 - rc
         if self.init_result is None:
-            self.fail_start("the agent exited (code %d) before it answered initialize" % code, EX_FAILED)
+            self.fail_start("the agent exited (code %d) before it answered %s" % (code, self.init_stage()), EX_FAILED)
             return
         if self.terminating:
             reason = "Ended on request."
@@ -2618,7 +2650,7 @@ class Keeper(object):
         if self.terminating and t > self.term_deadline:
             self.kill_group(signal.SIGKILL)
         if self.init_result is None and not self.terminating and t > self.init_deadline:
-            self.fail_start("the agent did not answer initialize within %d s" % INIT_TIMEOUT, EX_FAILED)
+            self.fail_start("the agent did not answer %s within %d s" % (self.init_stage(), INIT_TIMEOUT), EX_FAILED)
             return
         if self.dirty and t - self.last_save >= 1 and self.init_result is not None:
             self.save()
@@ -3165,6 +3197,9 @@ def call_command(tc):
         v = v[-1] if len(v) == 3 and v[1] in ("-c", "-lc") else " ".join(shlex.quote(x) for x in v)
     if not isinstance(v, str) or not v.strip():
         v = raw.get("file_path") or raw.get("path")
+    if not isinstance(v, str) or not v.strip():
+        # A plan waiting for approval (Claude's ExitPlanMode, Cursor's plan).
+        v = raw.get("plan")
     if not isinstance(v, str):
         return ""
     return VIEW_CONTROL.sub("", v.replace("\t", "    ")).strip("\n")

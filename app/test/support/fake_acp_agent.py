@@ -36,6 +36,8 @@ Prompt texts:
                 then a chunk `got:<the answer, JSON>`, end_turn. `cursor-ask-empty`: no question.
   cursor-plan   `cursor/create_plan`, then a chunk `got:<the answer, JSON>`, end_turn
   cursor-todos  `cursor/update_todos` (merge false, then merge true), a chunk, end_turn
+  cursor-plan-todos  `cursor/create_plan` with two todos, then `cursor/update_todos` (merge true) completing
+                the first, then a chunk `got:<the answer, JSON>`, end_turn
   cursor-task   a `Task: Explore codebase` tool call (pending, then completed), then Cursor's
                 `cursor/task` notification for it (custom subagent type), a chunk, end_turn
                 `cursor-task-bad`: the notification names no tool call (toolCallId is a number)
@@ -48,7 +50,9 @@ not taken (nothing of it is "said" afterwards). A file that says "quiet" makes
 the agent refuse without that chunk.
 Environment: FAKE_ACP_AUTH=<method id> advertises that auth method and refuses `session/new`
 ("Authentication required") until `authenticate` was called; FAKE_ACP_AUTH_FAIL=1 makes
-`authenticate` an error. FAKE_ACP_IGNORE_TERM=1 ignores SIGTERM; FAKE_ACP_FAIL_INIT=1
+`authenticate` Cursor's browser failure (-32602, the reason and a link in data.message),
+FAKE_ACP_AUTH_UNKNOWN=1 answers it -32601, FAKE_ACP_AUTH_EXIT=1 exits with code 4 on it.
+FAKE_ACP_IGNORE_TERM=1 ignores SIGTERM; FAKE_ACP_FAIL_INIT=1
 exits with code 5 before answering initialize; FAKE_ACP_INIT_DELAY=<s> waits
 that long before answering initialize (a cold `npx -y`); FAKE_ACP_PID_FILE=<file>
 gets a line `<pid>\t<cwd>` appended when it answers initialize.
@@ -466,6 +470,14 @@ def prompt(msg):
             "plan": "1. Inspect.\n2. Change.", "todos": [{"id": "t1", "content": "Inspect", "status": "pending"}],
         })
         chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-plan-got")
+    elif text == "cursor-plan-todos":
+        r = cursor_call(sid, "cur-plan", "cursor/create_plan", {
+            "toolCallId": "tc-plan", "name": "Two steps", "plan": "1. Inspect.\n2. Change.",
+            "todos": [{"id": "t1", "content": "Inspect", "status": "pending"}, {"id": "t2", "content": "Change", "status": "pending"}],
+        })
+        send({"jsonrpc": "2.0", "method": "cursor/update_todos", "params": {"toolCallId": "tc-todo", "merge": True, "todos": [
+            {"id": "t1", "content": "Inspect", "status": "completed"}]}})
+        chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-plan-got")
     elif text == "cursor-todos":
         todos = [{"id": "1", "content": "Set up", "status": "completed"}, {"id": "2", "content": "Build", "status": "in_progress"},
                  {"id": "3", "content": "Drop me", "status": "cancelled"}]
@@ -549,8 +561,16 @@ def main():
                 update(msg["params"]["sessionId"], {"sessionUpdate": "async_task_state_update", "asyncTaskId": tid, "state": "stopped"})
             send({"jsonrpc": "2.0", "id": rid, "result": {"stopped": stopped}})
         elif method == "authenticate":
-            if os.environ.get("FAKE_ACP_AUTH_FAIL"):
-                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Not logged in", "data": {"message": "run agent login first"}}})
+            if os.environ.get("FAKE_ACP_AUTH_EXIT"):
+                sys.stderr.write("signed out\n")
+                sys.stderr.flush()
+                os._exit(4)
+            if os.environ.get("FAKE_ACP_AUTH_UNKNOWN"):
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}})
+            elif os.environ.get("FAKE_ACP_AUTH_FAIL"):
+                # Cursor's shape when it cannot open a browser: generic message, the reason (with a link) in data.
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Invalid params", "data": {
+                    "message": "Failed to open browser for login. Please visit: https://cursor.com/loginDeepControl?challenge=abc123"}}})
             else:
                 authed = True
                 send({"jsonrpc": "2.0", "id": rid, "result": {}})

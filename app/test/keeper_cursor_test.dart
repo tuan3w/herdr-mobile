@@ -69,16 +69,31 @@ void main() {
       expect([for (final m in h.agentLog()) m['method']], ['initialize', 'authenticate', 'session/new']);
     });
 
-    test('a sign-in the agent refuses fails the start with its words and leaves nothing behind', () async {
+    test('a sign-in the agent refuses fails the start with its reason and the next step, not its link', () async {
       final h = await newHost({'FAKE_ACP_AUTH_FAIL': '1'});
       final r = await h.run(keeperStartCommand(agent: 'cursor', cwd: h.work));
       expect(r.code, 70);
-      expect(
-        r.err,
-        contains('Not logged in: run agent login first'),
-        reason: 'the error and the reason it carries in data',
-      );
+      expect(r.err, contains('Failed to open browser for login'), reason: 'the agent\'s reason, from data.message');
+      expect(r.err, isNot(contains('cursor.com')), reason: 'the link dies with the agent');
+      expect(r.err, isNot(contains('http')));
+      expect(r.err, contains('Sign in on that computer first'), reason: 'the next step');
       expect(await h.list(), isEmpty);
+    });
+
+    test('an agent that dies while it signs in is named at the sign-in, not at initialize', () async {
+      final h = await newHost({'FAKE_ACP_AUTH_EXIT': '1'});
+      final r = await h.run(keeperStartCommand(agent: 'cursor', cwd: h.work));
+      expect(r.code, 70);
+      expect(r.err, contains('authenticate'));
+      expect(r.err, isNot(contains('before it answered initialize')));
+      expect(await h.list(), isEmpty);
+    });
+
+    test('an agent that does not know authenticate has nothing to sign in to: the start succeeds', () async {
+      final h = await newHost({'FAKE_ACP_AUTH_UNKNOWN': '1'});
+      final info = await h.start(agent: 'cursor');
+      expect(info.id, isNotEmpty);
+      expect([for (final m in h.agentLog()) m['method']], ['initialize', 'authenticate']);
     });
 
     test('an agent that is not Cursor is not asked to authenticate', () async {
@@ -160,6 +175,64 @@ void main() {
       expect(a.seen.where(isMethod('elicitation/create')), isEmpty);
     });
 
+    test('an answer that is an error reaches the agent as that error, never as an answer', () async {
+      final h = await newHost();
+      final a = await session(h);
+      Json agentGot(String id) => h.agentLog().singleWhere((m) => !m.containsKey('method') && m['id'] == id);
+
+      var id = a.prompt('cursor-ask');
+      final q = await a.next(isMethod('elicitation/create'));
+      a.write({
+        'id': q['id'],
+        'error': {'code': -32000, 'message': 'no screen'},
+      });
+      expect(await got(a), isNull);
+      await a.response(id);
+      expect(agentGot('cur-ask').containsKey('result'), isFalse);
+      expect(asJson(agentGot('cur-ask')['error'])['message'], 'no screen');
+
+      id = a.prompt('cursor-plan');
+      final plan = await a.next(isMethod('session/request_permission'));
+      a.write({
+        'id': plan['id'],
+        'error': {'code': -32000, 'message': 'no screen'},
+      });
+      expect(await got(a), isNull);
+      await a.response(id);
+      expect(agentGot('cur-plan').containsKey('result'), isFalse);
+      expect(asJson(agentGot('cur-plan')['error'])['message'], 'no screen');
+    });
+
+    test('a second client is told who answered a translated question or plan, in its words', () async {
+      final h = await newHost();
+      final a = await session(h);
+      final b = await h.attach((await h.list()).single.id);
+      await b.initialize(title: 'Laptop');
+      await b.load(h);
+
+      a.prompt('cursor-ask');
+      final q = await a.next(isMethod('elicitation/create'));
+      final qb = await b.next(isMethod('elicitation/create'));
+      expect(qb['id'], q['id']);
+      a.reply(q['id'], {'action': 'decline'});
+      final declined = await b.next(isMethod('_herdr/resolved'));
+      expect(asJson(declined['params'])['requestId'], q['id']);
+      expect(asJson(declined['params'])['answer'], 'decline');
+      await got(a);
+
+      a.prompt('cursor-plan');
+      final plan = await a.next(isMethod('session/request_permission'));
+      final planB = await b.next(isMethod('session/request_permission'));
+      expect(planB['id'], plan['id']);
+      a.reply(plan['id'], {
+        'outcome': {'outcome': 'selected', 'optionId': 'accept'},
+      });
+      final approved = await b.next(isMethod('_herdr/resolved'));
+      expect(asJson(approved['params'])['requestId'], plan['id']);
+      expect(asJson(approved['params'])['answer'], 'Approve plan');
+      expect(a.seen.where(isMethod('_herdr/resolved')), isEmpty, reason: 'the one who answered knows');
+    });
+
     test('a question asked while detached is held, re-issued to the next client and answered once', () async {
       final h = await newHost();
       final a = await session(h);
@@ -203,6 +276,9 @@ void main() {
           final text = asJson(asJson((tool['content']! as List).single)['content'])['text']! as String;
           expect(text, contains('Keep UX.'));
           expect(text, contains('1. Inspect.'));
+          expect(asJson(tool['rawInput']), {
+            'plan': text,
+          }, reason: 'the card and a terminal view read the plan from here');
           expect([for (final o in p['options']! as List) asJson(o)['optionId']], ['accept', 'reject']);
         }
         a.reply(req['id'], {'outcome': chosen});
@@ -237,6 +313,29 @@ void main() {
         [entry('Set up', 'completed'), entry('Build', 'in_progress')],
         [entry('Set up', 'completed'), entry('Build', 'completed'), entry('Test', 'pending')],
       ]);
+    });
+
+    test('the todos a plan comes with are the list a later merging update adds to', () async {
+      final h = await newHost();
+      final a = await session(h);
+      final id = a.prompt('cursor-plan-todos');
+      final plan = await a.next(isMethod('session/request_permission'));
+      a.reply(plan['id'], {
+        'outcome': {'outcome': 'selected', 'optionId': 'accept'},
+      });
+      await got(a);
+      await a.response(id);
+      Json entry(String content, String status) => {'content': content, 'priority': 'medium', 'status': status};
+      expect(
+        [
+          for (final u in updatesOf(a.seen))
+            if (u['sessionUpdate'] == 'plan') u['entries'],
+        ],
+        [
+          [entry('Inspect', 'pending'), entry('Change', 'pending')],
+          [entry('Inspect', 'completed'), entry('Change', 'pending')],
+        ],
+      );
     });
 
     test('a finished subagent task rides its launching tool call, without the prompt', () async {
@@ -277,7 +376,9 @@ void main() {
         ..writeAsStringSync('#!/bin/sh\nprintf \'%s\\n\' "\$@" > "\$HOME/npx.argv"\nexec python3 \'$fake\'\n');
       await Process.run('chmod', ['755', stub.path]);
       await h.start(agent: 'deepseek');
-      expect(File('${h.home.path}/npx.argv').readAsLinesSync(), ['-y', '@deepseek-ai/dsh@next', '--profile', 'acp']);
+      final argv = File('${h.home.path}/npx.argv').readAsLinesSync();
+      expect(argv.first, '-y');
+      expect(argv.skip(2), ['--profile', 'acp'], reason: 'after the package argument, the route\'s own arguments');
     });
   });
 }
