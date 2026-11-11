@@ -1,0 +1,19 @@
+{
+  "agent": "hermes",
+  "scenario": "tools",
+  "prompt": "Read the file notes.txt in the current directory, then run the shell command `echo hello-from-scratch`, then tell me in one sentence what each of them gave.",
+  "command": "hermes acp",
+  "agentInfo": {
+    "name": "hermes-agent",
+    "version": "0.0.0"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 7231.637,
+  "stopReason": "end_turn",
+  "lines": 47,
+  "bytes": 32850,
+  "optionsCut": 64,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

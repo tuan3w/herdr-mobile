@@ -1,0 +1,20 @@
+{
+  "agent": "copilot",
+  "scenario": "subagent",
+  "prompt": "Use your task tool to start exactly one explore subagent whose job is to list the files in the current directory with the ls command and report the file names. Then answer with the names in one line.",
+  "command": "npx -y @github/copilot --acp --stdio",
+  "agentInfo": {
+    "name": "Copilot",
+    "title": "Copilot",
+    "version": "1.0.109"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 1875.118,
+  "stopReason": "end_turn",
+  "lines": 68,
+  "bytes": 44361,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

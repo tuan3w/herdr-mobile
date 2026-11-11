@@ -576,7 +576,7 @@ RunFacts? _copilot(ToolCall call, List<SubagentRun> known) {
     assignment: _assignment(prompt),
     model: _s(input?['model']),
     result: over && !background && answer != null ? _cut(answer, SubagentRun.maxResult) : null,
-    failure: status == SubagentStatus.failed ? (answer ?? 'The subagent failed') : null,
+    failure: status == SubagentStatus.failed ? _cut(answer ?? 'The subagent failed', SubagentRun.maxResult) : null,
     note: over && background ? startedInBackgroundNote : null,
     background: background,
   );
@@ -645,10 +645,20 @@ RunFacts? _kimi(ToolCall call, List<SubagentRun> known) {
     agentType: _s(input?['subagent_type']) ?? actualType,
     assignment: _assignment(_s(input?['prompt'])),
     result: over && !background ? (summary ?? (text == null ? null : _cut(text, SubagentRun.maxResult))) : null,
-    failure: status == SubagentStatus.failed ? (summary ?? text ?? 'The subagent failed') : null,
+    failure: status == SubagentStatus.failed ? _kimiFailure(text) : null,
     note: over && background ? startedInBackgroundNote : null,
     background: background,
   );
+}
+
+/// Why a Kimi `Agent` call failed: its `subagent error:` line, else its
+/// `stop_reason:`, else the whole text. The header lines (`agent_id:`,
+/// `status:`) and the partial output after the error are not the reason.
+String _kimiFailure(String? text) {
+  if (text == null) return 'The subagent failed';
+  final error = RegExp(r'^subagent error:[ \t]*(.+)$', multiLine: true).firstMatch(text)?.group(1)?.trim();
+  final stop = RegExp(r'^stop_reason:[ \t]*(.+)$', multiLine: true).firstMatch(text)?.group(1)?.trim();
+  return _cut(error ?? stop ?? text, SubagentRun.maxResult);
 }
 
 /// DeepSeek: `subagent` / `subagent_fork` (kind `other`), input `{description,
@@ -668,7 +678,9 @@ RunFacts? _deepseek(ToolCall call, List<SubagentRun> known) {
     name: _s(input?['name']),
     title: _firstLine(_s(input?['description'])) ?? _s(input?['name']),
     assignment: _assignment(_s(input?['prompt'])),
-    failure: status == SubagentStatus.failed ? (_allText(call) ?? 'The subagent failed') : null,
+    failure: status == SubagentStatus.failed
+        ? _cut(_allText(call) ?? 'The subagent failed', SubagentRun.maxResult)
+        : null,
     note: status == SubagentStatus.finished ? startedInBackgroundNote : null,
     background: true,
   );
@@ -684,15 +696,17 @@ RunFacts? _hermes(ToolCall call, List<SubagentRun> known) {
   final status = _callStatus(call);
   final text = _allText(call);
   final results = text != null && text.startsWith('Delegation results:');
-  final first = text == null ? null : _firstLine(text);
+  // The start text names the goals; any later text (the dispatch JSON, an
+  // error, the abandoned-call notice) says how it went and is not what was asked.
+  final asked = text != null && text.startsWith('Delegating');
   return RunFacts(
     id: call.toolCallId,
     route: SubagentRoute.hermes,
     status: status,
-    title: results ? null : (first != null && first.startsWith('Delegat') ? first : null),
-    assignment: results || text == null ? null : _assignment(text),
+    title: asked ? _firstLine(text) : null,
+    assignment: asked ? _assignment(text) : null,
     result: status == SubagentStatus.finished && results ? _cut(text, SubagentRun.maxResult) : null,
-    failure: status == SubagentStatus.failed ? (text ?? 'The subagent failed') : null,
+    failure: status == SubagentStatus.failed ? _cut(text ?? 'The subagent failed', SubagentRun.maxResult) : null,
     note: status == SubagentStatus.finished && !results ? startedInBackgroundNote : null,
     background: status == SubagentStatus.finished && !results,
   );

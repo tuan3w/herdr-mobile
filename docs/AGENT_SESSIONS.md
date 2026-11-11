@@ -100,9 +100,9 @@ is answered `-32800` once and the handler's `cancelled` future fires.
 | Kimi | `kimi acp` (native; `~/.kimi-code/bin`) or `npx -y @moonshot-ai/kimi-code acp` (the ACP registry's launch; 2.5.3 probed: adds `close`, `delete`, `fork`) | `kimi-code/packages/acp-server/src/`. Probed on `kimi` 0.26 and `kimi-cli` 1.29: `loadSession`, `sessionCapabilities {list, resume}`, auth method `login` (terminal). Logged out, `session/new` answers `-32000 Authentication required`. Permission ids `approve_once`, `approve_always`, `reject`; plan review has its own (`plan_approve`, `plan_revise`, `plan_reject_and_exit`), `approval.ts`. |
 | OpenCode | `opencode acp` (native; `~/.opencode/bin`) or `npx -y opencode-ai acp` (npm `latest` is 1.19.5; the ACP registry and Zed launch the 2.x binary from github.com/anomalyco/opencode/releases, 2.2.7 probed: advertises `_meta["opencode/child-session-updates"]`, `steering`, `delete`) | `opencode/packages/cli/src/acp/`. 1.19.5 probed (npx, 2 s warm): `loadSession`, `sessionCapabilities {close, fork, list, resume}`, auth method `opencode-login`; `session/new` works without a login (free models) and returns config options `model` (461 values) and `mode` (2 values, default `build`). 1.1.50 dies on every `initialize` (`fn3 is not a function`): needs a current build. Permission option ids `once` (allow_once), `always` (allow_always), `reject`. |
 | Cursor | `cursor-agent acp` (native) | cursor.com/docs/cli/acp. Probed: `loadSession`, `mcpCapabilities` http + sse, `promptCapabilities` image only (no embeddedContext), no `sessionCapabilities`, no `agentInfo`, auth method `cursor_login`. Without a login `session/new` answers `-32000` with `data.message` "run 'agent login' first, then call authenticate() with methodId 'cursor_login'"; `authenticate` itself fails with `-32602` while the stored login is stale. Flow `initialize`, `authenticate`, `session/new` (the route's `authMethod`: the keeper sends it before it reports the start). Permission ids `allow-once`, `allow-always`, `reject-once`. Its blocking `cursor/ask_question` and `cursor/create_plan` are translated by the keeper into `elicitation/create` and a `session/request_permission` (options `accept` / `reject`; only "Approve plan" answers `accepted`), so the held-request machinery applies; `cursor/update_todos` becomes a `plan` update (merge or replace by todo id, cancelled ones left out). `cursor/task` becomes a `tool_call_update` carrying `_meta.cursor.task` (see "Subagents of the other routes"); `cursor/generate_image` passes through unread. |
-| Copilot | `copilot --acp --stdio` or `npx -y @github/copilot --acp --stdio` | docs.github.com, Copilot CLI ACP server (public preview). Probed through npx (1.0.109, about 10 s cold): `loadSession`, `sessionCapabilities {close, list}` (no resume), `promptCapabilities` image + embeddedContext, auth method `copilot-login`; `session/new` answered with modes `agent`, `plan`, `autopilot` whose ids are URLs (`https://agentclientprotocol.com/protocol/session-modes#agent`). No real turn run. |
+| Copilot | `copilot --acp --stdio` or `npx -y @github/copilot --acp --stdio` | docs.github.com, Copilot CLI ACP server (public preview). Probed through npx (1.0.109, about 10 s cold): `loadSession`, `sessionCapabilities {close, list}` (no resume), `promptCapabilities` image + embeddedContext, auth method `copilot-login`; `session/new` answered with modes `agent`, `plan`, `autopilot` whose ids are URLs (`https://agentclientprotocol.com/protocol/session-modes#agent`). Real turns recorded (`traces/copilot`) in BYOK mode: `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_API_KEY`, `COPILOT_MODEL`, `COPILOT_OFFLINE=true` give a session with no GitHub login. |
 | Antigravity | `agy acp` (native) | antigravity.google/docs/cli/acp. 1.5.5 probed: `loadSession`, `sessionCapabilities {resume, close, load, list, additionalDirectories}`, `auth.logout`, auth methods `oauth-personal`, `oauth-business`, `gemini-api-key`, `agent-platform`. Logged out, `initialize` answers and `session/new` fails with `-32000 Authentication required`; an older build exited before `initialize` with stderr `authentication required. Run 'agy' to log in`, which the start failure carries. |
-| Hermes | `hermes acp` (native) | `hermes-agent/acp_adapter/server.py`: `loadSession`, `list`, `resume`, `fork`; always advertises the terminal auth method `hermes-setup`. Permission ids `allow_once`, `allow_session`/`allow_always` (allow_always), `deny`. Unverified on a real run (the launcher on the test machine has a broken venv). |
+| Hermes | `hermes acp` (native) | `hermes-agent/acp_adapter/server.py`: `loadSession`, `list`, `resume`, `fork`; always advertises the terminal auth method `hermes-setup`. Permission ids `allow_once`, `allow_session`/`allow_always` (allow_always), `deny`. Real turns recorded (`traces/hermes`) on an editable install of the latest source (`UV_PROJECT_ENVIRONMENT=<venv> uv sync --python 3.14 --extra acp`: wheels are refused, Python 3.14 is what the dependency pins need) with `HERMES_HOME` set and `config.yaml` `model: {provider: custom, base_url, default, api_key: ${OPENAI_API_KEY}}`, i.e. any OpenAI-compatible endpoint. Modes are `default`, `accept_edits`, `dont_ask` (config option `edit_approval_policy`: `ask`, `workspace_session`, `session`); Hermes's `Don't Ask` auto-allows file edits (sensitive paths still ask), unlike Claude's. |
 | DeepSeek | `dsh --profile acp` or `npx -y @deepseek-ai/dsh@next --profile acp` | `deepseek-harness/packages/acp/acp/src/index.ts`. Automation profile: no `session/load` (the keeper answers that itself), no elicitation, no modes; permission ids `allow-once`, `reject-once`; `session/list`, `resume`, `close`; `authenticate` is a no-op. Only prereleases are published: bare `@deepseek-ai/dsh` fails with ETARGET, so the route pins the `next` tag. Probed (npm install, Node 22.21 although it asks for >=24.9): `initialize` answers `sessionCapabilities {close, list, resume}`, `promptCapabilities` all false, no auth methods. A cold `npx` installs 900 MB (about a minute). No real turn run. herdr has no agent id for it, so the route id `deepseek` is what `pane report-agent` carries. |
 
 **Checked on this machine (2026-10-04), through the keeper and the app's own
@@ -1264,15 +1264,19 @@ Everything is in `AgentSessionState`
     request would block like Claude's), so it gets the tagged form. 1.19.5 sends the
     launcher only, no tagged child. An OpenCode 1.x launcher is told by its input (`prompt`,
     `description` and `agent`/`subagent_type`, kind `think`), since 1.x has no name.
-  - **Copilot** (UNVERIFIED against a session; github/copilot-cli#4106, the t3code adapter):
-    the `task` call has `rawInput {name, agent_type, description, prompt, mode, model}` and the
-    answer in `rawOutput.content`; the child's text and calls carry
-    `_meta["github.com/copilot"].agentId`, which is the launching call's id, so that is the
-    parent tag (builds before 1.0.106-3 send no tag and flatten parallel children). A tagged
-    update whose call is not shaped like that still gets a run made from the call.
-    `mode: background` settles the call at launch and Copilot reports the end only to a
-    client that declares `clientCapabilities._meta["github.com/copilot"].events`, which the
-    keeper does not: the run is `finished` with a note.
+  - **Copilot** (RECORDED, 1.0.109 in BYOK mode on an OpenAI-compatible endpoint,
+    `traces/copilot/subagent`): the `task` call is titled with its description, kind `other`,
+    `rawInput {agent_type, description, name, prompt}` (`mode` only when background); the answer is
+    in `rawOutput.content` and the call's content. The child's thoughts, text and tool calls come on
+    the main session tagged `_meta["github.com/copilot"].agentId`, a UUID that is NOT the launching
+    call's id and appears nowhere else (the launcher's updates carry no meta), so a child is bound
+    to the oldest `task` call that has none, a running one first: parallel children that speak out of
+    launch order can swap (OpenCode's results and titles settle that; Copilot gives nothing to settle
+    it). A child with no task to bind to is held, never shown as the main agent's words. Builds before
+    1.0.106-3 send no tag (parallel children flatten into the parent's text). `mode: background`
+    settles the call at launch, and Copilot reports the end only to a client that declares
+    `clientCapabilities._meta["github.com/copilot"].events`, which the keeper does not: the run is
+    `finished` with a note.
   - **Cursor** (UNVERIFIED; docs and the installed bundle): `Task: <description>` call, kind
     `other`, `rawInput {_toolName: task, prompt, description, subagentType}`. No child updates
     are known. The keeper turns `cursor/task` (sent when the task ends: `durationMs`, `model`,
@@ -1287,20 +1291,31 @@ Everything is in `AgentSessionState`
     (`agent_servers/src/acp/v1.rs`), and sends Cursor `_meta.parameterizedModelPicker: true`
     (a model picker with parameters). This app declares none of it, so Cursor sends the flat form
     above; taking the native form needs the keeper and client to carry several session ids.
-  - **Kimi** (UNVERIFIED; `acp-server` source): the `Agent` call, titled
-    `Launching [background ]<profile> agent: <description>`, `rawInput {prompt, description,
-    subagent_type, run_in_background}`, kind `other`. The ACP server follows only the main
-    agent: no child update exists. The result text (`agent_id:`, `status:`, `[summary]`) gives
-    the run's result and type. A background launch answers at once and reports its end only
-    inside a later turn. Child approvals arrive as ordinary permissions with no marker.
+  - **Kimi** (RECORDED, kimi-code 2.5.3 on an OpenAI-compatible endpoint, `traces/kimi/subagent`): the
+    `Agent` call starts as a bare `Agent` with the arguments streaming in as content, then is titled
+    `Launching <type> agent: <description>` with `rawInput {description, prompt, subagent_type}`, kind
+    `other`. The ACP server follows only the main agent: no child update exists. The result text
+    (`agent_id:`, `actual_subagent_type:`, `status:`, then `[summary]`) gives the run's result and
+    type; a failed call's text has a `subagent error:` line, which is the reason shown. A background
+    launch answers at once and reports its end only inside a later turn. A subagent's approval
+    arrives as an ordinary permission (title `Bash`) for a call the client never saw, with no
+    marker: with exactly one Kimi subagent running it is shown as that one's (`_unmarkedChildOrigin`),
+    with several it is not attributed. Modes: `default`, `plan`, `auto`, `yolo`.
+    A provider with no Kimi login: `~/.kimi-code/config.toml` with `[providers.x] type = "openai"`,
+    `base_url`, `api_key`, a `[models."alias"]` and `default_model`.
   - **DeepSeek** (UNVERIFIED; source): `subagent` / `subagent_fork`, kind `other`, `rawInput
     {description, prompt, name?}`. The call answers `started subagent <name>` at once; the
     end returns to the root as a later message. Child updates and approvals never reach the
     client. The run says its end is not reported.
-  - **Hermes** (UNVERIFIED; source): `delegate_task: <preview>`, kind `execute`, no input; the
-    start text is `Delegating N tasks` and the goals. Delegation runs in the background by
-    default, so the call usually ends with a dispatch, not with `Delegation results:`; only
-    that header makes a result. Child progress and approvals never reach the client.
+  - **Hermes** (RECORDED, 2026.9.24 on an OpenAI-compatible endpoint, `traces/hermes/subagent`):
+    `delegate_task: <n> tasks: <preview>`, kind `execute`, no input; the start text is
+    `Delegating N tasks` and the goals. Delegation runs in the background: the call ends at once
+    with the dispatch JSON (`{"status": "dispatched", "mode": "background", ...}`), which is not a
+    result and must not replace what was asked; only a `Delegation results:` header is a result.
+    The subagent's answer then comes as the agent's own `agent_message_chunk`s AFTER the prompt's
+    response (no `state_update`, no prompt in flight), so a message can stay live after `end_turn`
+    and a turn can last past it (the recorded-trace tests allow for both). Child progress and
+    approvals never reach the client.
   - **Antigravity**: `invoke_subagent` exists in the agent but its ACP shape is documented
     nowhere and was not recorded; no run is made (the call shows as an ordinary tool call).
   - A run whose launching call ended while the agent keeps working, with no end reported
@@ -1869,9 +1884,12 @@ nobody has listed. Descriptions are never read (Claude's `default` says it
 | Claude | `acceptEdits`, `auto` (a classifier answers the prompts) | elevated |
 | Claude | `bypassPermissions` | dangerous |
 | Codex | `read-only`, `workspace-write` (codex's own default preset) | none |
-| Codex | `agent` ("Auto review": asks only for what it judges unsafe) | elevated |
+| Codex | `agent` named "Auto review" (asks only for what it judges unsafe) | elevated |
 | Codex | `agent-full-access` ("Full access"), `danger-full-access` | dangerous |
-| omp | `default`, `plan` | none |
+| omp, OpenCode | `default`, `plan`, `build` | none |
+| Copilot | `agent`, `plan` (ids are URLs ending `#agent`, `#plan`: the whole id and the text after the last `#` or `/` are both read) | none |
+| Copilot | `autopilot` (allow-all, runs to the end without asking) | dangerous |
+| Cursor | `agent` ("Cursor Agent"): its policy is not on record | none |
 | pi | none: its modes are thinking levels | none |
 | unknown | contains `bypass`, `yolo`, `fullaccess`, `dangerously`, `skippermission`, `skipapproval`, `nosandbox` | dangerous |
 | unknown | contains `acceptedits`, `autoaccept`, `autoapprove`, `autoedit`, `acceptall`, `dontask`, `neverask`, `noprompt`, `noapproval`, `unrestricted`, `unsafe`, or has the word `auto` / `autonom…` | elevated |

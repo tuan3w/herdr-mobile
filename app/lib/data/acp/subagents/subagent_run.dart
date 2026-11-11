@@ -52,11 +52,7 @@ enum SubagentRoute {
   kimi,
   cursor,
   hermes,
-  deepseek;
-
-  /// The child's own updates arrive tagged on the session, so a run has a
-  /// transcript made from them.
-  bool get sendsTranscript => this == claude || this == opencode || this == copilot;
+  deepseek,
 }
 
 /// Where a run's transcript came from when the agent did not send it: the
@@ -351,7 +347,7 @@ class SubagentRun {
     bool? background,
     List<PlanEntry>? plan,
     int? droppedItems,
-    AgentSessionState? transcript,
+    Object? transcript = _same,
     SubagentLogInfo? log,
     String? parentRunId,
   }) => SubagentRun(
@@ -384,7 +380,7 @@ class SubagentRun {
     background: background ?? this.background,
     plan: plan ?? this.plan,
     droppedItems: droppedItems ?? this.droppedItems,
-    transcript: transcript ?? this.transcript,
+    transcript: identical(transcript, _same) ? this.transcript : transcript as AgentSessionState?,
     log: log ?? this.log,
   );
 }

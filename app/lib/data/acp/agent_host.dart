@@ -18,7 +18,7 @@ class AgentRoute {
     this.sessionMeta,
   });
 
-  /// Stable, lower case: `omp`, `claude`, `codex`, `pi`.
+  /// Stable, lower case, for example `omp`, `claude`, `codex`, `pi`.
   final String id;
 
   /// What the person reads: `Claude Code`.
@@ -92,7 +92,8 @@ const agentRoutes = <AgentRoute>[
   // copilot: `copilot --acp --stdio` (GitHub Copilot CLI ACP server, public
   // preview, docs.github.com). Probed through npx (1.0.109, ~10 s cold):
   // loadSession, sessionCapabilities {close, list} (no resume), auth method
-  // `copilot-login`, modes agent/plan/autopilot with URL ids. No real turn run.
+  // `copilot-login`, modes agent/plan/autopilot with URL ids. A real turn with a
+  // subagent was recorded in BYOK mode (`COPILOT_PROVIDER_*`, no GitHub login).
   AgentRoute(
     id: 'copilot',
     label: 'Copilot',
@@ -108,7 +109,9 @@ const agentRoutes = <AgentRoute>[
   AgentRoute(id: 'antigravity_cli', label: 'Antigravity', binary: 'agy', args: ['acp']),
   // hermes: `hermes acp` (NousResearch/hermes-agent acp_adapter/server.py:
   // loadSession, list, resume; terminal auth method `hermes-setup`).
-  // Unverified on a real run: the launcher here has a broken venv.
+  // A real turn with a subagent was recorded on an editable install (Python 3.14,
+  // `uv sync --extra acp`; the launcher on the test machine has a broken venv),
+  // with an OpenAI-compatible endpoint (`model.provider: custom` in config.yaml).
   AgentRoute(id: 'hermes', label: 'Hermes', binary: 'hermes', args: ['acp']),
   // deepseek: `dsh --profile acp` (deepseek-ai/deepseek-harness, npm
   // @deepseek-ai/dsh, bin `dsh`). Automation profile: no session/load (the
@@ -168,7 +171,7 @@ class KeeperInfo {
   /// Names the keeper on its host; the key of an agent session.
   final String id;
 
-  /// A route id (`omp`, `claude`, `codex`, `pi`).
+  /// A route id (for example `omp`, `claude`, `codex`, `pi`).
   final String agent;
   final String cwd;
   final KeeperState state;

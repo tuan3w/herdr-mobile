@@ -17,12 +17,23 @@ line the client wrote. Agent stderr is not recorded.
 Safety, in this order:
   * the agent runs in a fresh scratch directory (a tiny git repo under /tmp),
     never in a real project;
-  * omp and codex get their stores redirected to temp dirs (the login is
-    copied or reached through omp's auth broker; codex's access token has days
-    left, so the copy is never refreshed). Claude's store is NOT redirected:
-    its access token rotates on refresh, and a refreshed copy would invalidate
-    the owner's login. Its project folder for the scratch directory is
-    removed afterwards;
+  * omp, codex and opencode get their stores redirected to temp dirs (omp's
+    login is copied or reached through omp's auth broker; codex's is copied
+    and its access token has days left, so the copy is never refreshed).
+    OpenCode also gets an empty temp HOME (it reads ~/.agents and ~/.claude
+    through HOME), the Claude-compat loader off, none of the owner's
+    OPENCODE_*, *_API_KEY, *_TOKEN or *_SECRET variables (its free model
+    needs no login) and a config of {"permission": "ask"}: by default it
+    allows shell, edit and webfetch without ever raising a permission
+    request, so nothing below would gate it;
+  * claude, kimi and cursor are NOT redirected: Claude's access token rotates
+    on refresh, and a refreshed copy would invalidate the owner's login; kimi
+    and cursor keep their login in their own home folder. Claude's project
+    folder for the scratch directory is removed afterwards. Known limitation:
+    a kimi or cursor capture leaves a session whose working directory was
+    deleted in the owner's real ~/.kimi-code or ~/.cursor, and the app's Past
+    sessions then lists it. Delete it by hand; this tool does not touch
+    another tool's files;
   * permission requests are answered here, never by default: allow-once only
     when the tool's command / paths stay inside the scratch directory and the
     scenario expects an approval; everything else is rejected and noted in
@@ -127,14 +138,22 @@ AGENTS = {
     # `kimi acp` (kimi-code, probed: loadSession, session/list + resume). Its
     # store (~/.kimi-code) is not redirected, like Claude's.
     "kimi": {
-        "cmd": ["kimi", "acp"],
-        "scenarios": ["markdown", "tools", "plan"],
-        "approve": {"tools"},
+        "cmd": ["npx", "-y", "@moonshot-ai/kimi-code@2.5.3", "acp"],
+        "scenarios": ["markdown", "tools", "plan", "subagent"],
+        "approve": {"tools", "subagent"},
         "settle": 1.5,
+        "prompts": {
+            "subagent": (
+                "Use your Agent tool to start exactly one subagent whose job is to list the files in "
+                "the current directory with the ls command and report the file names. Wait for it, "
+                "then answer with the names in one line."
+            ),
+        },
     },
     # `opencode acp` (2.x binary from github.com/anomalyco/opencode releases: the
     # npm `opencode-ai` is 1.x and tags no child updates). Its free model needs no
-    # login. The store (XDG dirs) is redirected to a temp dir.
+    # login. The store (XDG dirs, HOME) is redirected to a temp dir and its
+    # config is {"permission": "ask"}, else it runs tools without asking (prepare_env).
     "opencode": {
         "cmd": ["opencode", "acp"],
         "scenarios": ["markdown", "tools", "subagent"],
@@ -144,6 +163,41 @@ AGENTS = {
         "prompts": {
             "subagent": (
                 "Use your subagent tool to start exactly one subagent whose job is to list the "
+                "files in the current directory with the ls command and report the file names. "
+                "Then answer with the names in one line."
+            ),
+        },
+    },
+    # `hermes acp` (NousResearch/hermes-agent, an editable install on Python 3.14:
+    # `UV_PROJECT_ENVIRONMENT=<venv> uv sync --python 3.14 --extra acp`, then put
+    # `<venv>/bin` first on PATH). Hermes has no login of its own here: the run
+    # uses any OpenAI-compatible endpoint, given by HERMES_CAPTURE_BASE_URL,
+    # HERMES_CAPTURE_MODEL and HERMES_CAPTURE_API_KEY (skipped when unset). Its
+    # home is a temp dir.
+    "hermes": {
+        "cmd": ["hermes", "acp"],
+        "scenarios": ["markdown", "tools", "subagent"],
+        "approve": {"tools", "subagent"},
+        "settle": 3.0,
+        "prompts": {
+            "subagent": (
+                "Use your delegate_task tool to delegate exactly one task to a subagent: list the "
+                "files in the current directory with the ls command and report the file names. "
+                "Wait for it, then answer with the names in one line."
+            ),
+        },
+    },
+    # `copilot --acp --stdio` (npm @github/copilot) in BYOK mode: no GitHub login, an
+    # OpenAI-compatible endpoint given by COPILOT_CAPTURE_BASE_URL, COPILOT_CAPTURE_MODEL
+    # and COPILOT_CAPTURE_API_KEY (skipped when unset). Its home is a temp dir.
+    "copilot": {
+        "cmd": ["npx", "-y", "@github/copilot", "--acp", "--stdio"],
+        "scenarios": ["markdown", "tools", "subagent"],
+        "approve": {"tools", "subagent"},
+        "settle": 3.0,
+        "prompts": {
+            "subagent": (
+                "Use your task tool to start exactly one explore subagent whose job is to list the "
                 "files in the current directory with the ls command and report the file names. "
                 "Then answer with the names in one line."
             ),
@@ -357,11 +411,80 @@ def prepare_env(agent: str, scratch: str, tmp: Path) -> tuple[dict, list[str]]:
         # No model line: the owner's pick (a model this account lacks) must not leak in.
         (store / "config.toml").write_text(f'[projects."{scratch}"]\ntrust_level = "trusted"\n')
     elif agent == "opencode":
+        # OpenCode's default policy allows shell, edit and webfetch without a
+        # `session/request_permission`, so `decide` would gate nothing. "ask"
+        # makes every such tool raise one. Its other inputs are cut off too:
+        # HOME is an empty temp dir (it reads ~/.agents and ~/.claude through
+        # it), the Claude-compat loader is off, and no credential of the
+        # owner's reaches it (the free model needs none).
+        env = {
+            k: v
+            for k, v in env.items()
+            if not re.search(r"(_API_KEY|_TOKEN|_SECRET)$", k) and not k.startswith("OPENCODE_")
+        }
+        home = tmp / "opencode-home"
+        home.mkdir()
+        env["HOME"] = str(home)
+        stores.append(str(home))
+        env["OPENCODE_DISABLE_CLAUDE_CODE"] = "1"
         for name, sub_dir in (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"), ("XDG_STATE_HOME", "state"), ("XDG_CACHE_HOME", "cache")):
             store = tmp / f"opencode-{sub_dir}"
             store.mkdir()
             env[name] = str(store)
             stores.append(str(store))
+        (Path(env["XDG_CONFIG_HOME"]) / "opencode").mkdir()
+        (Path(env["XDG_CONFIG_HOME"]) / "opencode" / "opencode.json").write_text('{"permission": "ask"}\n')
+    elif agent == "kimi" and os.environ.get("KIMI_CAPTURE_BASE_URL"):
+        # An OpenAI-compatible endpoint instead of the owner's login: KIMI_CAPTURE_BASE_URL,
+        # KIMI_CAPTURE_MODEL and KIMI_CAPTURE_API_KEY; the home (and so ~/.kimi-code) is a temp dir.
+        base, model, key = (os.environ.get(k) for k in ("KIMI_CAPTURE_BASE_URL", "KIMI_CAPTURE_MODEL", "KIMI_CAPTURE_API_KEY"))
+        if not (model and key):
+            raise Skip("set KIMI_CAPTURE_MODEL and KIMI_CAPTURE_API_KEY with KIMI_CAPTURE_BASE_URL")
+        home = tmp / "kimi-home"
+        (home / ".kimi-code").mkdir(parents=True)
+        stores.append(str(home))
+        cfg = home / ".kimi-code" / "config.toml"
+        cfg.write_text(
+            f'default_model = "capture"\n\n[providers.compat]\ntype = "openai"\nbase_url = "{base}"\napi_key = "{key}"\n\n'
+            f'[models."capture"]\nprovider = "compat"\nmodel = "{model}"\nmax_context_size = 200000\n'
+        )
+        os.chmod(cfg, 0o600)
+        for k in [k for k in env if k.endswith(("_API_KEY", "_TOKEN", "_SECRET")) or k.startswith("KIMI_")]:
+            del env[k]
+        env["HOME"] = str(home)
+        env["npm_config_cache"] = os.environ.get("npm_config_cache") or str(Path(HOME) / ".npm")
+    elif agent == "hermes":
+        base, model, key = (os.environ.get(k) for k in ("HERMES_CAPTURE_BASE_URL", "HERMES_CAPTURE_MODEL", "HERMES_CAPTURE_API_KEY"))
+        if not (base and model and key):
+            raise Skip("set HERMES_CAPTURE_BASE_URL, HERMES_CAPTURE_MODEL and HERMES_CAPTURE_API_KEY (an OpenAI-compatible endpoint)")
+        home = tmp / "hermes-home"
+        home.mkdir()
+        env["HERMES_HOME"] = str(home)
+        stores.append(str(home))
+        (home / ".env").write_text(f"OPENAI_API_KEY={key}\n")
+        os.chmod(home / ".env", 0o600)
+        (home / "config.yaml").write_text(
+            f'model:\n  default: "{model}"\n  provider: "custom"\n  base_url: "{base}"\n  api_key: "${{OPENAI_API_KEY}}"\n  stream: false\n'
+        )
+        for k in [k for k in env if k.endswith(("_API_KEY", "_TOKEN", "_SECRET")) and k != "OPENAI_API_KEY"]:
+            del env[k]
+        env["OPENAI_API_KEY"] = key
+    elif agent == "copilot":
+        base, model, key = (os.environ.get(k) for k in ("COPILOT_CAPTURE_BASE_URL", "COPILOT_CAPTURE_MODEL", "COPILOT_CAPTURE_API_KEY"))
+        if not (base and model and key):
+            raise Skip("set COPILOT_CAPTURE_BASE_URL, COPILOT_CAPTURE_MODEL and COPILOT_CAPTURE_API_KEY (an OpenAI-compatible endpoint)")
+        home = tmp / "copilot-home"
+        home.mkdir()
+        stores.append(str(home))
+        for k in [k for k in env if k.endswith(("_API_KEY", "_TOKEN", "_SECRET")) or k.startswith(("COPILOT_", "GH_", "GITHUB_"))]:
+            del env[k]
+        env.update(
+            HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), XDG_STATE_HOME=str(home / ".state"),
+            COPILOT_PROVIDER_TYPE="openai", COPILOT_PROVIDER_BASE_URL=base, COPILOT_PROVIDER_API_KEY=key,
+            COPILOT_MODEL=model, COPILOT_OFFLINE="true",
+        )
+        # npx needs its own cache: keep the owner's, it holds no secret.
+        env["npm_config_cache"] = os.environ.get("npm_config_cache") or str(Path(HOME) / ".npm")
     elif agent == "claude":
         if not (Path(HOME) / ".claude" / ".credentials.json").exists() and not env.get("ANTHROPIC_API_KEY"):
             raise Skip("no ~/.claude/.credentials.json: log in with `claude`")
@@ -608,6 +731,10 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
             time.sleep(0.1)
         _terminate(proc)
 
+        # A line the agent wrote is stamped by the reader thread, a line we wrote by the
+        # main thread, and the main thread files them in the order it handled them: an
+        # update that arrived while a send was being filed can then come out of order.
+        rec.rows.sort(key=lambda r: r["t"])
         text = "".join(json.dumps(r, separators=(",", ":"), ensure_ascii=False) + "\n" for r in rec.rows)
         size = len(text.encode())
         if size > MAX_BYTES:

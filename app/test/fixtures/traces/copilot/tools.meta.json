@@ -1,0 +1,20 @@
+{
+  "agent": "copilot",
+  "scenario": "tools",
+  "prompt": "Read the file notes.txt in the current directory, then run the shell command `echo hello-from-scratch`, then tell me in one sentence what each of them gave.",
+  "command": "npx -y @github/copilot --acp --stdio",
+  "agentInfo": {
+    "name": "Copilot",
+    "title": "Copilot",
+    "version": "1.0.109"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 1847.403,
+  "stopReason": "end_turn",
+  "lines": 52,
+  "bytes": 34021,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

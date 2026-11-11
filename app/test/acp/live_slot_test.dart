@@ -414,7 +414,8 @@ void main() {
         var step = 0;
         var chunks = 0;
         var listCopies = 0;
-        for (final event in eventsOf(file)) {
+        final events = eventsOf(file);
+        for (final event in events) {
           step++;
           final before = live.items;
           switch (event) {
@@ -432,7 +433,9 @@ void main() {
           if (!identical(before, live.items)) listCopies++;
           expectSameTranscript(live, reference, '$name step $step');
         }
-        expect(live.liveKey, isNull, reason: 'the turn ended: nothing is live');
+        // Hermes and DeepSeek send a subagent's answer after the prompt's response, as an
+        // autonomous message: it is live until something settles it.
+        if (events.last is StopReason) expect(live.liveKey, isNull, reason: 'the turn ended: nothing is live');
         if (chunks > 20) {
           expect(listCopies, lessThan(step), reason: 'chunks of the streaming message did not copy the list');
         }

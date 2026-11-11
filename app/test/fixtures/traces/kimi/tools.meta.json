@@ -1,0 +1,21 @@
+{
+  "agent": "kimi",
+  "scenario": "tools",
+  "prompt": "Read the file notes.txt in the current directory, then run the shell command `echo hello-from-scratch`, then tell me in one sentence what each of them gave.",
+  "command": "npx -y @moonshot-ai/kimi-code@2.5.3 acp",
+  "agentInfo": {
+    "name": "Kimi Code CLI",
+    "version": "2.5.3"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 1516.856,
+  "stopReason": "end_turn",
+  "lines": 56,
+  "bytes": 19428,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [
+    "allowed once: Bash"
+  ],
+  "notes": []
+}

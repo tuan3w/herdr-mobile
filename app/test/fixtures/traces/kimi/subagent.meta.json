@@ -1,0 +1,21 @@
+{
+  "agent": "kimi",
+  "scenario": "subagent",
+  "prompt": "Use your Agent tool to start exactly one subagent whose job is to list the files in the current directory with the ls command and report the file names. Wait for it, then answer with the names in one line.",
+  "command": "npx -y @moonshot-ai/kimi-code@2.5.3 acp",
+  "agentInfo": {
+    "name": "Kimi Code CLI",
+    "version": "2.5.3"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 1574.183,
+  "stopReason": "end_turn",
+  "lines": 105,
+  "bytes": 35765,
+  "optionsCut": 0,
+  "configChosen": {},
+  "permissionDecisions": [
+    "allowed once: Bash"
+  ],
+  "notes": []
+}

@@ -22,27 +22,27 @@ of the pipe): what a client that paints on arrival shows at once. *Burstiness B*
 
 ## By agent (every scenario pooled, thoughts and answer together)
 
-| | claude | codex | omp |
-| --- | ---: | ---: | ---: |
-| text chunks | 920 | 343 | 230 |
-| characters | 9363 | 1407 | 2387 |
-| chars/chunk p50 | 9 | 3 | 9 |
-| chars/chunk p95 | 24 | 8 | 23 |
-| chars/chunk max | 37 | 34 | 29 |
-| gap p50 (ms) | 24.7 | 17.8 | 4.7 |
-| gap p90 (ms) | 27.3 | 28.6 | 45.3 |
-| gap p99 (ms) | 51 | 89 | 405 |
-| gap max (ms) | 474 | 187 | 632 |
-| pauses of 1 s or more inside a stream | 8 | 3 | 0 |
-| share of chunks arriving < 5 ms after the previous | 0.17 | 0.49 | 0.65 |
-| longest burst (chunks) | 12 | 13 | 14 |
-| chars appearing together (burst) p50 | 9 | 4 | 10 |
-| chars appearing together (burst) p95 | 27 | 17 | 122 |
-| chars appearing together (burst) max | 122 | 60 | 176 |
-| burstiness B | -0.08 | 0.06 | 0.46 |
-| share of 100 ms windows with no text | 0.01 | 0.00 | 0.34 |
-| chars per 100 ms window, coefficient of variation | 0.63 | 0.68 | 1.31 |
-| chars/s while flowing | 439 | 229 | 332 |
+| | claude | codex | copilot | hermes | kimi | omp | opencode |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| text chunks | 920 | 343 | 369 | 450 | 588 | 230 | 9 |
+| characters | 9363 | 1407 | 6073 | 7723 | 9131 | 2387 | 386 |
+| chars/chunk p50 | 9 | 3 | 16 | 17 | 14 | 9 | 41 |
+| chars/chunk p95 | 24 | 8 | 33 | 35 | 34 | 23 | 87 |
+| chars/chunk max | 37 | 34 | 50 | 45 | 48 | 29 | 94 |
+| gap p50 (ms) | 24.7 | 17.8 | 14.0 | 13.9 | 14.1 | 4.7 | 100.0 |
+| gap p90 (ms) | 27.3 | 28.6 | 14.2 | 14.3 | 14.4 | 45.3 | 106.8 |
+| gap p99 (ms) | 51 | 89 | 67 | 17 | 16 | 405 | 108 |
+| gap max (ms) | 474 | 187 | 760 | 654 | 716 | 632 | 108 |
+| pauses of 1 s or more inside a stream | 8 | 3 | 0 | 1 | 1 | 0 | 3 |
+| share of chunks arriving < 5 ms after the previous | 0.17 | 0.49 | 0.02 | 0.01 | 0.01 | 0.65 | 0.00 |
+| longest burst (chunks) | 12 | 13 | 2 | 2 | 2 | 14 | 1 |
+| chars appearing together (burst) p50 | 9 | 4 | 17 | 17 | 14 | 10 | 41 |
+| chars appearing together (burst) p95 | 27 | 17 | 33 | 35 | 34 | 122 | 87 |
+| chars appearing together (burst) max | 122 | 60 | 50 | 45 | 48 | 176 | 94 |
+| burstiness B | -0.08 | 0.06 | 0.46 | 0.41 | 0.42 | 0.46 | - |
+| share of 100 ms windows with no text | 0.01 | 0.00 | 0.20 | 0.15 | 0.18 | 0.34 | - |
+| chars per 100 ms window, coefficient of variation | 0.63 | 0.68 | 0.63 | 0.53 | 0.60 | 1.31 | - |
+| chars/s while flowing | 439 | 229 | 897 | 1050 | 876 | 332 | - |
 
 Time from `session/prompt` sent to the first text chunk (ms), per scenario:
 
@@ -50,7 +50,11 @@ Time from `session/prompt` sent to the first text chunk (ms), per scenario:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | claude | - | 1302 | 1222 | 1235 | 1628 | 1783 | 1430 |
 | codex | - | 4253 | - | 6868 | - | 6978 | 4012 |
+| copilot | - | 790 | - | - | 428 | - | 420 |
+| hermes | - | 1328 | - | - | 907 | - | 899 |
+| kimi | - | 306 | - | 280 | 274 | - | 11298 |
 | omp | 4472 | 1702 | 3608 | 9810 | - | 2449 | 4476 |
+| opencode | - | - | - | - | 3325 | - | - |
 
 ## By scenario
 
@@ -66,9 +70,20 @@ Time from `session/prompt` sent to the first text chunk (ms), per scenario:
 | codex / plan | 104 | 508 | 4 / 10 / 34 | 18.2 / 27.4 / 51 / 76 | 2 | 5 / 23 / 54 | 0.54 | -0.04 | 256 |
 | codex / thinking | 57 | 228 | 4 / 8 / 24 | 2.7 / 30.0 / 139 / 187 | 0 | 4 / 54 / 60 | 0.81 | 0.39 | 297 |
 | codex / tools | 53 | 207 | 4 / 8 / 9 | 18.9 / 28.8 / 47 / 48 | 1 | 5 / 9 / 12 | 0.30 | -0.18 | 203 |
+| copilot / markdown | 288 | 4869 | 17 / 32 / 50 | 14.0 / 14.2 / 14 / 14 | 0 | 17 / 32 / 50 | 0.01 | -0.88 | 1220 |
+| copilot / subagent | 47 | 697 | 14 / 34 / 43 | 13.7 / 14.4 / 582 / 760 | 0 | 14 / 34 / 43 | 0.04 | 0.50 | 377 |
+| copilot / tools | 34 | 507 | 13 / 36 / 40 | 14.0 / 14.2 / 348 / 504 | 0 | 13 / 36 / 40 | 0.06 | 0.50 | 545 |
+| hermes / markdown | 337 | 6079 | 18 / 35 / 45 | 13.9 / 14.2 / 15 / 15 | 0 | 18 / 35 / 45 | 0.01 | -0.88 | 1309 |
+| hermes / subagent | 84 | 1147 | 11 / 32 / 39 | 13.9 / 14.4 / 181 / 654 | 1 | 11 / 32 / 39 | 0.02 | 0.52 | 569 |
+| hermes / tools | 29 | 497 | 14 / 37 / 42 | 13.8 / 14.3 / 394 / 535 | 0 | 15 / 37 / 42 | 0.07 | 0.51 | 562 |
+| kimi / markdown | 184 | 3226 | 17 / 35 / 43 | 14.1 / 14.3 / 15 / 17 | 0 | 17 / 35 / 43 | 0.01 | -0.84 | 1261 |
+| kimi / plan | 298 | 4361 | 13 / 33 / 48 | 14.1 / 14.5 / 384 / 716 | 0 | 13 / 33 / 48 | 0.01 | 0.48 | 714 |
+| kimi / subagent | 73 | 1079 | 13 / 31 / 43 | 14.1 / 14.4 / 15 / 15 | 1 | 13 / 31 / 43 | 0.03 | -0.75 | 1140 |
+| kimi / tools | 33 | 465 | 10 / 34 / 43 | 14.1 / 14.5 / 245 / 349 | 0 | 10 / 34 / 43 | 0.06 | 0.42 | 611 |
 | omp / ask | 1 | 4 | 4 / 4 / 4 | - / - / - / - | 0 | 4 / 4 / 4 | 0.00 | - | - |
 | omp / markdown | 64 | 807 | 12 / 23 / 29 | 0.0 / 0.2 / 537 / 632 | 0 | 125 / 176 / 176 | 0.98 | 0.52 | 302 |
 | omp / permission | 6 | 47 | 8 / 11 / 11 | 0.0 / 0.4 / 0 / 0 | 0 | 47 / 47 / 47 | 1.00 | - | - |
 | omp / plan | 10 | 141 | 14 / 25 / 25 | 0.1 / 0.3 / 1 / 1 | 0 | 141 / 141 / 141 | 1.00 | 0.19 | - |
 | omp / thinking | 135 | 1238 | 9 / 22 / 28 | 24.8 / 45.5 / 128 / 233 | 0 | 10 / 28 / 117 | 0.42 | 0.05 | 355 |
 | omp / tools | 14 | 150 | 12 / 17 / 20 | 0.1 / 0.4 / 1 / 1 | 0 | 150 / 150 / 150 | 1.00 | 0.14 | - |
+| opencode / subagent | 9 | 386 | 41 / 87 / 94 | 100.0 / 106.8 / 108 / 108 | 3 | 41 / 87 / 94 | 0.00 | - | - |

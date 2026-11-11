@@ -20,7 +20,13 @@ class HeldUpdate {
 /// book, sharing what did not change (the runs list is the same instance
 /// while no run changed, which is what `SubagentSummary.of` memoizes on).
 class SubagentBook {
-  const SubagentBook({this.runs = const [], this.owners = const {}, this.held = const [], this.aliases = const {}});
+  const SubagentBook({
+    this.runs = const [],
+    this.owners = const {},
+    this.held = const [],
+    this.aliases = const {},
+    this.scanned = const {},
+  });
 
   /// In order of first appearance; never reordered.
   final List<SubagentRun> runs;
@@ -38,11 +44,30 @@ class SubagentBook {
   /// it was bound to, when its first update arrived or the call completed.
   final Map<String, String> aliases;
 
+  /// Child session ids that found no launcher to bind to, each with the
+  /// transcript items it looked through: while those are the same list there
+  /// is nothing new to find, so its next update does not look again.
+  final Map<String, Object> scanned;
+
   /// The most updates held; the oldest are dropped past it (a parent that
   /// never comes must not grow memory).
   static const maxHeld = 500;
 
   bool get isEmpty => runs.isEmpty && owners.isEmpty && held.isEmpty && aliases.isEmpty;
+
+  SubagentBook _with({
+    List<SubagentRun>? runs,
+    Map<String, String>? owners,
+    List<HeldUpdate>? held,
+    Map<String, String>? aliases,
+    Map<String, Object>? scanned,
+  }) => SubagentBook(
+    runs: runs ?? this.runs,
+    owners: owners ?? this.owners,
+    held: held ?? this.held,
+    aliases: aliases ?? this.aliases,
+    scanned: scanned ?? this.scanned,
+  );
 
   int indexOf(String id) {
     for (var i = 0; i < runs.length; i++) {
@@ -65,31 +90,34 @@ class SubagentBook {
     } else {
       next[i] = run;
     }
-    return SubagentBook(runs: next, owners: owners, held: held, aliases: aliases);
+    return _with(runs: next);
   }
 
-  SubagentBook withRuns(List<SubagentRun> next) =>
-      SubagentBook(runs: next, owners: owners, held: held, aliases: aliases);
+  SubagentBook withRuns(List<SubagentRun> next) => _with(runs: next);
 
-  SubagentBook withOwner(String toolCallId, String parentId) => owners[toolCallId] == parentId
-      ? this
-      : SubagentBook(runs: runs, owners: {...owners, toolCallId: parentId}, held: held, aliases: aliases);
+  SubagentBook withOwner(String toolCallId, String parentId) =>
+      owners[toolCallId] == parentId ? this : _with(owners: {...owners, toolCallId: parentId});
 
   /// The child session [childId] belongs to the run [runId].
-  SubagentBook withAlias(String childId, String runId) => aliases[childId] == runId
-      ? this
-      : SubagentBook(runs: runs, owners: owners, held: held, aliases: {...aliases, childId: runId});
+  SubagentBook withAlias(String childId, String runId) =>
+      aliases[childId] == runId ? this : _with(aliases: {...aliases, childId: runId});
+
+  /// Every alias [changes] names, at once.
+  SubagentBook withAliases(Map<String, String> changes) => _with(aliases: {...aliases, ...changes});
+
+  /// The calls owned by the run [a] go to [b] and the other way round (the two
+  /// runs traded their conversations).
+  SubagentBook withOwnersSwapped(String a, String b) =>
+      _with(owners: {for (final e in owners.entries) e.key: e.value == a ? b : (e.value == b ? a : e.value)});
+
+  /// The child [childId] looked through [items] and found no launcher.
+  SubagentBook withScanned(String childId, Object items) => _with(scanned: {...scanned, childId: items});
 
   bool hasHeldFor(String parentId) => held.any((h) => h.parentId == parentId);
 
   SubagentBook withHeld(HeldUpdate update) {
     final next = [...held, update];
-    return SubagentBook(
-      runs: runs,
-      owners: owners,
-      aliases: aliases,
-      held: next.length > maxHeld ? next.sublist(next.length - maxHeld) : next,
-    );
+    return _with(held: next.length > maxHeld ? next.sublist(next.length - maxHeld) : next);
   }
 
   /// The updates held for [parentId], oldest first, and the book without them.
@@ -99,7 +127,7 @@ class SubagentBook {
     for (final h in held) {
       (h.parentId == parentId ? mine : rest).add(h);
     }
-    return (SubagentBook(runs: runs, owners: owners, held: rest, aliases: aliases), mine);
+    return (_with(held: rest), mine);
   }
 }
 

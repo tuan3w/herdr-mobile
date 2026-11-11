@@ -17,10 +17,9 @@ release.
   `Hermes` and `DeepSeek` show the launching call as a card with its result. When an agent
   starts a subagent in the background and never says when it ends, the card says so instead
   of showing it as running.
-- Checked: `Cursor`'s protocol in tests; `OpenCode` 2.2.7 on a real turn with a subagent, and 1.19.5
-  starting. `Kimi` is not logged in on the test machine, and `Copilot`, `Antigravity`, `Hermes` and
-  `DeepSeek` were not run on a turn, so their subagent cards follow the agents' documented
-  shapes. A phone was not used.
+- Checked: `Cursor`'s protocol in tests; `OpenCode` 2.2.7, `Hermes`, `Copilot` and `Kimi` on real turns
+  with a subagent (with a compatible model server). `Cursor`, `Antigravity` and `DeepSeek` were not
+  run on a turn, so their subagent cards follow the agents' documented shapes. A phone was not used.
 
 ## [0.1.61] - 2026-11-09
 

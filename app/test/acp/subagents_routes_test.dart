@@ -61,8 +61,8 @@ Json _chunk(String text, {String id = 'm', Json? meta, String kind = 'agent_mess
   '_meta': ?meta,
 };
 
-Json _oc(String child, {String parent = 'root', int depth = 1}) => {
-  'opencode/child-session': {'id': child, 'parentID': parent, 'depth': depth, 'title': 'child $child'},
+Json _oc(String child, {String parent = 'root', int depth = 1, String? title}) => {
+  'opencode/child-session': {'id': child, 'parentID': parent, 'depth': depth, 'title': title ?? 'child $child'},
 };
 
 Json _copilot(String agentId) => {
@@ -140,6 +140,82 @@ void main() {
     });
   });
 
+  group('kimi/subagent (recorded, kimi-code 2.5.3 on an OpenAI-compatible endpoint)', () {
+    test('one run for the Agent call: its description, the type that ran, the summary as the result', () {
+      final run = stateOfTrace('kimi', 'subagent').subagents.single;
+      expect(run.route, SubagentRoute.kimi);
+      expect(run.status, SubagentStatus.finished);
+      expect(run.title, isNotEmpty);
+      expect(run.agentType, 'explore');
+      expect(run.result, contains('README.md'));
+      expect(run.result, isNot(contains('agent_id:')), reason: 'the summary, without the header lines');
+      expect(run.hasTranscript, isFalse);
+    });
+
+    test('the subagent\'s approval names it, though nothing in the request does', () {
+      final s = stateOfTrace('kimi', 'subagent', stopAtPermission: true);
+      final pending = s.pending.single as PendingPermission;
+      expect(s.toolCall(pending.request.toolCall.toolCallId), isNull, reason: 'the child\'s call was never sent');
+      expect(pending.origin, isNotNull);
+      expect(pending.origin!.id, s.subagents.single.id);
+    });
+
+    test('with two running, an unknown call names neither; a call of the main agent never names one', () {
+      var s = _fold([
+        _call(
+          'k1',
+          title: 'Launching explore agent: a',
+          input: {'prompt': 'p', 'description': 'a'},
+          status: 'in_progress',
+        ),
+        _call(
+          'k2',
+          title: 'Launching explore agent: b',
+          input: {'prompt': 'p', 'description': 'b'},
+          status: 'in_progress',
+        ),
+        _call('main_call', title: 'Bash', kind: 'execute'),
+      ]);
+      s = s.withPending(PendingPermission(1, _permission('unknown_child_call')));
+      expect(s.pendingById(1)!.origin, isNull, reason: 'ambiguous');
+      s = s.withPending(PendingPermission(2, _permission('main_call')));
+      expect(s.pendingById(2)!.origin, isNull);
+    });
+
+    test('replay builds the same run', () {
+      expect(
+        replayOfTrace('kimi', 'subagent').subagents.map(_facts),
+        stateOfTrace('kimi', 'subagent').subagents.map(_facts),
+      );
+    });
+  });
+
+  group('hermes/subagent (recorded, Hermes 2026.9.24 on an OpenAI-compatible endpoint)', () {
+    test('one run for the delegate_task call: a background dispatch, not a result, and what it was asked is kept', () {
+      final s = stateOfTrace('hermes', 'subagent');
+      final run = s.subagents.single;
+      expect(run.route, SubagentRoute.hermes);
+      expect(run.status, SubagentStatus.finished);
+      expect(run.note, startedInBackgroundNote);
+      expect(run.result, isNull, reason: 'the call ended with the dispatch JSON');
+      expect(run.title, startsWith('Delegating'));
+      expect(run.assignment, isNot(contains('dispatched')), reason: 'the dispatch JSON is not what was asked');
+      expect(run.hasTranscript, isFalse);
+    });
+
+    test('what the subagent found comes back as the agent\'s own later message', () {
+      final said = _said(stateOfTrace('hermes', 'subagent').items);
+      expect(said.last, contains('README.md'));
+    });
+
+    test('replay builds the same run', () {
+      expect(
+        replayOfTrace('hermes', 'subagent').subagents.map(_facts),
+        stateOfTrace('hermes', 'subagent').subagents.map(_facts),
+      );
+    });
+  });
+
   group('opencode shapes (UNVERIFIED beyond the recorded one)', () {
     Json launcher(String id, {String status = 'in_progress'}) => _patch(
       id,
@@ -147,6 +223,25 @@ void main() {
       title: 'subagent',
       input: {'agent': 'explore', 'description': 'Look at $id', 'prompt': 'Do $id'},
     );
+
+    test('a launcher whose child never speaks has no conversation to open; it gets one when the child speaks', () {
+      var s = _fold([
+        _call('a', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('a'),
+        _patch('a', status: 'completed', text: 'done'),
+      ]);
+      expect(s.subagentRun('a')!.hasTranscript, isFalse, reason: 'the summary is the thing to open');
+      s = _fold([
+        _call('b', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('b'),
+        _chunk(
+          'hello',
+          id: 'x',
+          meta: _oc('ses_1', title: 'Look at b'),
+        ),
+      ], s);
+      expect(s.subagentRun('b')!.hasTranscript, isTrue);
+    });
 
     test('1.x `task`: a launcher by its input, no tagged children, wrapped result', () {
       final s = _fold([
@@ -199,7 +294,13 @@ void main() {
     });
 
     test('a child that speaks before any launcher is held, and joins the launcher when it arrives', () {
-      var s = _fold([_chunk('early', id: 'x', meta: _oc('ses_1'))]);
+      var s = _fold([
+        _chunk(
+          'early',
+          id: 'x',
+          meta: _oc('ses_1', title: 'Look at a'),
+        ),
+      ]);
       expect(s.items.whereType<TranscriptMessage>(), isEmpty, reason: 'not the main agent\'s text');
       expect(s.subagentBook.held, hasLength(1));
       s = _fold([_call('a', title: 'subagent', kind: 'think', name: 'subagent'), launcher('a')], s);
@@ -223,6 +324,94 @@ void main() {
       ]);
       expect(s.subagentRun('a')!.items.whereType<TranscriptMessage>().single.text, 'late');
       expect(s.subagentRun('a')!.result, 'done');
+    });
+
+    test('parallel launchers: a child binds to the launcher whose description is its title, whoever speaks first', () {
+      final s = _fold([
+        _call('a', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('a'),
+        _call('b', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('b'),
+        _chunk(
+          'B words',
+          id: 'y',
+          meta: _oc('ses_B', title: 'Look at b'),
+        ),
+        _chunk(
+          'A words',
+          id: 'x',
+          meta: _oc('ses_A', title: 'Look at a'),
+        ),
+      ]);
+      expect(s.subagentBook.aliases, {'ses_B': 'b', 'ses_A': 'a'});
+      expect(_said(s.subagentRun('a')!.items), ['A words']);
+      expect(_said(s.subagentRun('b')!.items), ['B words']);
+    });
+
+    test('a child bound to the wrong launcher moves when a result names it', () {
+      // The titles say nothing (both children are called the same), so the order bound them wrongly.
+      final s = _fold([
+        _call('a', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('a'),
+        _call('b', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('b'),
+        _chunk(
+          'B words',
+          id: 'y',
+          meta: _oc('ses_B', title: 'same'),
+        ),
+        _chunk(
+          'A words',
+          id: 'x',
+          meta: _oc('ses_A', title: 'same'),
+        ),
+        _patch(
+          'a',
+          status: 'completed',
+          text: '<subagent sessionID="ses_A" state="completed">\nresA\n</subagent>',
+          output: {
+            'metadata': {'sessionID': 'ses_A'},
+          },
+        ),
+        _patch(
+          'b',
+          status: 'completed',
+          text: '<subagent sessionID="ses_B" state="completed">\nresB\n</subagent>',
+          output: {
+            'metadata': {'sessionID': 'ses_B'},
+          },
+        ),
+        _chunk(
+          ' more A',
+          id: 'x',
+          meta: _oc('ses_A', title: 'same'),
+        ),
+      ]);
+      expect(s.subagentBook.aliases, {'ses_B': 'b', 'ses_A': 'a'});
+      expect(_said(s.subagentRun('a')!.items), ['A words more A']);
+      expect(_said(s.subagentRun('b')!.items), ['B words']);
+      expect(s.subagentRun('a')!.result, 'resA');
+    });
+
+    test('a child with no launcher is not adopted by a later unrelated launcher', () {
+      var s = _fold([
+        _chunk(
+          'ghost',
+          id: 'g',
+          meta: _oc('ses_G', title: 'Something else'),
+        ),
+      ]);
+      s = _fold([
+        _call('n', title: 'subagent', kind: 'think', name: 'subagent'),
+        launcher('n'),
+        _chunk(
+          'real',
+          id: 'r',
+          meta: _oc('ses_N', title: 'Look at n'),
+        ),
+      ], s);
+      expect(_said(s.subagentRun('n')!.items), ['real']);
+      expect(s.subagentBook.held.map((h) => h.parentId), ['ses_G'], reason: 'the orphan keeps waiting');
     });
 
     test('a grandchild belongs to the run of the child that started it', () {
@@ -291,13 +480,37 @@ void main() {
     });
   });
 
-  group('copilot (shape from github/copilot-cli#4106 and the t3code adapter; UNVERIFIED against a session)', () {
-    Json task(String id, {String status = 'in_progress', String mode = 'sync'}) => _call(
+  group('copilot/subagent (recorded, Copilot 1.0.109 in BYOK mode)', () {
+    test('the child\'s thoughts, call and text go to its run; the parent\'s transcript holds only its own', () {
+      final s = stateOfTrace('copilot', 'subagent');
+      final run = s.subagents.single;
+      expect(run.route, SubagentRoute.copilot);
+      expect(run.id, s.items.whereType<TranscriptTool>().single.call.toolCallId, reason: 'the launching call');
+      expect(run.agentType, 'explore');
+      expect(run.status, SubagentStatus.finished);
+      expect(run.result, contains('README.md'));
+      expect(run.hasTranscript, isTrue);
+      expect(run.items.whereType<TranscriptTool>(), hasLength(1), reason: 'the child ran one command');
+      expect(_said(run.items), isNotEmpty);
+      expect(s.toolCalls, hasLength(1), reason: 'the child\'s call is not in the main transcript');
+      expect(_said(s.items), hasLength(1), reason: 'only the parent\'s final answer');
+    });
+
+    test('replay builds the same run', () {
+      expect(
+        replayOfTrace('copilot', 'subagent').subagents.map(_facts),
+        stateOfTrace('copilot', 'subagent').subagents.map(_facts),
+      );
+    });
+  });
+
+  group('copilot shapes (UNVERIFIED beyond the recorded one)', () {
+    Json task(String id, {String status = 'in_progress', String mode = 'sync', String name = 'alpha'}) => _call(
       id,
-      title: 'task',
+      title: 'Find the parser',
       status: status,
       input: {
-        'name': 'alpha',
+        'name': name,
         'agent_type': 'explore',
         'description': 'Find the parser',
         'prompt': 'Where is the parser?',
@@ -305,35 +518,26 @@ void main() {
       },
     );
 
-    test('the child\'s text and calls are tagged with the launching call\'s id and go to its run', () {
+    test('the agent id is not the launching call\'s id: a child binds to the oldest unbound task', () {
       final s = _fold([
         task('t1'),
-        _chunk('thinking', id: 'c', meta: _copilot('t1'), kind: 'agent_thought_chunk'),
-        _call('child1', title: 'grep parser', kind: 'search', meta: _copilot('t1')),
-        _patch('child1', status: 'completed', meta: _copilot('t1')),
-        _chunk('found it', id: 'c2', meta: _copilot('t1')),
-        _patch('t1', status: 'completed', output: {'content': 'The parser is in src/parser.ts'}),
-        _chunk('Done: src/parser.ts', id: 'main'),
+        task('t2', name: 'beta'),
+        _chunk('first words', id: 'c', meta: _copilot('agent-uuid-1')),
+        _chunk('second words', id: 'd', meta: _copilot('agent-uuid-2')),
+        _patch('t1', status: 'completed', output: {'content': 'result one'}),
+        _chunk('Done', id: 'main'),
       ]);
-      final run = s.subagents.single;
-      expect(run.route, SubagentRoute.copilot);
-      expect(run.id, 't1');
-      expect(run.name, 'alpha');
-      expect(run.title, 'Find the parser');
-      expect(run.agentType, 'explore');
-      expect(run.status, SubagentStatus.finished);
-      expect(run.result, 'The parser is in src/parser.ts');
-      expect(run.items.whereType<TranscriptTool>().single.call.toolCallId, 'child1');
-      expect(run.items.whereType<TranscriptMessage>().map((m) => m.text), contains('found it'));
-      expect(s.toolCalls.map((c) => c.toolCallId), ['t1']);
-      expect(
-        [
-          for (final i in s.items)
-            if (i is TranscriptMessage) i.text,
-        ],
-        ['Done: src/parser.ts'],
-        reason: 'the child\'s text is not the main agent\'s',
-      );
+      expect(s.subagentBook.aliases, {'agent-uuid-1': 't1', 'agent-uuid-2': 't2'});
+      expect(_said(s.subagentRun('t1')!.items), ['first words']);
+      expect(_said(s.subagentRun('t2')!.items), ['second words']);
+      expect(s.subagentRun('t1')!.result, 'result one');
+      expect(_said(s.items), ['Done']);
+    });
+
+    test('a child with no task to bind to is held, not shown as the main agent\'s words', () {
+      final s = _fold([_chunk('orphan words', id: 'c', meta: _copilot('agent-uuid-9'))]);
+      expect(_said(s.items), isEmpty);
+      expect(s.subagentBook.held, hasLength(1));
     });
 
     test('mode background: the call settles at launch and the run says its end is not reported', () {
@@ -351,15 +555,6 @@ void main() {
       ]);
       expect(s.subagents.single.status, SubagentStatus.failed);
       expect(s.subagents.single.failure, 'boom');
-    });
-
-    test('tagged updates whose launcher has another shape still reach a run, made from the call', () {
-      final s = _fold([
-        _chunk('child words', id: 'c', meta: _copilot('odd')),
-        _call('odd', title: 'whatever it is called', kind: 'think'),
-      ]);
-      expect(s.subagents.single.id, 'odd');
-      expect(s.subagents.single.items.whereType<TranscriptMessage>().single.text, 'child words');
     });
   });
 
@@ -489,6 +684,63 @@ void main() {
       ]);
       expect(done.subagents.single.result, startsWith('Delegation results: 1 task'));
       expect(done.subagents.single.note, isNull);
+    });
+
+    test('hermes: the completion\'s dispatch JSON does not replace what it was asked', () {
+      final s = _fold([
+        _call('h1', title: 'delegate_task: 2 tasks', kind: 'execute', status: 'in_progress'),
+        _patch('h1', text: 'Delegating 2 tasks\n\n1. fix a\n2. fix b'),
+        _patch('h1', status: 'completed', text: '{"status": "dispatched", "mode": "background", "count": 2}'),
+      ]);
+      final run = s.subagents.single;
+      expect(run.title, 'Delegating 2 tasks');
+      expect(run.assignment, contains('1. fix a'));
+      expect(run.note, startedInBackgroundNote);
+    });
+
+    test('hermes: a failed delegation says why once, and keeps what it was asked', () {
+      final s = _fold([
+        _call('h1', title: 'delegate_task: one', kind: 'execute', status: 'in_progress'),
+        _patch('h1', text: 'Delegating task:\nfix the parser'),
+        _patch('h1', status: 'failed', text: 'Delegation failed: no api key'),
+      ]);
+      final run = s.subagents.single;
+      expect(run.failure, 'Delegation failed: no api key');
+      expect(run.assignment, contains('fix the parser'));
+      expect(run.title, isNot(contains('failed')));
+    });
+
+    test('kimi: a failed Agent call shows its error, not the header lines', () {
+      final s = _fold([
+        _call(
+          'k1',
+          title: 'Launching coder agent: trace',
+          input: {'prompt': 'p', 'description': 'trace', 'subagent_type': 'coder'},
+        ),
+        _patch(
+          'k1',
+          status: 'failed',
+          text: 'agent_id: ag_x\nactual_subagent_type: coder\nstatus: failed\nstop_reason: error\n\nsubagent error: Agent timed out after 60s\n\npartial output here',
+        ),
+      ]);
+      final run = s.subagents.single;
+      expect(run.status, SubagentStatus.failed);
+      expect(run.failure, 'Agent timed out after 60s');
+      expect(run.agentType, 'coder');
+    });
+
+    test('a failure text is cut like a result', () {
+      final huge = 'x' * (SubagentRun.maxResult * 3);
+      final copilot = _fold([
+        _call('c1', title: 'task', input: {'agent_type': 'explore', 'prompt': 'p', 'description': 'd'}),
+        _patch('c1', status: 'failed', output: {'content': huge}),
+      ]);
+      expect(copilot.subagents.single.failure!.length, lessThanOrEqualTo(SubagentRun.maxResult));
+      final deepseek = _fold([
+        _call('d1', title: 'subagent', input: {'description': 'd', 'prompt': 'p'}),
+        _patch('d1', status: 'failed', text: huge),
+      ]);
+      expect(deepseek.subagents.single.failure!.length, lessThanOrEqualTo(SubagentRun.maxResult));
     });
 
     test('a terminal call and an ordinary tool start no run', () {

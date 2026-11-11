@@ -578,7 +578,7 @@ class AgentSessionState {
   }
 
   AgentSessionState _apply(SessionUpdate update, DateTime? now) {
-    final bound = _bindOpenCodeChild(update);
+    final bound = _bindChild(update);
     if (!identical(bound, this)) return bound._apply(update, now);
     final parent = _parentOf(update);
     if (parent != null) return _childUpdate(parent, update, now);
@@ -937,80 +937,150 @@ class AgentSessionState {
   };
 
   /// The run [meta] names as the parent of what it tags: Claude's
-  /// `claudeCode.parentToolUseId`, Copilot's `github.com/copilot.agentId` (the
-  /// launching call's id), or OpenCode's child session, by the run it was
-  /// bound to (its own id until it is bound: the updates wait for a launcher).
+  /// `claudeCode.parentToolUseId` (the launching call's id), or, for OpenCode
+  /// and Copilot, the child's own id (a session id, an agent id) by the run it
+  /// was bound to (its own id until it is bound: the updates wait for a launcher).
   String? _tagOf(Json? meta) {
     if (meta == null) return null;
     final cc = meta['claudeCode'];
     final p = cc is Map ? cc['parentToolUseId'] : null;
     if (p is String && p.isNotEmpty) return p;
-    final co = meta['github.com/copilot'];
-    final a = co is Map ? co['agentId'] : null;
-    if (a is String && a.isNotEmpty) return a;
-    final child = _openCodeChild(meta);
+    final child = _childTag(meta);
     return child == null ? null : (subagentBook.aliases[child.id] ?? child.id);
   }
 
-  /// OpenCode's `_meta["opencode/child-session"]`: the child's session id, the
-  /// session it belongs to and its depth (1: a child of the main session).
-  static ({String id, String? parentId, int depth})? _openCodeChild(Json? meta) {
+  /// What OpenCode (`_meta["opencode/child-session"]`: the child's session id,
+  /// the session it belongs to, its depth, its title) and Copilot
+  /// (`_meta["github.com/copilot"].agentId`; a UUID, not the launching call's
+  /// id, and nothing else) put on what a child sends, and the launcher route
+  /// that starts such a child. Null for an update with neither.
+  static ({SubagentRoute route, String id, String? parentId, int depth, String? title})? _childTag(Json? meta) {
     final c = meta?['opencode/child-session'];
-    if (c is! Map) return null;
-    final id = c['id'];
-    if (id is! String || id.isEmpty) return null;
-    final parent = c['parentID'];
-    final depth = c['depth'];
-    return (id: id, parentId: parent is String && parent.isNotEmpty ? parent : null, depth: depth is int ? depth : 1);
+    if (c is Map) {
+      final id = c['id'];
+      if (id is! String || id.isEmpty) return null;
+      final parent = c['parentID'];
+      final depth = c['depth'];
+      final title = c['title'];
+      return (
+        route: SubagentRoute.opencode,
+        id: id,
+        parentId: parent is String && parent.isNotEmpty ? parent : null,
+        depth: depth is int ? depth : 1,
+        title: title is String && title.isNotEmpty ? title : null,
+      );
+    }
+    final co = meta?['github.com/copilot'];
+    final agent = co is Map ? co['agentId'] : null;
+    if (agent is String && agent.isNotEmpty) {
+      return (route: SubagentRoute.copilot, id: agent, parentId: null, depth: 1, title: null);
+    }
+    return null;
   }
 
-  /// An OpenCode child whose first update arrives is bound to the launching
-  /// call that started it: the oldest `subagent` / `task` call of the
-  /// transcript it belongs to that no child is bound to yet, a running one
-  /// first (the update names the child, never the call; the call's result
-  /// names the child exactly when it ends, see [_bindOpenCodeLauncher]).
-  AgentSessionState _bindOpenCodeChild(SessionUpdate u) {
-    final child = _openCodeChild(_metaOf(u));
+  /// A child whose first update arrives is bound to the launching call that
+  /// started it. The update names the child, never the call, so: the call whose
+  /// description is the child's title (OpenCode titles a child with it), else
+  /// the oldest call of the transcript it belongs to that no child is bound to
+  /// yet; a running call before a finished one. OpenCode's call result names
+  /// the child exactly when it ends (see [_bindLauncher]); Copilot's never
+  /// does, so parallel Copilot children can swap when they speak out of order.
+  AgentSessionState _bindChild(SessionUpdate u) {
+    final child = _childTag(_metaOf(u));
     if (child == null || subagentBook.aliases.containsKey(child.id)) return this;
     final AgentSessionState? container = child.depth <= 1
         ? this
         : subagentBook.run(subagentBook.aliases[child.parentId] ?? '')?.transcript;
     if (container == null) return this;
+    // Nothing new to look through since this child last found no launcher.
+    if (identical(subagentBook.scanned[child.id], container.items)) return this;
     final taken = subagentBook.aliases.values.toSet();
-    String? idle;
+    String? best;
+    var bestScore = -1;
     for (final item in container.items) {
       if (item is! TranscriptTool || taken.contains(item.call.toolCallId)) continue;
-      if (!launchFacts(item.call).any((f) => f.route == SubagentRoute.opencode)) continue;
-      if (item.call.status == ToolStatus.pending || item.call.status == ToolStatus.inProgress) {
-        return _copy(subagentBook: subagentBook.withAlias(child.id, item.call.toolCallId));
+      final facts = launchFacts(item.call).where((f) => f.route == child.route).firstOrNull;
+      if (facts == null) continue;
+      final active = item.call.status == ToolStatus.pending || item.call.status == ToolStatus.inProgress;
+      final score = (child.title != null && facts.title == child.title ? 2 : 0) + (active ? 1 : 0);
+      if (score > bestScore) {
+        best = item.call.toolCallId;
+        bestScore = score;
       }
-      idle ??= item.call.toolCallId;
     }
-    return idle == null ? this : _copy(subagentBook: subagentBook.withAlias(child.id, idle));
+    if (best == null) return _copy(subagentBook: subagentBook.withScanned(child.id, container.items));
+    return _copy(subagentBook: subagentBook.withAlias(child.id, best))._releaseHeldChild(best, null);
   }
 
-  /// The OpenCode launcher [runId] changed: its result names its child
-  /// session, which is bound to it; and the updates of a child that arrived
-  /// before any launcher (held under its own id) go to this one.
-  AgentSessionState _bindOpenCodeLauncher(String runId, ToolCall call, DateTime? now) {
+  /// The launcher [runId] changed: for OpenCode its result names its child
+  /// session, which is bound to it (moved to it when the order bound it to
+  /// another launcher); and the updates of a child that arrived before any
+  /// launcher (held under its own id) go to the launcher its title names.
+  AgentSessionState _bindLauncher(String runId, ToolCall call, SubagentRoute route, DateTime? now) {
     var s = this;
-    final named = openCodeChildSession(call);
-    if (named != null && !s.subagentBook.aliases.containsKey(named)) {
-      s = s._copy(subagentBook: s.subagentBook.withAlias(named, runId));
-    }
-    if (s.subagentBook.aliases.containsValue(runId)) {
-      return s._releaseHeldChild(runId, now);
-    }
-    String? waiting;
-    for (final h in s.subagentBook.held) {
-      final c = _openCodeChild(_metaOf(h.update));
-      if (c != null && c.id == h.parentId && !s.subagentBook.aliases.containsKey(c.id)) {
-        waiting = c.id;
-        break;
+    final named = route == SubagentRoute.opencode ? openCodeChildSession(call) : null;
+    if (named != null) {
+      final at = s.subagentBook.aliases[named];
+      if (at == null) {
+        s = s._copy(subagentBook: s.subagentBook.withAlias(named, runId));
+      } else if (at != runId) {
+        s = s._rebindChild(named, runId);
       }
     }
-    if (waiting == null) return s;
-    return s._copy(subagentBook: s.subagentBook.withAlias(waiting, runId))._releaseHeldChild(runId, now);
+    if (!s.subagentBook.aliases.containsValue(runId)) {
+      final title = s.subagentBook.run(runId)?.title;
+      String? waiting;
+      if (title != null) {
+        for (final h in s.subagentBook.held) {
+          final c = _childTag(_metaOf(h.update));
+          if (c != null &&
+              c.route == route &&
+              c.id == h.parentId &&
+              c.title == title &&
+              !s.subagentBook.aliases.containsKey(c.id)) {
+            waiting = c.id;
+            break;
+          }
+        }
+      }
+      if (waiting == null) return s;
+      s = s._copy(subagentBook: s.subagentBook.withAlias(waiting, runId));
+    }
+    return s._releaseHeldChild(runId, now);
+  }
+
+  /// The child session [child] was bound to another launcher than the one its
+  /// result names, [to]. When each run has at most one child, the two runs
+  /// trade their conversations (and who owns which call); more than that is
+  /// ambiguous and left as it is.
+  AgentSessionState _rebindChild(String child, String to) {
+    final book = subagentBook;
+    final from = book.aliases[child];
+    if (from == null || from == to) return this;
+    final fromKids = [
+      for (final e in book.aliases.entries)
+        if (e.value == from) e.key,
+    ];
+    final toKids = [
+      for (final e in book.aliases.entries)
+        if (e.value == to) e.key,
+    ];
+    final a = book.run(from);
+    final b = book.run(to);
+    if (fromKids.length != 1 || toKids.length > 1 || a == null || b == null) return this;
+    SubagentRun traded(SubagentRun r, SubagentRun other) => r.copyWith(
+      transcript: other.transcript,
+      toolCount: other.toolCount,
+      droppedItems: other.droppedItems,
+      recentTools: other.recentTools,
+      lastTool: other.lastTool,
+      lastToolLine: other.lastToolLine,
+    );
+    final next = book.withRun(traded(a, b)).withRun(traded(b, a)).withOwnersSwapped(from, to).withAliases({
+      child: to,
+      if (toKids.isNotEmpty) toKids.single: from,
+    });
+    return _copy(subagentBook: next);
   }
 
   /// The updates held under the child sessions bound to [runId] join its run.
@@ -1141,7 +1211,9 @@ class AgentSessionState {
     var s = this;
     for (final f in facts) {
       s = s._upsertRun(f, tool, containerId, now);
-      if (f.route == SubagentRoute.opencode) s = s._bindOpenCodeLauncher(f.id, tool.call, now);
+      if (f.route == SubagentRoute.opencode || f.route == SubagentRoute.copilot) {
+        s = s._bindLauncher(f.id, tool.call, f.route, now);
+      }
     }
     if (!held) return s;
     final (book, updates) = s.subagentBook.takeHeld(toolId);
@@ -1162,7 +1234,7 @@ class AgentSessionState {
       startedAt: tool.at,
       now: now,
     );
-    if (f.route.sendsTranscript && run.transcript == null) {
+    if (f.route == SubagentRoute.claude && run.transcript == null) {
       run = run.copyWith(transcript: AgentSessionState(sessionId));
     }
     final s = _copy(subagentBook: subagentBook.withRun(run));
@@ -1227,8 +1299,24 @@ class AgentSessionState {
         tagged = _tagOf(request.meta);
     }
     final parent = tagged ?? (toolId == null || toolId.isEmpty ? null : subagentBook.owners[toolId]);
-    if (parent == null || parent == toolId) return null;
+    if (parent == null) return _unmarkedChildOrigin(toolId);
+    if (parent == toolId) return null;
     return subagentBook.run(parent)?.origin;
+  }
+
+  /// Kimi's ACP server follows only the main agent: a subagent's approval
+  /// arrives as an ordinary permission for a call this client never saw
+  /// (recorded, `traces/kimi/subagent`), with nothing that names the subagent.
+  /// With exactly one Kimi subagent running, it is that one's.
+  SubagentOrigin? _unmarkedChildOrigin(String? toolId) {
+    if (toolId == null || toolId.isEmpty || _toolIndex(toolId) >= 0) return null;
+    SubagentRun? only;
+    for (final r in subagentBook.runs) {
+      if (r.route != SubagentRoute.kimi || !r.isActive) continue;
+      if (only != null) return null;
+      only = r;
+    }
+    return only?.origin;
   }
 
   /// The state without the item at [at].
