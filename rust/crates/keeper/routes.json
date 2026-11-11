@@ -2,5 +2,12 @@
   {"id": "omp", "label": "omp", "binary": "omp", "args": ["acp"]},
   {"id": "claude", "label": "Claude Code", "binary": "claude-agent-acp", "args": [], "npx": "@agentclientprotocol/claude-agent-acp"},
   {"id": "codex", "label": "Codex", "binary": "codex-acp", "args": [], "npx": "@agentclientprotocol/codex-acp", "air": ["asyncTasks"]},
-  {"id": "pi", "label": "pi", "binary": "pi-acp", "args": [], "npx": "pi-acp"}
+  {"id": "pi", "label": "pi", "binary": "pi-acp", "args": [], "npx": "pi-acp"},
+  {"id": "kimi", "label": "Kimi", "binary": "kimi", "args": ["acp"], "npx": "@moonshot-ai/kimi-code"},
+  {"id": "opencode", "label": "OpenCode", "binary": "opencode", "args": ["acp"], "npx": "opencode-ai"},
+  {"id": "cursor", "label": "Cursor", "binary": "cursor-agent", "args": ["acp"]},
+  {"id": "copilot", "label": "Copilot", "binary": "copilot", "args": ["--acp", "--stdio"], "npx": "@github/copilot"},
+  {"id": "antigravity_cli", "label": "Antigravity", "binary": "agy", "args": ["acp"]},
+  {"id": "hermes", "label": "Hermes", "binary": "hermes", "args": ["acp"]},
+  {"id": "deepseek", "label": "DeepSeek", "binary": "dsh", "args": ["--profile", "acp"], "npx": "@deepseek-ai/dsh@next"}
 ]

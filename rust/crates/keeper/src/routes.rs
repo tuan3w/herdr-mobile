@@ -46,22 +46,22 @@ mod tests {
     #[test]
     fn the_table_parses_and_ids_are_unique_lower_case() {
         let routes = all();
-        assert_eq!(
-            routes.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-            ["omp", "claude", "codex", "pi"]
-        );
-        for r in &routes {
-            assert_eq!(r.id, r.id.to_lowercase());
+        let mut ids: Vec<&str> = routes.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids.first(), Some(&"omp"), "the form lists omp first");
+        for id in &ids {
+            assert_eq!(*id, id.to_lowercase());
         }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), routes.len(), "ids are unique");
     }
 
     #[test]
-    fn omp_runs_acp_and_the_others_can_fall_back_to_npx() {
+    fn omp_runs_acp_and_an_agent_with_a_package_can_fall_back_to_npx() {
         assert_eq!(by_id("omp").map(|r| r.args), Some(vec!["acp".to_string()]));
-        assert!(all()
-            .iter()
-            .filter(|r| r.id != "omp")
-            .all(|r| r.npx.is_some()));
+        assert!(by_id("claude").and_then(|r| r.npx).is_some());
+        // An agent only its own installer provides has no package to run.
+        assert_eq!(by_id("cursor").and_then(|r| r.npx), None);
         assert_eq!(by_id("nope"), None);
     }
 }

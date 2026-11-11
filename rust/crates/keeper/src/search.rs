@@ -24,6 +24,9 @@ pub fn dirs(path_env: &str, home: &Path) -> Vec<PathBuf> {
         home.join(".bun/bin"),
         home.join(".cargo/bin"),
         home.join(".npm-global/bin"),
+        // Where the OpenCode and Kimi installers put their binary.
+        home.join(".opencode/bin"),
+        home.join(".kimi-code/bin"),
         PathBuf::from("/usr/local/bin"),
         PathBuf::from("/opt/homebrew/bin"),
     ] {
@@ -54,7 +57,8 @@ pub fn which(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// The command that runs `route`: its binary with its arguments, else
-/// `npx -y <package>`. `None` when the host has neither.
+/// `npx -y <package>` with the same arguments (`@github/copilot --acp --stdio`
+/// needs them). `None` when the host has neither.
 #[must_use]
 pub fn resolve(route: &Route, dirs: &[PathBuf]) -> Option<Vec<String>> {
     if let Some(bin) = which(&route.binary, dirs) {
@@ -64,11 +68,13 @@ pub fn resolve(route: &Route, dirs: &[PathBuf]) -> Option<Vec<String>> {
     }
     let pkg = route.npx.as_ref()?;
     let npx = which("npx", dirs)?;
-    Some(vec![
+    let mut argv = vec![
         npx.to_string_lossy().into_owned(),
         "-y".to_string(),
         pkg.clone(),
-    ])
+    ];
+    argv.extend(route.args.iter().cloned());
+    Some(argv)
 }
 
 #[cfg(test)]
@@ -93,6 +99,9 @@ mod tests {
         // codex-acp is not installed: npx runs its package.
         let codex = resolve(&routes::by_id("codex").expect("codex"), &dirs).expect("npx");
         assert_eq!(&codex[1..], ["-y", "@agentclientprotocol/codex-acp"]);
+        // A route with arguments keeps them behind the package.
+        let copilot = resolve(&routes::by_id("copilot").expect("copilot"), &dirs).expect("npx");
+        assert_eq!(&copilot[1..], ["-y", "@github/copilot", "--acp", "--stdio"]);
     }
 
     #[test]
