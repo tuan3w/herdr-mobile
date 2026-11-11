@@ -71,6 +71,12 @@ HELD = ("session/request_permission", "elicitation/create")
 SESSION_BUSY = -32003
 CHUNKS = ("agent_message_chunk", "agent_thought_chunk", "user_message_chunk")
 INIT_ID = "keeper-init"
+# The id of the `authenticate` the keeper sends when the route names an auth
+# method (Cursor): initialize, authenticate, then the first session.
+AUTH_ID = "keeper-auth"
+# Cursor's blocking extension requests, answered by the phone's own question
+# form and permission card: the keeper translates them (see cursor_*).
+XLATE = {"cursor/ask_question": "ask", "cursor/create_plan": "plan"}
 # What gives Claude Code a login without the macOS Keychain (see
 # Keeper.keychain_login).
 CLAUDE_ENV_LOGINS = (
@@ -232,6 +238,8 @@ def search_dirs():
         os.path.join(h, ".bun", "bin"),
         os.path.join(h, ".cargo", "bin"),
         os.path.join(h, ".npm-global", "bin"),
+        os.path.join(h, ".opencode", "bin"),
+        os.path.join(h, ".kimi-code", "bin"),
         "/usr/local/bin",
         "/opt/homebrew/bin",
     ):
@@ -264,7 +272,7 @@ def resolve(route, dirs):
     if pkg:
         n = which("npx", dirs)
         if n:
-            return [n, "-y", pkg]
+            return [n, "-y", pkg] + list(route.get("args") or [])
     return None
 
 
@@ -933,6 +941,143 @@ def answer_of(info, msg):
     return oid
 
 
+def cursor_choices(options):
+    """[{"const", "title"}] of Cursor's {id, label} options (unusable ones left out)."""
+    out = []
+    for o in options if isinstance(options, list) else []:
+        if isinstance(o, dict) and isinstance(o.get("id"), str) and o["id"]:
+            label = o.get("label")
+            out.append({"const": o["id"], "title": label if isinstance(label, str) and label else o["id"]})
+    return out
+
+
+def cursor_ask_to_elicitation(params, session_id):
+    """`cursor/ask_question` as the `elicitation/create` the phone already
+    shows: one enum property per single-choice question, one array of enums per
+    `allowMultiple` one. None when there is no question it could show."""
+    qs = params.get("questions") if isinstance(params, dict) else None
+    props = collections.OrderedDict()
+    for q in qs if isinstance(qs, list) else []:
+        if not isinstance(q, dict) or not isinstance(q.get("id"), str) or not q["id"]:
+            continue
+        opts = cursor_choices(q.get("options"))
+        if not opts:
+            continue
+        title = q.get("prompt") if isinstance(q.get("prompt"), str) and q["prompt"] else q["id"]
+        if q.get("allowMultiple") is True:
+            props[q["id"]] = {"type": "array", "title": title, "items": {"anyOf": opts}}
+        else:
+            props[q["id"]] = {"type": "string", "title": title, "oneOf": opts}
+    if not props:
+        return None
+    title = params.get("title")
+    return {
+        "sessionId": session_id,
+        "mode": "form",
+        "toolCallId": params.get("toolCallId"),
+        "message": title if isinstance(title, str) and title else "Cursor has a question",
+        "requestedSchema": {"type": "object", "properties": props, "required": list(props)},
+    }
+
+
+def cursor_ask_result(result, orig):
+    """What goes back to Cursor for the phone's answer to the translated question."""
+    res = result if isinstance(result, dict) else {}
+    action = res.get("action")
+    if action == "decline":
+        return {"outcome": {"outcome": "skipped"}}
+    content = res.get("content")
+    if action != "accept" or not isinstance(content, dict):
+        return {"outcome": {"outcome": "cancelled"}}
+    answers = []
+    qs = orig.get("questions") if isinstance(orig, dict) else None
+    for q in qs if isinstance(qs, list) else []:
+        qid = q.get("id") if isinstance(q, dict) else None
+        if not isinstance(qid, str) or qid not in content:
+            continue
+        v = content[qid]
+        ids = [x for x in v if isinstance(x, str)] if isinstance(v, list) else ([v] if isinstance(v, str) else [])
+        answers.append({"questionId": qid, "selectedOptionIds": ids})
+    return {"outcome": {"outcome": "answered", "answers": answers}}
+
+
+def cursor_plan_to_permission(params, session_id):
+    """`cursor/create_plan` as a `session/request_permission` with the plan as
+    its content and two options. None when there is no plan to approve."""
+    plan = params.get("plan") if isinstance(params, dict) else None
+    if not isinstance(plan, str) or not plan.strip():
+        return None
+    name = params.get("name")
+    overview = params.get("overview")
+    text = (overview + "\n\n" if isinstance(overview, str) and overview else "") + plan
+    return {
+        "sessionId": session_id,
+        "toolCall": {
+            "toolCallId": params.get("toolCallId"),
+            "title": "Approve plan: " + (name if isinstance(name, str) and name else "plan"),
+            "kind": "switch_mode",
+            "status": "pending",
+            "content": [{"type": "content", "content": {"type": "text", "text": text}}],
+        },
+        "options": [
+            {"optionId": "accept", "name": "Approve plan", "kind": "allow_once"},
+            {"optionId": "reject", "name": "Reject plan", "kind": "reject_once"},
+        ],
+    }
+
+
+def cursor_plan_result(result):
+    """Accepted only when the person chose "Approve plan"; anything else is not."""
+    res = result if isinstance(result, dict) else {}
+    out = res.get("outcome")
+    out = out if isinstance(out, dict) else {}
+    if out.get("outcome") == "selected":
+        if out.get("optionId") == "accept":
+            return {"outcome": {"outcome": "accepted"}}
+        if out.get("optionId") == "reject":
+            return {"outcome": {"outcome": "rejected"}}
+    return {"outcome": {"outcome": "cancelled"}}
+
+
+def cursor_todo_entries(todos, merge, level):
+    """The plan entries after `cursor/update_todos`: [level] (an ordered dict by
+    todo id) is replaced, or merged into; a cancelled todo is left out."""
+    if not merge:
+        level.clear()
+    for t in todos if isinstance(todos, list) else []:
+        if not isinstance(t, dict) or not isinstance(t.get("id"), str) or not isinstance(t.get("content"), str):
+            continue
+        if t.get("status") == "cancelled":
+            level.pop(t["id"], None)
+            continue
+        status = t.get("status") if t.get("status") in ("pending", "in_progress", "completed") else "pending"
+        level[t["id"]] = {"content": t["content"], "priority": "medium", "status": status}
+    return list(level.values())
+
+
+def cursor_task_update(params, session_id):
+    """The `tool_call_update` for what `cursor/task` says about a finished
+    subagent task, or None when it names no tool call. It rides the launching
+    call's own id; the prompt is left out (it is in that call's rawInput)."""
+    p = params if isinstance(params, dict) else {}
+    tcid = p.get("toolCallId")
+    if not (isinstance(tcid, str) and tcid):
+        return None
+    task = {}
+    for key in ("description", "model", "agentId"):
+        if isinstance(p.get(key), str):
+            task[key] = p[key]
+    kind = p.get("subagentType")
+    if isinstance(kind, dict):
+        kind = kind.get("custom")
+    if isinstance(kind, str):
+        task["subagentType"] = kind
+    ms = p.get("durationMs")
+    if isinstance(ms, (int, float)) and not isinstance(ms, bool):
+        task["durationMs"] = ms
+    return {"sessionUpdate": "tool_call_update", "toolCallId": tcid, "_meta": {"cursor": {"task": task}}}
+
+
 def herdr_result(out):
     """`.result` of what a herdr CLI command printed ({} when it is not that)."""
     try:
@@ -1180,6 +1325,10 @@ class Keeper(object):
         self.sent = {}
         self.unseen_end = None
         self.bg_level = None
+        self.pending_init = None
+        # Cursor's todo list (cursor/update_todos), by todo id: the notification
+        # may merge into it.
+        self.cursor_todos = collections.OrderedDict()
         # The herdr pane a `view` client said it shows this session in.
         self.pane_id = None
         # Claude Code on macOS keeps its login in the login Keychain, which
@@ -1613,6 +1762,10 @@ class Keeper(object):
         out = {"jsonrpc": "2.0", "id": info["aid"]}
         if "error" in msg:
             out["error"] = msg["error"]
+        elif info.get("xlate") == "ask":
+            out["result"] = cursor_ask_result(msg.get("result"), info.get("orig"))
+        elif info.get("xlate") == "plan":
+            out["result"] = cursor_plan_result(msg.get("result"))
         else:
             out["result"] = msg.get("result")
         self.send_agent(out)
@@ -1775,6 +1928,28 @@ class Keeper(object):
             # last one is kept so a client that attaches later still gets it.
             if method == "_claude/sdkMessage" and b"background_tasks_changed" in raw:
                 self.bg_level = raw
+            if method == "cursor/update_todos" and self.session_id is not None:
+                # Cursor's todo list is the plan: logged, counted and sent like
+                # any session/update.
+                p = msg.get("params")
+                p = p if isinstance(p, dict) else {}
+                entries = cursor_todo_entries(p.get("todos"), p.get("merge") is True, self.cursor_todos)
+                upd = {
+                    "jsonrpc": "2.0", "method": "session/update",
+                    "params": {"sessionId": self.session_id, "update": {"sessionUpdate": "plan", "entries": entries}},
+                }
+                data = enc(upd)
+                self.on_agent_notification(upd, data[:-1])
+                return
+            if method == "cursor/task" and self.session_id is not None:
+                # What a finished subagent task says rides its launching call.
+                task = cursor_task_update(msg.get("params"), self.session_id)
+                if task is None:
+                    self.dlog("cursor/task names no tool call: dropped")
+                    return
+                upd = {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": self.session_id, "update": task}}
+                self.on_agent_notification(upd, enc(upd)[:-1])
+                return
             self.broadcast(raw + b"\n")
 
     def on_agent_request(self, msg):
@@ -1785,10 +1960,32 @@ class Keeper(object):
         self.flush_stash()
         kid = "kp%d" % self.next_kid
         self.next_kid += 1
+        xlate = XLATE.get(method)
+        orig = msg.get("params")
+        if xlate is not None:
+            # Cursor's own question and plan approval become the phone's
+            # question form and permission card, held like any other.
+            sid = self.session_id
+            if sid is None and isinstance(orig, dict):
+                sid = orig.get("sessionId")
+            if xlate == "ask":
+                params = cursor_ask_to_elicitation(orig, sid)
+                method = "elicitation/create"
+            else:
+                params = cursor_plan_to_permission(orig, sid)
+                method = "session/request_permission"
+            if params is None:
+                self.dlog("%s had nothing to show: cancelled" % msg["method"])
+                self.send_agent({"jsonrpc": "2.0", "id": aid, "result": {"outcome": {"outcome": "cancelled"}}})
+                return
+            msg = {"jsonrpc": "2.0", "id": aid, "method": method, "params": params}
         if method in HELD:
             # Every client gets it under the same id; the first answer wins
             # (settle). `conns`: the clients that were given it.
             info = {"kid": kid, "aid": aid, "method": method, "params": msg.get("params"), "conns": set()}
+            if xlate is not None:
+                info["xlate"] = xlate
+                info["orig"] = orig
             self.pending[kid] = info
             self.save()
             self.hook("blocked", self.summarize(msg))
@@ -1811,6 +2008,9 @@ class Keeper(object):
         rid = msg["id"]
         if rid == INIT_ID:
             self.on_init_response(msg)
+            return
+        if rid == AUTH_ID:
+            self.on_auth_response(msg)
             return
         route = self.routes.pop(rid, None) if isinstance(rid, int) else None
         if route is None:
@@ -2080,6 +2280,33 @@ class Keeper(object):
             caps = {}
             res["agentCapabilities"] = caps
         caps["loadSession"] = True
+        auth = (route_by_id(self.agent) or {}).get("auth")
+        methods = res.get("authMethods")
+        if auth and isinstance(methods, list) and any(isinstance(m, dict) and m.get("id") == auth for m in methods):
+            # The route's flow is initialize, authenticate, session/new: the
+            # start report waits for the agent's answer (INIT_TIMEOUT covers it).
+            self.pending_init = res
+            self.send_agent({"jsonrpc": "2.0", "id": AUTH_ID, "method": "authenticate", "params": {"methodId": auth}})
+            return
+        self.finish_init(res)
+
+    def on_auth_response(self, msg):
+        if self.pending_init is None:
+            return
+        err = msg.get("error")
+        # An agent that does not know `authenticate` has nothing to sign in to.
+        if "error" in msg and not (isinstance(err, dict) and err.get("code") == -32601):
+            text = err.get("message") if isinstance(err, dict) else "no reason given"
+            # Cursor's reason ("Failed to open browser for login ...") is in data.message.
+            more = err.get("data", {}).get("message") if isinstance(err, dict) and isinstance(err.get("data"), dict) else None
+            if isinstance(more, str) and more:
+                text = "%s: %s" % (text, trunc(more, 300))
+            self.fail_start("the agent refused to sign in: %s" % text, EX_FAILED)
+            return
+        self.finish_init(self.pending_init)
+
+    def finish_init(self, res):
+        self.pending_init = None
         self.init_result = res
         self.state = "running"
         self.update_reg(self.listener)

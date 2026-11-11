@@ -54,6 +54,7 @@ String keeperScript() => keeperPython.replaceFirst(
         'binary': r.binary,
         'args': r.args,
         if (r.npxPackage != null) 'npx': r.npxPackage,
+        if (r.authMethod != null) 'auth': r.authMethod,
         if (r.airCapabilities.isNotEmpty) 'air': r.airCapabilities,
       },
   ]),

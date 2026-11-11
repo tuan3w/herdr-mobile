@@ -13,6 +13,7 @@ class AgentRoute {
     required this.binary,
     this.args = const [],
     this.npxPackage,
+    this.authMethod,
     this.airCapabilities = const [],
     this.sessionMeta,
   });
@@ -26,6 +27,10 @@ class AgentRoute {
   final String binary;
   final List<String> args;
   final String? npxPackage;
+
+  /// An `authMethods` id the keeper must `authenticate` with before the first
+  /// session. Cursor only: its flow is initialize, authenticate, session/new.
+  final String? authMethod;
 
   /// What the keeper declares to this agent as
   /// `clientCapabilities._meta.jetbrains.air.capabilities`. Empty: nothing, and
@@ -67,6 +72,59 @@ const agentRoutes = <AgentRoute>[
     airCapabilities: ['asyncTasks'],
   ),
   AgentRoute(id: 'pi', label: 'pi', binary: 'pi-acp', npxPackage: 'pi-acp'),
+  // The routes below launch the vendor's own ACP server. Ids equal herdr's
+  // `IntegrationTarget` ids (the keeper reports `pane report-agent --agent
+  // <id>`); herdr has none for DeepSeek. None declares `airCapabilities` or
+  // `sessionMeta`: that is only done once an agent was checked.
+  // kimi: `kimi acp`, probed on kimi 0.26 and kimi-cli 1.29 (loadSession,
+  // session/list + resume); installs into ~/.kimi-code/bin. Without it the
+  // ACP registry's own launch is used: `npx @moonshot-ai/kimi-code acp` (2.5.3
+  // probed: adds close, delete, fork).
+  AgentRoute(id: 'kimi', label: 'Kimi', binary: 'kimi', args: ['acp'], npxPackage: '@moonshot-ai/kimi-code'),
+  // opencode: `opencode acp` (opencode.ai/docs/acp). Builds before 1.19 crash
+  // on any `initialize` (1.1.50 probed: "fn3 is not a function"); 1.19.5
+  // probed OK (loadSession, list, resume). Installs into ~/.opencode/bin.
+  AgentRoute(id: 'opencode', label: 'OpenCode', binary: 'opencode', args: ['acp'], npxPackage: 'opencode-ai'),
+  // cursor: `cursor-agent acp` (cursor.com/docs/cli/acp), probed: loadSession
+  // but no session/list; flow is initialize, authenticate(cursor_login),
+  // session/new. Its `cursor/*` requests are translated by the keeper.
+  AgentRoute(id: 'cursor', label: 'Cursor', binary: 'cursor-agent', args: ['acp'], authMethod: 'cursor_login'),
+  // copilot: `copilot --acp --stdio` (GitHub Copilot CLI ACP server, public
+  // preview, docs.github.com). Probed through npx (1.0.109, ~10 s cold):
+  // loadSession, sessionCapabilities {close, list} (no resume), auth method
+  // `copilot-login`, modes agent/plan/autopilot with URL ids. No real turn run.
+  AgentRoute(
+    id: 'copilot',
+    label: 'Copilot',
+    binary: 'copilot',
+    args: ['--acp', '--stdio'],
+    npxPackage: '@github/copilot',
+  ),
+  // antigravity: `agy acp` (antigravity.google/docs/cli/acp), 1.5.5 probed:
+  // loadSession, sessionCapabilities {resume, close, load, list,
+  // additionalDirectories}, auth methods oauth-personal, oauth-business,
+  // gemini-api-key, agent-platform. Logged out, `session/new` answers -32000
+  // "Authentication required" (an older build exited before `initialize`).
+  AgentRoute(id: 'antigravity_cli', label: 'Antigravity', binary: 'agy', args: ['acp']),
+  // hermes: `hermes acp` (NousResearch/hermes-agent acp_adapter/server.py:
+  // loadSession, list, resume; terminal auth method `hermes-setup`).
+  // Unverified on a real run: the launcher here has a broken venv.
+  AgentRoute(id: 'hermes', label: 'Hermes', binary: 'hermes', args: ['acp']),
+  // deepseek: `dsh --profile acp` (deepseek-ai/deepseek-harness, npm
+  // @deepseek-ai/dsh, bin `dsh`). Automation profile: no session/load (the
+  // keeper answers that itself), one-shot allow/reject permissions.
+  // Only prereleases are published, so a bare `npx -y @deepseek-ai/dsh` fails
+  // with ETARGET (`*` excludes them): the `next` tag (0.2.2-rc.1) is pinned.
+  // Probed through npm: initialize answers sessionCapabilities {close, list,
+  // resume}, no auth methods. Needs Node >= 24.9 on paper; ran on Node 22.21.
+  // A cold `npx` installs 900 MB (about a minute). No real turn run here.
+  AgentRoute(
+    id: 'deepseek',
+    label: 'DeepSeek',
+    binary: 'dsh',
+    args: ['--profile', 'acp'],
+    npxPackage: '@deepseek-ai/dsh@next',
+  ),
 ];
 
 AgentRoute? agentRouteById(String id) {
