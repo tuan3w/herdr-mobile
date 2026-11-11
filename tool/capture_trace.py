@@ -124,6 +124,41 @@ AGENTS = {
         "approve": {"tools"},
         "settle": 1.5,
     },
+    # `kimi acp` (kimi-code, probed: loadSession, session/list + resume). Its
+    # store (~/.kimi-code) is not redirected, like Claude's.
+    "kimi": {
+        "cmd": ["kimi", "acp"],
+        "scenarios": ["markdown", "tools", "plan"],
+        "approve": {"tools"},
+        "settle": 1.5,
+    },
+    # `opencode acp` (2.x binary from github.com/anomalyco/opencode releases: the
+    # npm `opencode-ai` is 1.x and tags no child updates). Its free model needs no
+    # login. The store (XDG dirs) is redirected to a temp dir.
+    "opencode": {
+        "cmd": ["opencode", "acp"],
+        "scenarios": ["markdown", "tools", "subagent"],
+        "approve": {"tools", "subagent"},
+        "settle": 2.0,
+        "model": "opencode/big-pickle",
+        "prompts": {
+            "subagent": (
+                "Use your subagent tool to start exactly one subagent whose job is to list the "
+                "files in the current directory with the ls command and report the file names. "
+                "Then answer with the names in one line."
+            ),
+        },
+    },
+    # `cursor-agent acp`: initialize, authenticate(cursor_login), session/new.
+    # Its store (~/.cursor) is not redirected, like Claude's. Its permission
+    # options are allow-once / allow-always / reject-once (docs: cursor.com/docs/cli/acp).
+    "cursor": {
+        "cmd": ["cursor-agent", "acp"],
+        "auth": "cursor_login",
+        "scenarios": ["markdown", "tools", "permission"],
+        "approve": {"permission", "tools"},
+        "settle": 1.5,
+    },
 }
 
 
@@ -291,6 +326,8 @@ def prepare_env(agent: str, scratch: str, tmp: Path) -> tuple[dict, list[str]]:
         if not re.match(r"(ORCA_|HERDR_|CLAUDECODE|CLAUDE_CODE_|OMPCODE|ORCA)", k)
     }
     env["CI"] = "1"
+    # Kimi's installer puts `kimi` here, where a non-interactive PATH lacks it.
+    env["PATH"] = f"{HOME}/.kimi-code/bin:" + env.get("PATH", "")
     stores: list[str] = []
     if agent == "omp":
         store = tmp / "omp-agent"
@@ -319,6 +356,12 @@ def prepare_env(agent: str, scratch: str, tmp: Path) -> tuple[dict, list[str]]:
         os.chmod(store / "auth.json", 0o600)
         # No model line: the owner's pick (a model this account lacks) must not leak in.
         (store / "config.toml").write_text(f'[projects."{scratch}"]\ntrust_level = "trusted"\n')
+    elif agent == "opencode":
+        for name, sub_dir in (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"), ("XDG_STATE_HOME", "state"), ("XDG_CACHE_HOME", "cache")):
+            store = tmp / f"opencode-{sub_dir}"
+            store.mkdir()
+            env[name] = str(store)
+            stores.append(str(store))
     elif agent == "claude":
         if not (Path(HOME) / ".claude" / ".credentials.json").exists() and not env.get("ANTHROPIC_API_KEY"):
             raise Skip("no ~/.claude/.credentials.json: log in with `claude`")
@@ -504,7 +547,19 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
         )
         if init.get("authMethods") and agent in ("codex",) and not (Path(HOME) / ".codex" / "auth.json").exists():
             raise Skip("agent asks for sign-in")
-        setup = rec.wait_for(rec.request("session/new", {"cwd": scratch, "mcpServers": []}), 180, on_request)
+        auth = spec.get("auth")
+        if auth and any(m.get("id") == auth for m in init.get("authMethods") or []):
+            # Cursor's flow is initialize, authenticate, session/new.
+            try:
+                rec.wait_for(rec.request("authenticate", {"methodId": auth}), 60)
+            except RuntimeError as e:
+                raise Skip(f"{agent} is not logged in: {e}") from None
+        try:
+            setup = rec.wait_for(rec.request("session/new", {"cwd": scratch, "mcpServers": []}), 180, on_request)
+        except RuntimeError as e:
+            if re.search(r"authentication required|log ?in|sign ?in|unauthenticated", str(e), re.I):
+                raise Skip(f"agent is not logged in: {e}") from None
+            raise
         sid = setup["sessionId"]
         options = setup.get("configOptions") or []
 
@@ -532,10 +587,11 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
                         if v is not None and v != o.get("currentValue"):
                             options = set_option(o["id"], v)
                             chosen[o["id"]] = v
+        prompt_text = spec.get("prompts", {}).get(scenario, PROMPTS[scenario])
         prompt_at = rec.now()
         stop = None
         try:
-            rid = rec.request("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": PROMPTS[scenario]}]})
+            rid = rec.request("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": prompt_text}]})
             stop = (rec.wait_for(rid, timeout, on_request) or {}).get("stopReason")
         except TimeoutError:
             rec.send({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": sid}})
@@ -562,7 +618,7 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
         meta = {
             "agent": agent,
             "scenario": scenario,
-            "prompt": PROMPTS[scenario],
+            "prompt": prompt_text,
             "command": " ".join(spec["cmd"]),
             "agentInfo": ver,
             "capturedOn": time.strftime("%Y-%m-%d"),

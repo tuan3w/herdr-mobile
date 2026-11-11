@@ -20,7 +20,7 @@ class HeldUpdate {
 /// book, sharing what did not change (the runs list is the same instance
 /// while no run changed, which is what `SubagentSummary.of` memoizes on).
 class SubagentBook {
-  const SubagentBook({this.runs = const [], this.owners = const {}, this.held = const []});
+  const SubagentBook({this.runs = const [], this.owners = const {}, this.held = const [], this.aliases = const {}});
 
   /// In order of first appearance; never reordered.
   final List<SubagentRun> runs;
@@ -33,11 +33,16 @@ class SubagentBook {
   /// Waiting for their run, oldest first, at most [maxHeld].
   final List<HeldUpdate> held;
 
+  /// OpenCode names a child by its own session id, not by the call that
+  /// launched it: child session id to the id of the run (the launching call)
+  /// it was bound to, when its first update arrived or the call completed.
+  final Map<String, String> aliases;
+
   /// The most updates held; the oldest are dropped past it (a parent that
   /// never comes must not grow memory).
   static const maxHeld = 500;
 
-  bool get isEmpty => runs.isEmpty && owners.isEmpty && held.isEmpty;
+  bool get isEmpty => runs.isEmpty && owners.isEmpty && held.isEmpty && aliases.isEmpty;
 
   int indexOf(String id) {
     for (var i = 0; i < runs.length; i++) {
@@ -60,14 +65,20 @@ class SubagentBook {
     } else {
       next[i] = run;
     }
-    return SubagentBook(runs: next, owners: owners, held: held);
+    return SubagentBook(runs: next, owners: owners, held: held, aliases: aliases);
   }
 
-  SubagentBook withRuns(List<SubagentRun> next) => SubagentBook(runs: next, owners: owners, held: held);
+  SubagentBook withRuns(List<SubagentRun> next) =>
+      SubagentBook(runs: next, owners: owners, held: held, aliases: aliases);
 
   SubagentBook withOwner(String toolCallId, String parentId) => owners[toolCallId] == parentId
       ? this
-      : SubagentBook(runs: runs, owners: {...owners, toolCallId: parentId}, held: held);
+      : SubagentBook(runs: runs, owners: {...owners, toolCallId: parentId}, held: held, aliases: aliases);
+
+  /// The child session [childId] belongs to the run [runId].
+  SubagentBook withAlias(String childId, String runId) => aliases[childId] == runId
+      ? this
+      : SubagentBook(runs: runs, owners: owners, held: held, aliases: {...aliases, childId: runId});
 
   bool hasHeldFor(String parentId) => held.any((h) => h.parentId == parentId);
 
@@ -76,6 +87,7 @@ class SubagentBook {
     return SubagentBook(
       runs: runs,
       owners: owners,
+      aliases: aliases,
       held: next.length > maxHeld ? next.sublist(next.length - maxHeld) : next,
     );
   }
@@ -87,7 +99,7 @@ class SubagentBook {
     for (final h in held) {
       (h.parentId == parentId ? mine : rest).add(h);
     }
-    return (SubagentBook(runs: runs, owners: owners, held: rest), mine);
+    return (SubagentBook(runs: runs, owners: owners, held: rest, aliases: aliases), mine);
   }
 }
 

@@ -1,0 +1,21 @@
+{
+  "agent": "opencode",
+  "scenario": "subagent",
+  "prompt": "Use your subagent tool to start exactly one subagent whose job is to list the files in the current directory with the ls command and report the file names. Then answer with the names in one line.",
+  "command": "opencode acp",
+  "agentInfo": {
+    "name": "OpenCode",
+    "version": "2.2.7"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 1066.857,
+  "stopReason": "end_turn",
+  "lines": 29,
+  "bytes": 22198,
+  "optionsCut": 1682,
+  "configChosen": {
+    "model": "opencode/big-pickle"
+  },
+  "permissionDecisions": [],
+  "notes": []
+}

@@ -578,6 +578,8 @@ class AgentSessionState {
   }
 
   AgentSessionState _apply(SessionUpdate update, DateTime? now) {
+    final bound = _bindOpenCodeChild(update);
+    if (!identical(bound, this)) return bound._apply(update, now);
     final parent = _parentOf(update);
     if (parent != null) return _childUpdate(parent, update, now);
     final next = _applyMain(update, now);
@@ -918,22 +920,114 @@ class AgentSessionState {
   /// run that owns the tool call the update is about (late updates of a call
   /// carry no tag); null for the main agent's own.
   String? _parentOf(SessionUpdate u) {
-    final String? tagged = switch (u) {
-      MessageChunk(:final meta) => _parentTag(meta),
-      MessageUpsert(:final meta) => _parentTag(meta),
-      PlanUpdate(:final meta) => _parentTag(meta),
-      ToolCallStart() || ToolCallPatchUpdate() => _parentTag(_updateMeta(u)),
-      _ => null,
-    };
+    final String? tagged = _tagOf(_metaOf(u));
     final id = _toolIdOf(u);
     final parent = tagged ?? (id == null ? null : subagentBook.owners[id]);
     return parent == null || parent == id ? null : parent;
   }
 
-  static String? _parentTag(Json? meta) {
-    final cc = meta?['claudeCode'];
+  /// The `_meta` an update names its parent in: a message, a plan or one tool
+  /// call update; null for the rest.
+  static Json? _metaOf(SessionUpdate u) => switch (u) {
+    MessageChunk(:final meta) => meta,
+    MessageUpsert(:final meta) => meta,
+    PlanUpdate(:final meta) => meta,
+    ToolCallStart() || ToolCallPatchUpdate() => _updateMeta(u),
+    _ => null,
+  };
+
+  /// The run [meta] names as the parent of what it tags: Claude's
+  /// `claudeCode.parentToolUseId`, Copilot's `github.com/copilot.agentId` (the
+  /// launching call's id), or OpenCode's child session, by the run it was
+  /// bound to (its own id until it is bound: the updates wait for a launcher).
+  String? _tagOf(Json? meta) {
+    if (meta == null) return null;
+    final cc = meta['claudeCode'];
     final p = cc is Map ? cc['parentToolUseId'] : null;
-    return p is String && p.isNotEmpty ? p : null;
+    if (p is String && p.isNotEmpty) return p;
+    final co = meta['github.com/copilot'];
+    final a = co is Map ? co['agentId'] : null;
+    if (a is String && a.isNotEmpty) return a;
+    final child = _openCodeChild(meta);
+    return child == null ? null : (subagentBook.aliases[child.id] ?? child.id);
+  }
+
+  /// OpenCode's `_meta["opencode/child-session"]`: the child's session id, the
+  /// session it belongs to and its depth (1: a child of the main session).
+  static ({String id, String? parentId, int depth})? _openCodeChild(Json? meta) {
+    final c = meta?['opencode/child-session'];
+    if (c is! Map) return null;
+    final id = c['id'];
+    if (id is! String || id.isEmpty) return null;
+    final parent = c['parentID'];
+    final depth = c['depth'];
+    return (id: id, parentId: parent is String && parent.isNotEmpty ? parent : null, depth: depth is int ? depth : 1);
+  }
+
+  /// An OpenCode child whose first update arrives is bound to the launching
+  /// call that started it: the oldest `subagent` / `task` call of the
+  /// transcript it belongs to that no child is bound to yet, a running one
+  /// first (the update names the child, never the call; the call's result
+  /// names the child exactly when it ends, see [_bindOpenCodeLauncher]).
+  AgentSessionState _bindOpenCodeChild(SessionUpdate u) {
+    final child = _openCodeChild(_metaOf(u));
+    if (child == null || subagentBook.aliases.containsKey(child.id)) return this;
+    final AgentSessionState? container = child.depth <= 1
+        ? this
+        : subagentBook.run(subagentBook.aliases[child.parentId] ?? '')?.transcript;
+    if (container == null) return this;
+    final taken = subagentBook.aliases.values.toSet();
+    String? idle;
+    for (final item in container.items) {
+      if (item is! TranscriptTool || taken.contains(item.call.toolCallId)) continue;
+      if (!launchFacts(item.call).any((f) => f.route == SubagentRoute.opencode)) continue;
+      if (item.call.status == ToolStatus.pending || item.call.status == ToolStatus.inProgress) {
+        return _copy(subagentBook: subagentBook.withAlias(child.id, item.call.toolCallId));
+      }
+      idle ??= item.call.toolCallId;
+    }
+    return idle == null ? this : _copy(subagentBook: subagentBook.withAlias(child.id, idle));
+  }
+
+  /// The OpenCode launcher [runId] changed: its result names its child
+  /// session, which is bound to it; and the updates of a child that arrived
+  /// before any launcher (held under its own id) go to this one.
+  AgentSessionState _bindOpenCodeLauncher(String runId, ToolCall call, DateTime? now) {
+    var s = this;
+    final named = openCodeChildSession(call);
+    if (named != null && !s.subagentBook.aliases.containsKey(named)) {
+      s = s._copy(subagentBook: s.subagentBook.withAlias(named, runId));
+    }
+    if (s.subagentBook.aliases.containsValue(runId)) {
+      return s._releaseHeldChild(runId, now);
+    }
+    String? waiting;
+    for (final h in s.subagentBook.held) {
+      final c = _openCodeChild(_metaOf(h.update));
+      if (c != null && c.id == h.parentId && !s.subagentBook.aliases.containsKey(c.id)) {
+        waiting = c.id;
+        break;
+      }
+    }
+    if (waiting == null) return s;
+    return s._copy(subagentBook: s.subagentBook.withAlias(waiting, runId))._releaseHeldChild(runId, now);
+  }
+
+  /// The updates held under the child sessions bound to [runId] join its run.
+  AgentSessionState _releaseHeldChild(String runId, DateTime? now) {
+    var s = this;
+    for (final child in [
+      for (final e in s.subagentBook.aliases.entries)
+        if (e.value == runId) e.key,
+    ]) {
+      final (book, updates) = s.subagentBook.takeHeld(child);
+      if (updates.isEmpty) continue;
+      s = s._copy(subagentBook: book);
+      for (final h in updates) {
+        s = s._childUpdate(runId, h.update, h.at);
+      }
+    }
+    return s;
   }
 
   static String? _toolIdOf(SessionUpdate u) => switch (u) {
@@ -1047,6 +1141,7 @@ class AgentSessionState {
     var s = this;
     for (final f in facts) {
       s = s._upsertRun(f, tool, containerId, now);
+      if (f.route == SubagentRoute.opencode) s = s._bindOpenCodeLauncher(f.id, tool.call, now);
     }
     if (!held) return s;
     final (book, updates) = s.subagentBook.takeHeld(toolId);
@@ -1067,7 +1162,7 @@ class AgentSessionState {
       startedAt: tool.at,
       now: now,
     );
-    if (f.route == SubagentRoute.claude && run.transcript == null) {
+    if (f.route.sendsTranscript && run.transcript == null) {
       run = run.copyWith(transcript: AgentSessionState(sessionId));
     }
     final s = _copy(subagentBook: subagentBook.withRun(run));
@@ -1126,10 +1221,10 @@ class AgentSessionState {
       case PendingPermission(:final request):
         toolId = request.toolCall.toolCallId;
         final own = request.toolCall.fields['_meta'];
-        tagged = _parentTag(own is Map ? own.cast<String, Object?>() : null) ?? _parentTag(request.meta);
+        tagged = _tagOf(own is Map ? own.cast<String, Object?>() : null) ?? _tagOf(request.meta);
       case PendingQuestion(:final request):
         toolId = request.toolCallId;
-        tagged = _parentTag(request.meta);
+        tagged = _tagOf(request.meta);
     }
     final parent = tagged ?? (toolId == null || toolId.isEmpty ? null : subagentBook.owners[toolId]);
     if (parent == null || parent == toolId) return null;

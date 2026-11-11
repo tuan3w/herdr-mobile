@@ -11,6 +11,8 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/live_text.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 
+import '../../benchmark/support/trace_replay.dart' show isChildUpdate;
+
 // -- the reference: the reducer as it was, one copy of the list per chunk ------
 
 AgentSessionState _copyOf(AgentSessionState s, {List<TranscriptItem>? items, int? nextKey, int? echoed}) =>
@@ -385,6 +387,8 @@ void main() {
           out.add(prompt.map((b) => (b as Map)['text'] ?? '').join());
         } else if (received && msg['method'] == 'session/update') {
           final update = (msg['params'] as Map)['update'];
+          // A subagent's updates go to its own transcript, which the reference reducer does not model.
+          if (isChildUpdate((update as Map).cast<String, Object?>())) continue;
           out.add(SessionUpdate.parse(update));
         } else if (received && promptId != null && msg['id'] == promptId && msg.containsKey('result')) {
           final reason = (msg['result'] as Map)['stopReason'] as String?;

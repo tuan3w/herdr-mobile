@@ -23,6 +23,7 @@ void main() {
     // Claude Code
     ('default', 'Default', ModeRisk.none),
     ('plan', 'Plan Mode', ModeRisk.none),
+    ('build', 'Build', ModeRisk.none),
     ('dontAsk', "Don't Ask", ModeRisk.none),
     ('acceptEdits', 'Accept Edits', ModeRisk.elevated),
     ('auto', 'Auto', ModeRisk.elevated),

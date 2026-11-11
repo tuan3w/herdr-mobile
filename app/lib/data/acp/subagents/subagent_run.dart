@@ -35,6 +35,28 @@ enum SubagentRoute {
   /// Codex: a `collabAgentToolCall` / `subAgentActivity`; a title and a
   /// status, no transcript.
   codex,
+
+  /// OpenCode: the child's updates come tagged `_meta["opencode/child-session"]`
+  /// with the child's session id, so there is a transcript. The launcher call
+  /// is `subagent` (OpenCode 2) or `task` (1.x; no tagged updates there).
+  opencode,
+
+  /// Copilot: the child's text and tool calls come tagged
+  /// `_meta["github.com/copilot"].agentId`, which is the launching call's id.
+  copilot,
+
+  /// Kimi (`Agent` call), Cursor (`Task:` call plus `cursor/task`), Hermes
+  /// (`delegate_task`) and DeepSeek (`subagent`): the agent runs subagents but
+  /// sends only the launching call and its result. A title, a status and a
+  /// result, no transcript.
+  kimi,
+  cursor,
+  hermes,
+  deepseek;
+
+  /// The child's own updates arrive tagged on the session, so a run has a
+  /// transcript made from them.
+  bool get sendsTranscript => this == claude || this == opencode || this == copilot;
 }
 
 /// Where a run's transcript came from when the agent did not send it: the

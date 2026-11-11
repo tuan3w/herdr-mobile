@@ -72,7 +72,16 @@ List<RunFacts> launchFacts(ToolCall call, {Json? updateMeta, List<SubagentRun> k
   if (claude != null) return [claude];
   final omp = _omp(call, known);
   if (omp.isNotEmpty) return omp;
-  return _codex(call, known);
+  final codex = _codex(call, known);
+  if (codex.isNotEmpty) return codex;
+  final single =
+      _openCode(call, known) ??
+      _copilot(call, known) ??
+      _cursor(call, updateMeta, known) ??
+      _kimi(call, known) ??
+      _deepseek(call, known) ??
+      _hermes(call, known);
+  return single == null ? const [] : [single];
 }
 
 // ---------------------------------------------------------------------------
@@ -447,3 +456,244 @@ SubagentStatus _codexStatus(ToolCall call, String? state) => switch (state) {
     ToolStatus.cancelled => SubagentStatus.cancelled,
   },
 };
+
+// ---------------------------------------------------------------------------
+// OpenCode, Copilot, Cursor, Kimi, Hermes, DeepSeek
+//
+// Shapes read from each agent's source or docs, and for OpenCode recorded from
+// a real run (`test/fixtures/traces/opencode/subagent.jsonl`, OpenCode 2.2.7;
+// 1.19.5 sends the same launcher as `task` with no tagged children). Copilot,
+// Cursor, Kimi, Hermes and DeepSeek are UNVERIFIED against a recorded run: see
+// `docs/AGENT_SESSIONS.md`, "Subagents of the other routes".
+
+/// Said under a run whose launching call finished at once and whose end the
+/// agent never reports: the phone cannot know when it is over, and says so
+/// rather than keep showing it as running.
+const startedInBackgroundNote = 'Started in the background. The agent does not report when it ends.';
+
+SubagentStatus _callStatus(ToolCall call, {bool waiting = false}) => switch (call.status) {
+  ToolStatus.failed => SubagentStatus.failed,
+  ToolStatus.cancelled => SubagentStatus.cancelled,
+  ToolStatus.completed => SubagentStatus.finished,
+  ToolStatus.inProgress => SubagentStatus.running,
+  ToolStatus.pending => waiting ? SubagentStatus.waiting : SubagentStatus.running,
+};
+
+/// The text of the call's content blocks, joined.
+String? _allText(ToolCall call) {
+  final out = <String>[];
+  for (final c in call.content) {
+    if (c is ToolContentBlock && c.block is TextBlock) {
+      final t = (c.block as TextBlock).text;
+      if (t.trim().isNotEmpty) out.add(t.trim());
+    }
+  }
+  return out.isEmpty ? null : out.join('\n\n');
+}
+
+final _wrapOpen = RegExp(r'^<(?:subagent|task)\b[^>]*>\s*(?:<task_result>\s*)?');
+final _wrapClose = RegExp(r'\s*(?:</task_result>\s*)?</(?:subagent|task)>\s*$');
+
+/// OpenCode's result text without its `<subagent sessionID=.. state=..>` /
+/// `<task id=..><task_result>` wrapper.
+String? _unwrapped(String? text) {
+  if (text == null) return null;
+  final t = text.replaceFirst(_wrapOpen, '').replaceFirst(_wrapClose, '').trim();
+  return t.isEmpty ? null : _cut(t, SubagentRun.maxResult);
+}
+
+/// `subagentType` as a string: Cursor sends a name or `{custom: name}`.
+String? _typeName(Object? v) => _s(v) ?? _s(_m(v)?['custom']);
+
+/// OpenCode: `subagent` (2.x; the call is named, kind `think`) or `task` (1.x;
+/// titled `task` first, then by its description). The input is `{agent |
+/// subagent_type, description, prompt}`; the result is wrapped in
+/// `<subagent sessionID=..>` / `<task id=..>`, and `rawOutput.metadata` names
+/// the child session (`sessionID`, or `sessionId` in 1.x). A call without a
+/// name is told by its input.
+RunFacts? _openCode(ToolCall call, List<SubagentRun> known) {
+  final input = _m(call.rawInput);
+  final named = call.name == 'subagent' || call.name == 'task';
+  final shaped =
+      call.kind == ToolKind.think &&
+      input != null &&
+      _s(input['prompt']) != null &&
+      _s(input['description']) != null &&
+      (_s(input['agent']) != null || _s(input['subagent_type']) != null);
+  final mine = known.any((r) => r.route == SubagentRoute.opencode && r.id == call.toolCallId);
+  if (!(named || shaped || mine)) return null;
+
+  final description = _firstLine(_s(input?['description']));
+  final generic = call.title == 'subagent' || call.title == 'task' || call.title.isEmpty;
+  final prompt = _s(input?['prompt']);
+  final background = input?['background'] == true || input?['run_in_background'] == true;
+  final old = known.where((r) => r.id == call.toolCallId).firstOrNull;
+  final status = _callStatus(call, waiting: prompt == null && old?.status != SubagentStatus.running);
+  final over = status == SubagentStatus.finished;
+  final result = over && !background ? _unwrapped(_allText(call)) : null;
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.opencode,
+    status: status,
+    title: description ?? (generic ? null : _firstLine(call.title)),
+    agentType: _s(input?['agent']) ?? _s(input?['subagent_type']),
+    assignment: _assignment(prompt),
+    result: result,
+    failure: status == SubagentStatus.failed ? (_unwrapped(_allText(call)) ?? 'The subagent failed') : null,
+    note: over && background ? startedInBackgroundNote : null,
+    background: background,
+  );
+}
+
+/// The child session OpenCode names in a launcher's result, or null.
+String? openCodeChildSession(ToolCall call) {
+  final meta = _m(_m(call.rawOutput)?['metadata']);
+  return _s(meta?['sessionID']) ?? _s(meta?['sessionId']);
+}
+
+/// Copilot: a `task` call whose input is `{agent_type, prompt, description,
+/// name, mode, model}`; `mode: background` returns at once. The answer is in
+/// `rawOutput.content`. The child's own updates carry `_meta["github.com/
+/// copilot"].agentId`, which is this call's id.
+RunFacts? _copilot(ToolCall call, List<SubagentRun> known) {
+  final input = _m(call.rawInput);
+  final mine = known.any((r) => r.route == SubagentRoute.copilot && r.id == call.toolCallId);
+  if (!mine && !(input != null && _s(input['agent_type']) != null && _s(input['prompt']) != null)) return null;
+  final prompt = _s(input?['prompt']);
+  final background = _s(input?['mode']) == 'background';
+  final status = _callStatus(call, waiting: prompt == null);
+  final over = status == SubagentStatus.finished;
+  final out = _m(call.rawOutput);
+  final answer = _s(call.rawOutput) ?? _s(out?['content']) ?? _allText(call);
+  final description = _firstLine(_s(input?['description']));
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.copilot,
+    status: status,
+    name: _s(input?['name']),
+    title: description ?? _firstLine(_s(input?['name'])),
+    agentType: _s(input?['agent_type']),
+    assignment: _assignment(prompt),
+    model: _s(input?['model']),
+    result: over && !background && answer != null ? _cut(answer, SubagentRun.maxResult) : null,
+    failure: status == SubagentStatus.failed ? (answer ?? 'The subagent failed') : null,
+    note: over && background ? startedInBackgroundNote : null,
+    background: background,
+  );
+}
+
+/// Cursor: `Task: <description>` (kind `other`), input `{_toolName: task,
+/// prompt, description, subagentType}`. The keeper adds `cursor/task` (what the
+/// agent sends when the task ends) to a later update as `_meta.cursor.task
+/// {description, subagentType, model, agentId, durationMs}`.
+RunFacts? _cursor(ToolCall call, Json? updateMeta, List<SubagentRun> known) {
+  final input = _m(call.rawInput);
+  final mine = known.any((r) => r.route == SubagentRoute.cursor && r.id == call.toolCallId);
+  final isTask = _s(input?['_toolName']) == 'task' || (call.title.startsWith('Task: ') && _s(input?['prompt']) != null);
+  if (!isTask) return null;
+  if (!mine && input == null) return null;
+  final done = _m(_m(updateMeta?['cursor'])?['task']) ?? _m(_m(call.meta?['cursor'])?['task']);
+  final description = _firstLine(_s(input?['description'])) ?? _firstLine(done?['description']?.toString());
+  final status = _callStatus(call);
+  final ms = _num(done?['durationMs']);
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.cursor,
+    status: status,
+    title: description,
+    agentType: _typeName(input?['subagentType']) ?? _typeName(done?['subagentType']),
+    assignment: _assignment(_s(input?['prompt'])),
+    model: _s(done?['model']),
+    totalElapsed: ms == null ? null : Duration(milliseconds: ms.round()),
+    result: status == SubagentStatus.finished ? _contentText(call) : null,
+    failure: status == SubagentStatus.failed ? (_contentText(call) ?? 'The subagent failed') : null,
+  );
+}
+
+/// Kimi: the `Agent` call, titled `Launching (background) PROFILE agent:
+/// DESCRIPTION` once its input is complete, kind `other`, input `{prompt,
+/// description, subagent_type, run_in_background}`. The result is text lines
+/// (`agent_id:`, `actual_subagent_type:`, `status:` ..) then `[summary]`; a
+/// background launch answers `task_id: .. status: running` at once.
+RunFacts? _kimi(ToolCall call, List<SubagentRun> known) {
+  final input = _m(call.rawInput);
+  final mine = known.any((r) => r.route == SubagentRoute.kimi && r.id == call.toolCallId);
+  final shaped = call.title.startsWith('Launching ') && _s(input?['prompt']) != null;
+  if (!shaped && !mine) return null;
+  final background = input?['run_in_background'] == true;
+  final status = _callStatus(call);
+  final over = status == SubagentStatus.finished;
+  final text = _allText(call);
+  String? actualType;
+  String? summary;
+  if (text != null) {
+    actualType = RegExp(r'^actual_subagent_type:\s*(\S+)', multiLine: true).firstMatch(text)?.group(1);
+    final at = text.indexOf('[summary]');
+    if (at >= 0) {
+      var s = text.substring(at + '[summary]'.length);
+      final hint = s.indexOf('\nresume_hint:');
+      if (hint >= 0) s = s.substring(0, hint);
+      summary = s.trim().isEmpty ? null : _cut(s.trim(), SubagentRun.maxResult);
+    }
+  }
+  final description = _firstLine(_s(input?['description']));
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.kimi,
+    status: status,
+    title: description ?? (call.title.startsWith('Launching ') ? _firstLine(call.title) : null),
+    agentType: _s(input?['subagent_type']) ?? actualType,
+    assignment: _assignment(_s(input?['prompt'])),
+    result: over && !background ? (summary ?? (text == null ? null : _cut(text, SubagentRun.maxResult))) : null,
+    failure: status == SubagentStatus.failed ? (summary ?? text ?? 'The subagent failed') : null,
+    note: over && background ? startedInBackgroundNote : null,
+    background: background,
+  );
+}
+
+/// DeepSeek: `subagent` / `subagent_fork` (kind `other`), input `{description,
+/// prompt, name?}`. The call answers `started subagent NAME` at once and the
+/// subagent keeps working: the end comes back to the root as a later message,
+/// not as an update the phone can attach to the call.
+RunFacts? _deepseek(ToolCall call, List<SubagentRun> known) {
+  final input = _m(call.rawInput);
+  final mine = known.any((r) => r.route == SubagentRoute.deepseek && r.id == call.toolCallId);
+  final launcher = (call.title == 'subagent' || call.title == 'subagent_fork') && call.kind == ToolKind.other;
+  if (!(launcher && input != null && _s(input['prompt']) != null) && !mine) return null;
+  final status = _callStatus(call);
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.deepseek,
+    status: status,
+    name: _s(input?['name']),
+    title: _firstLine(_s(input?['description'])) ?? _s(input?['name']),
+    assignment: _assignment(_s(input?['prompt'])),
+    failure: status == SubagentStatus.failed ? (_allText(call) ?? 'The subagent failed') : null,
+    note: status == SubagentStatus.finished ? startedInBackgroundNote : null,
+    background: true,
+  );
+}
+
+/// Hermes: `delegate_task: <preview>` (kind `execute`, no input). The start text
+/// is `Delegating N tasks` and the goals; a call that ends with `Delegation
+/// results:` carries the results, any other end is the dispatch of background
+/// work (the results come back as a later message).
+RunFacts? _hermes(ToolCall call, List<SubagentRun> known) {
+  final mine = known.any((r) => r.route == SubagentRoute.hermes && r.id == call.toolCallId);
+  if (!call.title.startsWith('delegate_task') && !mine) return null;
+  final status = _callStatus(call);
+  final text = _allText(call);
+  final results = text != null && text.startsWith('Delegation results:');
+  final first = text == null ? null : _firstLine(text);
+  return RunFacts(
+    id: call.toolCallId,
+    route: SubagentRoute.hermes,
+    status: status,
+    title: results ? null : (first != null && first.startsWith('Delegat') ? first : null),
+    assignment: results || text == null ? null : _assignment(text),
+    result: status == SubagentStatus.finished && results ? _cut(text, SubagentRun.maxResult) : null,
+    failure: status == SubagentStatus.failed ? (text ?? 'The subagent failed') : null,
+    note: status == SubagentStatus.finished && !results ? startedInBackgroundNote : null,
+    background: status == SubagentStatus.finished && !results,
+  );
+}

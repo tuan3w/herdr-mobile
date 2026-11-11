@@ -68,6 +68,20 @@ Map<String, Object?>? updateOf(TraceLine line) {
   return update is Map<String, Object?> ? update : null;
 }
 
+/// Whether [update] is a subagent's: it carries the tag its agent puts on what
+/// a child says (`claudeCode.parentToolUseId`, `github.com/copilot.agentId`,
+/// `opencode/child-session`). The reducer keeps those in the subagent's own
+/// transcript, so they are not part of the main one.
+bool isChildUpdate(Map<String, Object?> update) {
+  final meta = update['_meta'];
+  if (meta is! Map) return false;
+  final claude = meta['claudeCode'];
+  final copilot = meta['github.com/copilot'];
+  return (claude is Map && claude['parentToolUseId'] is String) ||
+      (copilot is Map && copilot['agentId'] is String) ||
+      meta['opencode/child-session'] is Map;
+}
+
 /// Every text chunk of the trace, in order.
 List<TraceChunk> textChunks(List<TraceLine> lines) {
   final out = <TraceChunk>[];
