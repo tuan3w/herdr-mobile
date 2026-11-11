@@ -51,6 +51,24 @@ jobs:
       - name: Analyze and design lint
         run: tool/check.sh --quick
 
+  # The Rust viewer and keeper: release.yml runs the same three commands per
+  # target, so a change that breaks them must fail here, not on a tag. The keeper
+  # contract test also reads app/lib/data/acp/agent_host.dart (the route table).
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check and test
+        working-directory: rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
   # The tests are ~1,550 s of work that waits on processes and timers, and a
   # runner has 4 cores: more jobs per runner made timing tests fail, so they
   # are split over runners instead. Measured on 4 pinned cores: 308 s whole,

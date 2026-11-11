@@ -4,6 +4,22 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.63] - 2026-11-11
+
+### The desktop viewer is back
+
+The `herdr-tui` viewer builds that 0.1.62 lacked are published again, and the
+viewer lists the same agents as the app: `Kimi`, `OpenCode`, `Cursor`,
+`Copilot`, `Antigravity`, `Hermes` and `DeepSeek`.
+
+**Fixed**
+
+- A route that needs `npx` (`Copilot`, `DeepSeek`, `Kimi`) now keeps its
+  arguments when the viewer starts it, as the app does.
+- The viewer finds `OpenCode` and `Kimi` where their installers put them.
+- `Cursor` still needs the app to sign in and to answer its questions: from
+  the viewer it stops with the agent's own "Authentication required".
+
 ## [0.1.62] - 2026-11-11
 
 ### Seven more agents, with their subagents
