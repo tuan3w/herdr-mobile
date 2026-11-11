@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- `New agent session` offers seven more agents: `Kimi`, `OpenCode`, `Cursor`,
+  `Copilot`, `Antigravity`, `Hermes` and `DeepSeek`. One that is not installed
+  on the machine stays dimmed, and the line under the chips names it.
+- A question `Cursor` asks opens the same form as any agent's question, and a
+  plan it wants approved opens as a request to `Approve plan` or `Reject plan`;
+  nothing is approved unless you choose it. Its to-do list shows as the plan.
+- Subagents of `OpenCode` and `Copilot` show as their own card with their own conversation,
+  instead of their words and tool calls running into the main agent's. `Kimi`, `Cursor`,
+  `Hermes` and `DeepSeek` show the launching call as a card with its result. When an agent
+  starts a subagent in the background and never says when it ends, the card says so instead
+  of showing it as running.
+- Checked: `Cursor`'s protocol in tests; `OpenCode` 2.2.7, `Hermes`, `Copilot` and `Kimi` on real turns
+  with a subagent (with a compatible model server). `Cursor`, `Antigravity` and `DeepSeek` were not
+  run on a turn, so their subagent cards follow the agents' documented shapes. A phone was not used.
+
 ## [0.1.61] - 2026-11-09
 
 ### Delete a worktree to give its disk space back

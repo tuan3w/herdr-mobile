@@ -11,6 +11,8 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/live_text.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 
+import '../../benchmark/support/trace_replay.dart' show isChildUpdate;
+
 // -- the reference: the reducer as it was, one copy of the list per chunk ------
 
 AgentSessionState _copyOf(AgentSessionState s, {List<TranscriptItem>? items, int? nextKey, int? echoed}) =>
@@ -385,6 +387,8 @@ void main() {
           out.add(prompt.map((b) => (b as Map)['text'] ?? '').join());
         } else if (received && msg['method'] == 'session/update') {
           final update = (msg['params'] as Map)['update'];
+          // A subagent's updates go to its own transcript, which the reference reducer does not model.
+          if (isChildUpdate((update as Map).cast<String, Object?>())) continue;
           out.add(SessionUpdate.parse(update));
         } else if (received && promptId != null && msg['id'] == promptId && msg.containsKey('result')) {
           final reason = (msg['result'] as Map)['stopReason'] as String?;
@@ -410,7 +414,8 @@ void main() {
         var step = 0;
         var chunks = 0;
         var listCopies = 0;
-        for (final event in eventsOf(file)) {
+        final events = eventsOf(file);
+        for (final event in events) {
           step++;
           final before = live.items;
           switch (event) {
@@ -428,7 +433,9 @@ void main() {
           if (!identical(before, live.items)) listCopies++;
           expectSameTranscript(live, reference, '$name step $step');
         }
-        expect(live.liveKey, isNull, reason: 'the turn ended: nothing is live');
+        // Hermes and DeepSeek send a subagent's answer after the prompt's response, as an
+        // autonomous message: it is live until something settles it.
+        if (events.last is StopReason) expect(live.liveKey, isNull, reason: 'the turn ended: nothing is live');
         if (chunks > 20) {
           expect(listCopies, lessThan(step), reason: 'chunks of the streaming message did not copy the list');
         }

@@ -397,7 +397,8 @@ class _AgentChips extends StatelessWidget {
             padding: const EdgeInsets.only(top: Gap.hair),
             child: Text(
               reason,
-              maxLines: 2,
+              // Eleven routes can all be missing: `Not installed on X: omp, pi, Kimi, ...` is ~120 characters.
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: Type.caption.copyWith(color: ds.textSecondary),
             ),

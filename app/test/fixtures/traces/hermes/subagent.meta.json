@@ -1,0 +1,19 @@
+{
+  "agent": "hermes",
+  "scenario": "subagent",
+  "prompt": "Use your delegate_task tool to delegate exactly one task to a subagent: list the files in the current directory with the ls command and report the file names. Wait for it, then answer with the names in one line.",
+  "command": "hermes acp",
+  "agentInfo": {
+    "name": "hermes-agent",
+    "version": "0.0.0"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 5562.132,
+  "stopReason": "end_turn",
+  "lines": 102,
+  "bytes": 54369,
+  "optionsCut": 80,
+  "configChosen": {},
+  "permissionDecisions": [],
+  "notes": []
+}

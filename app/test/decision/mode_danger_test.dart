@@ -23,6 +23,7 @@ void main() {
     // Claude Code
     ('default', 'Default', ModeRisk.none),
     ('plan', 'Plan Mode', ModeRisk.none),
+    ('build', 'Build', ModeRisk.none),
     ('dontAsk', "Don't Ask", ModeRisk.none),
     ('acceptEdits', 'Accept Edits', ModeRisk.elevated),
     ('auto', 'Auto', ModeRisk.elevated),
@@ -32,6 +33,19 @@ void main() {
     ('workspace-write', 'Workspace access', ModeRisk.none),
     ('agent', 'Auto review', ModeRisk.elevated),
     ('agent-full-access', 'Full access', ModeRisk.dangerous),
+    // Copilot (ids are URLs, see "Copilot's URL ids" below)
+    ('https://agentclientprotocol.com/protocol/session-modes#agent', 'Agent', ModeRisk.none),
+    ('https://agentclientprotocol.com/protocol/session-modes#plan', 'Plan', ModeRisk.none),
+    ('https://agentclientprotocol.com/protocol/session-modes#autopilot', 'Autopilot', ModeRisk.dangerous),
+    ('autopilot', 'Autopilot', ModeRisk.dangerous),
+    // Kimi: default, plan, auto (above) and yolo ("Auto-approve everything")
+    ('yolo', 'YOLO', ModeRisk.dangerous),
+    // Hermes: the session modes and the values of its edit_approval_policy option
+    ('accept_edits', 'Accept Edits', ModeRisk.elevated),
+    ('dont_ask', "Don't Ask", ModeRisk.elevated),
+    ('ask', 'Default', ModeRisk.none),
+    ('workspace_session', 'Accept Edits', ModeRisk.elevated),
+    ('session', "Don't Ask", ModeRisk.elevated),
     // omp
     ('plan', 'Plan', ModeRisk.none),
   ];
@@ -40,7 +54,9 @@ void main() {
     for (final (id, name, risk) in known) {
       test('$id ($name) is $risk', () {
         expect(_id(id, name), risk);
-        expect(_id(id), risk, reason: 'the id alone');
+        // `agent` alone is Codex's or Copilot's or Cursor's, and only Codex's
+        // name says what it does: its id alone is covered below.
+        if (id != 'agent') expect(_id(id), risk, reason: 'the id alone');
         final a = assessMode(id: id, name: name);
         expect(a.reason == null, risk == ModeRisk.none, reason: 'a reason exactly when risky');
         expect(a.isRisky, risk != ModeRisk.none);
@@ -111,6 +127,51 @@ void main() {
       expect(_id('bypassPermissions', 'Default'), ModeRisk.dangerous);
       expect(_id('default', 'Accept Edits'), ModeRisk.elevated);
       expect(_id('default', 'Default'), ModeRisk.none);
+    });
+  });
+
+  group("Copilot's URL ids", () {
+    const base = 'https://agentclientprotocol.com/protocol/session-modes';
+
+    test('autopilot (allow-all, no questions) is dangerous, with a reason', () {
+      final a = assessMode(id: '$base#autopilot', name: 'Autopilot');
+      expect(a.risk, ModeRisk.dangerous);
+      expect(a.reason, isNotNull);
+      expect(_id('$base#autopilot'), ModeRisk.dangerous, reason: 'the id alone');
+      expect(_id('$base/autopilot'), ModeRisk.dangerous, reason: 'a path instead of a fragment');
+      expect(_id('default', 'Autopilot'), ModeRisk.dangerous, reason: 'the name alone');
+    });
+
+    test('plan is none, whatever carries it', () {
+      expect(assessMode(id: '$base#plan', name: 'Plan').isRisky, isFalse);
+      expect(_id('$base#plan'), ModeRisk.none);
+    });
+
+    test('the URL does not hide a risky word before the fragment', () {
+      expect(_id('https://example.com/bypass#plan'), ModeRisk.dangerous);
+      expect(_id('$base#bypassPermissions'), ModeRisk.dangerous);
+    });
+  });
+
+  group('the mode named agent', () {
+    // Codex "Auto review" asks only for what it judges unsafe. Copilot's and
+    // Cursor's `agent` mode has no such policy on record, so its id and its
+    // name do not claim one.
+    test('Codex says what it is in its name: elevated', () {
+      expect(_id('agent', 'Auto review'), ModeRisk.elevated);
+    });
+
+    test('Copilot and Cursor send no claim: none, no reason', () {
+      for (final (id, name) in [
+        ('https://agentclientprotocol.com/protocol/session-modes#agent', 'Agent'),
+        ('agent', 'Agent'),
+        ('agent', 'Cursor Agent'),
+        ('agent', null),
+      ]) {
+        final a = assessMode(id: id, name: name);
+        expect(a.risk, ModeRisk.none, reason: '$id / $name');
+        expect(a.reason, isNull);
+      }
     });
   });
 

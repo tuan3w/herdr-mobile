@@ -347,7 +347,7 @@ class KeeperHost {
     Directory('${home.path}/work').createSync();
     final fake = File('test/support/fake_acp_agent.py').absolute.path;
     expect(File(fake).existsSync(), isTrue, reason: fake);
-    for (final binary in ['omp', 'codex-acp', 'claude-agent-acp']) {
+    for (final binary in ['omp', 'codex-acp', 'claude-agent-acp', 'cursor-agent']) {
       final wrapper = File('${bin.path}/$binary')..writeAsStringSync('#!/bin/sh\nexec python3 \'$fake\' "\$@"\n');
       await Process.run('chmod', ['755', wrapper.path]);
     }

@@ -1064,11 +1064,19 @@ void main() {
 
         // Times: from the prompt to the last event; the answer settled when the turn ended.
         final asked = traceTime(facts.promptLine.tMs);
-        final answered = traceTime(facts.answerLine.tMs);
+        // The last thing the agent sent: usually its response, but Hermes and DeepSeek send a
+        // subagent's answer after it, and the turn is as long as that.
+        final lastUpdate = facts.updates
+            .where((e) => e.$2 is MessageChunk || e.$2 is ToolCallStart || e.$2 is ToolCallPatchUpdate)
+            .fold<double>(0, (t, e) => e.$1.tMs > t ? e.$1.tMs : t);
+        final answered = traceTime(lastUpdate > facts.answerLine.tMs ? lastUpdate : facts.answerLine.tMs);
         expect(turn.startedAt, asked);
         expect(turn.endedAt, isNotNull);
         expect(turn.duration! <= answered.difference(asked), isTrue);
-        if (turn.answer != null) expect(turn.duration, answered.difference(asked));
+        // A message still streaming when the trace ends has no end time: its start stands for it.
+        if (turn.answer != null && lastUpdate <= facts.answerLine.tMs) {
+          expect(turn.duration, answered.difference(asked));
+        }
 
         // Per-step durations are the recorded ones.
         final started = <String, DateTime>{};

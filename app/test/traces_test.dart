@@ -78,7 +78,7 @@ void main() {
           if (update is UnknownUpdate) unknown++;
           state = state.apply(update);
           final content = u['content'];
-          if (u['sessionUpdate'] == 'agent_message_chunk' && content is Map) {
+          if (u['sessionUpdate'] == 'agent_message_chunk' && content is Map && !isChildUpdate(u)) {
             chars += (content['text'] as String? ?? '').length;
           }
         }

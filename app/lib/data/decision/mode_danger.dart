@@ -102,10 +102,35 @@ ModeAssessment assessSessionMode(AgentSessionState state) {
 /// are not read: Claude's own `default` says it "prompts for dangerous
 /// operations".
 ModeAssessment assessMode({String? id, String? name}) {
-  final byId = _assess(id);
+  final byId = _worse(_worse(_assess(id), _assess(_idTail(id))), _hermes(id));
   final byName = _assess(name);
-  final worse = byName.risk.index > byId.risk.index ? byName : byId;
-  return worse;
+  return _worse(byId, byName);
+}
+
+/// Hermes's edit modes, by their own ids: `accept_edits` and the option value
+/// `workspace_session` (edits in the workspace are allowed), `dont_ask` and the
+/// option value `session` (edits are allowed for the session; sensitive paths
+/// still ask). The NAME `Don't Ask` is Claude's mode that asks for nothing and
+/// runs nothing new (none), so Hermes's is told by its snake_case id.
+const _hermesEditIds = {'dont_ask', 'workspace_session', 'session'};
+const _hermesEdits = ModeAssessment(
+  ModeRisk.elevated,
+  'File edits are accepted without asking you, except sensitive paths.',
+);
+
+ModeAssessment _hermes(String? id) => _hermesEditIds.contains(id) ? _hermesEdits : ModeAssessment.none;
+
+ModeAssessment _worse(ModeAssessment a, ModeAssessment b) => b.risk.index > a.risk.index ? b : a;
+
+/// The last segment of an id that is a URL or path (Copilot's mode ids are
+/// `https://agentclientprotocol.com/protocol/session-modes#autopilot`): the
+/// text after the last `#`, else after the last `/`. Null when the id has
+/// neither. The whole id is read too, so a risky word before the segment still
+/// counts.
+String? _idTail(String? id) {
+  if (id == null) return null;
+  final cut = id.contains('#') ? id.lastIndexOf('#') : id.lastIndexOf('/');
+  return cut < 0 ? null : id.substring(cut + 1);
 }
 
 ModeAssessment _assess(String? raw) {
@@ -195,6 +220,10 @@ const _fullAccess = ModeAssessment(
 const _acceptEdits = ModeAssessment(ModeRisk.elevated, 'File edits are accepted without asking you.');
 const _auto = ModeAssessment(ModeRisk.elevated, 'A classifier, not you, approves or denies the permission prompts.');
 const _codexAgent = ModeAssessment(ModeRisk.elevated, 'It asks only for actions it judges unsafe.');
+const _autopilot = ModeAssessment(
+  ModeRisk.dangerous,
+  'Autopilot allows everything and runs to the end of the task without asking you.',
+);
 
 /// Modes the four routes are known to send (`docs/AGENT_SESSIONS.md`, the
 /// recorded traces), by compacted id or name.
@@ -205,8 +234,17 @@ const _codexAgent = ModeAssessment(ModeRisk.elevated, 'It asks only for actions 
 /// - Codex: `read-only`, `workspace-write` ("Workspace access", codex's own
 ///   default preset: ask before leaving the workspace: none), `agent` ("Auto
 ///   review": elevated), `agent-full-access` ("Full access": dangerous);
-///   `danger-full-access` is the sandbox name of the same thing.
+///   `danger-full-access` is the sandbox name of the same thing. Codex's
+///   elevated sentence is keyed by its NAME `Auto review` only: the id `agent`
+///   is also Copilot's and Cursor's default mode, whose policy is not on record
+///   (an unlisted `agent` is none).
 /// - omp: `default`, `plan`. pi: none (its modes are thinking levels).
+/// - OpenCode: `build`, `plan` (none).
+/// - Hermes: `default` (`ask`), `accept_edits` (`workspace_session`), `dont_ask`
+///   (`session`): see [_hermesEditIds].
+/// - Copilot: `agent`, `plan` (none) and `autopilot` ("Autonomous mode that
+///   enables allow-all and runs until task completion without user
+///   interaction": dangerous), ids are URLs (see [_idTail]).
 const _known = <String, ModeAssessment>{
   'bypasspermissions': _bypass,
   'agentfullaccess': _fullAccess,
@@ -214,10 +252,11 @@ const _known = <String, ModeAssessment>{
   'dangerfullaccess': _fullAccess,
   'acceptedits': _acceptEdits,
   'auto': _auto,
-  'agent': _codexAgent,
+  'autopilot': _autopilot,
   'autoreview': _codexAgent,
   'default': ModeAssessment.none,
   'plan': ModeAssessment.none,
+  'build': ModeAssessment.none,
   'planmode': ModeAssessment.none,
   'dontask': ModeAssessment.none,
   'readonly': ModeAssessment.none,

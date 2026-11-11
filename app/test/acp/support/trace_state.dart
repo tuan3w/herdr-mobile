@@ -53,7 +53,7 @@ class TraceFacts {
     final b = StringBuffer();
     for (final l in lines) {
       final u = updateOf(l);
-      if (u != null && u['sessionUpdate'] == sessionUpdate) {
+      if (u != null && u['sessionUpdate'] == sessionUpdate && !isChildUpdate(u)) {
         final content = u['content'];
         if (content is Map && content['text'] is String) b.write(content['text']);
       }

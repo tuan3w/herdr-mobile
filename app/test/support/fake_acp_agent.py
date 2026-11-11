@@ -32,6 +32,15 @@ Prompt texts:
   sdktask:<id>  Claude's raw `_claude/sdkMessage` `background_tasks_changed` naming <id>
                 (a `local_bash`), a chunk, end_turn
   sdkend:<id>   `background_tasks_changed` with no tasks, end_turn
+  cursor-ask    `cursor/ask_question` (q1 single choice red/blue, q2 multiple fig/plum/pear),
+                then a chunk `got:<the answer, JSON>`, end_turn. `cursor-ask-empty`: no question.
+  cursor-plan   `cursor/create_plan`, then a chunk `got:<the answer, JSON>`, end_turn
+  cursor-todos  `cursor/update_todos` (merge false, then merge true), a chunk, end_turn
+  cursor-plan-todos  `cursor/create_plan` with two todos, then `cursor/update_todos` (merge true) completing
+                the first, then a chunk `got:<the answer, JSON>`, end_turn
+  cursor-task   a `Task: Explore codebase` tool call (pending, then completed), then Cursor's
+                `cursor/task` notification for it (custom subagent type), a chunk, end_turn
+                `cursor-task-bad`: the notification names no tool call (toolCallId is a number)
 `_session/async_task/stop {asyncTaskId}` answers {stopped: true} and sends an
 `async_task_state_update` `stopped` for a task spawned with `task:`, else {stopped: false}.
 Busy guard (omp's `AgentBusyError`, `-32003 sessionBusy`): while the file named
@@ -39,7 +48,11 @@ by $FAKE_ACP_BUSY_FILE exists, the agent is busy with an autonomous turn of its
 own: a prompt gets one chunk of that turn's output and then the error, and is
 not taken (nothing of it is "said" afterwards). A file that says "quiet" makes
 the agent refuse without that chunk.
-Environment: FAKE_ACP_IGNORE_TERM=1 ignores SIGTERM; FAKE_ACP_FAIL_INIT=1
+Environment: FAKE_ACP_AUTH=<method id> advertises that auth method and refuses `session/new`
+("Authentication required") until `authenticate` was called; FAKE_ACP_AUTH_FAIL=1 makes
+`authenticate` Cursor's browser failure (-32602, the reason and a link in data.message),
+FAKE_ACP_AUTH_UNKNOWN=1 answers it -32601, FAKE_ACP_AUTH_EXIT=1 exits with code 4 on it.
+FAKE_ACP_IGNORE_TERM=1 ignores SIGTERM; FAKE_ACP_FAIL_INIT=1
 exits with code 5 before answering initialize; FAKE_ACP_INIT_DELAY=<s> waits
 that long before answering initialize (a cold `npx -y`); FAKE_ACP_PID_FILE=<file>
 gets a line `<pid>\t<cwd>` appended when it answers initialize.
@@ -294,6 +307,14 @@ def permission(sid, rid, title):
     return wait_response(rid)
 
 
+def cursor_call(sid, rid, method, params):
+    """A blocking `cursor/*` request; returns the client's answer."""
+    params = dict(params)
+    params["sessionId"] = sid
+    send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+    return wait_response(rid)
+
+
 def hold_until_cancel():
     global cancelled
     later = []
@@ -430,6 +451,52 @@ def prompt(msg):
     elif text.startswith("long:"):
         for i in range(int(text[5:])):
             chunk(sid, "line %d " % i, "m%d" % i)
+    elif text == "cursor-ask":
+        r = cursor_call(sid, "cur-ask", "cursor/ask_question", {
+            "toolCallId": "tc-ask", "title": "Need input",
+            "questions": [
+                {"id": "q1", "prompt": "Which colour?", "options": [{"id": "red", "label": "Red"}, {"id": "blue", "label": "Blue"}]},
+                {"id": "q2", "prompt": "Which fruits?", "allowMultiple": True,
+                 "options": [{"id": "fig", "label": "Fig"}, {"id": "plum", "label": "Plum"}, {"id": "pear", "label": "Pear"}]},
+            ],
+        })
+        chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-ask-got")
+    elif text == "cursor-ask-empty":
+        r = cursor_call(sid, "cur-ask", "cursor/ask_question", {"toolCallId": "tc-ask", "questions": []})
+        chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-ask-got")
+    elif text == "cursor-plan":
+        r = cursor_call(sid, "cur-plan", "cursor/create_plan", {
+            "toolCallId": "tc-plan", "name": "Refactor tabs", "overview": "Keep UX.",
+            "plan": "1. Inspect.\n2. Change.", "todos": [{"id": "t1", "content": "Inspect", "status": "pending"}],
+        })
+        chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-plan-got")
+    elif text == "cursor-plan-todos":
+        r = cursor_call(sid, "cur-plan", "cursor/create_plan", {
+            "toolCallId": "tc-plan", "name": "Two steps", "plan": "1. Inspect.\n2. Change.",
+            "todos": [{"id": "t1", "content": "Inspect", "status": "pending"}, {"id": "t2", "content": "Change", "status": "pending"}],
+        })
+        send({"jsonrpc": "2.0", "method": "cursor/update_todos", "params": {"toolCallId": "tc-todo", "merge": True, "todos": [
+            {"id": "t1", "content": "Inspect", "status": "completed"}]}})
+        chunk(sid, "got:" + json.dumps(r.get("result"), sort_keys=True), "cur-plan-got")
+    elif text == "cursor-todos":
+        todos = [{"id": "1", "content": "Set up", "status": "completed"}, {"id": "2", "content": "Build", "status": "in_progress"},
+                 {"id": "3", "content": "Drop me", "status": "cancelled"}]
+        send({"jsonrpc": "2.0", "method": "cursor/update_todos", "params": {"toolCallId": "tc-todo", "todos": todos, "merge": False}})
+        send({"jsonrpc": "2.0", "method": "cursor/update_todos", "params": {"toolCallId": "tc-todo", "merge": True, "todos": [
+            {"id": "2", "content": "Build", "status": "completed"}, {"id": "4", "content": "Test", "status": "pending"}]}})
+        chunk(sid, "todos sent", "cur-todos")
+    elif text == "cursor-task":
+        update(sid, {"sessionUpdate": "tool_call", "toolCallId": "tc-task", "title": "Task: Explore codebase", "kind": "other",
+                     "status": "pending", "rawInput": {"_toolName": "task", "prompt": "find auth",
+                                                       "description": "Explore codebase", "subagentType": "explore"}})
+        update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "tc-task", "status": "completed"})
+        send({"jsonrpc": "2.0", "method": "cursor/task", "params": {
+            "toolCallId": "tc-task", "description": "Explore codebase", "prompt": "find auth",
+            "subagentType": {"custom": "reviewer"}, "model": "composer", "agentId": "ag-1", "durationMs": 1234}})
+        chunk(sid, "task sent", "cur-task")
+    elif text == "cursor-task-bad":
+        send({"jsonrpc": "2.0", "method": "cursor/task", "params": {"toolCallId": 7, "description": "Explore codebase"}})
+        chunk(sid, "task sent", "cur-task")
     elif text.startswith("heavy:") or text.startswith("heavyhold:"):
         heavy(sid, text)
         if text.startswith("heavyhold:"):
@@ -443,6 +510,7 @@ def main():
     if os.environ.get("FAKE_ACP_IGNORE_TERM"):
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
     sessions = 0
+    authed = False
     sys.stderr.write("fake agent up\n")
     sys.stderr.flush()
     while True:
@@ -466,9 +534,12 @@ def main():
                 "protocolVersion": 1,
                 "agentInfo": {"name": "fake-acp", "version": "1"},
                 "agentCapabilities": capabilities(),
-                "authMethods": [],
+                "authMethods": [{"id": os.environ["FAKE_ACP_AUTH"], "name": "Login"}] if os.environ.get("FAKE_ACP_AUTH") else [],
             }})
         elif method == "session/new":
+            if os.environ.get("FAKE_ACP_AUTH") and not authed:
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required"}})
+                continue
             sessions += 1
             sid = new_session_id(sessions, (msg.get("params") or {}).get("cwd"))
             send({"jsonrpc": "2.0", "id": rid, "result": {
@@ -489,6 +560,20 @@ def main():
                 spawned.discard(tid)
                 update(msg["params"]["sessionId"], {"sessionUpdate": "async_task_state_update", "asyncTaskId": tid, "state": "stopped"})
             send({"jsonrpc": "2.0", "id": rid, "result": {"stopped": stopped}})
+        elif method == "authenticate":
+            if os.environ.get("FAKE_ACP_AUTH_EXIT"):
+                sys.stderr.write("signed out\n")
+                sys.stderr.flush()
+                os._exit(4)
+            if os.environ.get("FAKE_ACP_AUTH_UNKNOWN"):
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}})
+            elif os.environ.get("FAKE_ACP_AUTH_FAIL"):
+                # Cursor's shape when it cannot open a browser: generic message, the reason (with a link) in data.
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Invalid params", "data": {
+                    "message": "Failed to open browser for login. Please visit: https://cursor.com/loginDeepControl?challenge=abc123"}}})
+            else:
+                authed = True
+                send({"jsonrpc": "2.0", "id": rid, "result": {}})
         else:
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "unknown method " + method}})
 

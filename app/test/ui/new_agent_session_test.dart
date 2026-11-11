@@ -119,6 +119,9 @@ Finder _field(String label) => find.descendant(
   matching: find.byType(TextFormField),
 );
 
+/// The routes after pi, in the order the form lists them.
+const _newRoutes = ['Kimi', 'OpenCode', 'Cursor', 'Copilot', 'Antigravity', 'Hermes', 'DeepSeek'];
+
 Finder _chip(String label) => find.widgetWithText(AppChip, label);
 
 Finder _start() => find.widgetWithText(AppButton, 'Start');
@@ -153,13 +156,17 @@ void main() {
       e.host('a').installed = {'claude', 'codex'};
       await _pumpForm(tester, e);
 
-      for (final label in ['omp', 'Claude Code', 'Codex', 'pi']) {
+      for (final label in ['omp', 'Claude Code', 'Codex', 'pi', ..._newRoutes]) {
         expect(_chip(label), findsOneWidget, reason: label);
       }
       expect(tester.widget<AppChip>(_chip('omp')).enabled, isFalse);
       expect(tester.widget<AppChip>(_chip('pi')).enabled, isFalse);
       expect(tester.widget<AppChip>(_chip('Codex')).enabled, isTrue);
-      expect(find.text('Not installed on studio-mac: omp, pi'), findsOneWidget, reason: 'one line names both');
+      expect(
+        find.text('Not installed on studio-mac: omp, pi, ${_newRoutes.join(', ')}'),
+        findsOneWidget,
+        reason: 'one line names them all',
+      );
       expect(_selected(tester, 'Claude Code'), isTrue, reason: 'the first agent that can run');
 
       await tester.tap(_chip('omp'));
@@ -210,7 +217,7 @@ void main() {
 
       expect(_folder(tester), '/srv/app');
       expect(_selected(tester, 'Codex'), isTrue, reason: 'omp isn’t on build-box');
-      expect(find.text('Not installed on build-box: omp, Claude Code, pi'), findsOneWidget);
+      expect(find.text('Not installed on build-box: omp, Claude Code, pi, ${_newRoutes.join(', ')}'), findsOneWidget);
       await _teardown(tester, e);
     });
 
