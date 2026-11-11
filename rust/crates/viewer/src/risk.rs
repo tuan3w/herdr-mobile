@@ -29,17 +29,45 @@ pub fn why(risk: Risk) -> &'static str {
 /// The risk of the mode with this `id` and display `name`.
 #[must_use]
 pub fn assess(id: &str, name: &str) -> Risk {
-    one(id).max(one(name))
+    one(id)
+        .max(id_tail(id).map_or(Risk::None, one))
+        .max(hermes(id))
+        .max(one(name))
+}
+
+/// The last segment of an id that is a URL or path (Copilot's mode ids are
+/// `https://agentclientprotocol.com/protocol/session-modes#autopilot`): the text after the last
+/// `#`, else after the last `/`. `None` when the id has neither. The whole id is read too, so a
+/// risky word before the segment still counts.
+fn id_tail(id: &str) -> Option<&str> {
+    let cut = if id.contains('#') {
+        id.rfind('#')
+    } else {
+        id.rfind('/')
+    }?;
+    Some(&id[cut + 1..])
+}
+
+/// Hermes's edit modes by their own snake_case ids: `workspace_session` (edits in the workspace
+/// are allowed), `dont_ask` and `session` (edits are allowed for the session; sensitive paths
+/// still ask). The name `Don't Ask` is Claude's mode that runs nothing new, so Hermes's is told
+/// by its id.
+fn hermes(id: &str) -> Risk {
+    match id {
+        "dont_ask" | "workspace_session" | "session" => Risk::Elevated,
+        _ => Risk::None,
+    }
 }
 
 /// Modes the routes are known to send (`docs/AGENT_SESSIONS.md`), by compacted id or name.
 fn known(key: &str) -> Option<Risk> {
     Some(match key {
-        "bypasspermissions" | "agentfullaccess" | "fullaccess" | "dangerfullaccess" => {
-            Risk::Dangerous
-        }
-        "acceptedits" | "auto" | "agent" | "autoreview" => Risk::Elevated,
-        "default" | "plan" | "planmode" | "dontask" | "readonly" | "workspacewrite"
+        "bypasspermissions" | "agentfullaccess" | "fullaccess" | "dangerfullaccess"
+        | "autopilot" => Risk::Dangerous,
+        // Codex's `agent` is told by its name `Auto review`: the id is also Copilot's and
+        // Cursor's default mode, whose policy is not on record (an unlisted `agent` is none).
+        "acceptedits" | "auto" | "autoreview" => Risk::Elevated,
+        "default" | "plan" | "build" | "planmode" | "dontask" | "readonly" | "workspacewrite"
         | "workspaceaccess" => Risk::None,
         _ => return None,
     })
@@ -147,6 +175,28 @@ mod tests {
             assert_eq!(assess(safe, safe), Risk::None, "{safe}");
         }
         assert_eq!(assess("plan", "Plan Mode"), Risk::None);
+    }
+
+    #[test]
+    fn copilot_hermes_and_the_unlisted_agent_mode_are_read_as_the_phone_reads_them() {
+        let base = "https://agentclientprotocol.com/protocol/session-modes#";
+        assert_eq!(
+            assess(&format!("{base}autopilot"), "Autopilot"),
+            Risk::Dangerous
+        );
+        assert_eq!(assess(&format!("{base}plan"), "Plan"), Risk::None);
+        assert_eq!(assess(&format!("{base}agent"), "Agent"), Risk::None);
+        assert_eq!(assess("agent", "Cursor Agent"), Risk::None);
+        assert_eq!(
+            assess("https://example.com/bypass#plan", "Plan"),
+            Risk::Dangerous
+        );
+        assert_eq!(assess("accept_edits", "Accept Edits"), Risk::Elevated);
+        assert_eq!(assess("dont_ask", "Don't Ask"), Risk::Elevated);
+        assert_eq!(assess("workspace_session", "Accept Edits"), Risk::Elevated);
+        assert_eq!(assess("session", "Don't Ask"), Risk::Elevated);
+        assert_eq!(assess("ask", "Default"), Risk::None);
+        assert_eq!(assess("dontAsk", "Don't Ask"), Risk::None, "Claude's own");
     }
 
     #[test]
