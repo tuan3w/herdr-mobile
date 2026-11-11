@@ -216,6 +216,33 @@ void main() {
     });
   });
 
+  group('opencode/parallel (recorded, OpenCode 2.2.7 with two subagents started in one step)', () {
+    test('each subagent has its own conversation: the tool it ran, and nobody else\'s', () {
+      final s = stateOfTrace('opencode', 'parallel');
+      expect(s.subagents, hasLength(2));
+      String ran(SubagentRun r) => r.items.whereType<TranscriptTool>().single.call.title;
+      final ls = s.subagents.singleWhere((r) => ran(r).contains(': ls'));
+      final wc = s.subagents.singleWhere((r) => ran(r).contains('wc -c'));
+      expect(ls.result, contains('README.md'));
+      expect(
+        wc.result,
+        contains('bytes'),
+        reason: 'each run holds its own subagent\'s answer and its own conversation',
+      );
+      expect(s.subagentBook.aliases.length, 2);
+      expect(s.subagentBook.aliases.values.toSet(), {ls.id, wc.id}, reason: 'one child to each launcher');
+      expect([ls.status, wc.status], everyElement(SubagentStatus.finished));
+      expect(s.toolCalls.map((c) => c.name), everyElement('subagent'), reason: 'no child call in the main transcript');
+    });
+
+    test('replay builds the same runs', () {
+      expect(
+        replayOfTrace('opencode', 'parallel').subagents.map(_facts),
+        stateOfTrace('opencode', 'parallel').subagents.map(_facts),
+      );
+    });
+  });
+
   group('opencode shapes (UNVERIFIED beyond the recorded one)', () {
     Json launcher(String id, {String status = 'in_progress'}) => _patch(
       id,

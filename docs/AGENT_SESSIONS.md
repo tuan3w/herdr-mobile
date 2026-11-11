@@ -1264,6 +1264,12 @@ Everything is in `AgentSessionState`
     request would block like Claude's), so it gets the tagged form. 1.19.5 sends the
     launcher only, no tagged child. An OpenCode 1.x launcher is told by its input (`prompt`,
     `description` and `agent`/`subagent_type`, kind `think`), since 1.x has no name.
+    Two subagents started in one step (RECORDED, `traces/opencode/parallel`, 2.2.7 on an
+    OpenAI-compatible endpoint with `"permission": "ask"`): each child's tagged `title` is its
+    launcher's `description`, so binding by title is exact; with `ask`, the `subagent` calls and each
+    child's shell call raise permissions (the child's carries the tag, so the dock names it). A custom
+    provider is `opencode.json` `provider.<id> {npm: "@ai-sdk/openai-compatible", options: {baseURL,
+    apiKey}, models: {<id>: {tool_call: true, limit}}}` and `model: "<id>/<model>"`.
   - **Copilot** (RECORDED, 1.0.109 in BYOK mode on an OpenAI-compatible endpoint,
     `traces/copilot/subagent`): the `task` call is titled with its description, kind `other`,
     `rawInput {agent_type, description, name, prompt}` (`mode` only when background); the answer is

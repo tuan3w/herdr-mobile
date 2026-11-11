@@ -156,11 +156,17 @@ AGENTS = {
     # config is {"permission": "ask"}, else it runs tools without asking (prepare_env).
     "opencode": {
         "cmd": ["opencode", "acp"],
-        "scenarios": ["markdown", "tools", "subagent"],
-        "approve": {"tools", "subagent"},
+        "scenarios": ["markdown", "tools", "subagent", "parallel"],
+        "approve": {"tools", "subagent", "parallel"},
         "settle": 2.0,
         "model": "opencode/big-pickle",
         "prompts": {
+            "parallel": (
+                "Start TWO subagents in parallel with your subagent tool, in a single step. Subagent "
+                "one: run the shell command 'ls' and report the file names. Subagent two: run the "
+                "shell command 'wc -c README.md notes.txt' and report the counts. Wait for both, "
+                "then answer in one line."
+            ),
             "subagent": (
                 "Use your subagent tool to start exactly one subagent whose job is to list the "
                 "files in the current directory with the ls command and report the file names. "
@@ -433,7 +439,24 @@ def prepare_env(agent: str, scratch: str, tmp: Path) -> tuple[dict, list[str]]:
             env[name] = str(store)
             stores.append(str(store))
         (Path(env["XDG_CONFIG_HOME"]) / "opencode").mkdir()
-        (Path(env["XDG_CONFIG_HOME"]) / "opencode" / "opencode.json").write_text('{"permission": "ask"}\n')
+        config = {"permission": "ask"}
+        base, model, key = (os.environ.get(k) for k in ("OPENCODE_CAPTURE_BASE_URL", "OPENCODE_CAPTURE_MODEL", "OPENCODE_CAPTURE_API_KEY"))
+        if base:
+            # An OpenAI-compatible endpoint instead of the free model: OPENCODE_CAPTURE_BASE_URL,
+            # OPENCODE_CAPTURE_MODEL and OPENCODE_CAPTURE_API_KEY (the model is listed as `compat/<model>`).
+            if not (model and key):
+                raise Skip("set OPENCODE_CAPTURE_MODEL and OPENCODE_CAPTURE_API_KEY with OPENCODE_CAPTURE_BASE_URL")
+            config["provider"] = {
+                "compat": {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "name": "compat",
+                    "options": {"baseURL": base, "apiKey": key},
+                    "models": {model: {"name": model, "tool_call": True, "limit": {"context": 200000, "output": 16000}}},
+                }
+            }
+        cfg = Path(env["XDG_CONFIG_HOME"]) / "opencode" / "opencode.json"
+        cfg.write_text(json.dumps(config) + "\n")
+        os.chmod(cfg, 0o600)
     elif agent == "kimi" and os.environ.get("KIMI_CAPTURE_BASE_URL"):
         # An OpenAI-compatible endpoint instead of the owner's login: KIMI_CAPTURE_BASE_URL,
         # KIMI_CAPTURE_MODEL and KIMI_CAPTURE_API_KEY; the home (and so ~/.kimi-code) is a temp dir.
@@ -695,6 +718,8 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
 
         chosen = {}
         wanted = (spec.get("thinking_model") if scenario == "thinking" else None) or spec.get("model")
+        if agent == "opencode" and os.environ.get("OPENCODE_CAPTURE_BASE_URL"):
+            wanted = "compat/" + os.environ.get("OPENCODE_CAPTURE_MODEL", "")
         if wanted:
             for o in options:
                 if o.get("id") == "model" and isinstance(o.get("options"), list):
@@ -710,7 +735,7 @@ def capture(agent: str, scenario: str, force: bool, timeout: float) -> str:
                         if v is not None and v != o.get("currentValue"):
                             options = set_option(o["id"], v)
                             chosen[o["id"]] = v
-        prompt_text = spec.get("prompts", {}).get(scenario, PROMPTS[scenario])
+        prompt_text = spec.get("prompts", {}).get(scenario) or PROMPTS[scenario]
         prompt_at = rec.now()
         stop = None
         try:

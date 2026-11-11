@@ -1,0 +1,26 @@
+{
+  "agent": "opencode",
+  "scenario": "parallel",
+  "prompt": "Start TWO subagents in parallel with your subagent tool, in a single step. Subagent one: run the shell command 'ls' and report the file names. Subagent two: run the shell command 'wc -c README.md notes.txt' and report the counts. Wait for both, then answer in one line.",
+  "command": "opencode acp",
+  "agentInfo": {
+    "name": "OpenCode",
+    "version": "2.2.7"
+  },
+  "capturedOn": "2026-11-11",
+  "promptSentAtMs": 520.323,
+  "stopReason": "end_turn",
+  "lines": 50,
+  "bytes": 27431,
+  "optionsCut": 0,
+  "configChosen": {
+    "model": "compat/vllm/swift-1.5-27b"
+  },
+  "permissionDecisions": [
+    "allowed once: subagent",
+    "allowed once: subagent",
+    "allowed once: ls",
+    "allowed once: wc -c README.md notes.txt"
+  ],
+  "notes": []
+}
