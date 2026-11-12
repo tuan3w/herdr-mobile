@@ -49,7 +49,9 @@ if [ "${1:-}" != "--quick" ]; then
   config=.dart_tool/package_config.json
   cp "$config" "$config.orig"
   trap 'mv -f "$config.orig" "$config"' EXIT
-  sed -i "s#\"rootUri\": \"../\"#\"rootUri\": \"file://$PWD/\"#" "$config"
+  # Read the copy and write the file, not `sed -i`: GNU and BSD (macOS) sed
+  # disagree on -i's argument, and the BSD one failed here before any test ran.
+  sed "s#\"rootUri\": \"../\"#\"rootUri\": \"file://$PWD/\"#" "$config.orig" > "$config"
   jobs="${HERDR_TEST_JOBS:-$(nproc)}"
   tags=()
   case "${HERDR_TEST_ONLY:-}" in
