@@ -15,7 +15,6 @@ import 'package:herdr_mobile/data/repositories/observed_sessions.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
-import 'package:provider/provider.dart';
 
 import '../support/fake_log_source.dart';
 import '../support/fake_network.dart';
@@ -27,11 +26,6 @@ import '../support/memory_terminal_settings_store.dart';
 
 void main() {
   testWidgets('a page held open with its notice up keeps the connection, not the observed sessions', (tester) async {
-    // The app hands ObservedSessions out with a plain Provider (it notifies
-    // its own listeners); the debug check for that is not what this is about.
-    final check = Provider.debugCheckInvalidValueType;
-    Provider.debugCheckInvalidValueType = null;
-    addTearDown(() => Provider.debugCheckInvalidValueType = check);
     final machines = MachineRepository(profiles: MemoryProfileStore(), secrets: MemorySecretStore());
     await machines.load();
     await machines.save(
