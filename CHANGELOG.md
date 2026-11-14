@@ -4,7 +4,7 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [0.1.65] - 2026-11-14
+## [0.1.66] - 2026-11-14
 
 ### Selecting text selects the code in it
 
