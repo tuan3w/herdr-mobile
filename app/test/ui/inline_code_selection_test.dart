@@ -34,7 +34,7 @@ void main() {
                       style: const TextStyle(fontSize: 40, color: Colors.black),
                       children: [
                         const TextSpan(text: 'ab '),
-                        TextSpan(text: 'M    M', style: chip),
+                        TextSpan(text: 'a      b', style: chip),
                       ],
                     ),
                   ),
@@ -50,17 +50,18 @@ void main() {
 
     late Color inChip;
     await tester.runAsync(() async {
-      final image = await (key.currentContext!.findRenderObject()! as RenderRepaintBoundary).toImage();
+      final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await boundary.toImage();
       final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
-      final box = tester.getRect(find.descendant(of: find.byType(SelectionArea), matching: find.byType(Text)).first);
-      // A space inside the chip, between its two glyphs.
-      final at = (((box.top + 20).round() * image.width) + (box.left + 190).round()) * 4;
-      inChip = Color.fromARGB(
-        bytes.getUint8(at + 3),
-        bytes.getUint8(at),
-        bytes.getUint8(at + 1),
-        bytes.getUint8(at + 2),
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: find.byType(SelectionArea), matching: find.byType(RichText)).first,
       );
+      // The middle of the blanks inside the chip ('ab ' is 3 characters, then
+      // 'a', six spaces and 'b'): no glyph is drawn there, whatever the font.
+      final box = paragraph.getBoxesForSelection(const TextSelection(baseOffset: 5, extentOffset: 8)).first.toRect();
+      final at = paragraph.localToGlobal(box.center) - boundary.localToGlobal(Offset.zero);
+      final i = ((at.dy.round() * image.width) + at.dx.round()) * 4;
+      inChip = Color.fromARGB(bytes.getUint8(i + 3), bytes.getUint8(i), bytes.getUint8(i + 1), bytes.getUint8(i + 2));
     });
     // The page is near-white and the chip a faint grey: a highlighted pixel is
     // far more blue than red.
