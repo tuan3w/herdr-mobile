@@ -27,6 +27,7 @@ import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransport
 import '../services/disk_cache.dart';
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
+import 'background_grace.dart';
 import 'attach_target.dart' show AttachMode;
 import 'command_source.dart' show SessionCommands;
 import 'machine_connection.dart';
@@ -132,7 +133,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     this.maxAttempts = 12,
     this.linger = const Duration(seconds: 20),
     this.idleAfter = const Duration(minutes: 10),
-    this.detachAfter = const Duration(seconds: 90),
+    this.detachAfter = defaultBackgroundGrace,
     this.notifyEvery = const Duration(milliseconds: 16),
     this.backgroundNotifyEvery = const Duration(seconds: 2),
     this.sliceLines = 64,
@@ -196,8 +197,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// After this long without a screen the registry may drop the session.
   final Duration idleAfter;
 
-  /// How long the app may stay in the background before the follow stops.
-  final Duration detachAfter;
+  /// How long the app may stay in the background before the follow stops;
+  /// asked when the app goes away.
+  final BackgroundGrace detachAfter;
   final Duration notifyEvery;
   final Duration backgroundNotifyEvery;
 
@@ -2406,7 +2408,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (_disposed || _backgroundedAt != null) return;
     _backgroundedAt = since ?? DateTime.now();
     _graceElapsed = false;
-    _detachTimer = Timer(detachAfter, () {
+    _detachTimer = Timer(detachAfter(), () {
       _detachTimer = null;
       _graceElapsed = true;
       if (!_keepAlive) _detach();

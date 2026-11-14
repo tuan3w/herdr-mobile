@@ -10,6 +10,33 @@ enum ThemeChoice { light, dark, system }
 /// log always open as a terminal.
 enum OpenAgentsAs { chat, terminal }
 
+/// How long the app stays connected after the person leaves it: to copy
+/// something, look at another app, and come back to a board that is already
+/// current instead of one that is reconnecting. Past it the connections and
+/// the chats are let go, which is what saves the battery (and the radio) of a
+/// phone left in a pocket.
+///
+/// Why a choice: the right time is a trade the person makes. A held
+/// connection keeps the radio and the app's timers running for nothing if the
+/// person does not come back (not measured on a phone); the short stops spend
+/// least, the long ones fit a longer errand. Alerts, when on, keep their own
+/// connection for as long as agents work, whatever this says.
+enum BackgroundHold {
+  /// Let go at once; coming back reconnects.
+  off(Duration.zero),
+  seconds90(Duration(seconds: 90)),
+  minutes5(Duration(minutes: 5)),
+  minutes15(Duration(minutes: 15));
+
+  const BackgroundHold(this.duration);
+
+  final Duration duration;
+
+  /// Until the person chooses: long enough for a copy, a look and a reply
+  /// elsewhere, short enough to cost little.
+  static const defaultHold = minutes5;
+}
+
 /// Where [AppSettings] are kept between launches. Null is "never saved" (or
 /// saved as something this version does not know).
 abstract interface class AppSettingsStore {
@@ -28,6 +55,10 @@ abstract interface class AppSettingsStore {
   Future<bool?> readSmoothText();
 
   Future<void> writeSmoothText(bool value);
+
+  Future<BackgroundHold?> readBackgroundHold();
+
+  Future<void> writeBackgroundHold(BackgroundHold value);
 }
 
 class PrefsAppSettingsStore implements AppSettingsStore {
@@ -35,6 +66,7 @@ class PrefsAppSettingsStore implements AppSettingsStore {
   static const _darkTerminalKey = 'app.darkTerminal.v1';
   static const _openAsKey = 'app.openAgentsAs.v1';
   static const _smoothTextKey = 'app.smoothText.v1';
+  static const _holdKey = 'app.backgroundHold.v1';
 
   @override
   Future<ThemeChoice?> readTheme() async {
@@ -90,6 +122,21 @@ class PrefsAppSettingsStore implements AppSettingsStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_smoothTextKey, value);
   }
+
+  @override
+  Future<BackgroundHold?> readBackgroundHold() async {
+    final saved = (await SharedPreferences.getInstance()).get(_holdKey);
+    for (final choice in BackgroundHold.values) {
+      if (choice.name == saved) return choice;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> writeBackgroundHold(BackgroundHold value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_holdKey, value.name);
+  }
 }
 
 /// App-wide preferences that are not about one screen. Load it before
@@ -114,6 +161,7 @@ class AppSettings extends ChangeNotifier {
   bool _darkTerminal = false;
   OpenAgentsAs _openAs = OpenAgentsAs.chat;
   bool _smoothText = true;
+  BackgroundHold _hold = BackgroundHold.defaultHold;
 
   ThemeChoice get theme => _theme;
 
@@ -130,6 +178,11 @@ class AppSettings extends ChangeNotifier {
   /// shown and when it ends do not change, only the pace.
   bool get smoothText => _smoothText;
 
+  /// How long the app keeps its connections and chats after it leaves the
+  /// front, before it lets them go to save the battery; read when the app
+  /// goes away, so a change applies from the next time. See [BackgroundHold].
+  BackgroundHold get backgroundHold => _hold;
+
   /// Reads the saved settings. Anything missing or unreadable is the default.
   Future<void> load() async {
     try {
@@ -137,11 +190,13 @@ class AppSettings extends ChangeNotifier {
       _darkTerminal = await _store.readDarkTerminal() ?? false;
       _openAs = await _store.readOpenAgentsAs() ?? OpenAgentsAs.chat;
       _smoothText = await _store.readSmoothText() ?? true;
+      _hold = await _store.readBackgroundHold() ?? BackgroundHold.defaultHold;
     } on Object {
       _theme = defaultTheme;
       _darkTerminal = false;
       _openAs = OpenAgentsAs.chat;
       _smoothText = true;
+      _hold = BackgroundHold.defaultHold;
     }
     notifyListeners();
   }
@@ -179,5 +234,14 @@ class AppSettings extends ChangeNotifier {
       notifyListeners();
     }
     return _store.writeSmoothText(_smoothText);
+  }
+
+  /// Applies [value] right away and saves it.
+  Future<void> setBackgroundHold(BackgroundHold value) {
+    if (value != _hold) {
+      _hold = value;
+      notifyListeners();
+    }
+    return _store.writeBackgroundHold(_hold);
   }
 }

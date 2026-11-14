@@ -46,4 +46,15 @@ class MemoryAppSettingsStore implements AppSettingsStore {
     smoothText = value;
     writes.add('smoothText $value');
   }
+
+  BackgroundHold? backgroundHold;
+
+  @override
+  Future<BackgroundHold?> readBackgroundHold() async => backgroundHold;
+
+  @override
+  Future<void> writeBackgroundHold(BackgroundHold value) async {
+    backgroundHold = value;
+    writes.add('backgroundHold ${value.name}');
+  }
 }

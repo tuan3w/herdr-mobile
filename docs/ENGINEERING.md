@@ -1086,6 +1086,18 @@ Notifications are local, optional and off by default (`NotificationSettings`,
   that keeps only the page's machine, and only once the notice is up
   (`pageNotice`); without it (refused, or iOS) the 90 s rule applies and the
   page says the connection dropped.
+- Without that service the app leaves the process to Android, and what it
+  holds is let go after a grace period the person chooses (Settings > Agents,
+  `Stay connected when away`: Off, 90 s, 5 min, 15 min;
+  `AppSettings.backgroundHold`, 5 min until chosen). `FleetRepository`,
+  `AgentSessions` and `ObservedSessions` ask for it as a `BackgroundGrace`
+  when the app goes away, so a change applies from the next absence. Back
+  inside the grace period nothing is rebuilt: each connection that is up is
+  asked for a snapshot, and one that errors or is silent for `probeTimeout`
+  (4 s) is reconnected, as every one used to be after 5 s away. Why: a person
+  who steps out to copy something came back to a handshake. Not measured on a
+  phone: whether Android keeps the sockets alive for the whole grace period
+  (the probe is what makes a wrong guess cost 4 s instead of a stale board).
 - Back at the app's root moves the task to the background instead of finishing
   while watching (`PopScope` in `HomeShell`, `TaskMover`);
   `MainActivity.onDestroy` stops the service for any non-configuration

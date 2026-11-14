@@ -25,6 +25,7 @@ import '../streaming/flush_scheduler.dart';
 import '../words/agent_names.dart';
 import 'agent_session.dart';
 import 'attach_target.dart' show AttachMode;
+import 'background_grace.dart';
 import 'machine_connection.dart';
 import 'reviewed_state.dart';
 import 'subagent_transcripts.dart';
@@ -86,7 +87,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     this._backoff = defaultBackoff,
     this._jitter = defaultRetryJitter,
     this.maxAttempts = 12,
-    this.detachAfter = const Duration(seconds: 90),
+    this.detachAfter = defaultBackgroundGrace,
     this.notifyEvery = const Duration(milliseconds: 16),
     this.backgroundNotifyEvery = const Duration(seconds: 2),
     FlushScheduler? flush,
@@ -117,8 +118,8 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   final int maxAttempts;
 
   /// How long the app may stay in the background before the transport is
-  /// detached.
-  final Duration detachAfter;
+  /// detached; asked when the app goes away.
+  final BackgroundGrace detachAfter;
 
   /// Listeners are told of a burst of changes at most this often (the default
   /// scheduler's frame; with a frame-aligned [FlushScheduler] once per frame,
@@ -1337,7 +1338,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     _saveCache(now: true);
     final at = _backgroundedAt = since ?? _clock();
     _graceElapsed = false;
-    final left = detachAfter - _clock().difference(at);
+    final left = detachAfter() - _clock().difference(at);
     if (left <= Duration.zero) {
       _graceEnded();
     } else {

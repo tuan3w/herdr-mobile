@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
+import 'package:herdr_mobile/data/repositories/background_grace.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
@@ -24,14 +25,19 @@ MachineProfile _machine(String id, String label) =>
     (id: id, ws: 'w1', agent: agent, status: status);
 
 class _Harness {
-  _Harness({Duration backoff = const Duration(milliseconds: 10), FakeNetwork? network, MemorySnapshotCache? cache})
-    : network = network ?? FakeNetwork(),
-      cache = cache ?? MemorySnapshotCache() {
+  _Harness({
+    Duration backoff = const Duration(milliseconds: 10),
+    FakeNetwork? network,
+    MemorySnapshotCache? cache,
+    BackgroundGrace? grace,
+  }) : network = network ?? FakeNetwork(),
+       cache = cache ?? MemorySnapshotCache() {
     machines = MachineRepository(profiles: MemoryProfileStore(), secrets: MemorySecretStore());
     fleet = FleetRepository(
       machines: machines,
       network: this.network,
       clock: () => now,
+      backgroundSuspendAfter: grace ?? defaultBackgroundGrace,
       connect: (profile, secrets) {
         final t = transports.putIfAbsent(profile.id, FakeTransport.new);
         return MachineConnection(
@@ -333,36 +339,15 @@ void main() {
       h.add(_machine('b', 'beta'));
     }
 
-    test('back after a long absence resets every socket and reconnects now', () {
+    test('back inside the grace period only asks: nothing is rebuilt and the board is current', () {
       fakeAsync((async) {
         final h = _Harness(backoff: const Duration(hours: 1));
         addTwo(h);
         async.flushMicrotasks();
-
-        h.fleet.onLifecycleState(AppLifecycleState.paused);
-        h.advance(async, const Duration(seconds: 6));
-        h.fleet.onLifecycleState(AppLifecycleState.resumed);
-        async.flushMicrotasks();
-
-        for (final id in ['a', 'b']) {
-          expect(h.transports[id]!.resets, 1, reason: id);
-          expect(h.transports[id]!.subscriptions, 2, reason: id);
-        }
-        expect(h.allLive, isTrue);
-        h.dispose();
-      });
-    });
-
-    test('back after a short absence only refreshes', () {
-      fakeAsync((async) {
-        final h = _Harness();
-        addTwo(h);
-        async.flushMicrotasks();
         final calls = h.snapshotCalls('a');
 
-        h.fleet.onLifecycleState(AppLifecycleState.hidden);
         h.fleet.onLifecycleState(AppLifecycleState.paused);
-        h.advance(async, const Duration(seconds: 4));
+        h.advance(async, const Duration(seconds: 60));
         h.fleet.onLifecycleState(AppLifecycleState.resumed);
         async.flushMicrotasks();
 
@@ -376,18 +361,20 @@ void main() {
       });
     });
 
-    test('exactly at the threshold counts as short', () {
+    test('back to a link that died meanwhile: the question fails and the connection is rebuilt now', () {
       fakeAsync((async) {
-        final h = _Harness();
+        final h = _Harness(backoff: const Duration(hours: 1));
         addTwo(h);
         async.flushMicrotasks();
 
         h.fleet.onLifecycleState(AppLifecycleState.paused);
-        h.advance(async, const Duration(seconds: 5));
+        h.advance(async, const Duration(seconds: 30));
+        h.transports['a']!.failure = StateError('socket is gone');
         h.fleet.onLifecycleState(AppLifecycleState.resumed);
         async.flushMicrotasks();
 
-        expect(h.transports['a']!.resets, 0);
+        expect(h.transports['a']!.resets, 1, reason: 'the one that does not answer is rebuilt');
+        expect(h.transports['b']!.resets, 0, reason: 'the one that answers is left alone');
         h.dispose();
       });
     });
@@ -437,6 +424,30 @@ void main() {
         h.fleet.onLifecycleState(AppLifecycleState.resumed);
         async.flushMicrotasks();
         expect(h.allLive, isTrue);
+        h.dispose();
+      });
+    });
+
+    test('the grace period is asked when the app goes away, so a change applies from the next absence', () {
+      fakeAsync((async) {
+        var grace = const Duration(minutes: 5);
+        final h = _Harness(grace: () => grace);
+        addTwo(h);
+        async.flushMicrotasks();
+
+        h.fleet.onLifecycleState(AppLifecycleState.paused);
+        h.advance(async, const Duration(minutes: 4, seconds: 59));
+        expect(h.allLive, isTrue, reason: 'still inside the 5 minutes');
+        h.advance(async, const Duration(seconds: 1));
+        expect(h.fleet.connections.map((c) => c.isLive), everyElement(isFalse));
+        h.fleet.onLifecycleState(AppLifecycleState.resumed);
+        async.flushMicrotasks();
+        expect(h.allLive, isTrue);
+
+        grace = Duration.zero; // Off, chosen while the app was in front
+        h.fleet.onLifecycleState(AppLifecycleState.paused);
+        h.advance(async, const Duration(milliseconds: 1));
+        expect(h.fleet.connections.map((c) => c.isLive), everyElement(isFalse), reason: 'let go at once');
         h.dispose();
       });
     });
@@ -503,7 +514,7 @@ void main() {
         async.flushMicrotasks();
         expect(h.fleet.connections.map((c) => c.isLive), everyElement(isFalse));
 
-        h.fleet.onForeground(away: const Duration(seconds: 1));
+        h.fleet.onForeground();
         async.flushMicrotasks();
         expect(h.allLive, isTrue);
         h.dispose();

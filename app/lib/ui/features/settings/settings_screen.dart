@@ -202,6 +202,7 @@ class _AgentsGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.read<AppSettings>();
     final openAs = context.select<AppSettings, OpenAgentsAs>((s) => s.openAgentsAs);
+    final hold = context.select<AppSettings, BackgroundHold>((s) => s.backgroundHold);
     // Absent where the app runs without them (tests).
     final phrases = context.watch<QuickPhrases?>()?.phrases.length;
     final opens = openAs == OpenAgentsAs.chat ? 'Opens as chat' : 'Opens as terminal';
@@ -226,6 +227,25 @@ class _AgentsGroup extends StatelessWidget {
               ],
               value: openAs,
               onChanged: (next) => unawaited(settings.setOpenAgentsAs(next)),
+            ),
+          ),
+        ),
+        CustomRow(
+          id: 'background-hold',
+          child: SettingsField(
+            title: 'Stay connected when away',
+            hint: hold == BackgroundHold.off
+                ? 'Connections are let go as soon as you leave the app, and coming back reconnects. Alerts still keep theirs while agents work.'
+                : 'After you leave the app, connections stay up for this long, so a copy or a look elsewhere doesn’t end in a reconnect. Then they’re let go to spare the battery. Alerts keep theirs while agents work.',
+            child: Segmented<BackgroundHold>(
+              options: const [
+                SegmentOption(BackgroundHold.off, 'Off'),
+                SegmentOption(BackgroundHold.seconds90, '90 s'),
+                SegmentOption(BackgroundHold.minutes5, '5 min'),
+                SegmentOption(BackgroundHold.minutes15, '15 min'),
+              ],
+              value: hold,
+              onChanged: (next) => unawaited(settings.setBackgroundHold(next)),
             ),
           ),
         ),

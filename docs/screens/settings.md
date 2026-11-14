@@ -19,7 +19,9 @@ it is set to and opening in place (`SettingsGroup`, on `Collapse`), one at a
 time. Look (theme, the terminal font size stepper 8 to 22
 with a sample line, wrap, Dark terminal, and Smooth text: streaming answers at
 an even pace, on by default, `AppSettings.smoothText`; the terminal ones edit
-the pane's `TerminalSettings`), Agents (how agents open, and Quick phrases, a
+the pane's `TerminalSettings`), Agents (how agents open, how long the app
+stays connected after it is left (`BackgroundHold`: Off, 90 s, 5 min, 15 min,
+5 min until chosen, `AppSettings.backgroundHold`), and Quick phrases, a
 row that opens its own page because the list grows), Notifications, Storage
 (what the disk cache keeps, `DiskCache`, as `Cache · 38 MB`, and `Clear cache`: a plain tap, because
 everything cleared can be downloaded again), and About (what it talks to, update

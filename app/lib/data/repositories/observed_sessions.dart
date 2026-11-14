@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/herdr_models.dart' show Pane;
 import '../observed/observed_kind.dart';
 import 'fleet_repository.dart';
+import 'background_grace.dart';
 import 'machine_connection.dart';
 import 'observed_session.dart';
 import 'pane_previews.dart';
@@ -26,6 +27,7 @@ class ObservedSessions extends ChangeNotifier {
     required this._sourceFor,
     required this._kinds,
     this.idleAfter = const Duration(minutes: 10),
+    this.detachAfter = defaultBackgroundGrace,
   }) {
     _fleet.addListener(_prune);
   }
@@ -37,6 +39,10 @@ class ObservedSessions extends ChangeNotifier {
 
   /// A session nobody holds for this long is dropped.
   final Duration idleAfter;
+
+  /// How long the app may stay in the background before a session stops
+  /// following its log, asked when the app goes away.
+  final BackgroundGrace detachAfter;
 
   final _sessions = <String, ObservedAgentSession>{};
   bool _disposed = false;
@@ -126,6 +132,7 @@ class ObservedSessions extends ChangeNotifier {
         onUnlinked: () => markUnlinked(machine, paneId),
         onIdle: _drop,
         idleAfter: idleAfter,
+        detachAfter: detachAfter,
       ),
     );
   }
@@ -156,6 +163,7 @@ class ObservedSessions extends ChangeNotifier {
         subagentName: name,
         onIdle: _drop,
         idleAfter: idleAfter,
+        detachAfter: detachAfter,
       ),
     );
   }

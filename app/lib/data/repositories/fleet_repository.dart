@@ -4,6 +4,7 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:flutter/foundation.dart';
 
 import '../models/machine_profile.dart';
+import 'background_grace.dart';
 import '../services/network_monitor.dart';
 import 'agent_screens.dart';
 import 'fleet_agent.dart';
@@ -33,8 +34,8 @@ class FleetRepository extends ChangeNotifier {
     ReviewedState? reviewed,
     this._screens,
     PaneSessionNames? names,
-    this.longAway = const Duration(seconds: 5),
-    this.backgroundSuspendAfter = const Duration(seconds: 90),
+    this.probeTimeout = const Duration(seconds: 4),
+    this.backgroundSuspendAfter = defaultBackgroundGrace,
     this._clock = DateTime.now,
   }) : reviewed = reviewed ?? ReviewedState(),
        _ownsReviewed = reviewed == null {
@@ -61,13 +62,13 @@ class FleetRepository extends ChangeNotifier {
   /// The agent screen in front: a terminal there is being looked at.
   final AgentScreens? _screens;
 
-  /// Sockets die while the app is suspended. Back after more than this, the
-  /// connections are reset instead of trusted.
-  final Duration longAway;
+  /// How long a connection that is up is given to answer when the app is back
+  /// from the background, before it is rebuilt (see [onForeground]).
+  final Duration probeTimeout;
 
-  /// Continuous time in the background after which connections are torn
-  /// down to save battery.
-  final Duration backgroundSuspendAfter;
+  /// Continuous time in the background after which connections are torn down
+  /// to save battery; asked when the app goes away.
+  final BackgroundGrace backgroundSuspendAfter;
 
   late final StreamSubscription<NetworkState> _networkSub;
   DateTime? _backgroundedAt;
@@ -328,29 +329,30 @@ class FleetRepository extends ChangeNotifier {
         _backgroundedAt = _clock();
         _graceElapsed = false;
         _syncBackground();
-        _suspendTimer = Timer(backgroundSuspendAfter, _graceEnded);
+        _suspendTimer = Timer(backgroundSuspendAfter(), _graceEnded);
       case AppLifecycleState.resumed:
-        final at = _backgroundedAt;
-        if (at == null) return;
+        if (_backgroundedAt == null) return;
         _backgroundedAt = null;
         _graceElapsed = false;
         _syncBackground();
         names.sync(); // reads that waited for the foreground start now
         _suspendTimer?.cancel();
         _suspendTimer = null;
-        unawaited(onForeground(away: _clock().difference(at)));
+        unawaited(onForeground());
       case AppLifecycleState.inactive || AppLifecycleState.detached:
         break;
     }
   }
 
-  /// The app is back after [away]. A long absence (or a suspension) means
-  /// the sockets are dead, so reset and reconnect now; a short one only
-  /// needs a refresh. A connection that was kept ([keeps]: the process ran
-  /// behind a foreground notice and it never suspended) only needs a
-  /// refresh whatever the absence: a link that died meanwhile is found by
-  /// that.
-  Future<void> onForeground({required Duration away}) async {
+  /// The app is back. A connection that was let go (suspended after the grace
+  /// period) is rebuilt now. One that was not is asked something small instead
+  /// of being rebuilt: the person who stepped out to copy something comes back
+  /// to a board that is already current, not to a handshake. Whether the socket
+  /// survived (Android may have frozen the process, a handover may have moved
+  /// the path) is learned from the answer: an error, or none within
+  /// [probeTimeout], and the connection is rebuilt, as it always was. A
+  /// connection that was kept ([keeps]) is probed the same way.
+  Future<void> onForeground() async {
     if (_disposed) return;
     final wasSuspended = {..._suspended};
     _suspended.clear();
@@ -360,16 +362,21 @@ class FleetRepository extends ChangeNotifier {
       }
       return;
     }
-    final refresh = <MachineConnection>[];
+    final probe = <MachineConnection>[];
     for (final c in connections) {
-      final id = c.profile.id;
-      if (wasSuspended.contains(id) || (away > longAway && !keeps(id))) {
+      if (wasSuspended.contains(c.profile.id)) {
         c.reconnect();
       } else {
-        refresh.add(c);
+        probe.add(c);
       }
     }
-    await _refresh(refresh);
+    await Future.wait([
+      for (final c in probe)
+        if (c.state == LinkState.online)
+          c.refresh().timeout(probeTimeout).catchError((Object _) => c.reconnect())
+        else
+          Future<void>.sync(c.retry),
+    ]);
   }
 
   /// Continuously backgrounded for too long: stop every connection until the

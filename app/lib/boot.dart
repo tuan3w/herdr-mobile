@@ -180,6 +180,9 @@ Future<HerdrMobileApp> bootApp({
   // Fast, and never throws: a platform without notifications gets a no-op.
   final notify = notifier ?? await LocalNotifier.start(accent: Ds.paper.accent);
   final monitor = network ?? ConnectivityNetworkMonitor();
+  // What the person chose in Settings, asked when the app goes away: the
+  // connections, the chats and the followed logs are let go after it.
+  Duration holdFor() => appSettings.backgroundHold.duration;
   final cache = snapshotCache ?? PrefsSnapshotCache();
   // The connections are made now, not when the first frame builds the app:
   // each one starts reading its cached snapshot and its transport starts
@@ -190,6 +193,7 @@ Future<HerdrMobileApp> bootApp({
     network: monitor,
     reviewed: reviewed,
     screens: agentScreens,
+    backgroundSuspendAfter: holdFor,
   );
   final previews = PanePreviews(changes: fleet, connection: fleet.connection);
   // Agent sessions (ACP) ride the same SSH connections, through keepers on the
@@ -201,6 +205,7 @@ Future<HerdrMobileApp> bootApp({
           hostFor: (machine) => SshAgentHost(machine.api.transport),
           // Sessions notify at the start of the next frame, before build.
           flush: FrameFlush(),
+          detachAfter: holdFor,
           // What each session said last, in private files: a thread opens on
           // it at once, also after a restart (the directory is looked up on
           // first use, not here).
@@ -218,6 +223,7 @@ Future<HerdrMobileApp> bootApp({
           previews: previews,
           sourceFor: (machine) => SshLogSource(SshAgentHost(machine.api.transport)),
           kinds: {'omp': ompKind, 'claude': claudeKind, 'codex': codexKind},
+          detachAfter: holdFor,
         );
   // What needs the person, computed once per change of the fleet or the
   // sessions: built before the notifier, so it is current when that reads it.

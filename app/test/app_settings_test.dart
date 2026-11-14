@@ -31,6 +31,12 @@ class _BrokenStore implements AppSettingsStore {
 
   @override
   Future<void> writeSmoothText(bool value) async {}
+
+  @override
+  Future<BackgroundHold?> readBackgroundHold() async => throw StateError('disk gone');
+
+  @override
+  Future<void> writeBackgroundHold(BackgroundHold value) async {}
 }
 
 void main() {
@@ -124,6 +130,29 @@ void main() {
       expect(settings.smoothText, isTrue);
     });
 
+    test('background hold is 5 minutes until chosen, then saved and applied at once', () async {
+      final store = MemoryAppSettingsStore();
+      final settings = AppSettings(store);
+      await settings.load();
+      expect(settings.backgroundHold, BackgroundHold.minutes5);
+      var notified = 0;
+      settings.addListener(() => notified++);
+      await settings.setBackgroundHold(BackgroundHold.off);
+      expect(settings.backgroundHold.duration, Duration.zero);
+      expect(notified, 1);
+      expect(store.writes, ['backgroundHold off']);
+
+      final reopened = AppSettings(store);
+      await reopened.load();
+      expect(reopened.backgroundHold, BackgroundHold.off);
+    });
+
+    test('a store that cannot be read gives the default hold', () async {
+      final settings = AppSettings(_BrokenStore());
+      await settings.load();
+      expect(settings.backgroundHold, BackgroundHold.defaultHold);
+    });
+
     test('an unreadable store gives the defaults for all of it', () async {
       final settings = AppSettings(_BrokenStore());
       await settings.load();
@@ -150,6 +179,20 @@ void main() {
       expect(await store.readSmoothText(), isFalse);
       SharedPreferences.setMockInitialValues({'app.smoothText.v1': 'yes'});
       expect(await PrefsAppSettingsStore().readSmoothText(), isNull);
+    });
+
+    test('background hold round-trips; an unknown or mistyped value is ignored', () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = PrefsAppSettingsStore();
+      expect(await store.readBackgroundHold(), isNull);
+      for (final choice in BackgroundHold.values) {
+        await store.writeBackgroundHold(choice);
+        expect(await store.readBackgroundHold(), choice);
+      }
+      SharedPreferences.setMockInitialValues({'app.backgroundHold.v1': 'forever'});
+      expect(await PrefsAppSettingsStore().readBackgroundHold(), isNull);
+      SharedPreferences.setMockInitialValues({'app.backgroundHold.v1': 5});
+      expect(await PrefsAppSettingsStore().readBackgroundHold(), isNull);
     });
 
     test('ignores a value this version does not know, or of the wrong type', () async {

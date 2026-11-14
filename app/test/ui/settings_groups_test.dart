@@ -158,6 +158,18 @@ void main() {
       expect(find.text('Open agents as'), findsNothing);
     });
 
+    testWidgets('Stay connected when away: five minutes until chosen, a tap on another stop saves it', (tester) async {
+      await _pump(tester);
+      await openSettingsGroup(tester, 'Agents');
+      final settings = Provider.of<AppSettings>(tester.element(find.text('Stay connected when away')), listen: false);
+      expect(settings.backgroundHold, BackgroundHold.minutes5);
+
+      await tester.ensureVisible(find.text('15 min'));
+      await tester.tap(find.text('15 min'));
+      await tester.pump();
+      expect(settings.backgroundHold, BackgroundHold.minutes15);
+    });
+
     testWidgets('a group that closes folds away; its controls do not vanish first', (tester) async {
       await _pump(tester);
       await openSettingsGroup(tester, 'Look');

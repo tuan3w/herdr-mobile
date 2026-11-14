@@ -189,10 +189,26 @@ void main() {
       });
     });
 
-    test('after an absence that was not kept alive they are reset, as before', () {
+    test('after an absence inside the grace period that was not kept alive they are asked, not reset', () {
       run((h) {
         h.life(away);
         h.advance(const Duration(seconds: 30));
+        final calls = h.transport.snapshotCalls;
+
+        h.life(back);
+        h.advance(const Duration(seconds: 1));
+        expect(h.transport.resets, 0);
+        expect(h.transport.snapshotCalls, greaterThan(calls), reason: 'asked, to see what changed');
+        expect(h.connection.isLive, isTrue);
+      });
+    });
+
+    test('a link that died while away is rebuilt when the question after the return fails', () {
+      run((h) {
+        h.life(away);
+        h.advance(const Duration(seconds: 30));
+        h.transport.failure = StateError('socket is gone');
+
         h.life(back);
         h.advance(const Duration(seconds: 1));
         expect(h.transport.resets, 1);

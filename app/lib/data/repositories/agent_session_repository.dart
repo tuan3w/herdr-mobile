@@ -9,6 +9,7 @@ import '../acp/session_state.dart';
 import '../streaming/flush_scheduler.dart';
 import 'acp_agent_session.dart';
 import 'agent_session.dart';
+import 'background_grace.dart';
 import 'fleet_repository.dart';
 import 'machine_connection.dart';
 import 'attention_set.dart';
@@ -58,7 +59,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     this.recentAttached = 3,
     this.refreshEvery = const Duration(seconds: 30),
     this.backgroundRefreshEvery = const Duration(minutes: 4),
-    this.detachAfter = const Duration(seconds: 90),
+    this.detachAfter = defaultBackgroundGrace,
     this.notifyEvery = const Duration(milliseconds: 16),
     this.flush,
     this._cache,
@@ -94,8 +95,8 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   final Duration backgroundRefreshEvery;
 
   /// Passed to every session: how long the app may stay in the background
-  /// before they detach.
-  final Duration detachAfter;
+  /// before they detach; asked when the app goes away.
+  final BackgroundGrace detachAfter;
   final Duration notifyEvery;
 
   /// Passed to every session: when it tells its listeners (the app injects a
@@ -231,7 +232,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
   /// asks the hosts anything until it is back.
   bool get _suspended {
     final at = _backgroundedAt;
-    return at != null && !_keepAlive && _clock().difference(at) >= detachAfter;
+    return at != null && !_keepAlive && _clock().difference(at) >= detachAfter();
   }
 
   @override
