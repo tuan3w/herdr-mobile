@@ -28,7 +28,6 @@ import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../support/fake_agent_session.dart';
-import '../support/fake_notifier.dart';
 import '../support/memory_app_settings_store.dart';
 import '../support/memory_quick_phrases_store.dart';
 import '../support/memory_terminal_settings_store.dart';
@@ -76,7 +75,7 @@ void main() {
     });
   }
 
-  for (final mode in const [false, true])
+  for (final mode in const [false, true]) {
     group(mode ? 'dark' : 'light', () {
       setUp(() => dark = mode);
 
@@ -191,4 +190,5 @@ void main() {
         await snap(tester, key, 'chat-selection');
       });
     });
+  }
 }
