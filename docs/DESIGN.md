@@ -121,6 +121,7 @@ named by its role, so every timing lives in `motion.dart` and is tuned there.
 | `blocked` / `working` / `done` / `danger` | `#CC5A1E` `#B07F00` `#258A53` `#D44C47` | `#F2994A` `#F2C94C` `#4CB782` `#EB5757` | status shapes |
 | `blockedText` / `dangerText` | `#A84A13` / `#B5342F` | `#F2994A` / `#F26B6B` | status words |
 | `pressTint` | black 4.3% | white 4.3% | a pressed row on any surface |
+| `textChip` | black 4.3% | white 3% | the chip behind inline code in text; translucent so a selection shows through |
 | `inverseSurface` / `onInverse` / `inverseAccent` | `#2B2A27` / `#F1F1EF` / `#AAB2F5` | `#2A2B30` / `#F1F1EF` / `#AAB2F5` | toasts, tooltips |
 
 Getters: `wash(c)` (12% paper / 16% ink: a state's panel, strip or primed

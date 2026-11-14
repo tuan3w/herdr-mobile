@@ -155,6 +155,12 @@ class Ds extends ThemeExtension<Ds> {
   /// Selected text in a field or a selectable block.
   Color get selection => accent.withValues(alpha: 0.28);
 
+  /// The chip behind inline code and image chips in running text, about what
+  /// [fill] looks like on [bg] but translucent. Why: the selection highlight is
+  /// painted under the text, and a span's opaque background covers it, so
+  /// selected inline code showed as holes in the highlight.
+  Color get textChip => isDark ? const Color(0x08FFFFFF) : const Color(0x0B000000);
+
   /// Selected output in a pane on the dark page. [selection] is a near-black
   /// indigo there; the text keeps its own colour, so this only has to be seen
   /// (still 7:1 with the terminal foreground).

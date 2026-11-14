@@ -73,13 +73,13 @@ final class MdStyles {
   }
 
   /// Inline code inside text of style [base]: mono, a notch (1.5) smaller than
-  /// the text around it, on the quiet fill. Relative, not [Mono.base]: a fixed
+  /// the text around it, on the quiet [Ds.textChip]. Relative, not [Mono.base]: a fixed
   /// 12.5 is tiny in a heading and the same size as quiet 13.5 text.
   TextStyle inlineCode(TextStyle base) => Mono.base.copyWith(
     // design-lint: allow(raw-type) inline code follows the size of the text it sits in
     fontSize: (base.fontSize ?? Type.body.fontSize!) - 1.5,
     height: base.height,
-    backgroundColor: ds.fill,
+    backgroundColor: ds.textChip,
   );
 
   /// Links and tappable paths: the accent, underlined faintly.
@@ -88,7 +88,7 @@ final class MdStyles {
     return TextStyle(color: ds.accentText, decoration: TextDecoration.underline, decorationColor: ds.linkUnderline);
   }
 
-  /// An image chip: quiet text on the fill, so it never reads as a link.
+  /// An image chip: quiet text on the chip fill, so it never reads as a link.
   // design-lint: allow(raw-type) colour-only overlay merged onto the text it sits in
-  TextStyle get imageChip => TextStyle(color: ds.textSecondary, backgroundColor: ds.fill);
+  TextStyle get imageChip => TextStyle(color: ds.textSecondary, backgroundColor: ds.textChip);
 }
