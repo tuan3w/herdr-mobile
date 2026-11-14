@@ -1,6 +1,6 @@
 // Renders the screens the 0.1.64 and 0.1.66 release notes talk about to PNGs:
 // Settings > Agents with `Stay connected when away`, a new chat with the `/`
-// chip first, and a selection that covers inline code. Light theme, 412 dp
+// chip first, and a selection that covers inline code. Light and dark (`-dark`), 412 dp
 // wide. Off by default; it writes files:
 //
 //   RELEASE_STILLS=1 flutter test test/ui/release_stills_shots_test.dart
@@ -58,9 +58,11 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
+  var dark = false;
+
   Widget framed(GlobalKey key, Widget home) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    theme: AppTheme.light(),
+    theme: dark ? AppTheme.dark() : AppTheme.light(),
     builder: (context, child) => RepaintBoundary(key: key, child: child!),
     home: home,
   );
@@ -70,114 +72,123 @@ void main() {
     await tester.runAsync(() async {
       final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      await File('$out/$name.png').writeAsBytes(data!.buffer.asUint8List());
+      await File('$out/$name${dark ? '-dark' : ''}.png').writeAsBytes(data!.buffer.asUint8List());
     });
   }
 
-  testWidgets('settings: Stay connected when away', (tester) async {
-    phone(tester);
-    final key = GlobalKey();
-    final notifications = NotificationSettings(MemoryNotificationStore());
-    await notifications.load();
-    final phrases = QuickPhrases(MemoryQuickPhrasesStore(const ['continue', 'run the tests']));
-    await phrases.load();
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AppSettings(MemoryAppSettingsStore())),
-          ChangeNotifierProvider(create: (_) => TerminalSettings(MemoryTerminalSettingsStore())),
-          ChangeNotifierProvider.value(value: notifications),
-          ChangeNotifierProvider.value(value: phrases),
-          Provider<Notifier>.value(value: const NullNotifier()),
-        ],
-        child: framed(key, const SettingsScreen()),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 100));
-    await openSettingsGroup(tester, 'Agents');
-    await tester.pump(const Duration(milliseconds: 400));
-    await snap(tester, key, 'settings-stay-connected');
-  });
+  for (final mode in const [false, true])
+    group(mode ? 'dark' : 'light', () {
+      setUp(() => dark = mode);
 
-  testWidgets('chat: mode and model chips, and `/` first', (tester) async {
-    phone(tester);
-    final key = GlobalKey();
-    final session = FakeAgentSession(
-      title: 'Fix payments',
-      state: stateWith(
-        commands: const [
-          AcpCommand(name: 'review', description: 'Review the change'),
-          AcpCommand(name: 'compact', description: 'Summarise the chat'),
-        ],
-        options: const [
-          SelectConfigOption(
-            id: 'mode',
-            name: 'Approval mode',
-            category: 'mode',
-            value: 'ask',
-            choices: [
-              ConfigChoice(value: 'ask', name: 'Ask'),
-              ConfigChoice(value: 'auto', name: 'Auto'),
+      testWidgets('settings: Stay connected when away', (tester) async {
+        phone(tester);
+        final key = GlobalKey();
+        final notifications = NotificationSettings(MemoryNotificationStore());
+        await notifications.load();
+        final phrases = QuickPhrases(MemoryQuickPhrasesStore(const ['continue', 'run the tests']));
+        await phrases.load();
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider(
+                create: (_) => AppSettings(MemoryAppSettingsStore(dark ? ThemeChoice.dark : null)),
+              ),
+              ChangeNotifierProvider(create: (_) => TerminalSettings(MemoryTerminalSettingsStore())),
+              ChangeNotifierProvider.value(value: notifications),
+              ChangeNotifierProvider.value(value: phrases),
+              Provider<Notifier>.value(value: const NullNotifier()),
+            ],
+            child: framed(key, const SettingsScreen()),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        await openSettingsGroup(tester, 'Agents');
+        await tester.pump(const Duration(milliseconds: 400));
+        await snap(tester, key, 'settings-stay-connected');
+      });
+
+      testWidgets('chat: mode and model chips, and `/` first', (tester) async {
+        phone(tester);
+        final key = GlobalKey();
+        final session = FakeAgentSession(
+          title: 'Fix payments',
+          state: stateWith(
+            commands: const [
+              AcpCommand(name: 'review', description: 'Review the change'),
+              AcpCommand(name: 'compact', description: 'Summarise the chat'),
+            ],
+            options: const [
+              SelectConfigOption(
+                id: 'mode',
+                name: 'Approval mode',
+                category: 'mode',
+                value: 'ask',
+                choices: [
+                  ConfigChoice(value: 'ask', name: 'Ask'),
+                  ConfigChoice(value: 'auto', name: 'Auto'),
+                ],
+              ),
+              SelectConfigOption(
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                value: 'sonnet',
+                choices: [
+                  ConfigChoice(value: 'sonnet', name: 'Sonnet'),
+                  ConfigChoice(value: 'opus', name: 'Opus'),
+                ],
+              ),
             ],
           ),
-          SelectConfigOption(
-            id: 'model',
-            name: 'Model',
-            category: 'model',
-            value: 'sonnet',
-            choices: [
-              ConfigChoice(value: 'sonnet', name: 'Sonnet'),
-              ConfigChoice(value: 'opus', name: 'Opus'),
+        );
+        final phrases = QuickPhrases(
+          MemoryQuickPhrasesStore(const ['continue', 'run the tests', 'summarise what you did']),
+        );
+        await phrases.load();
+        await tester.pumpWidget(
+          ChangeNotifierProvider.value(
+            value: phrases,
+            child: framed(key, AgentSessionScreen(key: ObjectKey(session), session: session)),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.byType(TextField).last);
+        for (var i = 0; i < 12; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        await snap(tester, key, 'chat-slash-chip');
+      });
+
+      testWidgets('chat: a selection covers the inline code in it', (tester) async {
+        phone(tester);
+        final key = GlobalKey();
+        final session = FakeAgentSession(
+          title: 'IgIntegrate',
+          state: stateWith(
+            items: [
+              userMsg('u1', 'What did you find in the files you do not own?'),
+              agentMsg(
+                'a1',
+                '**Bugs and gaps in files I don\'t own**\n\n'
+                    '- `ledger.replay` cannot retract a `same_as` op: `retract` only updates `edge` and `node` tables, '
+                    'and `same_as` rows have no id.\n'
+                    '- `.gitignore` lacks `graph.sqlite.tmp`. It only exists while a build is running.\n'
+                    '- Quote re-verification in `replay` is never exercised by `build`, because I pass no `doc_texts`.',
+              ),
             ],
           ),
-        ],
-      ),
-    );
-    final phrases = QuickPhrases(
-      MemoryQuickPhrasesStore(const ['continue', 'run the tests', 'summarise what you did']),
-    );
-    await phrases.load();
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: phrases,
-        child: framed(key, AgentSessionScreen(key: ObjectKey(session), session: session)),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byType(TextField).last);
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    await snap(tester, key, 'chat-slash-chip');
-  });
-
-  testWidgets('chat: a selection covers the inline code in it', (tester) async {
-    phone(tester);
-    final key = GlobalKey();
-    final session = FakeAgentSession(
-      title: 'IgIntegrate',
-      state: stateWith(
-        items: [
-          userMsg('u1', 'What did you find in the files you do not own?'),
-          agentMsg(
-            'a1',
-            '**Bugs and gaps in files I don\'t own**\n\n'
-                '- `ledger.replay` cannot retract a `same_as` op: `retract` only updates `edge` and `node` tables, '
-                'and `same_as` rows have no id.\n'
-                '- `.gitignore` lacks `graph.sqlite.tmp`. It only exists while a build is running.\n'
-                '- Quote re-verification in `replay` is never exercised by `build`, because I pass no `doc_texts`.',
-          ),
-        ],
-      ),
-    );
-    await tester.pumpWidget(framed(key, AgentSessionScreen(key: ObjectKey(session), session: session)));
-    await tester.pump(const Duration(milliseconds: 100));
-    // A long press selects a word; then the whole message is selected from it.
-    final first = find.textContaining('Bugs and gaps', findRichText: true);
-    await tester.longPress(first.first);
-    await tester.pump(const Duration(milliseconds: 300));
-    tester.state<SelectableRegionState>(find.byType(SelectableRegion).first).selectAll(SelectionChangedCause.toolbar);
-    await tester.pump(const Duration(milliseconds: 300));
-    await snap(tester, key, 'chat-selection');
-  });
+        );
+        await tester.pumpWidget(framed(key, AgentSessionScreen(key: ObjectKey(session), session: session)));
+        await tester.pump(const Duration(milliseconds: 100));
+        // A long press selects a word; then the whole message is selected from it.
+        final first = find.textContaining('Bugs and gaps', findRichText: true);
+        await tester.longPress(first.first);
+        await tester.pump(const Duration(milliseconds: 300));
+        tester
+            .state<SelectableRegionState>(find.byType(SelectableRegion).first)
+            .selectAll(SelectionChangedCause.toolbar);
+        await tester.pump(const Duration(milliseconds: 300));
+        await snap(tester, key, 'chat-selection');
+      });
+    });
 }
