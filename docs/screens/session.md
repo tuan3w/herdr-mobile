@@ -9,7 +9,7 @@ The design system (tokens, kit, motion, words) is `docs/DESIGN.md`; this file ho
 Slim bar like the pane bar (status glyph by phase, title over
 `agent · machine · folder`, a tap on the title area opens the agent
 switcher (`docs/screens/agent-screens.md`), `Session options`, which holds the
-session overview, `Remove worktree` (when the folder is in a linked worktree) and `Show terminal` for a followed pane's chat); plan header (`1 of 3` + the
+session overview, `Mode and model` (one row that opens the settings), `Remove worktree` (when the folder is in a linked worktree) and `Show terminal` for a followed pane's chat); plan header (`1 of 3` + the
 current step); a virtualized transcript stuck to the bottom with Jump to
 latest; the permission dock; the composer (send becomes stop while a turn
 runs). The permission dock is a safety surface: the command is always visible
@@ -194,14 +194,25 @@ hold rule is unchanged. Evidence is worked out once per request (the panel is
 keyed by it), never per frame; a path the diff already heads is not listed
 again. Absent evidence draws nothing.
 
-**Mode and model chips** (`session_chips_row.dart`). One row above the composer
-(four chips rarely fit a phone's width, so the chips scroll sideways and `+N`
-stays pinned at the right): `sessionChipsOf(state)` gives up to four
-`AppChip`s (mode, model, effort, switches, then any other select) and `+N`.
-A select opens the options sheet on that setting's choices
-(`showSessionOptions(at: chip)`); a switch (`Fast`) flips in place, shown
-selected with a check; `+N` opens the sheet. The `…` button keeps everything
-else. The row takes no room when the agent offers nothing, takes no tap while
+**Mode and model chips** (`session_chips_row.dart`). One row above the
+composer, until the person sends the first message (`hasUserMessage`). A long
+model name can outgrow a phone's width, so the chips scroll sideways and `+N`
+stays pinned at the right. `sessionChipsOf(state)` gives the mode and the model
+as `AppChip`s (`maxSessionChips`) and `+N` for effort, the switches and any
+other select. A select opens the settings sheet (`showSessionSettings(at:
+chip)`) on that setting's choices; a switch (`Fast`) that is among the shown
+flips in place, shown selected with a check; `+N` opens the sheet on its list
+of settings. After the first message the row keeps only a dangerous mode
+(`SessionChips.standing`; an elevated one such as `Accept edits` goes with the rest) and takes no
+room otherwise. The settings are then in `Session options`, which holds the
+session's actions and one row, `Mode and model` with what they are set to, that
+opens the settings sheet (also the way to them in the compact layout, where the
+chips are gone). Why (owner, 2026-11-13): mode and model are chosen when a chat
+opens and changed once or twice at most after, so the row is there for that
+first choice and then gives its height back to the transcript; a plain mode,
+the model and the effort are not news after it. Listed in both the chips and
+the `…` sheet they were the same facts twice. The row takes no room when the
+agent offers nothing, takes no tap while
 the session is not live, and goes with the quick phrases in the compact layout
 (landscape with the keyboard). **Danger is persistent**: a `dangerous` mode
 (`assessSessionMode`) is the first chip, in the danger tint (`AppChip.tint`: a

@@ -3,8 +3,10 @@ import '../acp/session_state.dart';
 import 'mode_danger.dart';
 import 'plain_text.dart';
 
-/// Most chips drawn above the composer; the rest is an overflow count.
-const maxSessionChips = 4;
+/// Most chips drawn above the composer: the two that are changed to steer an
+/// agent, mode and model. Effort, switches and the rest are an overflow count
+/// that opens the settings sheet.
+const maxSessionChips = 2;
 
 /// Longest chip label, in characters.
 const chipLabelLimit = 28;
@@ -102,7 +104,23 @@ class SessionChips {
         if (!s.contains(c)) c,
     ];
   }
+
+  /// What stays above the composer once the person has written: only a
+  /// dangerous mode (`Danger is persistent`), the one chip that must never go
+  /// unseen. A plain or elevated mode, the model and the rest were chosen at
+  /// the start and are one tap away in the `…` sheet.
+  List<SessionChip> get standing => [
+    for (final c in all)
+      if (c.kind == SessionChipKind.mode && c.risk == ModeRisk.dangerous) c,
+  ];
 }
+
+/// Whether the person has written in this session yet. Mode and model are
+/// chosen when a chat opens and rarely after (the owner: once or twice a chat
+/// at most), so the chips are there until the first message; the short scan
+/// ends at the first user message of any chat that has one.
+bool hasUserMessage(AgentSessionState state) =>
+    state.items.any((i) => i is TranscriptMessage && i.role == MessageRole.user);
 
 /// The chips for [state]. Order is the same whatever order the agent lists
 /// its options in: mode, model, effort, switches (in the agent's order), then

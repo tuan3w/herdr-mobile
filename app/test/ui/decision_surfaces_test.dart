@@ -109,8 +109,12 @@ const effortOption = SelectConfigOption(
 
 const fastOption = BooleanConfigOption(id: 'fast', name: 'Fast', value: false);
 
-FakeAgentSession withOptions(List<ConfigOption> options, {AgentLink link = AgentLink.live}) => FakeAgentSession(
-  state: stateWith(options: options),
+FakeAgentSession withOptions(
+  List<ConfigOption> options, {
+  AgentLink link = AgentLink.live,
+  List<TranscriptItem> items = const [],
+}) => FakeAgentSession(
+  state: stateWith(options: options, items: items),
   link: link,
 );
 
@@ -307,7 +311,7 @@ void main() {
   });
 
   group('mode and model chips', () {
-    testWidgets('one row: mode, model, effort, switches, and +N for the rest', (tester) async {
+    testWidgets('one row: mode, model, and +N for the rest', (tester) async {
       final session = withOptions([
         modeOption('default'),
         modelOption,
@@ -316,11 +320,13 @@ void main() {
         const BooleanConfigOption(id: 'web', name: 'Web search', value: true),
       ]);
       await pumpScreen(tester, session);
-      for (final label in ['Default', 'Claude Sonnet', 'High', 'Fast']) {
+      for (final label in ['Default', 'Claude Sonnet']) {
         expect(find.widgetWithText(AppChip, label), findsOneWidget, reason: label);
       }
-      expect(find.widgetWithText(AppChip, 'Web search'), findsNothing, reason: 'four chips, then +N');
-      expect(find.widgetWithText(AppChip, '+1'), findsOneWidget);
+      for (final label in ['High', 'Fast', 'Web search']) {
+        expect(find.widgetWithText(AppChip, label), findsNothing, reason: '$label is behind +N');
+      }
+      expect(find.widgetWithText(AppChip, '+3'), findsOneWidget);
       final tops = {
         for (final c in tester.widgetList<AppChip>(find.byType(AppChip))) tester.getTopLeft(find.byWidget(c)).dy,
       };
@@ -429,7 +435,7 @@ void main() {
       expect(session.configs, [('fast', true)]);
     });
 
-    testWidgets('+N opens the whole list of settings', (tester) async {
+    testWidgets('+N opens the settings, and only the settings', (tester) async {
       final session = withOptions([
         modeOption('default'),
         modelOption,
@@ -438,10 +444,12 @@ void main() {
         const BooleanConfigOption(id: 'web', name: 'Web search', value: true),
       ]);
       await pumpScreen(tester, session);
-      await tester.tap(find.widgetWithText(AppChip, '+1'));
+      await tester.tap(find.widgetWithText(AppChip, '+3'));
       await tester.pumpAndSettle();
-      expect(find.text('Web search'), findsOneWidget);
       expect(find.text('Mode and model'), findsOneWidget);
+      expect(find.text('Effort'), findsOneWidget, reason: 'what the chips left out is here');
+      expect(find.text('Web search'), findsOneWidget);
+      expect(find.text('Duplicate'), findsNothing, reason: 'the session\'s own actions are behind the `…`');
     });
 
     testWidgets('nothing to show takes no room', (tester) async {
@@ -449,6 +457,45 @@ void main() {
       expect(find.byType(SessionChipsRow), findsOneWidget);
       expect(find.byType(AppChip), findsNothing);
       expect(tester.getSize(find.byType(SessionChipsRow)).height, 0);
+    });
+
+    testWidgets('once the person has written the chips are gone: they are chosen when a chat opens', (tester) async {
+      final session = withOptions([modeOption('default'), modelOption, effortOption], items: [userMsg('u1', 'fix it')]);
+      await pumpScreen(tester, session);
+      expect(find.byType(AppChip), findsNothing);
+      expect(tester.getSize(find.byType(SessionChipsRow)).height, 0);
+    });
+
+    testWidgets('the first message takes the row away; nothing is asked of the chat', (tester) async {
+      final session = withOptions([modeOption('default'), modelOption]);
+      await pumpScreen(tester, session);
+      expect(find.widgetWithText(AppChip, 'Claude Sonnet'), findsOneWidget);
+      session.update((s) => s.withUserMessage(const [TextBlock('fix it')]));
+      await tester.pump();
+      expect(find.byType(AppChip), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a dangerous mode stays after the first message; an elevated one, the model and the rest do not', (
+      tester,
+    ) async {
+      final danger = withOptions(
+        [modeOption('bypassPermissions'), modelOption, effortOption],
+        items: [userMsg('u1', 'fix it')],
+      );
+      await pumpScreen(tester, danger);
+      expect(find.widgetWithText(AppChip, 'Bypass Permissions'), findsOneWidget);
+      expect(find.byType(AppChip), findsOneWidget, reason: 'no model, no +N');
+
+      final elevated = withOptions(
+        [
+          modeOption('acceptEdits', choices: const [('acceptEdits', 'Accept edits')]),
+          modelOption,
+        ],
+        items: [userMsg('u1', 'fix it')],
+      );
+      await pumpScreen(tester, elevated);
+      expect(find.byType(AppChip), findsNothing, reason: 'it was chosen at the start');
     });
 
     testWidgets('a session that is not live shows the chips and takes no tap on them', (tester) async {
@@ -519,9 +566,12 @@ void main() {
       ]);
       await pumpScreen(tester, session);
       final danger = tester.getTopLeft(find.widgetWithText(AppChip, 'Bypass Permissions')).dx;
-      for (final label in ['Claude Sonnet', 'High', 'Fast']) {
-        expect(danger, lessThan(tester.getTopLeft(find.widgetWithText(AppChip, label)).dx), reason: label);
-      }
+      expect(
+        danger,
+        lessThan(tester.getTopLeft(find.widgetWithText(AppChip, 'Claude Sonnet')).dx),
+        reason: 'the mode leads, wherever the agent lists it',
+      );
+      expect(find.widgetWithText(AppChip, 'High'), findsNothing, reason: 'behind +N');
     });
 
     testWidgets('an elevated mode is neutral with a quiet marker; a plain one has neither', (tester) async {

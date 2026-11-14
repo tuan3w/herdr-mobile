@@ -90,6 +90,27 @@ void main() {
     });
   });
 
+  group('cues', () {
+    List<String> cues(List<SlashCommand> commands, {String? agent = 'omp'}) {
+      final m = CommandPaletteModel(source: _Source(commands, agent: agent));
+      addTearDown(m.dispose);
+      return m.cues;
+    }
+
+    test('a known agent gets `/` before its list has arrived: a chip never fetches', () {
+      expect(cues(const []), ['/']);
+    });
+
+    test(r'`$` comes with the skills of an agent that has them, after `/`', () {
+      expect(cues(const [_review, _skill]), ['/', r'$']);
+      expect(cues(const [_skill]), [r'$'], reason: 'no slash command to begin');
+    });
+
+    test('a terminal with no agent has none: what is typed there is a shell line', () {
+      expect(cues(const [_review], agent: null), isEmpty);
+    });
+  });
+
   group('hintFor', () {
     CommandPaletteModel model() {
       final m = CommandPaletteModel(source: _Source(const [_review, _compact, _skill]));

@@ -12,13 +12,16 @@ import '../../../data/words/plural.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../composer/composer_frame.dart' show showComposerKeyboard;
-import 'session_bar.dart' show showSessionOptions;
+import 'session_bar.dart' show showSessionSettings;
 import 'session_select.dart';
 
-/// Mode, model, effort and the switches of the session as one quiet row above
-/// the composer: up to [maxSessionChips] chips
-/// and `+N` for the rest. A tap on a setting opens the options sheet on that
-/// setting's choices; a switch (`Fast`) flips in place; `+N` opens the sheet.
+/// Mode and model of the session as one quiet row above the composer
+/// ([maxSessionChips]), and `+N` for the rest (effort, switches), until the
+/// person writes the first message: they are chosen when a chat opens and
+/// rarely changed after. A tap on a setting opens the settings sheet on that
+/// setting's choices; `+N` opens the sheet. Once the person has written, the
+/// row keeps only a dangerous mode ([SessionChips.standing]) and
+/// takes no room otherwise.
 ///
 /// A dangerous mode keeps the danger tint (a triangle and its name, not only
 /// the colour) for as long as it is active, so it is the first chip; an
@@ -41,16 +44,21 @@ class SessionChipsRow extends StatelessWidget {
   final FocusNode? focus;
 
   @override
-  Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?, AgentLink)>(
+  Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?, AgentLink, bool)>(
     session: session,
-    select: (s) => (s.state.configOptions, s.state.modes, s.link),
+    select: (s) => (s.state.configOptions, s.state.modes, s.link, hasUserMessage(s.state)),
     builder: (context, selected) {
       final chips = sessionChipsOf(session.state);
       if (chips.all.isEmpty) return const SizedBox.shrink();
       final live = selected.$3 == AgentLink.live;
+      // Before the first message: mode, model and `+N`, to choose. After it:
+      // only a dangerous mode; the rest is in the `…` sheet.
+      final fresh = !selected.$4;
+      final standing = fresh ? chips.shown : chips.standing;
+      if (standing.isEmpty) return const SizedBox.shrink();
       // Danger first: the one chip that must never scroll out of sight.
-      final shown = [...chips.shown.where((c) => c.isRisky), ...chips.shown.where((c) => !c.isRisky)];
-      final overflow = chips.overflow;
+      final shown = [...standing.where((c) => c.isRisky), ...standing.where((c) => !c.isRisky)];
+      final overflow = fresh ? chips.overflow : 0;
       final more = overflow == 0
           ? null
           : AppChip(
@@ -62,8 +70,9 @@ class SessionChipsRow extends StatelessWidget {
       return SizedBox(
         height: AppChip.height,
         // A few chips, all built (a screen reader meets every one): a Row in a
-        // sideways scroll, not a lazy list. Four chips rarely fit a phone's
-        // width, so the row scrolls and `+N` stays pinned beside it.
+        // sideways scroll, not a lazy list. A long mode or model name can
+        // outgrow the phone's width, so the row scrolls and `+N` stays pinned
+        // beside it.
         child: Row(
           children: [
             Expanded(
@@ -94,10 +103,10 @@ class SessionChipsRow extends StatelessWidget {
   );
 }
 
-/// The options sheet ([at]: on that chip's choices); a pick sends the person
+/// The settings sheet ([at]: on that chip's choices); a pick sends the person
 /// back to the message field with the keyboard up.
 Future<void> _choose(BuildContext context, AgentSessionView session, FocusNode? focus, {SessionChip? at}) async {
-  final picked = await showSessionOptions(context, session, at: at);
+  final picked = await showSessionSettings(context, session, at: at);
   if (picked && focus != null && context.mounted) showComposerKeyboard(focus);
 }
 

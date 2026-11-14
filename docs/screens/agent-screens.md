@@ -226,7 +226,16 @@ screen reader hears `Output is stale` once. A closed pane is dimmed, not stale.
   remembered at most. Why: replayed on a year of one person's messages, 14% were
   exact repeats and these chips finish 5% of messages in one tap, twice the
   defaults (`tool/predict-eval`); what a person types can hold secrets, hence
-  each limit.
+  each limit. **The cue chips** start the same row, pinned at the left while the
+  phrases scroll after them (alone with no phrases): `/` while the agent is
+  known, and `$` once its loaded list holds skills that start with it (Codex)
+  (`CommandPaletteModel.cues`). A tap puts the trigger in the empty field and the
+  command palette opens, so a command does not start with a trip to the
+  keyboard's symbol page (seen on a Samsung keyboard: `/` is on the symbols
+  page, `$` one layer deeper). They never fetch: `/` shows before the list has
+  arrived, `$` only after it, and a pane with no agent has none. They go with
+  the phrases once there is text, since a command is only recognised at the start
+  of an empty field.
 - **Dictation** (`ui/features/dictation/`): the mic takes Send's place in both
   composers (agent session, and a pane that has an agent) while the box is
   empty and the link is live: the same 36 dp disc, neutral at rest, the accent

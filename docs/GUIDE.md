@@ -378,7 +378,10 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
   not list is held once ("Send as message" sends it as typed), so a typo does
   not cost a turn.
 - **Quick phrases.** Chips above the empty message box. A tap fills the box
-  and never sends. Edit them in Settings > Agents > `Quick phrases`. Up to three
+  and never sends. At the end of the row stands a `/` chip (and `$` for an
+  agent whose skills start with it): a tap puts it in the box and opens the
+  palette, so you do not have to find `/` on the keyboard's symbol page. Edit
+  the phrases in Settings > Agents > `Quick phrases`. Up to three
   messages you send to an agent at least twice join them, most sent first
   (before the built-in phrases while you have not edited the list). They are
   learned and kept on this phone only; turn that off or forget them in the
@@ -520,9 +523,11 @@ tabs:
 Up to five attachments per message. The message can't be sent until every
 upload has finished; a failed upload keeps its chip with `Retry`.
 
-**Modes.** Mode and model chips sit above the message box. A mode that skips
-permission checks is shown in the danger colour, and switching to it needs a
-hold.
+**Modes.** A new chat has mode and model chips above the message box, to
+choose them first; `+N` opens the rest (effort, switches). Once you have sent a
+message they go, and `Session options` > `Mode and model` is the way back to
+them. A mode that skips permission checks stays on screen in the danger
+colour, and switching to it needs a hold.
 
 **Signing in.** If the agent needs a login on the machine, the session shows
 `Sign in on the host` with the agent's login command (`Copy command`) and

@@ -51,6 +51,7 @@ PAGE = r"""<!doctype html>
 <title>__TITLE__</title>
 <style>
 :root{--bg:#fafaf8;--fg:#1d1d1b;--mut:#6b6b66;--line:#e4e3de;--card:#fff;--acc:#4c5bd4;--warn:#c4571a;--ok:#237a4b}
+html{-webkit-text-size-adjust:100%}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.5 -apple-system,Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{padding:28px 32px 8px;max-width:1200px;margin:auto}
@@ -92,9 +93,10 @@ section{display:none}section.on{display:block}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .chips label{border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:13px;cursor:pointer;background:var(--card)}
 .chips input{margin-right:5px}
-table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:14px}
-th{background:#f3f2ee;font-weight:600}
+.finds .find{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.fh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px}
+.fv{color:var(--mut);font-size:13px}
+.find p{margin:0;font-size:14.5px}
 .sev{font-weight:600}.sev.Broken{color:#b3261e}.sev.Friction{color:var(--warn)}.sev.Noise,.sev.Inconsistent{color:#7a5d00}.sev.Polish{color:var(--mut)}
 ul.plain{margin:6px 0 16px;padding-left:20px}
 .note{background:#fff7e6;border:1px solid #f0dca8;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:14px}
@@ -102,7 +104,36 @@ ul.plain{margin:6px 0 16px;padding-left:20px}
 .dec .rec{color:var(--ok);font-size:14px;margin-top:4px}
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;z-index:20;overflow:auto;padding:20px;cursor:zoom-out}
 #lb img{display:block;margin:auto;max-width:min(720px,100%)}
-code{background:#eceae4;padding:1px 5px;border-radius:4px;font-size:13px}
+code{background:#eceae4;padding:1px 5px;border-radius:4px;font-size:13px;overflow-wrap:anywhere}
+@media (max-width:720px){
+ header{padding:18px 16px 4px}
+ h1{font-size:22px}
+ .sub{font-size:14.5px}
+ #moment{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+ #moment.open{display:block}
+ .quote{font-size:14.5px;margin:10px 0}
+ nav{padding:0 4px}
+ nav .in{overflow-x:auto;scrollbar-width:none}
+ nav .in::-webkit-scrollbar{display:none}
+ nav button{padding:0 10px;min-height:48px;white-space:nowrap;font-size:14px}
+ nav .sp{display:none}
+ .seg{margin-left:auto;flex:none;margin-right:8px}
+ .seg button{min-height:32px;padding:0 9px;font-size:13px}
+ main{padding:16px 14px 72px}
+ .grid{grid-template-columns:1fr}
+ .card{padding:14px}
+ .thumb{max-height:280px}
+ .chips label{padding:8px 12px;font-size:14px}
+ .cols{scroll-snap-type:x mandatory;margin:0 -14px;padding:0 14px 8px;gap:10px}
+ .col{width:84vw;scroll-snap-align:center}
+ .scroller{height:calc(100vh - 210px);height:calc(100dvh - 210px)}
+ #lb{padding:6px}
+}
+@media (max-width:380px){
+ nav button{padding:0 7px}
+ .seg{margin-right:4px}
+ .seg button{padding:0 7px;font-size:12.5px}
+}
 </style></head><body>
 <header><h1 id="title"></h1><div id="moment" class="sub"></div><div id="problem" class="quote"></div></header>
 <nav><div class="in">
@@ -152,7 +183,7 @@ function render(){
  $('#chips').addEventListener('change',drawCols);
  // critic
  $('#critic').innerHTML=(D.findings&&D.findings.length)?`<p class="sub">From a reviewer who saw only the pictures and the moment${D.critic_rank?', and ranked: '+D.critic_rank.map(i=>esc(by[i]?.name||i)).join(' › '):''}.</p>
-  <table><tr><th>Severity</th><th>Where</th><th>What the person experiences</th></tr>${D.findings.map(f=>`<tr><td class="sev ${esc(f.sev)}">${esc(f.sev)}</td><td>${esc(by[f.variant]?.name||f.variant||'')}</td><td>${esc(f.text)}</td></tr>`).join('')}</table>`:'<p class="sub">No critique recorded.</p>';
+  <div class="finds">${D.findings.map(f=>`<div class="find"><div class="fh"><span class="sev ${esc(f.sev)}">${esc(f.sev)}</span><span class="fv">${esc(by[f.variant]?.name||f.variant||'')}</span></div><p>${esc(f.text)}</p></div>`).join('')}</div>`:'<p class="sub">No critique recorded.</p>';
  $('#decide').innerHTML=(D.decisions||[]).map(d=>`<div class="dec"><b>${esc(d.q)}</b>${d.rec?`<div class="rec">Recommendation: ${esc(d.rec)}</div>`:''}</div>`).join('')||'<p class="sub">No open decisions.</p>';
 }
 // Pages open at the part that differs between variants. A hidden section has no
@@ -172,6 +203,7 @@ document.addEventListener('click',e=>{
  const z=e.target.closest('[data-zoom]');if(z){$('#lb img').src=img(z.dataset.zoom);$('#lb').style.display='block';return}
  if(e.target.closest('#lb'))$('#lb').style.display='none';
 });
+$('#moment').addEventListener('click',e=>e.currentTarget.classList.toggle('open'));
 render();
 </script></body></html>
 """

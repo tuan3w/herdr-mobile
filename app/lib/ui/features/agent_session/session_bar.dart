@@ -204,36 +204,35 @@ List<_Setting> _settings(AgentSessionState state) {
   return out;
 }
 
-/// The session's options as a sheet: each mode and option of the agent as a
-/// row showing its current choice (tap to pick; a long list such as a model
-/// catalogue scrolls lazily and can be searched) or a switch, then Duplicate.
-/// True when a choice was picked (the sheet closes on a pick).
-Future<bool> showSessionOptions(BuildContext context, AgentSessionView session, {SessionChip? at}) async =>
+/// The `…` sheet: what can be done with the session (its overview, files, what
+/// it made, a link, Duplicate), and one row that leads to its settings. The
+/// settings are not listed here: they are changed from the chips above the
+/// composer, low on the screen, and this sheet is for what is done rarely.
+Future<void> showSessionOptions(BuildContext context, AgentSessionView session) =>
+    showAppSheet<void>(context, builder: (ctx) => _OptionsSheet(session: session));
+
+/// The agent's settings as a sheet: each mode and option as a row showing its
+/// current choice (tap to pick; a long list such as a model catalogue scrolls
+/// lazily and can be searched) or a switch. [at] is the chip that was tapped:
+/// the sheet opens on that setting's choices. True when a choice was picked
+/// (the sheet closes on a pick).
+Future<bool> showSessionSettings(BuildContext context, AgentSessionView session, {SessionChip? at}) async =>
     await showAppSheet<bool>(
       context,
-      builder: (ctx) => _OptionsSheet(session: session, at: at),
+      builder: (ctx) => _SettingsSheet(session: session, at: at),
     ) ==
     true;
 
 class _OptionsSheet extends StatefulWidget {
-  const _OptionsSheet({required this.session, this.at});
+  const _OptionsSheet({required this.session});
 
   final AgentSessionView session;
-
-  /// The chip that was tapped: the sheet opens on that setting's choices.
-  final SessionChip? at;
 
   @override
   State<_OptionsSheet> createState() => _OptionsSheetState();
 }
 
 class _OptionsSheetState extends State<_OptionsSheet> {
-  late String? _picking = switch (widget.at) {
-    null => null,
-    SessionChip(viaModes: true) => _modeId,
-    final chip => chip.settingId,
-  };
-
   /// The linked worktree the session's folder is in, once the machine has said
   /// (one `worktree.list` when the sheet opens); null for a plain folder, a
   /// folder git does not know, or while it is not known.
@@ -276,13 +275,12 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     }
   }
 
-  void _pick(_Setting setting, ConfigChoice choice) {
-    if (setting.id == _modeId) {
-      widget.session.setMode(choice.value);
-    } else {
-      widget.session.setConfigOption(setting.id, choice.value);
-    }
-    Navigator.of(context).pop(true);
+  /// The settings sheet in place of this one.
+  void _openSettings() {
+    final session = widget.session;
+    final navigator = Navigator.of(context)..pop();
+    // ignore: use_build_context_synchronously
+    unawaited(showSessionSettings(navigator.context, session));
   }
 
   /// Another session of the same agent in the same folder on the same machine,
@@ -361,6 +359,131 @@ class _OptionsSheetState extends State<_OptionsSheet> {
   }
 
   @override
+  Widget build(BuildContext context) => SheetScaffold(
+    title: 'Session',
+    kind: SheetKind.actions,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // The settings are one row here, with what they are set to: they are
+        // changed from the chips above the composer, within the thumb's reach.
+        SessionSelect<(List<ConfigOption>, ModeState?)>(
+          session: widget.session,
+          select: (s) => (s.state.configOptions, s.state.modes),
+          builder: (context, _) {
+            final settings = _settings(widget.session.state);
+            if (settings.isEmpty) return const SizedBox.shrink();
+            final picks = [
+              for (final s in settings)
+                if (s.kind == _Kind.select) s.currentName,
+            ].take(2).join(' \u00b7 ');
+            return _SettingRow(
+              title: 'Mode and model',
+              value: picks.isEmpty ? countOf(settings.length, 'setting') : picks,
+              onTap: _openSettings,
+            );
+          },
+        ),
+        SheetActionRow(
+          action: SheetAction(label: 'Session overview', icon: LucideIcons.layoutList, onTap: _overview),
+          onTap: _overview,
+        ),
+        if (machineSupportsFiles(widget.session.machine))
+          SheetActionRow(
+            action: SheetAction(label: 'Files', icon: HerdrIcons.folder, onTap: _files),
+            onTap: _files,
+          ),
+        // Always here: the chip under the title only shows once something
+        // exists, so this is where "where are the files and pictures?" is
+        // answered, with its reason while there is nothing.
+        SessionSelect<(int, MadeReach)>(
+          session: widget.session,
+          select: (s) => (madeAssetsOf(s.state.items, cwd: s.cwd, history: s.madeHistory).length, s.madeReach),
+          builder: (context, v) {
+            final (made, reach) = v;
+            // Only the end of a long chat is read: the sheet reads the rest when opened.
+            final nothing = made == 0 && reach == MadeReach.whole;
+            return SheetActionRow(
+              action: SheetAction(
+                label: 'Made in this session',
+                icon: LucideIcons.globe,
+                onTap: _made,
+                unavailable: nothing ? 'Nothing has come up yet' : null,
+              ),
+              onTap: _made,
+            );
+          },
+        ),
+        SheetActionRow(
+          action: SheetAction(label: 'Copy session link', icon: LucideIcons.link, onTap: _copyLink),
+          onTap: _copyLink,
+        ),
+        if (!widget.session.isObserved)
+          ListenableBuilder(
+            listenable: widget.session.machine,
+            builder: (context, _) {
+              final machine = widget.session.machine;
+              return SheetActionRow(
+                action: SheetAction(
+                  label: 'Duplicate',
+                  icon: LucideIcons.copyPlus,
+                  onTap: _duplicate,
+                  unavailable: machine.isLive ? null : '${machine.profile.label} is offline',
+                ),
+                onTap: _duplicate,
+              );
+            },
+          ),
+        if (_checkout != null)
+          SheetActionRow(
+            action: SheetAction(
+              label: 'Remove worktree',
+              icon: LucideIcons.gitBranchMinus,
+              destructive: true,
+              onTap: _removeWorktree,
+            ),
+            onTap: _removeWorktree,
+          ),
+        if (widget.session.terminalPaneId case final paneId?)
+          SheetActionRow(
+            action: agentViewAction(context, _pane(paneId), AgentView.chat),
+            onTap: () => _showTerminal(_pane(paneId)),
+          ),
+      ],
+    ),
+  );
+}
+
+class _SettingsSheet extends StatefulWidget {
+  const _SettingsSheet({required this.session, this.at});
+
+  final AgentSessionView session;
+
+  /// The chip that was tapped: the sheet opens on that setting's choices.
+  final SessionChip? at;
+
+  @override
+  State<_SettingsSheet> createState() => _SettingsSheetState();
+}
+
+class _SettingsSheetState extends State<_SettingsSheet> {
+  late String? _picking = switch (widget.at) {
+    null => null,
+    SessionChip(viaModes: true) => _modeId,
+    final chip => chip.settingId,
+  };
+
+  void _pick(_Setting setting, ConfigChoice choice) {
+    if (setting.id == _modeId) {
+      widget.session.setMode(choice.value);
+    } else {
+      widget.session.setConfigOption(setting.id, choice.value);
+    }
+    Navigator.of(context).pop(true);
+  }
+
+  @override
   Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?)>(
     session: widget.session,
     select: (s) => (s.state.configOptions, s.state.modes),
@@ -375,98 +498,41 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         );
       }
       return SheetScaffold(
-        title: settings.isEmpty ? 'Session' : 'Mode and model',
+        title: 'Mode and model',
         kind: SheetKind.actions,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final s in settings)
-              if (s.kind == _Kind.boolean)
-                SwitchRow(
-                  title: s.name,
-                  subtitle: s.description,
-                  value: s.value == true,
-                  onChanged: (v) => widget.session.setConfigOption(s.id, v),
-                )
-              else
-                _SettingRow(setting: s, onTap: () => setState(() => _picking = s.id)),
-            SheetActionRow(
-              action: SheetAction(label: 'Session overview', icon: LucideIcons.layoutList, onTap: _overview),
-              onTap: _overview,
-            ),
-            if (machineSupportsFiles(widget.session.machine))
-              SheetActionRow(
-                action: SheetAction(label: 'Files', icon: HerdrIcons.folder, onTap: _files),
-                onTap: _files,
+        child: settings.isEmpty
+            ? const EmptyState.inline('Nothing to set.')
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final s in settings)
+                    if (s.kind == _Kind.boolean)
+                      // The sheet's rows are inset by Gap.lg; a switch row brings no inset of its own.
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+                        child: SwitchRow(
+                          title: s.name,
+                          subtitle: s.description,
+                          value: s.value == true,
+                          onChanged: (v) => widget.session.setConfigOption(s.id, v),
+                        ),
+                      )
+                    else
+                      _SettingRow(title: s.name, value: s.currentName, onTap: () => setState(() => _picking = s.id)),
+                ],
               ),
-            // Always here: the chip under the title only shows once something
-            // exists, so this is where "where are the files and pictures?" is
-            // answered, with its reason while there is nothing.
-            SessionSelect<(int, MadeReach)>(
-              session: widget.session,
-              select: (s) => (madeAssetsOf(s.state.items, cwd: s.cwd, history: s.madeHistory).length, s.madeReach),
-              builder: (context, v) {
-                final (made, reach) = v;
-                // Only the end of a long chat is read: the sheet reads the rest when opened.
-                final nothing = made == 0 && reach == MadeReach.whole;
-                return SheetActionRow(
-                  action: SheetAction(
-                    label: 'Made in this session',
-                    icon: LucideIcons.globe,
-                    onTap: _made,
-                    unavailable: nothing ? 'Nothing has come up yet' : null,
-                  ),
-                  onTap: _made,
-                );
-              },
-            ),
-            SheetActionRow(
-              action: SheetAction(label: 'Copy session link', icon: LucideIcons.link, onTap: _copyLink),
-              onTap: _copyLink,
-            ),
-            if (!widget.session.isObserved)
-              ListenableBuilder(
-                listenable: widget.session.machine,
-                builder: (context, _) {
-                  final machine = widget.session.machine;
-                  return SheetActionRow(
-                    action: SheetAction(
-                      label: 'Duplicate',
-                      icon: LucideIcons.copyPlus,
-                      onTap: _duplicate,
-                      unavailable: machine.isLive ? null : '${machine.profile.label} is offline',
-                    ),
-                    onTap: _duplicate,
-                  );
-                },
-              ),
-            if (_checkout != null)
-              SheetActionRow(
-                action: SheetAction(
-                  label: 'Remove worktree',
-                  icon: LucideIcons.gitBranchMinus,
-                  destructive: true,
-                  onTap: _removeWorktree,
-                ),
-                onTap: _removeWorktree,
-              ),
-            if (widget.session.terminalPaneId case final paneId?)
-              SheetActionRow(
-                action: agentViewAction(context, _pane(paneId), AgentView.chat),
-                onTap: () => _showTerminal(_pane(paneId)),
-              ),
-          ],
-        ),
       );
     },
   );
 }
 
 class _SettingRow extends StatelessWidget {
-  const _SettingRow({required this.setting, required this.onTap});
+  const _SettingRow({required this.title, required this.value, required this.onTap});
 
-  final _Setting setting;
+  /// The option, and what it is set to now.
+  final String title;
+  final String value;
   final VoidCallback onTap;
 
   /// Two lines: the option and its current choice.
@@ -492,9 +558,9 @@ class _SettingRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(setting.name, style: Type.row.copyWith(color: ds.text)),
+                  Text(title, style: Type.row.copyWith(color: ds.text)),
                   Text(
-                    setting.currentName,
+                    value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Type.secondary.copyWith(color: ds.textSecondary),
@@ -585,7 +651,7 @@ class _PickerState extends State<_Picker> {
         children: [
           PressBuilder(
             onTap: widget.onBack,
-            semanticLabel: 'Back to options',
+            semanticLabel: 'Back to mode and model',
             builder: (context, pressed) => Container(
               constraints: const BoxConstraints(minHeight: kMinTap),
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg),

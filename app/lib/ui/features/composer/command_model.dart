@@ -112,6 +112,18 @@ class CommandPaletteModel extends ChangeNotifier {
     return null;
   }
 
+  /// The characters that start a command for this agent, for the cue chips
+  /// above an empty field: `/` while the agent is known (its list may not be
+  /// loaded yet: the palette learns it when a command is begun, and a chip
+  /// never fetches), and `$` once the loaded list holds skills of that kind
+  /// (Codex). Empty for a terminal with no agent: what is typed there is a
+  /// shell line.
+  List<String> get cues {
+    if (source.agent == null) return const [];
+    final loaded = {for (final c in source.commands) c.trigger};
+    return [if (loaded.isEmpty || loaded.contains('/')) '/', if (loaded.contains(r'$')) r'$'];
+  }
+
   /// Commands that [input] (the composer's whole text) is the start of.
   ///
   /// Empty unless [input] is a lone `/word` (or `$word`): once there is a space

@@ -37,8 +37,9 @@ void main() {
         [for (final c in chips.all) c.kind],
         [SessionChipKind.mode, SessionChipKind.model, SessionChipKind.effort, SessionChipKind.other],
       );
-      expect(_labels(chips), ['Default', 'Opus', 'High', 'Agent: Default']);
-      expect(chips.overflow, 0);
+      expect(_labels(chips), ['Default', 'Opus']);
+      expect(chips.hidden.map((c) => c.label), ['High', 'Agent: Default']);
+      expect(chips.overflow, 2);
       expect(chips.all.first.risk, ModeRisk.none);
       expect(chips.all.first.settingId, 'mode');
       expect(chips.all.first.viaModes, isFalse);
@@ -59,9 +60,10 @@ void main() {
       expect(chips.all[3].label, 'Collaboration mode: Default');
     });
 
-    test('omp: three chips, model by its display name', () {
+    test('omp: mode and model by its display name, effort behind the overflow', () {
       final chips = sessionChipsOf(replayTrace('omp/tools').setup);
-      expect(_labels(chips), ['Default', 'Claude Sonnet 5.5', 'high']);
+      expect(_labels(chips), ['Default', 'Claude Sonnet 5.5']);
+      expect(chips.hidden.map((c) => c.label), ['high']);
     });
 
     test('the danger chip follows the mode when the agent changes it', () {
@@ -93,10 +95,10 @@ void main() {
       ];
       final a = sessionChipsOf(_with(options));
       final b = sessionChipsOf(_with(options.reversed.toList()));
-      expect(_labels(a), ['Default', 'Model One', 'High', 'Fast']);
+      expect(_labels(a), ['Default', 'Model One']);
       expect(_labels(b), _labels(a));
-      expect(a.overflow, 1);
-      expect(a.hidden.single.label, 'Extra: Ex');
+      expect(a.overflow, 3);
+      expect(a.hidden.map((c) => c.label), ['High', 'Fast', 'Extra: Ex']);
       expect(a.all.map((c) => c.settingId).toList(), b.all.map((c) => c.settingId).toList());
     });
 
@@ -109,7 +111,7 @@ void main() {
       expect(chips.all.first.settingId, 'fast');
     });
 
-    test('at most four are shown; the overflow counts the rest', () {
+    test('only mode and model are shown; the overflow counts the rest', () {
       final chips = sessionChipsOf(
         _with([
           _select('mode', 'mode', 'default', [
@@ -127,9 +129,10 @@ void main() {
         ]),
       );
       expect(chips.all, hasLength(6));
+      expect(_labels(chips), ['Default', 'M']);
       expect(chips.shown, hasLength(maxSessionChips));
-      expect(chips.overflow, 2);
-      expect(chips.hidden.map((c) => c.label), ['b', 'c']);
+      expect(chips.overflow, 4);
+      expect(chips.hidden.map((c) => c.label), ['H', 'a', 'b', 'c']);
     });
 
     test('a risky chip is never the one cut', () {
@@ -142,9 +145,47 @@ void main() {
       );
       const quiet = SessionChip(kind: SessionChipKind.other, settingId: 'q', title: 'Q', label: 'Q');
       final chips = SessionChips([quiet, quiet, quiet, quiet, risky]);
-      expect(chips.shown, hasLength(4));
+      expect(chips.shown, hasLength(maxSessionChips));
       expect(chips.shown.last, same(risky));
-      expect(chips.overflow, 1);
+      expect(chips.overflow, 3);
+    });
+    test('once the person has written only a dangerous mode stays', () {
+      const quiet = SessionChip(kind: SessionChipKind.model, settingId: 'm', title: 'M', label: 'M');
+      const plain = SessionChip(kind: SessionChipKind.mode, settingId: 'mode', title: 'Mode', label: 'Default');
+      const elevated = SessionChip(
+        kind: SessionChipKind.mode,
+        settingId: 'mode',
+        title: 'Mode',
+        label: 'Accept edits',
+        risk: ModeRisk.elevated,
+      );
+      const other = SessionChip(
+        kind: SessionChipKind.other,
+        settingId: 'x',
+        title: 'X',
+        label: 'X',
+        risk: ModeRisk.dangerous,
+      );
+      const dangerous = SessionChip(
+        kind: SessionChipKind.mode,
+        settingId: 'mode',
+        title: 'Mode',
+        label: 'Bypass Permissions',
+        risk: ModeRisk.dangerous,
+      );
+      expect(const SessionChips([plain, quiet]).standing, isEmpty);
+      expect(const SessionChips([elevated, quiet]).standing, isEmpty, reason: 'chosen at the start, not a danger');
+      expect(const SessionChips([dangerous, quiet]).standing, [dangerous]);
+      expect(const SessionChips([plain, quiet, other]).standing, isEmpty, reason: 'only the mode, not any chip');
+    });
+
+    test('a session has a user message from the first one on, not before', () {
+      const empty = AgentSessionState('s');
+      final said = TranscriptMessage(key: 'm1', role: MessageRole.user, blocks: const [TextBlock('hi')]);
+      final answered = TranscriptMessage(key: 'm2', role: MessageRole.agent, blocks: const [TextBlock('hello')]);
+      expect(hasUserMessage(empty), isFalse);
+      expect(hasUserMessage(AgentSessionState('s', items: [answered])), isFalse);
+      expect(hasUserMessage(AgentSessionState('s', items: [answered, said])), isTrue);
     });
 
     test('modes with no mode option: a mode chip through modes', () {

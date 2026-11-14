@@ -1905,7 +1905,7 @@ Every mode id in the recorded traces is asserted against this table. Changing a
 row is a one-line edit of `_known`.
 
 **Session chips** (`session_chips.dart`). `sessionChipsOf(state)` gives
-`SessionChips`: `all`, `shown` (at most 4), `overflow`, `hidden`. Order is fixed
+`SessionChips`: `all`, `shown` (`maxSessionChips`, 2: mode and model), `overflow`, `hidden`, `standing` (what stays after the first message, `hasUserMessage`: only a dangerous mode). Order is fixed
 whatever order the agent lists options in: mode, model, effort (category
 `thought_level`), boolean switches in the agent's order (`on` carries the
 state), then any other select, labelled `Title: choice` (a bare `Default` would

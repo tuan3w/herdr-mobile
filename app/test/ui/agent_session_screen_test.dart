@@ -917,8 +917,11 @@ void main() {
       await pumpScreen(tester, session);
       await tester.tap(find.byTooltip('Session options'));
       await tester.pumpAndSettle();
-      // The chips above the composer say the same (they are the quick way in):
-      // the sheet's own rows are what this test is about.
+      // The `…` sheet holds the session's actions and one row to its settings.
+      expect(find.text('Model 5 \u00b7 Ask'), findsOneWidget);
+      await tester.tap(find.text('Mode and model'));
+      await tester.pumpAndSettle();
+      // The settings sheet's own rows are what this test is about.
       final sheet = find.byType(SheetSurface);
       expect(
         find.descendant(of: sheet, matching: find.text('Model 5')),
@@ -944,6 +947,59 @@ void main() {
       expect(find.text('Approval mode'), findsNothing, reason: 'the sheet closed');
     });
 
+    testWidgets('the … sheet lists no settings: one row says what they are and leads to them', (tester) async {
+      final session = FakeAgentSession(
+        state: stateWith(
+          options: const [
+            SelectConfigOption(
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              value: 'm1',
+              choices: [ConfigChoice(value: 'm1', name: 'Model One')],
+            ),
+            BooleanConfigOption(id: 'fast', name: 'Fast mode', value: false),
+          ],
+        ),
+      );
+      await pumpScreen(tester, session);
+      await tester.tap(find.byTooltip('Session options'));
+      await tester.pumpAndSettle();
+      Finder inSheet(String text) => find.descendant(of: find.byType(SheetSurface), matching: find.text(text));
+      expect(inSheet('Mode and model'), findsOneWidget);
+      expect(inSheet('Model One'), findsOneWidget, reason: 'what the settings are now, on the row');
+      expect(inSheet('Fast mode'), findsNothing, reason: 'the switch is in the settings, not here');
+      expect(inSheet('Session overview'), findsOneWidget);
+    });
+
+    testWidgets('in the settings sheet a switch has the same left edge as the other rows', (tester) async {
+      final session = FakeAgentSession(
+        state: stateWith(
+          options: const [
+            SelectConfigOption(
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              value: 'm1',
+              choices: [ConfigChoice(value: 'm1', name: 'Model One')],
+            ),
+            BooleanConfigOption(id: 'fast', name: 'Fast mode', value: false),
+          ],
+        ),
+      );
+      await pumpScreen(tester, session);
+      await tester.tap(find.byTooltip('Session options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mode and model'));
+      await tester.pumpAndSettle();
+      Finder inSheet(String text) => find.descendant(of: find.byType(SheetSurface), matching: find.text(text));
+      expect(
+        tester.getTopLeft(inSheet('Fast mode')).dx,
+        tester.getTopLeft(inSheet('Model')).dx,
+        reason: 'a switch row brings no inset of its own: it sat on the sheet\'s edge',
+      );
+    });
+
     testWidgets('modes without a mode option are offered as one choice list', (tester) async {
       final session = FakeAgentSession(
         state: stateWith(
@@ -958,6 +1014,8 @@ void main() {
       );
       await pumpScreen(tester, session);
       await tester.tap(find.byTooltip('Session options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mode and model'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Mode'));
       await tester.pumpAndSettle();

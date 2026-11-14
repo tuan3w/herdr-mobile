@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../render/visible_text.dart';
+import '../files/middle_ellipsis.dart';
 
 /// One quiet line for a piece of content that is not text: an icon, what it
 /// is, where it lives, and (when something could not be shown) why in a
@@ -60,22 +61,40 @@ class ContentChip extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text.rich(
-                TextSpan(
-                  text: visibleText(title),
-                  style: Type.secondaryStrong.copyWith(
+              LayoutBuilder(
+                builder: (context, box) {
+                  final name = visibleText(title);
+                  final nameStyle = Type.secondaryStrong.copyWith(
                     color: tappable ? ds.accentText : (muted ? ds.textMuted : ds.textSecondary),
-                  ),
-                  children: [
-                    if (detail.isNotEmpty)
-                      TextSpan(
-                        text: '  ${visibleText(detail)}',
-                        style: Mono.base.copyWith(color: ds.textMuted),
-                      ),
-                  ],
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                  );
+                  final detailText = detail.isEmpty ? null : visibleText(detail);
+                  final detailStyle = Mono.base.copyWith(color: ds.textMuted);
+                  // A name wider than the line would be broken inside by the line
+                  // breaker, in its extension (`IMG_…101433.j` over `pg`): a name of
+                  // one word is cut in the middle instead, keeping the end, and the
+                  // detail goes under it. Words wrap as they did.
+                  final scaler = MediaQuery.textScalerOf(context);
+                  final oneWord = !name.contains(RegExp(r'\s'));
+                  if (oneWord && middleEllipsize(name, box.maxWidth, nameStyle, scaler) != name) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        MiddleEllipsisText(name, style: nameStyle),
+                        if (detailText != null)
+                          Text(detailText, maxLines: 2, overflow: TextOverflow.ellipsis, style: detailStyle),
+                      ],
+                    );
+                  }
+                  return Text.rich(
+                    TextSpan(
+                      text: name,
+                      style: nameStyle,
+                      children: [if (detailText != null) TextSpan(text: '  $detailText', style: detailStyle)],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  );
+                },
               ),
               if (note != null)
                 Padding(

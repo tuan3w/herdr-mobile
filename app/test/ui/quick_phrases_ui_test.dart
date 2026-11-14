@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/quick_phrases.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/data/acp/acp_models.dart' show AcpCommand;
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 import 'package:herdr_mobile/ui/features/settings/quick_phrases_editor.dart';
 import 'package:provider/provider.dart';
@@ -95,18 +96,58 @@ void main() {
       expect(_chips(), findsNothing);
     });
 
-    testWidgets('no phrases, no row', (tester) async {
+    testWidgets('no phrases: only the `/` cue is left in the row, alone at the left', (tester) async {
       await _pumpSession(tester, FakeAgentSession(), await _phrases([]));
       await tester.tap(find.byType(TextField).last);
       await _frames(tester, 2);
-      expect(_chips(), findsNothing);
+      expect(_chips(), findsOneWidget);
+      expect(find.widgetWithText(AppChip, '/'), findsOneWidget);
+      expect(tester.getTopLeft(_chips()).dx, lessThan(40), reason: 'at the composer margin, not pushed to the right');
     });
 
-    testWidgets('without the store the composer is as before', (tester) async {
+    testWidgets('without the store the composer has the `/` cue and no phrases', (tester) async {
       await _pumpSession(tester, FakeAgentSession(), null);
       await tester.tap(find.byType(TextField).last);
       await _frames(tester, 2);
-      expect(_chips(), findsNothing);
+      expect(_chips(), findsOneWidget);
+      expect(find.widgetWithText(AppChip, '/'), findsOneWidget);
+    });
+
+    testWidgets('the `/` cue stands first, before the phrases, opens the command palette and sends nothing', (
+      tester,
+    ) async {
+      final session = FakeAgentSession(
+        state: stateWith(
+          commands: const [
+            AcpCommand(name: 'review', description: 'Review the change'),
+            AcpCommand(name: 'compact', description: 'Summarise'),
+          ],
+        ),
+      );
+      await _pumpSession(tester, session, await _phrases());
+      await tester.tap(find.byType(TextField).last);
+      await _frames(tester, 2);
+      final cue = find.widgetWithText(AppChip, '/');
+      expect(cue, findsOneWidget);
+      expect(
+        tester.getTopLeft(cue).dx,
+        lessThan(tester.getTopLeft(find.widgetWithText(AppChip, 'continue')).dx),
+        reason: 'before the phrases, where the thumb finds it without scrolling',
+      );
+      expect(
+        tester.getSize(find.descendant(of: cue, matching: find.byType(PressBuilder)).first).shortestSide,
+        greaterThanOrEqualTo(kMinTap),
+      );
+
+      await tester.tap(cue);
+      await _frames(tester, 3);
+      final field = tester.widget<TextField>(find.byType(TextField).last);
+      expect(field.controller!.text, '/');
+      expect(field.controller!.selection, const TextSelection.collapsed(offset: 1));
+      expect(field.focusNode!.hasFocus, isTrue);
+      expect(find.textContaining('/review', findRichText: true), findsOneWidget, reason: 'the palette is open');
+      expect(session.sent, isEmpty);
+      expect(_chips(), findsNothing, reason: 'the field has text, so the row makes way');
     });
 
     testWidgets('left out in the compact layout: landscape with the keyboard up', (tester) async {
@@ -138,7 +179,7 @@ void main() {
       await tester.tap(find.byType(TextField).last);
       await _frames(tester, 2);
       expect(tester.takeException(), isNull);
-      expect(tester.getSize(_chips()).width, lessThanOrEqualTo(240));
+      expect(tester.getSize(_chips().last).width, lessThanOrEqualTo(240), reason: 'the phrase, after the cue');
     });
   });
 

@@ -10,6 +10,8 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/services/image_decode.dart' show DecodedImage;
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/ui/features/files/middle_ellipsis.dart';
+import 'package:herdr_mobile/ui/features/agent_session/content_chip.dart';
 import 'package:herdr_mobile/ui/render/markdown/markdown.dart';
 import 'package:herdr_mobile/ui/features/agent_session/code_panel.dart';
 import 'package:herdr_mobile/ui/features/agent_session/content_blocks.dart';
@@ -433,6 +435,66 @@ void main() {
         );
       }
       expect(find.ancestor(of: rich('mail'), matching: find.byType(PressBuilder)), findsNothing);
+    });
+
+    testWidgets('a file name wider than the line is cut in the middle, not broken inside its extension', (
+      tester,
+    ) async {
+      const name = 'IMG_20261113_101433.jpg';
+      await tester.pumpWidget(
+        host(
+          const Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 150,
+              child: ResourceLinkRow(
+                block: ResourceLinkBlock(
+                  uri: 'file:///inbox/IMG_20261113_101433.jpg',
+                  name: name,
+                  mimeType: 'image/jpeg',
+                  size: 1800000,
+                ),
+              ),
+            ),
+          ),
+          textScale: 1.6,
+        ),
+      );
+      final shown = tester.widget<Text>(
+        find.descendant(of: find.byType(MiddleEllipsisText), matching: find.byType(Text)),
+      );
+      expect(shown.data, contains('…'));
+      expect(shown.data, endsWith('.jpg'), reason: 'the extension is the last thing to go');
+      expect(shown.maxLines, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a name that fits keeps its detail on the same line; words still wrap', (tester) async {
+      await tester.pumpWidget(
+        host(
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ResourceLinkRow(
+                block: ResourceLinkBlock(uri: 'file:///x/IMG_1.jpg', name: 'IMG_1.jpg', mimeType: 'image/jpeg'),
+              ),
+              Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 150,
+                  child: ContentChip(icon: LucideIcons.circleHelp, title: 'Content this app can’t show at all'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      expect(
+        find.byType(MiddleEllipsisText),
+        findsNothing,
+        reason: 'a short name and a sentence are left as they were',
+      );
+      expect(rich('IMG_1.jpg'), findsOneWidget);
     });
 
     testWidgets('hidden and bidi characters in a name show as escapes', (tester) async {

@@ -669,6 +669,7 @@ class _PaneViewState extends State<_PaneView> {
     phrases: QuickPhrasesRow(
       input: _input,
       focus: _focus,
+      commands: _commands,
       padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
     ),
     chips: AttachmentChips(attachments: _attachments),
