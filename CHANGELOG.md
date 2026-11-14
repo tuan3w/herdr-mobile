@@ -4,6 +4,56 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.64] - 2026-11-14
+
+### Stay connected while you check something else
+
+Leave the app to copy something or look at a page, and you come back to a
+board that is already current, not a reconnect. How long the app keeps its
+connections after you leave is yours to choose: Off, 90 s, 5 min or 15 min.
+It is 5 min until you choose.
+
+> [!TIP]
+> Try it: in Settings, open `Agents` and pick a time under `Stay connected
+> when away`.
+
+- Back inside that time, each connection is asked for what changed instead of
+  being rebuilt. One that no longer answers within 4 s is rebuilt, as before,
+  so a link that died while you were away still comes back by itself.
+- Past that time the connections are let go to spare the battery, as they were
+  after 90 s. Alerts, when on, still keep theirs while agents work.
+- Not tried on a phone: whether Android keeps the connections alive for the
+  whole 5 or 15 minutes is not measured.
+
+### Mode and model first, and a `/` for commands
+
+A new chat shows mode and model as two chips above the message box, to pick
+them first. Once you send the first message the chips go and the transcript
+gets the room.
+
+> [!TIP]
+> Try it: tap the message box of a chat: the `/` chip comes first. Tap it to
+> start a command without hunting for `/` on the keyboard's symbol page.
+
+- Effort and the switches are behind `+N`, which opens a sheet of just the
+  settings. A mode that skips permission checks stays in the danger colour
+  after the first message.
+- `Session options` no longer lists the settings. It keeps what you do with the
+  session, and one `Mode and model` row that shows what they are set to and
+  opens them.
+- With the message box focused and empty, the `/` chip comes before the quick
+  phrases, and `$` next to it in a chat of an agent whose skills start with it,
+  once its list has loaded.
+- Not tried on a phone.
+
+**Fixed**
+
+- `Fast mode`, and any other switch in the settings sheet, no longer sits
+  against the edge of the sheet: it lines up with the rows above it.
+- A file name too long for its line in a chat (a photo name at a large text size
+  on a narrow phone) no longer breaks inside its extension: it is cut in the
+  middle and keeps its ending, and the size and type go under it.
+
 ## [0.1.63] - 2026-11-11
 
 ### The desktop viewer lists the new agents
