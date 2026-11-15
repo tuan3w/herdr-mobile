@@ -4,15 +4,38 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.67] - 2026-11-15
 
-- `Made` now finds more of what an agent made: videos it rendered (`.mp4`, `.mov`,
-  `.webm`, `.mkv`, `.m4v`), the pictures a tool returned inside its result (a browser
-  screenshot has no file), and the pull request, issue, release or CI run it
-  opened or checked on GitHub. Pictures and videos share a tab, now called `Media`; the
-  links are on a new `Links` tab. Not tried on a phone.
-- `Made` no longer lists a file the agent said it left alone (for example "I left
-  /tmp/old_build.html alone"). A `local://` document is still not listed.
+[![Watch what's new · 1 change · 0:08 · 2.1 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.mp4)
+
+### Made finds your videos, screenshots and pull requests
+
+When an agent renders a video, takes a browser screenshot or opens a pull
+request, `Made` now lists it. Before, those were missing: on a session that made
+21 things it listed 13, and one of them was a page the agent said it left alone.
+
+> [!TIP]
+> Try it: in a chat where an agent made something, tap `Made`, then `Media` or
+> `Links`.
+
+- Videos (`.mp4`, `.mov`, `.webm`, `.mkv`, `.m4v`) are a play tile with their name
+  on `Media`, with the pictures. A tap opens one in Files.
+- A picture a tool returned inside its result, such as a browser screenshot, is
+  there too. It opens on its own, not among the other pictures.
+- `Links` lists the pull request, issue, release or CI run the agent made or
+  checked with GitHub's command line, or said it opened or published. A tap opens
+  it in your browser. Other links, such as a video or a dashboard, are not listed.
+- The tab that was `Pictures` is now `Media`.
+- Not listed: documents under `local://`, which the phone has no path for. Not
+  tried on a phone. The counts above are from one invented session, not
+  measured on a real one.
+
+![The Made sheet on the Media tab: a screenshot, a video, and five pictures](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-made-media.png)
+
+**Fixed**
+
+- `Made` no longer lists a file the agent said it left alone, such as "I left
+  /tmp/old_build.html alone".
 
 ## [0.1.66] - 2026-11-14
 
