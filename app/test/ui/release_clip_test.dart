@@ -72,6 +72,7 @@ FakeAgentSession _session() {
   }
   fs.addFile('$_base/reports/coverage.html', '<h1>x</h1>');
   fs.addFile('$_base/renders/checkout-demo.mp4', 'x');
+  fs.addFile('$_base/notes/checkout-plan.md', 'x');
   final machine = MachineConnection(
     profile: const MachineProfile(id: 'm', label: 'build-box', host: 'h', username: 'u'),
     api: HerdrApi(FakeTransport()..fs = fs),
@@ -82,6 +83,11 @@ FakeAgentSession _session() {
     state: stateWith(
       items: [
         userMsg('u1', 'Record a demo of the new checkout and open a pull request.'),
+        _run(
+          'cd web-shop && npm run dev',
+          output: '  VITE v5.2.0  ready in 312 ms\n\n  ➜  Local:   http://localhost:5173/\n',
+        ),
+        _wrote('$_base/notes/checkout-plan.md'),
         _wrote('$_base/reports/coverage.html'),
         for (var i = 1; i <= 5; i++) agentMsg('s$i', 'I saved screenshots/checkout_$i.png'),
         agentMsg('v', 'I saved renders/checkout-demo.mp4'),
