@@ -76,6 +76,7 @@ List<MadeKind> webAssetsKinds(List<String> names) => [
       switch (k) {
         MadeFileKind.page => MadeKind.page,
         MadeFileKind.picture => MadeKind.picture,
+        MadeFileKind.video => MadeKind.video,
         MadeFileKind.doc => MadeKind.doc,
       },
 ];
@@ -801,6 +802,162 @@ void main() {
         [for (final a in madeAssetsOf(items, cwd: '/w')) a.kind],
         [MadeKind.server, MadeKind.picture, MadeKind.page, MadeKind.doc],
       );
+    });
+  });
+
+  group('videos', () {
+    test('a render a command writes and one the agent announces are rows of kind video; a bare mention is not', () {
+      final assets = madeAssetsOf([
+        _run('npx hyperframes render -o renders/intro.mp4', cwd: '/w/app'),
+        _say('I saved demo/walk.mov'),
+        _say('See also demo/old.webm'),
+        _run('curl -sLo /tmp/clip.mp4 https://example.com/clip.mp4'),
+      ], cwd: '/w');
+      expect(
+        [for (final a in assets) (a.kind, a.key)],
+        [(MadeKind.video, '/w/demo/walk.mov'), (MadeKind.video, '/w/app/renders/intro.mp4')],
+      );
+      expect(assets.last.title, 'intro.mp4');
+      expect(assets.last.where, 'renders/');
+    });
+  });
+
+  group('links the agent opened or shipped', () {
+    const repo = 'https://github.com/tuan3w/herdr-mobile';
+
+    test('a pull request, an issue, a release and a CI run are rows, named from the command that made them', () {
+      final assets = madeAssetsOf([
+        _run(
+          'gh pr create --base main --head feat/x --title "feat(observed): send while it works"',
+          output: '$repo/pull/93\n',
+        ),
+        _run('gh issue create -t "Flaky test" -b x', output: '$repo/issues/94\n'),
+        _run('gh release create v0.1.51 --notes x', output: '$repo/releases/tag/v0.1.51\n'),
+        _run('gh run watch 123', output: 'Run CI (123) completed\nView: $repo/actions/runs/123/job/9\n'),
+      ]);
+      expect(
+        [for (final a in assets) (a.kind, a.title, a.where, a.url.toString())],
+        [
+          (MadeKind.link, 'Actions run 123', 'tuan3w/herdr-mobile', '$repo/actions/runs/123'),
+          (MadeKind.link, 'Release v0.1.51', 'tuan3w/herdr-mobile', '$repo/releases/tag/v0.1.51'),
+          (MadeKind.link, 'Issue #94 Flaky test', 'tuan3w/herdr-mobile', '$repo/issues/94'),
+          (MadeKind.link, 'PR #93 feat(observed): send while it works', 'tuan3w/herdr-mobile', '$repo/pull/93'),
+        ],
+      );
+    });
+
+    test('what only reads, offers or failed makes no row', () {
+      final items = [
+        _run('gh pr view 93', output: '$repo/pull/93\n'),
+        _run('gh release list', output: 'v0.1.51\n$repo/releases/tag/v0.1.51\n'),
+        _run(
+          'git push -u origin feat/x',
+          output:
+              "remote: Create a pull request for 'feat/x' on GitHub by visiting:\nremote:   $repo/pull/new/feat/x\n",
+        ),
+        _run('gh pr create --title x', output: '$repo/pull/95\n', status: ToolStatus.failed),
+        _run('gh pr create --title x', output: '$repo/issues/96\n'),
+        _run('cat NOTES.md', output: '$repo/pull/97\n'),
+      ];
+      expect(_keys(items), isEmpty);
+    });
+
+    test('in the agent’s words a link counts after a verb of doing, not when it is only named', () {
+      final items = [
+        _say('Opened PR: $repo/pull/93'),
+        _say('The release is out, I published v0.1.51: $repo/releases/tag/v0.1.51'),
+        _say('The earlier discussion is in $repo/issues/85'),
+        _say('See the release notes $repo/releases/tag/v0.1.40'),
+        _say('The walkthrough is on https://www.youtube.com/watch?v=abc and https://us3.datadoghq.com/dashboard/x'),
+        _say('I created https://github.com/tuan3w/herdr-mobile/tree/main'),
+      ];
+      expect([for (final a in madeAssetsOf(items)) a.title], ['Release v0.1.51', 'PR #93']);
+    });
+
+    test('the same address said again keeps the longer name', () {
+      final items = [
+        _run('gh pr create --title "feat: a"', output: '$repo/pull/93\n'),
+        _say('Opened PR: $repo/pull/93'),
+      ];
+      final assets = madeAssetsOf(items);
+      expect(assets.map((a) => a.title), ['PR #93 feat: a']);
+      expect(assets.single.order ~/ 1000, 1, reason: 'but it is as new as the later mention');
+    });
+  });
+
+  group('pictures a tool returned', () {
+    ImageBlock block(String data) => ImageBlock(data: data, mimeType: 'image/png');
+
+    TranscriptItem returned(
+      String id,
+      List<ContentBlock> blocks, {
+      ToolKind kind = ToolKind.other,
+      String title = 'Screenshot',
+      ToolStatus status = ToolStatus.completed,
+    }) => TranscriptTool(
+      ToolCall(
+        toolCallId: id,
+        title: title,
+        kind: kind,
+        status: status,
+        content: [for (final b in blocks) ToolContentBlock(b)],
+      ),
+    );
+
+    test('a browser screenshot is a row of kind picture that holds the block; no file, no path', () {
+      final b = block('AAAA');
+      final assets = madeAssetsOf([
+        returned('t1', [b]),
+      ]);
+      final a = assets.single;
+      expect((a.kind, a.key, a.title, a.path), (MadeKind.picture, 'shot:t1:0', 'Screenshot', null));
+      expect(identical(a.image, b), isTrue);
+    });
+
+    test(
+      'what the agent only looked at is not made: a read, a search, a fetch, a call that failed, a bare address',
+      () {
+        final items = [
+          returned('r', [block('AAAA')], kind: ToolKind.read),
+          returned('s', [block('AAAA')], kind: ToolKind.search),
+          returned('f', [block('AAAA')], kind: ToolKind.fetch),
+          returned('x', [block('AAAA')], status: ToolStatus.failed),
+          returned('u', [const ImageBlock(data: '', mimeType: 'image/png', uri: 'file:///tmp/a.png')]),
+        ];
+        expect(_keys(items), isEmpty);
+      },
+    );
+
+    test('a tool that returns forty frames has not made forty things: the first six', () {
+      final items = [
+        returned('t', [for (var i = 0; i < 40; i++) block('A$i')]),
+      ];
+      expect(madeAssetsOf(items).map((a) => a.key), [for (var i = 5; i >= 0; i--) 'shot:t:$i']);
+    });
+
+    test('the log keeps files, never the bytes of a returned picture', () {
+      final history =
+          (MadeFold(cwd: '/w')..addAll([
+                returned('t1', [block('AAAA')]),
+                _say('I saved shots/a.png'),
+              ]))
+              .history(10);
+      expect(history.assets.map((a) => a.key), ['shot:t1:0', '/w/shots/a.png'].reversed);
+      final back = MadeHistory.fromBytes(history.toBytes())!;
+      expect(back.assets.map((a) => a.key), ['/w/shots/a.png']);
+    });
+  });
+
+  group('a file the agent says it left alone', () {
+    test('is named, not made, even with a folder in its path', () {
+      final items = [
+        _say('I left /tmp/old_build.html alone.'),
+        _say('Untouched: reports/stale.html'),
+        _say('I did not touch reports/other.html'),
+        _say('I wrote /tmp/new_build.html'),
+        _say('Serving the page at /tmp/live/index.html'),
+      ];
+      expect(_keys(items), ['/tmp/live/index.html', '/tmp/new_build.html']);
     });
   });
 

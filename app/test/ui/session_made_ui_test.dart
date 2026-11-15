@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert' show base64Encode;
 import 'dart:typed_data';
 import 'dart:ui' show Tristate;
 
@@ -61,6 +62,28 @@ TranscriptItem _wrote(String path) => TranscriptTool(
     kind: ToolKind.edit,
     status: ToolStatus.completed,
     content: [ToolDiff(path: path, newText: '<h1>x</h1>')],
+  ),
+);
+
+/// A finished command with what it printed.
+TranscriptItem _ran(String command, String printed) => TranscriptTool(
+  ToolCall(
+    toolCallId: 't$command',
+    kind: ToolKind.execute,
+    status: ToolStatus.completed,
+    rawInput: {'command': command},
+    output: ToolOutput(text: printed, exited: true, exitCode: 0),
+  ),
+);
+
+/// A picture a tool returned inside its result, the way a browser tool does.
+TranscriptItem _returned(String id, Uint8List bytes, {ToolKind kind = ToolKind.other}) => TranscriptTool(
+  ToolCall(
+    toolCallId: id,
+    title: 'Screenshot',
+    kind: kind,
+    status: ToolStatus.completed,
+    content: [ToolContentBlock(ImageBlock(data: base64Encode(bytes), mimeType: 'image/png'))],
   ),
 );
 
@@ -535,7 +558,7 @@ void main() {
 
       expect(find.text('Pages'), findsOneWidget);
       expect(find.text('Docs'), findsOneWidget);
-      expect(find.text('Pictures'), findsNothing);
+      expect(find.text('Media'), findsNothing);
       expect(find.text('2'), findsOneWidget, reason: 'two pages');
       expect(find.text('1'), findsOneWidget, reason: 'one doc');
       handle.dispose();
@@ -571,7 +594,7 @@ void main() {
     final handle = tester.ensureSemantics();
     await openSheet(tester, session(mixed()));
 
-    expect(selected(tester, 'Pictures'), isTrue);
+    expect(selected(tester, 'Media'), isTrue);
     expect(selected(tester, 'Pages'), isFalse);
     expect(selected(tester, 'Docs'), isFalse);
     expect(find.text('4'), findsOneWidget);
@@ -633,12 +656,12 @@ void main() {
     (tester) async {
       final handle = tester.ensureSemantics();
       await openSheet(tester, session(mixed(), key: 'm/swipe'));
-      expect(selected(tester, 'Pictures'), isTrue);
+      expect(selected(tester, 'Media'), isTrue);
 
       await tester.fling(find.text('d.png'), const Offset(-300, 0), 1500);
       await _settle(tester);
       await tester.pump(const Duration(seconds: 1));
-      expect(selected(tester, 'Docs'), isTrue, reason: 'Docs follows Pictures');
+      expect(selected(tester, 'Docs'), isTrue, reason: 'Docs follows Media');
       expect(find.text('plan.md'), findsOneWidget);
       expect(find.text('d.png'), findsNothing);
 
@@ -769,6 +792,54 @@ void main() {
     expect(find.text('spec.pdf'), findsOneWidget, reason: 'on the Docs tab it was left on');
   });
 
+  testWidgets(
+    'a pull request is a row of Links that opens in the phone’s browser; a video and a picture a tool returned are on Media',
+    (tester) async {
+      onMachine(['$base/renders/intro.mp4']);
+      await openSheet(
+        tester,
+        session([
+          _say('I saved renders/intro.mp4'),
+          _returned('shot1', png(3)),
+          _ran(
+            'gh pr create --base main --head feat/x --title "feat(observed): send while it works"',
+            'https://github.com/tuan3w/herdr-mobile/pull/93\n',
+          ),
+        ], key: 'm/outcome'),
+      );
+
+      // The newest thing made is the pull request: the sheet opens on Links.
+      final handle = tester.ensureSemantics();
+      expect(selected(tester, 'Links'), isTrue);
+      expect(find.text('PR #93 feat(observed): send while it works'), findsOneWidget);
+      expect(find.text('tuan3w/herdr-mobile'), findsOneWidget);
+      await tester.tap(find.text('PR #93 feat(observed): send while it works'));
+      await _settle(tester);
+      expect(launcher.opened, ['https://github.com/tuan3w/herdr-mobile/pull/93']);
+
+      await tapChip(tester, 'Media');
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('intro.mp4'), findsOneWidget);
+      expect(find.text('Screenshot'), findsOneWidget);
+      expect(find.byType(RawImage), findsOneWidget, reason: 'the returned picture is its own thumbnail');
+
+      await tester.tap(find.text('Screenshot'));
+      await _settle(tester);
+      expect(find.byType(PhotoViewer), findsOneWidget);
+      Navigator.of(tester.element(find.byType(PhotoViewer))).pop();
+      await _settle(tester);
+      expect(find.text('Made in this session'), findsOneWidget);
+      expect(selected(tester, 'Media'), isTrue, reason: 'Back lands on the tab it was left on');
+
+      await tester.tap(find.text('intro.mp4'));
+      await _settle(tester);
+      expect(find.byType(FileViewerScreen), findsOneWidget);
+      handle.dispose();
+    },
+  );
+
   testWidgets('a page opens in herdr from its tab', (tester) async {
     await openSheet(tester, session(mixed()));
     await tapChip(tester, 'Pages');
@@ -882,7 +953,7 @@ void main() {
     // Only how far from the top: the switch may scroll sideways to its cell.
     double top(String label) => tester.getRect(find.text(label)).top;
     final servers = top('Apps');
-    final pictures = top('Pictures');
+    final pictures = top('Media');
     expect(
       tester.getSize(find.byType(CustomScrollView)).height,
       lessThanOrEqualTo(892 * 0.6 + 0.5),
@@ -891,15 +962,15 @@ void main() {
 
     await tester.drag(find.text('s27.png'), const Offset(0, -300));
     await _settle(tester);
-    expect(top('Pictures'), pictures, reason: 'the switch doesn’t scroll away with a long list');
+    expect(top('Media'), pictures, reason: 'the switch doesn’t scroll away with a long list');
 
     await tapChip(tester, 'Apps');
     await _settle(tester);
     expect(find.text('App on port 5173'), findsOneWidget);
     expect(top('Apps'), servers, reason: 'a short tab after a tall one');
-    expect(top('Pictures'), pictures);
+    expect(top('Media'), pictures);
 
-    await tapChip(tester, 'Pictures');
+    await tapChip(tester, 'Media');
     await _settle(tester);
     expect(top('Apps'), servers, reason: 'and a tall one after a short one');
   });
@@ -1081,7 +1152,7 @@ void main() {
     await tester.tap(find.text('Made'));
     await _settle(tester);
     expect(find.text('late.md'), findsOneWidget, reason: 'Docs is where it was left, and now it holds the new one');
-    await tapChip(tester, 'Pictures');
+    await tapChip(tester, 'Media');
     await _settle(tester);
     expect(find.text('e.png'), findsOneWidget);
   });
@@ -1108,12 +1179,12 @@ void main() {
     await _settle(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Pictures'), findsOneWidget);
+    expect(find.text('Media'), findsOneWidget);
     expect(find.text('d.png'), findsOneWidget);
 
     // Left on Docs, which the switch may not show at this size: it opens with
     // the chosen cell in view, not hidden past the edge.
-    await tester.drag(find.text('Pictures'), const Offset(-300, 0));
+    await tester.drag(find.text('Media'), const Offset(-300, 0));
     await _settle(tester);
     await tapChip(tester, 'Docs');
     await _settle(tester);

@@ -29,7 +29,12 @@ import 'turns/turns.dart' show pathOfCall;
 ///   existing files all day;
 /// - a server: a link in the agent's own words, or a banner line a launched
 ///   command printed (`Local: http://localhost:5173/`).
-enum MadeKind { server, page, picture, doc }
+///
+/// A video and a picture share one tab (`Media`), and so do the pictures a tool
+/// returned inline (a browser screenshot has no file and no name); a link is a
+/// pull request, release, issue or CI run the agent opened or watched on GitHub
+/// (any other link is something the agent MENTIONED, not made: see `_say`).
+enum MadeKind { server, page, picture, doc, video, link }
 
 /// A server's state as far as the phone can tell. [seen] is the honest default:
 /// a link in the output says the server existed, not that it still runs.
@@ -46,6 +51,7 @@ class MadeAsset {
     this.path,
     this.at,
     this.launch,
+    this.image,
     required this.order,
   });
 
@@ -80,6 +86,11 @@ class MadeAsset {
   /// Null for a file and when no launch was seen. Raw text from the agent.
   final String? launch;
 
+  /// A picture a tool returned inside its result (a screenshot): the block the
+  /// transcript holds, for the viewer. Null for a file. Never kept in a
+  /// [MadeHistory]: the bytes are the log's, a row of it would be a stale key.
+  final ImageBlock? image;
+
   /// The port, for matching a background task.
   int? get port => url == null ? null : (url!.hasPort ? url!.port : 80);
 
@@ -98,6 +109,7 @@ class MadeAsset {
     path: path,
     at: at,
     launch: launch,
+    image: image,
     order: order,
   );
 
@@ -127,7 +139,7 @@ class MadeAsset {
       return null;
     }
     final uri = url == null ? null : Uri.tryParse(url as String);
-    if (kind == MadeKind.server && uri == null) return null;
+    if ((kind == MadeKind.server || kind == MadeKind.link) && uri == null) return null;
     return MadeAsset(
       kind: kind,
       key: key,
@@ -154,7 +166,7 @@ const madeServerPathsCap = 5;
 
 /// Bumped whenever the scanning rules change what a log makes: a [MadeHistory]
 /// kept under an older one was read with other rules and is read again.
-const madeScanVersion = 2;
+const madeScanVersion = 3;
 
 /// Whether [a] and [b] show the same rows. A tool call that streams replaces
 /// the transcript list on every chunk and with it the list this returns; the
@@ -199,7 +211,10 @@ class MadeHistory {
         'v': madeScanVersion,
         'span': span,
         'upTo': upTo,
-        'assets': [for (final a in assets) a.toJson()],
+        'assets': [
+          for (final a in assets)
+            if (a.image == null) a.toJson(),
+        ],
       }),
     ),
   );
@@ -373,13 +388,15 @@ final _lists = Expando<Map<(String?, MadeHistory?), List<MadeAsset>>>('session m
 final _mentions = Expando<List<_Mention>>('session made mentions');
 final _commandScans = Expando<List<_Mention>>('session made command');
 
-enum _Act { server, file, drop, launch }
+enum _Act { server, file, drop, launch, link, shot }
 
 /// One thing a transcript item said. [cd] is a `cd` the command made first.
 /// A server mention is [weak] when it only names the origin (a banner, a bare
 /// `localhost:5173`): the same item's own link to that port says more. A launch
 /// mention names the [port] a command started and the [label] to call it by; it
-/// makes no row (a launch command is not proof that a server came up).
+/// makes no row (a launch command is not proof that a server came up). A link
+/// mention is a GitHub address with its [title] and the repository in [where];
+/// a shot is a picture a tool returned, under [key].
 class _Mention {
   const _Mention.server(this.url, this.at, {this.weak = false})
     : act = _Act.server,
@@ -387,26 +404,62 @@ class _Mention {
       cwd = null,
       cd = null,
       port = null,
-      label = null;
+      label = null,
+      title = null,
+      where = null,
+      image = null,
+      key = null;
   const _Mention.file(this.path, this.cwd, this.cd, this.at)
     : act = _Act.file,
       url = null,
       weak = false,
       port = null,
-      label = null;
+      label = null,
+      title = null,
+      where = null,
+      image = null,
+      key = null;
   const _Mention.drop(this.path, this.cwd, this.cd, this.at)
     : act = _Act.drop,
       url = null,
       weak = false,
       port = null,
-      label = null;
+      label = null,
+      title = null,
+      where = null,
+      image = null,
+      key = null;
   const _Mention.launch(this.port, this.label, this.at)
     : act = _Act.launch,
       url = null,
       path = null,
       cwd = null,
       cd = null,
-      weak = false;
+      weak = false,
+      title = null,
+      where = null,
+      image = null,
+      key = null;
+  const _Mention.link(this.url, this.title, this.where, this.at)
+    : act = _Act.link,
+      path = null,
+      cwd = null,
+      cd = null,
+      weak = false,
+      port = null,
+      label = null,
+      image = null,
+      key = null;
+  const _Mention.shot(this.key, this.image, this.title, this.at)
+    : act = _Act.shot,
+      url = null,
+      path = null,
+      cwd = null,
+      cd = null,
+      weak = false,
+      port = null,
+      label = null,
+      where = null;
 
   final _Act act;
   final Uri? url;
@@ -417,6 +470,10 @@ class _Mention {
   final bool weak;
   final int? port;
   final String? label;
+  final String? title;
+  final String? where;
+  final ImageBlock? image;
+  final String? key;
 }
 
 /// The rows of a transcript, one item at a time: what a long chat is read with
@@ -474,6 +531,31 @@ class MadeFold {
           if (key != null) _byKey.remove(key);
         case _Act.launch:
           _launchByPort[m.port!] = m.label!;
+        case _Act.link:
+          final key = m.url.toString();
+          final old = _byKey[key];
+          // The same address said again keeps the longer name: the command that
+          // made a pull request knew its title, a later "opened PR" line does not.
+          final title = old != null && old.title.length > m.title!.length ? old.title : m.title!;
+          _byKey[key] = MadeAsset(
+            kind: MadeKind.link,
+            key: key,
+            title: title,
+            where: m.where!,
+            url: m.url,
+            at: m.at,
+            order: order,
+          );
+        case _Act.shot:
+          _byKey[m.key!] = MadeAsset(
+            kind: MadeKind.picture,
+            key: m.key!,
+            title: m.title!,
+            where: '',
+            image: m.image,
+            at: m.at,
+            order: order,
+          );
       }
     }
   }
@@ -593,8 +675,12 @@ List<_Mention> _scan(TranscriptItem item) {
             _banners(printed, command, at, out);
             if (done) _saved(printed, call.cwd, at, out);
           }
+          // What `gh` printed for a command that makes a pull request, an issue, a
+          // release or a CI run: its own address.
+          if (done && printed != null) _ghLinks(command, printed, at, out);
         }
       }
+      if (done) _shots(call, at, out);
     default:
   }
   return out.length > _perItem ? out.sublist(0, _perItem) : out;
@@ -605,6 +691,8 @@ _Mention _withTime(_Mention m, DateTime? at) => switch (m.act) {
   _Act.file => _Mention.file(m.path, m.cwd, m.cd, at),
   _Act.drop => _Mention.drop(m.path, m.cwd, m.cd, at),
   _Act.launch => _Mention.launch(m.port, m.label, at),
+  _Act.link => _Mention.link(m.url, m.title, m.where, at),
+  _Act.shot => _Mention.shot(m.key, m.image, m.title, at),
 };
 
 const _textCap = 20000;
@@ -645,24 +733,50 @@ final _wordEdge = RegExp(r'''^[`*_"'(\[]+|[`*_"')\]]+$''');
 /// Further back it is another thing the agent did ("I created the handler and
 /// then updated the README.md"), or a path in a sentence about something else.
 bool _madeBefore(String prose, int start) {
+  final words = _clauseWordsBefore(prose, start);
+  if (words.isEmpty) return false;
+  if (_builtVerb.hasMatch(words.last)) return true;
+  return _madeVerb.hasMatch(words.skip(words.length > 4 ? words.length - 4 : 0).join(' '));
+}
+
+/// The words of the clause the thing at [start] is in, up to it (see [_madeBefore]).
+List<String> _clauseWordsBefore(String prose, int start) {
   final before = prose.substring(start - 80 < 0 ? 0 : start - 80, start);
   var tail = before;
   for (final b in _clauseBreak.allMatches(before)) {
     tail = before.substring(b.end);
   }
-  final words = [
+  return [
     for (final w in tail.split(RegExp(r'\s+')))
       if (w.replaceAll(_wordEdge, '').isNotEmpty) w.replaceAll(_wordEdge, ''),
   ];
-  if (words.isEmpty) return false;
-  if (_builtVerb.hasMatch(words.last)) return true;
-  return _madeVerb.hasMatch(words.skip(words.length > 4 ? words.length - 4 : 0).join(' '));
+}
+
+// The agent says it did NOT touch the file: "I left /tmp/old_build.html alone",
+// "unchanged docs/a.html", "not docs/b.md". Such a path is named, not made; a
+// page with a folder in it counted without a verb, and this one was a row.
+final _leftAlone = RegExp(
+  r"\b(?:left|leave|leaving|untouched|unchanged|skipped|skipping|ignored|ignoring|not|never|without|stale|existing)\b|n't\b",
+  caseSensitive: false,
+);
+
+bool _leftAloneBefore(String prose, int start) {
+  final words = _clauseWordsBefore(prose, start);
+  return _leftAlone.hasMatch(words.skip(words.length > 6 ? words.length - 6 : 0).join(' '));
 }
 
 void _say(String text, DateTime? at, List<_Mention> out) {
   for (final m in _url.allMatches(text)) {
     final s = _serverUri(m.group(0)!, text.substring(0, m.start), keepPath: true);
     if (s != null) out.add(_Mention.server(s, at));
+  }
+  // Links the agent opened or shipped on GitHub ("Opened PR: https://.../pull/93"):
+  // a verb of doing right before it, on its own line. A link it only mentions
+  // ("see https://.../issues/85") is not a row.
+  for (final m in _ghUrl.allMatches(text)) {
+    final link = _ghLink(m, null);
+    if (link == null || !_linkVerbBefore(text, m.start)) continue;
+    out.add(_Mention.link(link.$1, link.$2, link.$3, at));
   }
   for (final m in _bareLocalhost.allMatches(text)) {
     final port = int.parse(m.group(1)!);
@@ -680,7 +794,7 @@ void _say(String text, DateTime? at, List<_Mention> out) {
     if (!raw.contains('.')) continue;
     final p = _cleanPath(raw);
     final kind = p == null ? null : _kindOf(p);
-    if (p == null || kind == null) continue;
+    if (p == null || kind == null || _leftAloneBefore(prose, m.start)) continue;
     // A page with a folder in it counts; a bare name, and any picture or
     // document (the chat names existing README.md files and screenshots all day),
     // only right after a word of making.
@@ -688,6 +802,126 @@ void _say(String text, DateTime? at, List<_Mention> out) {
       if (!_madeBefore(prose, m.start)) continue;
     }
     out.add(_Mention.file(p, null, null, at));
+  }
+}
+
+// ----- links and pictures a tool returned -----
+
+// What a pull request, issue, release or CI run is on GitHub. The id of a pull
+// request, an issue and a run is digits; a release's is its tag.
+final _ghUrl = RegExp(
+  r'https://github\.com/([\w.\-]+)/([\w.\-]+)/(pull|issues|releases/tag|actions/runs)/([^\s/?#<>"`)\]}]+)',
+  caseSensitive: false,
+);
+final _digits = RegExp(r'^\d+$');
+// A verb of the agent DOING it right before the address. A bare "PR" or
+// "release" is not one: "see the release notes https://..." is a mention.
+final _linkVerb = RegExp(
+  r'\b(?:opened|created|filed|published|released|merged|pushed|shipped|raised|submitted|tạo)\b',
+  caseSensitive: false,
+);
+
+/// The address of [m], what to call it (`PR #93 <title>`, `Release v0.1.51`) and
+/// its repository; null when the id is not one.
+(Uri, String, String)? _ghLink(RegExpMatch m, String? title) {
+  final owner = m.group(1)!, repo = m.group(2)!, type = m.group(3)!.toLowerCase();
+  final id = m.group(4)!.replaceFirst(_closingPunct, '');
+  if (type == 'releases/tag' ? id.isEmpty || id.length > 100 : !_digits.hasMatch(id)) return null;
+  final uri = Uri.tryParse('https://github.com/$owner/$repo/$type/$id');
+  if (uri == null) return null;
+  final name = switch (type) {
+    'pull' => 'PR #$id',
+    'issues' => 'Issue #$id',
+    'releases/tag' => 'Release ${_display(id)}',
+    _ => 'Actions run $id',
+  };
+  final full = title == null || title.trim().isEmpty ? name : '$name ${title.trim()}';
+  return (uri, full.length > 120 ? '${full.substring(0, 119)}…' : full, '$owner/$repo');
+}
+
+bool _linkVerbBefore(String text, int start) {
+  final line = text.substring(start - 80 < 0 ? 0 : start - 80, start).split('\n').last;
+  final words = line.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  return _linkVerb.hasMatch(words.skip(words.length > 6 ? words.length - 6 : 0).join(' '));
+}
+
+/// What the `gh` subcommands that make something print: its own address.
+/// `gh pr view` and `gh release list` print about what is already there, so they
+/// are not here; neither is `git push`, whose "Create a pull request" line is an
+/// offer.
+const _ghMakes = {
+  'pr create': 'pull',
+  'issue create': 'issues',
+  'release create': 'releases/tag',
+  'release upload': 'releases/tag',
+  'release edit': 'releases/tag',
+  'run watch': 'actions/runs',
+  'run view': 'actions/runs',
+  'run rerun': 'actions/runs',
+};
+
+void _ghLinks(String command, String printed, DateTime? at, List<_Mention> out) {
+  for (final seg in _commandHead(command).split(_segments)) {
+    final all = _words(seg);
+    var i = 0;
+    while (i < all.length && (_assignment.hasMatch(all[i]) || _wrappers.contains(all[i]))) {
+      i++;
+    }
+    if (i >= all.length || all[i] != 'gh') continue;
+    final args = all.sublist(i + 1);
+    final plain = [
+      for (final a in args)
+        if (!a.startsWith('-')) a,
+    ];
+    if (plain.length < 2) continue;
+    final type = _ghMakes['${plain[0]} ${plain[1]}'];
+    if (type == null) continue;
+    String? title;
+    for (var j = 0; j < args.length; j++) {
+      if ((args[j] == '--title' || args[j] == '-t') && j + 1 < args.length) {
+        title = args[j + 1];
+      } else if (args[j].startsWith('--title=')) {
+        title = args[j].substring(8);
+      }
+    }
+    final head = printed.length > 8192 ? printed.substring(0, 8192) : printed;
+    for (final line in head.split('\n')) {
+      final l = line.length > 300 ? line.substring(0, 300) : line;
+      for (final m in _ghUrl.allMatches(l)) {
+        if (m.group(3)!.toLowerCase() != type) continue;
+        final link = _ghLink(m, type == 'pull' || type == 'issues' ? title : null);
+        if (link != null) out.add(_Mention.link(link.$1, link.$2, link.$3, at));
+      }
+    }
+  }
+}
+
+/// The most pictures one tool call makes rows of: a tool that returns forty
+/// frames has not made forty things to look at.
+const _shotsPerCall = 6;
+
+/// The pictures a finished tool call returned inside its result: a browser
+/// screenshot, a rendered chart. Not the pictures a call READ, searched for or
+/// fetched: the agent looks at those (1,813 of the 2,468 recorded results were
+/// `read`), it did not make them. A bare uri is a link, not a picture.
+void _shots(ToolCall call, DateTime? at, List<_Mention> out) {
+  switch (call.kind) {
+    case ToolKind.read || ToolKind.search || ToolKind.fetch || ToolKind.think || ToolKind.delete || ToolKind.switchMode:
+      return;
+    case ToolKind.edit || ToolKind.move || ToolKind.execute || ToolKind.other:
+      break;
+  }
+  final line = call.title.trim().split('\n').first.trim();
+  final title = line.isEmpty ? 'Image' : (line.length > 60 ? '${line.substring(0, 59)}…' : line);
+  var n = 0;
+  for (final (i, c) in call.content.indexed) {
+    if (c is! ToolContentBlock) continue;
+    final b = c.block;
+    // No data and no address is a picture held in a terminal-log chat (a
+    // `LogImageBlock`): the viewer fetches it. No data and an address is a link.
+    if (b is! ImageBlock || (b.data.isEmpty && (b.uri ?? '').isNotEmpty)) continue;
+    if (++n > _shotsPerCall) break;
+    out.add(_Mention.shot('shot:${call.toolCallId}:$i', b, title, at));
   }
 }
 
@@ -1037,6 +1271,7 @@ MadeAsset? _fileOf(_Mention m, String? sessionCwd, int order) {
   final kind = switch (fileKind) {
     MadeFileKind.page => MadeKind.page,
     MadeFileKind.picture => MadeKind.picture,
+    MadeFileKind.video => MadeKind.video,
     MadeFileKind.doc => MadeKind.doc,
   };
   return MadeAsset(kind: kind, key: key, title: name, where: folder, path: key, at: m.at, order: order);

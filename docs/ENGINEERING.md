@@ -315,8 +315,8 @@ Tailscale.
     `Dwell.titleSettle` after its route changes (frameworks set it after the
     route renders).
 - **Made in this session** (`session_made.dart` in `data/acp`, the `Made` chip and
-  sheet in `ui/features/agent_session`): the servers, pages, pictures and
-  documents a session made, found by scanning the transcript, so a link printed an hour ago
+  sheet in `ui/features/agent_session`): the servers, pages, pictures, videos,
+  documents and links a session made, found by scanning the transcript, so a link printed an hour ago
   is not lost with the chat. The scan is memoized per
   transcript item, per list and per folder. The rules are narrow because a wide
   scan was wrong: run over 6,000 recorded sessions, "every `localhost` URL and
@@ -347,6 +347,37 @@ Tailscale.
     letter or a URL; NOT `node_modules`, `.git` or system folders; NOT a
     relative name when no folder is known (an empty session folder counts as
     unknown: it would be taken against the login folder and open a decoy).
+  - Videos (`mp4 mov webm mkv m4v`): the same rules as a picture (a command's `-o`
+    target or a `cp`/`mv` target, a saved line, a path after a word of making), shown
+    on the `Media` tab as a play glyph and the name. No thumbnail is read: that would
+    be the file over the radio. Not audio, `avi` or `3gp`: not measured in the
+    recorded sessions, so not guessed; add one when a session shows it.
+  - Pictures a tool returned (`_shots`): a finished `execute`, `edit`, `move` or
+    `other` call whose result holds an image with data (a browser screenshot has no
+    file and no name). NOT what a `read`, `search`, `fetch` or `think` call returned: of
+    2,468 image results in the recorded sessions 1,813 were `read`, the agent looking
+    at an image, and only 646 were made. At most 6 per call. The row holds the
+    block, not a path, so it opens in the chat's viewer (`showContentImage`), and a
+    `MadeHistory` never keeps it (the bytes belong to the log: the row is read
+    again with the log). An image that only names an address is a link, not a picture.
+  - Links (`MadeKind.link`): a GitHub pull request, issue, release or CI run, from what
+    `gh pr create`, `gh issue create`, `gh release create|upload|edit` and
+    `gh run watch|view|rerun` printed (`_ghLinks`; `gh` is a probe for banners, so its
+    output is read only for these), named from the command (`--title` for a pull
+    request or issue), or from the agent's words after a verb of DOING it on its own
+    line (`opened`, `created`, `published`, `released`, `merged`, `pushed`...: "Opened
+    PR: <url>"). NOT `gh pr view` or `gh release list` (what is already there), NOT
+    `git push`'s "Create a pull request" line (an offer), NOT a link only named ("see
+    <url>"), NOT any other host (a YouTube or Datadog link is mentioned, not made).
+    A row opens in the phone's browser (`openInBrowser`, https only). The same
+    address said twice keeps the longer name.
+  - A file the agent says it LEFT alone ("I left /tmp/old_build.html alone",
+    "untouched", "not", "stale", "existing" in the 6 words before the path) is
+    named, not made: a page with a folder in it counted without a verb and was a
+    row. Heuristic: a sentence it misreads loses a row, never invents one.
+  - Not handled: `local://` documents (omp's own artifact folder for a session). The
+    phone has no path for them and the agent's folder is not in the transcript, so a
+    row would be a dead end; 74 such writes in 49 recorded sessions.
   - Servers: a loopback link in the agent's own words (path kept: one row per
     page the agent named, newest 5 per port, `madeServerPathsCap`: with one row
     per port, a table of a dashboard and its four tabs showed only the last tab;
@@ -428,7 +459,7 @@ Tailscale.
     pinned above a scroll area that is as tall as the tallest tab's first batch,
     at most 60% of the screen, for EVERY tab (estimated from the type scale: the
     tabs not open are not built; the cap is why an Apps tab of two rows sits
-    in some empty space under a long Pictures tab), so changing tab or
+    in some empty space under a long Media tab), so changing tab or
     scrolling a long list never moves the switch
     from under the thumb. The tabs are the pages of a `PageView`: a swipe sideways
     goes to the next kind and the switch follows (`_paged`), a tap on the switch
@@ -444,7 +475,7 @@ Tailscale.
     sheet's other pictures (in its order, those the grid found gone left out) to
     swipe to.
   - The sheet: the app's one switch (`Segmented`, docs/DESIGN.md "Components")
-    leads it with the kinds present (`Apps`, `Pages 17`, `Pictures 13`,
+    leads it with the kinds present (`Apps`, `Pages 17`, `Media 13`, `Links 3`,
     `Docs 8`, a live dot before Apps while one runs), only when two or more
     kinds exist, the choice remembered per session; the default is the newest
     non-app kind. Pictures are a lazy grid of real thumbnails (`PhotoThumbs`, the

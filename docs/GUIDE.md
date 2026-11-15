@@ -476,9 +476,12 @@ changed files, commands, mode and model, and context use.
 **Made, and the link.** The `Made` chip under the title lists what the agent
 made and shows up once there is something: `Apps` (a server and its pages, named
 by what started it, with `Running`, `Stopped` or `Status unknown`), `Pages`,
-`Pictures` and `Docs`. Swipe sideways, or tap a tab, to move between them. A tap on
+`Media` (pictures, videos and the pictures a tool returned, such as a browser
+screenshot), `Docs` and `Links` (a pull request, issue, release or CI run on
+GitHub). Swipe sideways, or tap a tab, to move between them. A tap on
 a row opens it over the list: Back returns to the list, so you can look at the
-next one, and a picture opens in a viewer that swipes to the other pictures.
+next one, a picture opens in a viewer that swipes to the other pictures, a video
+in the file viewer, and a link in your browser.
 `Session options` > `Made in this session` opens the same sheet at
 any time (dimmed, `Nothing has come up yet`, until then). In a long chat the
 phone has read only the end of the log: the chip says `Made 9+`, and opening the

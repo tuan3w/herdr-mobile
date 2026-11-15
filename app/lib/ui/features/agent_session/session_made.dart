@@ -23,6 +23,9 @@ import '../files/photo_thumbs.dart' show PhotoThumbs;
 import '../photos/photo_item.dart' show PhotoItem;
 import '../photos/photo_viewer.dart' show openPhotoViewer;
 import '../web/web_preview_screen.dart';
+import '../../support/open_link.dart' show openInBrowser;
+import 'content_image_cache.dart' show ImageEntry, ImagePreviewCache;
+import 'photo_thread.dart' show showContentImage;
 import 'session_select.dart';
 import '../../render/visible_text.dart';
 
@@ -63,7 +66,12 @@ Future<void> showSessionMade(BuildContext opener, AgentSessionView session) => s
 final _lastTab = <String, MadeKind>{};
 
 /// The kinds that get a tab, in the order they are laid out.
-const _tabKinds = [MadeKind.server, MadeKind.page, MadeKind.picture, MadeKind.doc];
+const _tabKinds = [MadeKind.server, MadeKind.page, MadeKind.picture, MadeKind.doc, MadeKind.link];
+
+/// The tab a row of [kind] is on: a video is on Media, with the pictures.
+MadeKind _tabOf(MadeKind kind) => kind == MadeKind.video ? MadeKind.picture : kind;
+
+bool _inTab(MadeAsset a, MadeKind tab) => _tabOf(a.kind) == tab;
 
 /// Rows a list shows before `N more`, and tiles a grid does: what is BUILT, not
 /// what is found.
@@ -183,7 +191,8 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
       loader: _entries,
       pictures: [
         for (final a in _shown)
-          if (a.kind == MadeKind.picture) a,
+          // The pictures with a file (an inline screenshot opens by itself).
+          if (a.kind == MadeKind.picture && a.path != null) a,
       ],
     ),
   );
@@ -299,7 +308,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
     var tallest = floor;
     for (final kind in kinds) {
       if (tallest >= cap) break;
-      final items = shown.where((a) => a.kind == kind);
+      final items = shown.where((a) => _inTab(a, kind));
       final n = items.length;
       if (kind == MadeKind.picture) {
         final cells = math.min(n, _gridStep) + (n > _gridStep ? 1 : 0);
@@ -327,7 +336,12 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
         }
       } else {
         for (final a in items.take(_listStep)) {
-          sum += _rowHeight(visibleText(a.title), _FileRow.subtitleOf(a, files), width, scaler);
+          sum += _rowHeight(
+            visibleText(a.title),
+            _FileRow.subtitleOf(a, files || kind == MadeKind.link),
+            width,
+            scaler,
+          );
           if (sum >= cap) break;
         }
       }
@@ -370,11 +384,12 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
         final files = machineSupportsFiles(session.machine);
         final kinds = [
           for (final k in _tabKinds)
-            if (shown.any((a) => a.kind == k)) k,
+            if (shown.any((a) => _inTab(a, k))) k,
         ];
         // The kind the person chose if it is still here, else the newest made
         // (servers only when nothing else exists).
-        final newest = shown.where((a) => a.kind != MadeKind.server).firstOrNull?.kind ?? MadeKind.server;
+        final newest =
+            shown.where((a) => a.kind != MadeKind.server).map((a) => _tabOf(a.kind)).firstOrNull ?? MadeKind.server;
         final tab = kinds.isEmpty ? null : (_picked != null && kinds.contains(_picked) ? _picked! : newest);
         final tabbed = kinds.length >= 2;
         _kinds = kinds;
@@ -409,7 +424,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
               _PictureGrid(
                 assets: [
                   for (final a in shown)
-                    if (a.kind == kind) a,
+                    if (_inTab(a, kind)) a,
                 ],
                 limit: _limit(MadeKind.picture),
                 files: files,
@@ -425,10 +440,10 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
                       : _rows(
                           [
                             for (final a in shown)
-                              if (a.kind == kind) a,
+                              if (_inTab(a, kind)) a,
                           ],
                           kind,
-                          files: files,
+                          files: files || kind == MadeKind.link,
                         ),
                 ),
               ),
@@ -460,7 +475,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
                           (
                             k,
                             _tabLabel(k),
-                            k == MadeKind.server ? apps.length : shown.where((a) => a.kind == k).length,
+                            k == MadeKind.server ? apps.length : shown.where((a) => _inTab(a, k)).length,
                             k == MadeKind.server && running,
                           ),
                       ],
@@ -534,9 +549,10 @@ class _EarlierNote extends StatelessWidget {
 
 String _tabLabel(MadeKind kind) => switch (kind) {
   MadeKind.page => 'Pages',
-  MadeKind.picture => 'Pictures',
+  MadeKind.picture || MadeKind.video => 'Media',
   MadeKind.doc => 'Docs',
   MadeKind.server => 'Apps',
+  MadeKind.link => 'Links',
 };
 
 /// The switch between what was made: the app's one `Segmented`, a cell per kind
@@ -596,8 +612,9 @@ final _opening = <String>{};
 /// Opens [asset] over the sheet, which stays on the stack under it (Back lands
 /// on the list, on the same tab): an app or page as a page in herdr (its screen
 /// goes up at once and says there if it cannot open), a picture in the photo
-/// viewer with the other [pictures] to swipe to, and a document in the file
-/// viewer. A failure is a toast over the sheet.
+/// viewer with the other [pictures] to swipe to (a picture a tool returned in
+/// the viewer of the chat), a video and a document in the file viewer, and a
+/// link in the phone's browser. A failure is a toast over the sheet.
 Future<void> _openMade(
   BuildContext sheet,
   BuildContext opener,
@@ -616,7 +633,7 @@ Future<void> _openMade(
     return;
   }
   void failed(String text) => toaster.show(text, kind: ToastKind.failed);
-  if (asset.kind != MadeKind.server && !machineSupportsFiles(machine)) {
+  if (asset.path != null && !machineSupportsFiles(machine)) {
     failed('Files are not available on this machine.');
     return;
   }
@@ -628,11 +645,22 @@ Future<void> _openMade(
   }
   try {
     switch (asset.kind) {
+      case MadeKind.link:
+        if (!await openInBrowser(asset.url.toString())) failed('Couldn’t open the link.');
+      case MadeKind.video:
+        if (opener.mounted) unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd));
       case MadeKind.doc:
         // The screen goes up at once and finds the file inside (it says what
         // went wrong itself).
         if (opener.mounted) unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd));
       case MadeKind.picture:
+        final image = asset.image;
+        if (image != null) {
+          if (opener.mounted) {
+            unawaited(showContentImage(opener, image, origin: 'Tool result · ${visibleText(asset.title)}'));
+          }
+          return;
+        }
         // No toast: it would stand over the viewer for its 3 s (the app has no
         // way to take one down), and the tile the person tapped is already a
         // thumbnail of this picture.
@@ -795,8 +823,10 @@ class _FileRow extends StatelessWidget {
         icon: switch (asset.kind) {
           MadeKind.page => HerdrIcons.madePage,
           MadeKind.picture => HerdrIcons.picture,
+          MadeKind.video => LucideIcons.video,
           MadeKind.doc => HerdrIcons.madeDoc,
           MadeKind.server => HerdrIcons.madeServer,
+          MadeKind.link => _linkIcon(asset),
         },
       ),
       leadingOnTitle: false,
@@ -935,7 +965,14 @@ class _PictureGrid extends StatelessWidget {
     Widget cell(int i) {
       if (i < built.length) {
         final a = built[i];
-        return _PictureTile(key: ValueKey(a.key), asset: a, loader: loader, enabled: files, onTap: () => onOpen(a));
+        // A picture a tool returned needs no machine and no file; a video has
+        // no thumbnail on the phone, so it is a glyph with its name.
+        if (a.image != null) return _ShotTile(key: ValueKey(a.key), asset: a, onTap: () => onOpen(a));
+        final tile = a.kind == MadeKind.video
+            ? _VideoTile(key: ValueKey(a.key), asset: a, enabled: files, onTap: () => onOpen(a))
+            : _PictureTile(key: ValueKey(a.key), asset: a, loader: loader, enabled: files, onTap: () => onOpen(a));
+        // Unavailable stays, dimmed.
+        return files ? tile : Opacity(opacity: 0.55, child: tile);
       }
       return i == built.length && rest > 0 ? _MoreTile(count: rest, onTap: onMore) : const SizedBox.shrink();
     }
@@ -961,15 +998,15 @@ class _PictureGrid extends StatelessWidget {
       padding: const EdgeInsets.only(top: Gap.md),
       sliver: SliverMainAxisGroup(
         slivers: [
-          // Unavailable stays, dimmed, and says why once instead of under every tile.
-          if (!files)
+          // Says why once instead of under every tile.
+          if (!files && assets.any((a) => a.path != null))
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: Gap.md),
                 child: Text(_noFiles, style: Type.secondary.copyWith(color: ds.textSecondary)),
               ),
             ),
-          if (files) rows else SliverOpacity(opacity: 0.55, sliver: rows),
+          rows,
         ],
       ),
     );
@@ -1065,6 +1102,137 @@ class _PictureTileState extends State<_PictureTile> {
                       entry: entry,
                       thumbs: PhotoThumbs.shared,
                       pressed: pressed,
+                    ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: Gap.xs),
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(color: ds.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The glyph of a link's row: what it is on GitHub, read from its address.
+IconData _linkIcon(MadeAsset link) {
+  final path = link.url?.path ?? '';
+  if (path.contains('/pull/')) return LucideIcons.gitPullRequest;
+  if (path.contains('/releases/')) return LucideIcons.tag;
+  if (path.contains('/issues/')) return LucideIcons.circleDot;
+  return LucideIcons.externalLink;
+}
+
+/// A video: a play glyph on the quiet fill and its name. No thumbnail is read
+/// (that would be the whole file over the radio); a tap opens the file viewer.
+class _VideoTile extends StatelessWidget {
+  const _VideoTile({super.key, required this.asset, required this.enabled, required this.onTap});
+
+  final MadeAsset asset;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final name = visibleText(asset.title);
+    return PressBuilder(
+      onTap: enabled ? onTap : null,
+      haptic: true,
+      semanticLabel: 'Video, $name',
+      builder: (context, pressed) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(Radii.sm),
+              child: _QuietTile(icon: LucideIcons.play, pressed: pressed),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: Gap.xs),
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(color: ds.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A picture a tool returned inside its result (a browser screenshot): its
+/// preview from the shared cache the chat uses (decoded off the UI thread, held
+/// while the tile is built), a quiet tile until then and for a picture that is
+/// only a reference into a log. A tap opens the viewer of the chat.
+class _ShotTile extends StatefulWidget {
+  const _ShotTile({super.key, required this.asset, required this.onTap});
+
+  final MadeAsset asset;
+  final VoidCallback onTap;
+
+  @override
+  State<_ShotTile> createState() => _ShotTileState();
+}
+
+class _ShotTileState extends State<_ShotTile> {
+  ImageEntry? _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    final block = widget.asset.image!;
+    if (block.data.isNotEmpty) _entry = ImagePreviewCache.shared.acquire(block)..addListener(_changed);
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    final entry = _entry;
+    if (entry != null) {
+      entry.removeListener(_changed);
+      ImagePreviewCache.shared.release(entry);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final name = visibleText(widget.asset.title);
+    final image = _entry?.image;
+    return PressBuilder(
+      onTap: widget.onTap,
+      haptic: true,
+      semanticLabel: 'Image, $name',
+      builder: (context, pressed) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(Radii.sm),
+              child: image == null
+                  ? _QuietTile(icon: HerdrIcons.picture, faint: _entry?.problem == null, pressed: pressed)
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        RawImage(image: image.image, fit: BoxFit.cover),
+                        if (pressed) ColoredBox(color: ds.wash(ds.text)),
+                      ],
                     ),
             ),
           ),

@@ -4,6 +4,16 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- `Made` now finds more of what an agent made: videos it rendered (`.mp4`, `.mov`,
+  `.webm`, `.mkv`, `.m4v`), the pictures a tool returned inside its result (a browser
+  screenshot has no file), and the pull request, issue, release or CI run it
+  opened on GitHub. Pictures and videos share a tab, now called `Media`; the
+  links are on a new `Links` tab. Not tried on a phone.
+- `Made` no longer lists a file the agent said it left alone (for example "I left
+  /tmp/old_build.html alone"). A `local://` document is still not listed.
+
 ## [0.1.66] - 2026-11-14
 
 ### Selecting text selects the code in it
