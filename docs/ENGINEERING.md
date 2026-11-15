@@ -356,14 +356,17 @@ Tailscale.
     `other` call whose result holds an image with data (a browser screenshot has no
     file and no name). NOT what a `read`, `search`, `fetch` or `think` call returned: of
     2,468 image results in the recorded sessions 1,813 were `read`, the agent looking
-    at an image, and only 646 were made. At most 6 per call. The row holds the
-    block, not a path, so it opens in the chat's viewer (`showContentImage`), and a
-    `MadeHistory` never keeps it (the bytes belong to the log: the row is read
-    again with the log). An image that only names an address is a link, not a picture.
+    at an image, 646 came from an `eval` tool and 9 from `write` (regex counts over
+    11,671 omp logs on a laptop, 2026-11-15: not the Dart scanner, not a phone). At most 6 per
+    call. The row holds the block, not a path, so it opens in the chat's viewer
+    (`showContentImage`, the single picture: it never swipes with the file pictures) and a
+    `MadeHistory` never keeps it (`MadeFold.history` leaves it out before the cap, so memory,
+    disk and the cap agree; the row is read again with the log). A picture with no data is
+    left out: the chat shows it as a reference line.
   - Links (`MadeKind.link`): a GitHub pull request, issue, release or CI run, from what
-    `gh pr create`, `gh issue create`, `gh release create|upload|edit` and
-    `gh run watch|view|rerun` printed (`_ghLinks`; `gh` is a probe for banners, so its
-    output is read only for these), named from the command (`--title` for a pull
+    `gh pr create`, `gh issue create`, `gh release create|edit` and `gh run view`
+    printed (`_ghLinks`; `gh` is a probe for banners, so its output is read only for these;
+    a global `-R o/r` before the subcommand is skipped), named from the command (`--title` for a pull
     request or issue), or from the agent's words after a verb of DOING it on its own
     line (`opened`, `created`, `published`, `released`, `merged`, `pushed`...: "Opened
     PR: <url>"). NOT `gh pr view` or `gh release list` (what is already there), NOT
@@ -372,12 +375,14 @@ Tailscale.
     A row opens in the phone's browser (`openInBrowser`, https only). The same
     address said twice keeps the longer name.
   - A file the agent says it LEFT alone ("I left /tmp/old_build.html alone",
-    "untouched", "not", "stale", "existing" in the 6 words before the path) is
-    named, not made: a page with a folder in it counted without a verb and was a
-    row. Heuristic: a sentence it misreads loses a row, never invents one.
+    "untouched", "not", "never", "without" in the 8 words before the path, looking back over
+    a `:` or a line break so a list "Files I did not touch:" works) is named, not made: a
+    page with a folder in it counted without a verb and was a row. A verb of making right
+    before the path wins ("not the CSS, I wrote docs/a.html"). Heuristic: a sentence it
+    misreads loses a row, never invents one.
   - Not handled: `local://` documents (omp's own artifact folder for a session). The
     phone has no path for them and the agent's folder is not in the transcript, so a
-    row would be a dead end; 74 such writes in 49 recorded sessions.
+    row would be a dead end; 74 such writes in 49 recorded sessions (the same laptop regex count).
   - Servers: a loopback link in the agent's own words (path kept: one row per
     page the agent named, newest 5 per port, `madeServerPathsCap`: with one row
     per port, a table of a dashboard and its four tabs showed only the last tab;
@@ -412,8 +417,8 @@ Tailscale.
     characters), else `App on port N`. A launch comes from a banner's command or
     from a launch command's `--port N`, `-p N`, `http.server N` or `PORT=N`; it
     makes NO row by itself (a command is not proof that a server came up). The
-    `Made N` chip and the tab count apps, not links (`madeCountOf`). The launch is
-    kept with the row, so `madeScanVersion` is 2. A link or a bare `localhost:port`
+    `Made N` chip and the tab count apps, not their pages (`madeCountOf`). The launch is
+    kept with the row, so `madeScanVersion` is 2 (3 since videos, links and returned pictures). A link or a bare `localhost:port`
     quoted in the agent's own words (a chat about this very sheet) still makes a
     row: the scan cannot tell a quote from an announcement.
   - A port that is not a web server (SSH, Docker, MySQL, PostgreSQL, Redis,

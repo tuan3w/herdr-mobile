@@ -211,10 +211,7 @@ class MadeHistory {
         'v': madeScanVersion,
         'span': span,
         'upTo': upTo,
-        'assets': [
-          for (final a in assets)
-            if (a.image == null) a.toJson(),
-        ],
+        'assets': [for (final a in assets) a.toJson()],
       }),
     ),
   );
@@ -567,8 +564,13 @@ class MadeFold {
   /// The rows, newest first. Each kind keeps its newest [madeAssetsCap], and a
   /// port its newest [madeServerPathsCap] pages, so a flood of one thing never
   /// pushes another out.
-  List<MadeAsset> get assets {
-    final out = _byKey.values.toList()..sort((a, b) => b.order.compareTo(a.order));
+  List<MadeAsset> get assets => _kept((_) => true);
+
+  /// [assets] without the pictures a tool returned: what is kept (in memory and
+  /// on disk alike) is read again from the log, which holds their bytes. The cap
+  /// is applied after they are left out, so they cannot push a file out of it.
+  List<MadeAsset> _kept(bool Function(MadeAsset) keep) {
+    final out = _byKey.values.where(keep).toList()..sort((a, b) => b.order.compareTo(a.order));
     final seen = <MadeKind, int>{};
     final perPort = <int, int>{};
     final kept = <MadeAsset>[];
@@ -586,7 +588,7 @@ class MadeFold {
   }
 
   /// What is known now, to be kept: read through [upTo] bytes of the log.
-  MadeHistory history(int upTo) => MadeHistory(assets: assets, span: _next, upTo: upTo);
+  MadeHistory history(int upTo) => MadeHistory(assets: _kept((a) => a.image == null), span: _next, upTo: upTo);
 }
 
 int _portOf(Uri url) => url.hasPort ? url.port : 80;
@@ -756,13 +758,25 @@ List<String> _clauseWordsBefore(String prose, int start) {
 // "unchanged docs/a.html", "not docs/b.md". Such a path is named, not made; a
 // page with a folder in it counted without a verb, and this one was a row.
 final _leftAlone = RegExp(
-  r"\b(?:left|leave|leaving|untouched|unchanged|skipped|skipping|ignored|ignoring|not|never|without|stale|existing)\b|n't\b",
+  r"\b(?:left|leave|leaving|untouched|unchanged|skipped|skipping|ignored|ignoring|not|never|without)\b|n't\b",
   caseSensitive: false,
 );
+final _sentenceBreak = RegExp(r'[;!?]|\.(?:\s|$)');
 
+/// Whether the sentence the path at [start] is in says, within its last 8 words,
+/// that the file was left alone. The window runs back over a `:` and a line
+/// break, because the usual shape is a list ("Files I did not touch:\n- a.html").
 bool _leftAloneBefore(String prose, int start) {
-  final words = _clauseWordsBefore(prose, start);
-  return _leftAlone.hasMatch(words.skip(words.length > 6 ? words.length - 6 : 0).join(' '));
+  final before = prose.substring(start - 120 < 0 ? 0 : start - 120, start);
+  var tail = before;
+  for (final b in _sentenceBreak.allMatches(before)) {
+    tail = before.substring(b.end);
+  }
+  final words = [
+    for (final w in tail.split(RegExp(r'\s+')))
+      if (w.replaceAll(_wordEdge, '').isNotEmpty) w.replaceAll(_wordEdge, ''),
+  ];
+  return _leftAlone.hasMatch(words.skip(words.length > 8 ? words.length - 8 : 0).join(' '));
 }
 
 void _say(String text, DateTime? at, List<_Mention> out) {
@@ -794,7 +808,9 @@ void _say(String text, DateTime? at, List<_Mention> out) {
     if (!raw.contains('.')) continue;
     final p = _cleanPath(raw);
     final kind = p == null ? null : _kindOf(p);
-    if (p == null || kind == null || _leftAloneBefore(prose, m.start)) continue;
+    // A verb of making right before the path wins over a "not" further back
+    // ("not the CSS, I wrote docs/a.html").
+    if (p == null || kind == null || (_leftAloneBefore(prose, m.start) && !_madeBefore(prose, m.start))) continue;
     // A page with a folder in it counts; a bare name, and any picture or
     // document (the chat names existing README.md files and screenshots all day),
     // only right after a word of making.
@@ -810,7 +826,7 @@ void _say(String text, DateTime? at, List<_Mention> out) {
 // What a pull request, issue, release or CI run is on GitHub. The id of a pull
 // request, an issue and a run is digits; a release's is its tag.
 final _ghUrl = RegExp(
-  r'https://github\.com/([\w.\-]+)/([\w.\-]+)/(pull|issues|releases/tag|actions/runs)/([^\s/?#<>"`)\]}]+)',
+  r'https://github\.com/([\w.\-]+)/([\w.\-]+)/(pull|issues|releases/tag|actions/runs)/([^\s/?#<>"`)\]}*~]+)',
   caseSensitive: false,
 );
 final _digits = RegExp(r'^\d+$');
@@ -824,7 +840,8 @@ final _linkVerb = RegExp(
 /// The address of [m], what to call it (`PR #93 <title>`, `Release v0.1.51`) and
 /// its repository; null when the id is not one.
 (Uri, String, String)? _ghLink(RegExpMatch m, String? title) {
-  final owner = m.group(1)!, repo = m.group(2)!, type = m.group(3)!.toLowerCase();
+  // GitHub reads owner and repository without case: one row for one pull request.
+  final owner = m.group(1)!.toLowerCase(), repo = m.group(2)!.toLowerCase(), type = m.group(3)!.toLowerCase();
   final id = m.group(4)!.replaceFirst(_closingPunct, '');
   if (type == 'releases/tag' ? id.isEmpty || id.length > 100 : !_digits.hasMatch(id)) return null;
   final uri = Uri.tryParse('https://github.com/$owner/$repo/$type/$id');
@@ -848,17 +865,21 @@ bool _linkVerbBefore(String text, int start) {
 /// What the `gh` subcommands that make something print: its own address.
 /// `gh pr view` and `gh release list` print about what is already there, so they
 /// are not here; neither is `git push`, whose "Create a pull request" line is an
-/// offer.
+/// offer. `gh run view` prints "View this run on GitHub: <address>" for the run
+/// the agent is checking; `gh run watch`, `gh run rerun` and `gh release upload`
+/// print no address (per a review of gh's source; not run here), so a link of
+/// theirs comes only from the agent's words.
 const _ghMakes = {
   'pr create': 'pull',
   'issue create': 'issues',
   'release create': 'releases/tag',
-  'release upload': 'releases/tag',
   'release edit': 'releases/tag',
-  'run watch': 'actions/runs',
   'run view': 'actions/runs',
-  'run rerun': 'actions/runs',
 };
+
+/// `gh` flags that take a value and may come before the subcommand
+/// (`gh -R o/r pr create`): the value is not the subcommand.
+const _ghGlobalValued = {'-R', '--repo', '--hostname'};
 
 void _ghLinks(String command, String printed, DateTime? at, List<_Mention> out) {
   for (final seg in _commandHead(command).split(_segments)) {
@@ -869,10 +890,14 @@ void _ghLinks(String command, String printed, DateTime? at, List<_Mention> out) 
     }
     if (i >= all.length || all[i] != 'gh') continue;
     final args = all.sublist(i + 1);
-    final plain = [
-      for (final a in args)
-        if (!a.startsWith('-')) a,
-    ];
+    final plain = <String>[];
+    for (var j = 0; j < args.length; j++) {
+      if (_ghGlobalValued.contains(args[j])) {
+        j++;
+      } else if (!args[j].startsWith('-')) {
+        plain.add(args[j]);
+      }
+    }
     if (plain.length < 2) continue;
     final type = _ghMakes['${plain[0]} ${plain[1]}'];
     if (type == null) continue;
@@ -903,7 +928,8 @@ const _shotsPerCall = 6;
 /// The pictures a finished tool call returned inside its result: a browser
 /// screenshot, a rendered chart. Not the pictures a call READ, searched for or
 /// fetched: the agent looks at those (1,813 of the 2,468 recorded results were
-/// `read`), it did not make them. A bare uri is a link, not a picture.
+/// `read`), it did not make them. A picture with no data is not drawn here: the
+/// chat shows it as a reference line.
 void _shots(ToolCall call, DateTime? at, List<_Mention> out) {
   switch (call.kind) {
     case ToolKind.read || ToolKind.search || ToolKind.fetch || ToolKind.think || ToolKind.delete || ToolKind.switchMode:
@@ -917,9 +943,7 @@ void _shots(ToolCall call, DateTime? at, List<_Mention> out) {
   for (final (i, c) in call.content.indexed) {
     if (c is! ToolContentBlock) continue;
     final b = c.block;
-    // No data and no address is a picture held in a terminal-log chat (a
-    // `LogImageBlock`): the viewer fetches it. No data and an address is a link.
-    if (b is! ImageBlock || (b.data.isEmpty && (b.uri ?? '').isNotEmpty)) continue;
+    if (b is! ImageBlock || b.data.isEmpty) continue;
     if (++n > _shotsPerCall) break;
     out.add(_Mention.shot('shot:${call.toolCallId}:$i', b, title, at));
   }

@@ -1,9 +1,10 @@
 // Renders the `Made in this session` sheet to PNGs for review, one per tab
-// (Apps, Pages, Pictures, Docs) with the tab switch showing. Apps: one server
+// (Apps, Pages, Media, Docs, Links) with the tab switch showing. Apps: one server
 // with four pages and a launch command, a long launch command, a running app, a
-// database port, and an app with no known launch. Pictures are real thumbnails
-// from a fake machine. Light and dark at 412x892, and 320x640 at text scale
-// 1.6. Off by default; it writes files:
+// database port, and an app with no known launch. Media: real thumbnails of
+// pictures from a fake machine, a video and a picture a tool returned. Links: a
+// pull request and a release. Light and dark at 412x892, and 320x640 at text
+// scale 1.6. Off by default; it writes files:
 //
 //   MADE_SHOTS=1 flutter test test/ui/session_made_shots_test.dart
 //
@@ -11,6 +12,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert' show base64Encode;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -52,6 +54,15 @@ TranscriptItem _wrote(String path) => TranscriptTool(
   ),
 );
 
+TranscriptItem _printed(String command, String output) => TranscriptTool(
+  ToolCall(
+    toolCallId: 't$command',
+    kind: ToolKind.execute,
+    status: ToolStatus.completed,
+    rawInput: {'command': command},
+    output: ToolOutput(text: output, exited: true, exitCode: 0),
+  ),
+);
 Uint8List _png(int hue) {
   final image = img.Image(width: 96, height: 72);
   for (final p in image) {
@@ -78,7 +89,7 @@ void main() {
     (Brightness.dark, const Size(412, 892), 1.0),
     (Brightness.light, const Size(320, 640), 1.6),
   ];
-  const tabs = ['Apps', 'Pages', 'Pictures', 'Docs'];
+  const tabs = ['Apps', 'Pages', 'Media', 'Docs', 'Links'];
   for (final (brightness, size, scale) in cases) {
     for (final tab in tabs) {
       final tag = '${brightness.name}-${size.width.round()}x${size.height.round()}${scale == 1.0 ? '' : '-x$scale'}';
@@ -124,6 +135,21 @@ void main() {
               _wrote('$_base/notes/plan.md'),
               _wrote('$_base/notes/findings.pdf'),
               for (var i = 1; i <= 8; i++) _say('I saved screenshots/shot_$i.png'),
+              _say('I saved renders/walkthrough.mp4'),
+              TranscriptTool(
+                ToolCall(
+                  toolCallId: 'browser',
+                  title: 'Screenshot',
+                  kind: ToolKind.other,
+                  status: ToolStatus.completed,
+                  content: [ToolContentBlock(ImageBlock(data: base64Encode(_png(5)), mimeType: 'image/png'))],
+                ),
+              ),
+              _printed(
+                'gh pr create --title "feat(observed): send while the agent works"',
+                'https://github.com/tuan3w/herdr-mobile/pull/93\n',
+              ),
+              _printed('gh release create v0.1.51', 'https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.51\n'),
             ],
           ),
           machine: machine,
@@ -159,7 +185,7 @@ void main() {
             await t.tap(find.text(tab));
             await t.pump(const Duration(milliseconds: 600));
             // Thumbnails are read three at a time and decoded on the engine's real clock.
-            for (var i = 0; i < 40 && tab == 'Pictures'; i++) {
+            for (var i = 0; i < 40 && tab == 'Media'; i++) {
               await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
               await t.pump(const Duration(milliseconds: 100));
             }

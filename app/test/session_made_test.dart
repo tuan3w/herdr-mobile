@@ -833,7 +833,7 @@ void main() {
         ),
         _run('gh issue create -t "Flaky test" -b x', output: '$repo/issues/94\n'),
         _run('gh release create v0.1.51 --notes x', output: '$repo/releases/tag/v0.1.51\n'),
-        _run('gh run watch 123', output: 'Run CI (123) completed\nView: $repo/actions/runs/123/job/9\n'),
+        _run('gh run view 123', output: 'View this run on GitHub: $repo/actions/runs/123/job/9\n'),
       ]);
       expect(
         [for (final a in assets) (a.kind, a.title, a.where, a.url.toString())],
@@ -858,6 +858,9 @@ void main() {
         _run('gh pr create --title x', output: '$repo/pull/95\n', status: ToolStatus.failed),
         _run('gh pr create --title x', output: '$repo/issues/96\n'),
         _run('cat NOTES.md', output: '$repo/pull/97\n'),
+        // Real gh prints no address for these: nothing to read.
+        _run('gh run watch 123', output: 'Run CI (123) completed with success\n'),
+        _run('gh release upload v0.1.51 a.zip', output: ''),
       ];
       expect(_keys(items), isEmpty);
     });
@@ -882,6 +885,30 @@ void main() {
       final assets = madeAssetsOf(items);
       expect(assets.map((a) => a.title), ['PR #93 feat: a']);
       expect(assets.single.order ~/ 1000, 1, reason: 'but it is as new as the later mention');
+    });
+
+    test('gh with a global flag before the subcommand is still the command that made it', () {
+      final items = [
+        _run('gh -R tuan3w/herdr-mobile pr create --title "feat: b"', output: '$repo/pull/98\n'),
+        _run('gh --repo tuan3w/herdr-mobile release create v2', output: '$repo/releases/tag/v2\n'),
+      ];
+      expect(madeAssetsOf(items).map((a) => a.title), ['Release v2', 'PR #98 feat: b']);
+    });
+
+    test('a link in bold is the link, not the marks after it (a release was opened as `v1**`, a 404)', () {
+      final items = [
+        _say('Published the release: **$repo/releases/tag/v0.1.51**'),
+        _say('Opened the pull request **$repo/pull/93**'),
+      ];
+      expect(madeAssetsOf(items).map((a) => a.url.toString()), ['$repo/pull/93', '$repo/releases/tag/v0.1.51']);
+    });
+
+    test('the owner and repository are read without case: one row for one pull request', () {
+      final items = [
+        _run('gh pr create --title "feat: a"', output: '$repo/pull/93\n'),
+        _say('Opened PR: https://github.com/Tuan3w/Herdr-Mobile/pull/93'),
+      ];
+      expect(madeAssetsOf(items), hasLength(1));
     });
   });
 
@@ -923,6 +950,7 @@ void main() {
           returned('f', [block('AAAA')], kind: ToolKind.fetch),
           returned('x', [block('AAAA')], status: ToolStatus.failed),
           returned('u', [const ImageBlock(data: '', mimeType: 'image/png', uri: 'file:///tmp/a.png')]),
+          returned('d', [const ImageBlock(data: '', mimeType: 'image/png')]),
         ];
         expect(_keys(items), isEmpty);
       },
@@ -935,29 +963,45 @@ void main() {
       expect(madeAssetsOf(items).map((a) => a.key), [for (var i = 5; i >= 0; i--) 'shot:t:$i']);
     });
 
-    test('the log keeps files, never the bytes of a returned picture', () {
+    test('the history keeps files, never a returned picture: in memory, on disk, or against the cap', () {
       final history =
           (MadeFold(cwd: '/w')..addAll([
-                returned('t1', [block('AAAA')]),
-                _say('I saved shots/a.png'),
+                for (var i = 0; i < madeAssetsCap + 10; i++) _say('I saved shots/f$i.png'),
+                for (var i = 0; i < 30; i++) returned('t$i', [block('AAAA')]),
               ]))
               .history(10);
-      expect(history.assets.map((a) => a.key), ['shot:t1:0', '/w/shots/a.png'].reversed);
+      expect(history.assets, hasLength(madeAssetsCap), reason: 'the screenshots do not push files out of the cap');
+      expect(history.assets.every((a) => a.image == null && a.path != null), isTrue);
       final back = MadeHistory.fromBytes(history.toBytes())!;
-      expect(back.assets.map((a) => a.key), ['/w/shots/a.png']);
+      expect(back.assets.map((a) => a.key), history.assets.map((a) => a.key));
     });
   });
 
   group('a file the agent says it left alone', () {
-    test('is named, not made, even with a folder in its path', () {
-      final items = [
-        _say('I left /tmp/old_build.html alone.'),
-        _say('Untouched: reports/stale.html'),
-        _say('I did not touch reports/other.html'),
-        _say('I wrote /tmp/new_build.html'),
-        _say('Serving the page at /tmp/live/index.html'),
-      ];
-      expect(_keys(items), ['/tmp/live/index.html', '/tmp/new_build.html']);
+    List<String> kept(List<String> said) => _keys([for (final s in said) _say(s)], cwd: '/w');
+
+    test('is named, not made, even with a folder in its path or in a list', () {
+      expect(
+        kept([
+          'I left /tmp/old_build.html alone.',
+          'Untouched: reports/stale.html',
+          'I did not touch reports/other.html',
+          'Files I did not touch:\n- /tmp/legacy/index.html\n- docs/old.html',
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('what it made is still there, also next to a "not": a verb of making right before the path wins', () {
+      expect(
+        kept([
+          'I wrote /tmp/new_build.html',
+          'Serving the page at /tmp/live/index.html',
+          'Not the stylesheet: I wrote docs/a.html',
+          'Overwrote the existing out/report.html',
+        ]),
+        ['/w/out/report.html', '/w/docs/a.html', '/tmp/live/index.html', '/tmp/new_build.html'],
+      );
     });
   });
 

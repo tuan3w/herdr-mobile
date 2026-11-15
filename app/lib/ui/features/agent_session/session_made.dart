@@ -313,7 +313,8 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
       if (kind == MadeKind.picture) {
         final cells = math.min(n, _gridStep) + (n > _gridStep ? 1 : 0);
         final rows = (cells + _PictureGrid.columns - 1) ~/ _PictureGrid.columns;
-        final note = files ? 0.0 : _noteHeight(width, scaler) + Gap.md;
+        // The note is drawn only when a tile needs a file (a returned picture needs none).
+        final note = files || items.every((a) => a.path == null) ? 0.0 : _noteHeight(width, scaler) + Gap.md;
         tallest = math.max(tallest, Gap.md + note + rows * tile + (rows - 1) * Gap.md);
         continue;
       }
@@ -796,8 +797,8 @@ class _AppRow extends StatelessWidget {
   }
 }
 
-/// A page or a document: its name, and under it the folder and time (or why it
-/// cannot be opened on this machine).
+/// A page, a document or a link: its name, and under it the folder (or the
+/// repository) and time, or why it cannot be opened on this machine.
 class _FileRow extends StatelessWidget {
   const _FileRow({required this.asset, required this.filesAvailable, required this.divider, required this.onTap});
 
@@ -1186,13 +1187,13 @@ class _ShotTile extends StatefulWidget {
 }
 
 class _ShotTileState extends State<_ShotTile> {
-  ImageEntry? _entry;
+  late final ImageEntry _entry;
 
   @override
   void initState() {
     super.initState();
-    final block = widget.asset.image!;
-    if (block.data.isNotEmpty) _entry = ImagePreviewCache.shared.acquire(block)..addListener(_changed);
+    // A returned picture always carries its data (the scanner leaves out one that does not).
+    _entry = ImagePreviewCache.shared.acquire(widget.asset.image!)..addListener(_changed);
   }
 
   void _changed() {
@@ -1201,11 +1202,8 @@ class _ShotTileState extends State<_ShotTile> {
 
   @override
   void dispose() {
-    final entry = _entry;
-    if (entry != null) {
-      entry.removeListener(_changed);
-      ImagePreviewCache.shared.release(entry);
-    }
+    _entry.removeListener(_changed);
+    ImagePreviewCache.shared.release(_entry);
     super.dispose();
   }
 
@@ -1213,11 +1211,11 @@ class _ShotTileState extends State<_ShotTile> {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final name = visibleText(widget.asset.title);
-    final image = _entry?.image;
+    final image = _entry.image;
     return PressBuilder(
       onTap: widget.onTap,
       haptic: true,
-      semanticLabel: 'Image, $name',
+      semanticLabel: name,
       builder: (context, pressed) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1226,7 +1224,7 @@ class _ShotTileState extends State<_ShotTile> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(Radii.sm),
               child: image == null
-                  ? _QuietTile(icon: HerdrIcons.picture, faint: _entry?.problem == null, pressed: pressed)
+                  ? _QuietTile(icon: HerdrIcons.picture, faint: _entry.problem == null, pressed: pressed)
                   : Stack(
                       fit: StackFit.expand,
                       children: [
