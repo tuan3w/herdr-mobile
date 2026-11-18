@@ -32,6 +32,8 @@ void main() {
     PaneName? name,
     AgentStatus status = AgentStatus.idle,
     DateTime? lastActive,
+    String cwd = '/src/payments-api',
+    Workspace? workspace,
   }) => agentRow(
     FleetAgent(
       machine: h.fleet.connections.single,
@@ -40,13 +42,13 @@ void main() {
         workspaceId: 'w1',
         tabId: 'w1:t1',
         focused: false,
-        cwd: '/src/payments-api',
+        cwd: cwd,
         title: label ?? title,
         label: label,
         agent: agent,
         status: status,
       ),
-      workspace: null,
+      workspace: workspace,
       sessionName: name,
       lastActive: lastActive,
     ),
@@ -112,5 +114,49 @@ void main() {
     final r = row(title: '');
     expect(r.title, 'omp');
     expect(r.subtitle, 'payments-api', reason: 'the agent is the title, so not said twice');
+  });
+
+  group('ACP canonical terminal names', () {
+    const hash = 'acp-81e167053dd7d3dfcf47';
+
+    test('uses the managed worktree name when git provenance is not present', () {
+      final r = row(title: hash, cwd: '/home/dev/git/.worktrees/ttc/ttc@customer_contract/lib/services');
+      expect(r.title, 'customer_contract');
+      expect(r.subtitle, 'services · omp', reason: 'the current subfolder is not mistaken for the task name');
+    });
+
+    test('prefers the workspace checkout when the agent changed directory', () {
+      const worktree = WorkspaceWorktree(
+        repoKey: '/home/dev/git/ttc/.git',
+        repoName: 'ttc',
+        repoRoot: '/home/dev/git/ttc',
+        checkoutPath: '/home/dev/git/.worktrees/ttc/ttc@customer@contract',
+        isLinked: true,
+      );
+      final r = row(
+        title: hash,
+        cwd: '/tmp/build/output',
+        workspace: const Workspace(
+          id: 'w1',
+          number: 1,
+          label: 'customer contract',
+          focused: false,
+          paneCount: 1,
+          tabCount: 1,
+          status: AgentStatus.idle,
+          worktree: worktree,
+        ),
+      );
+      expect(r.title, 'customer@contract', reason: 'desktop naming keeps everything after the first @');
+    });
+
+    test('never replaces a person name or an unrelated ACP-looking title', () {
+      expect(row(title: hash, label: 'Contract review').title, 'Contract review');
+      expect(
+        row(title: 'acp-customer-contract', cwd: '/home/dev/git/.worktrees/ttc/ttc@customer_contract').title,
+        'acp-customer-contract',
+      );
+      expect(row(title: hash, cwd: '/src/project@customer_contract').title, hash);
+    });
   });
 }

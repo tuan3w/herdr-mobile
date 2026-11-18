@@ -174,8 +174,13 @@ AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
   final kind = agentLabelOf(pane);
   // A pane whose own title says nothing (omp's `π > <folder>`) is named by what
   // its session log says, when that was read (`PaneSessionNames`).
-  final named = a.betterTitle;
-  final title = named ?? (pane.title.isNotEmpty ? pane.title : kind);
+  final named = a.displayTitle;
+  final title = named.isNotEmpty ? named : kind;
+  // The opaque ACP id is replaced only for the primary task name. Keep the
+  // pane's original naming authority for subtitle de-duplication: a worktree
+  // and its branch commonly have the same name, and the branch still belongs
+  // on the where line.
+  final whereTitle = a.betterTitle ?? (pane.title.isNotEmpty ? pane.title : kind);
   // herdr gives no status timestamps, so a pane that was already idle when the
   // app first looked has no time of its own, or only a bound. The file its agent
   // writes says when it last did: the end of its last turn, the moment it went
@@ -185,7 +190,7 @@ AgentRowData agentRow(FleetAgent a, {required bool showMachine}) {
   if (pane.status == AgentStatus.idle && active != null && (since == null || !since.exact)) {
     since = StatusTime.exact(active);
   }
-  final subtitle = agentWhere(a.machine, pane.cwd, agent: kind, title: title, showMachine: showMachine);
+  final subtitle = agentWhere(a.machine, pane.cwd, agent: kind, title: whereTitle, showMachine: showMachine);
   return (
     key: '${a.machine.profile.id}/${pane.id}',
     machine: a.machine,

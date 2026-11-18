@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/agent_screens.dart' show PaneAgent;
+import '../../../data/repositories/fleet_agent.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/where_line.dart';
@@ -39,7 +40,8 @@ PaneTitle paneTitle(MachineConnection? machine, String machineId, String paneId,
       live: machine?.isLive ?? false,
     );
   }
-  final task = named ?? pane.title.trim();
+  final task =
+      named ?? FleetAgent.displayTitleOf(machine!, pane, workspace: machine.snapshot.workspace(pane.workspaceId));
   final agent = agentLabelOf(pane);
   final title = task.isNotEmpty ? task : agent;
   return (

@@ -2,6 +2,35 @@ import '../models/herdr_models.dart';
 import '../models/pane_name.dart';
 import 'machine_connection.dart';
 
+final _opaqueAcpTitle = RegExp(r'^acp-[0-9a-f]{20}$');
+
+String? _checkoutDisplayName(String path) {
+  final parts = path.split('/').where((part) => part.isNotEmpty).toList(growable: false);
+  if (parts.isEmpty) return null;
+  final folder = parts.last;
+  final separator = folder.indexOf('@');
+  final name = separator >= 0 ? folder.substring(separator + 1) : folder;
+  return name.isEmpty ? null : name;
+}
+
+/// A checkout name read directly from ACP's managed-worktree layout when the
+/// host did not report git provenance. The repo folder must agree with the
+/// checkout prefix, so an ordinary directory that merely contains `@` is not
+/// mistaken for an ACP worktree.
+String? _managedWorktreeDisplayName(String? cwd) {
+  if (cwd == null || !cwd.startsWith('/')) return null;
+  final parts = cwd.split('/').where((part) => part.isNotEmpty).toList(growable: false);
+  for (var i = 0; i + 2 < parts.length; i++) {
+    if (parts[i] != '.worktrees') continue;
+    final repo = parts[i + 1];
+    final checkout = parts[i + 2];
+    if (!checkout.startsWith('$repo@')) continue;
+    final name = checkout.substring(repo.length + 1);
+    if (name.isNotEmpty) return name;
+  }
+  return null;
+}
+
 /// An agent pane together with where it lives.
 class FleetAgent {
   const FleetAgent({
@@ -70,4 +99,31 @@ class FleetAgent {
   /// the session log, only when that title says nothing. Null means show
   /// [Pane.title].
   String? get betterTitle => hasGenericTitle ? sessionName?.shown : null;
+
+  /// The task name shown everywhere a person sees this pane. ACP deliberately
+  /// gives its terminal an opaque stable id (`acp-<hash>`); when that exact
+  /// shape and a trustworthy checkout path agree, show the worktree's name as
+  /// the desktop app does. A person's `pane.rename` always wins.
+  String get displayTitle => betterTitle ?? displayTitleOf(machine, pane, workspace: workspace);
+
+  /// [displayTitle] for surfaces that have a pane but not a [FleetAgent]
+  /// (Machines and the pane bar). This keeps the same pane named the same way
+  /// across the app without changing its raw Core identity.
+  static String displayTitleOf(MachineConnection machine, Pane pane, {Workspace? workspace}) {
+    return displayTitleOverrideOf(machine, pane, workspace: workspace) ?? pane.title;
+  }
+
+  /// A person's pane name or the trustworthy replacement for an opaque ACP
+  /// id; null for every pane whose normal title precedence should stay intact.
+  /// Observed chats use this before their log title, while ordinary chats keep
+  /// the log's more useful task name.
+  static String? displayTitleOverrideOf(MachineConnection machine, Pane pane, {Workspace? workspace}) {
+    final title = pane.title.trim();
+    if (pane.label != null) return pane.title;
+    if (!_opaqueAcpTitle.hasMatch(title)) return null;
+
+    final checkoutPath = workspace?.worktree?.checkoutPath ?? machine.places.of(pane.cwd)?.checkoutPath;
+    final checkout = checkoutPath == null ? _managedWorktreeDisplayName(pane.cwd) : _checkoutDisplayName(checkoutPath);
+    return checkout;
+  }
 }

@@ -266,6 +266,23 @@ void main() {
   });
 
   group('Codex', () {
+    test('an ACP worktree name and a person rename stay the same in its observed chat', () async {
+      final (rig, session) = await _open(codexKind, _lines('codex_logs', 'plain'), status: 'idle', screen: '');
+
+      await rig.setPaneName(
+        title: 'acp-81e167053dd7d3dfcf47',
+        cwd: '/home/dev/git/.worktrees/ttc/ttc@customer_contract/lib',
+      );
+      expect(session.title, 'customer_contract');
+
+      await rig.setPaneName(
+        title: 'acp-81e167053dd7d3dfcf47',
+        cwd: '/home/dev/git/.worktrees/ttc/ttc@customer_contract/lib',
+        label: 'Contract review',
+      );
+      expect(session.title, 'Contract review');
+    });
+
     test('a command that waits for approval is the card, with the command from the log', () async {
       final lines = _lines('codex_logs', 'command-approve');
       final (_, session) = await _open(

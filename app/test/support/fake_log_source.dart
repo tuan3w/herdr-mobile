@@ -366,6 +366,18 @@ class ObservedRig {
     await machine.refresh();
   }
 
+  /// Changes the pane fields that decide the name shown for an observed chat.
+  Future<void> setPaneName({required String title, required String cwd, String? label}) async {
+    _pane['terminal_title_stripped'] = title;
+    _pane['cwd'] = cwd;
+    if (label == null) {
+      _pane.remove('label');
+    } else {
+      _pane['label'] = label;
+    }
+    await machine.refresh();
+  }
+
   /// The pane is gone from herdr.
   Future<void> removePane() async {
     (transport.snapshot['panes'] as List).clear();

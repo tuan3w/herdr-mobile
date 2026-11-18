@@ -28,6 +28,7 @@ import '../services/disk_cache.dart';
 import 'acp_agent_session.dart' show defaultRetryJitter;
 import 'agent_session.dart';
 import 'background_grace.dart';
+import 'fleet_agent.dart';
 import 'attach_target.dart' show AttachMode;
 import 'command_source.dart' show SessionCommands;
 import 'machine_connection.dart';
@@ -400,9 +401,17 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   @override
   String get title {
     if (_isSub) return subagentName!;
+    final pane = _pane;
+    if (pane != null) {
+      final override = FleetAgent.displayTitleOverrideOf(
+        machine,
+        pane,
+        workspace: machine.snapshot.workspace(pane.workspaceId),
+      );
+      if (override != null) return override;
+    }
     final logged = _log.title?.trim();
     if (logged != null && logged.isNotEmpty) return logged;
-    final pane = _pane;
     final named = pane?.title.trim();
     if (named != null && named.isNotEmpty) return named;
     return _folderName(cwd, fallback: agentLabel);

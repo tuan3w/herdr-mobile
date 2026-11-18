@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../data/models/herdr_models.dart';
 import '../../../data/models/machine_layout.dart';
 import '../../../data/repositories/agent_screens.dart';
+import '../../../data/repositories/fleet_agent.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/where_line.dart';
@@ -113,7 +114,8 @@ class MachinePaneRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final agent = pane.agent;
     final name = agentLabelOf(pane);
-    final title = pane.title.isNotEmpty ? pane.title : name;
+    final task = FleetAgent.displayTitleOf(machine, pane, workspace: machine.snapshot.workspace(pane.workspaceId));
+    final title = task.isNotEmpty ? task : name;
     final restoreError = pane.restoreError;
     // A pane herdr could not bring back says why; the tap still opens the
     // pane screen, which explains and offers Close.

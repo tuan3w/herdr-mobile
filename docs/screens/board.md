@@ -119,6 +119,11 @@ slot, so a long branch cuts the end of the line, never the time. The peek and
 the reply sheet show the same line (`AgentRowData.subtitle`); a session's is
 `sessionWhereOnBoard`.
 
+An ACP terminal's opaque canonical name (`acp-<hash>`) is identity, not a task
+name. When its checkout is known, every mobile surface uses the checkout or
+worktree name instead, matching the desktop app; the branch remains on the
+secondary line. A name set explicitly with `pane.rename` always wins.
+
 **To review lives in the status line.** `3 to review` (quiet: `textSecondary`,
 `secondaryStrong`, a dotted underline, warming to `text` on pointer-down; a
 button read as `3 to review, select them`) selects exactly the finished agents

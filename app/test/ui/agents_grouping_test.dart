@@ -501,11 +501,15 @@ void main() {
     const login = '/wt/app-login';
     const workspaces = [(id: 'w1', label: 'app'), (id: 'w2', label: 'app-login'), (id: 'w3', label: 'notes')];
 
-    Future<UiHarness> repoFleet(Map<String, String?> cwd, {List<String> machines = const ['a']}) async {
+    Future<UiHarness> repoFleet(
+      Map<String, String?> cwd, {
+      List<String> machines = const ['a'],
+      String Function(String paneId)? title,
+    }) async {
       final snapshot = snapshotWith(
         [for (final (i, id) in cwd.keys.indexed) (id: id, ws: 'w${i + 1}', agent: 'omp', status: 'idle')],
         workspaces: workspaces,
-        title: (id) => 'task ${id.split(':').last}',
+        title: title ?? (id) => 'task ${id.split(':').last}',
       );
       for (final p in snapshot['panes'] as List) {
         final pane = p as Map<String, dynamic>;
@@ -559,6 +563,18 @@ void main() {
       final h = await repoFleet({'w1:p1': primary}, machines: ['a', 'b']);
       addTearDown(h.dispose);
       expect(whereOf(h, 'w1:p1'), 'app · omp · m-a');
+    });
+
+    test('an ACP worktree title does not remove the same-named branch from the second line', () async {
+      final h = await repoFleet({'w1:p1': primary, 'w2:p2': '$login/lib'}, title: (_) => 'acp-81e167053dd7d3dfcf47');
+      addTearDown(h.dispose);
+      h.fleet.connections.single.noteBranches(const [
+        WorktreeInfo(path: login, label: 'app-login', isLinked: true, branch: 'app-login'),
+      ]);
+
+      final row = AgentsOverview.of(h.fleet).agents.firstWhere((r) => r.paneId == 'w2:p2');
+      expect(row.title, 'app-login');
+      expect(row.subtitle, 'app · app-login · omp');
     });
 
     test('a part the title says, or one said already, is left out; no folder at all leaves the agent', () async {
