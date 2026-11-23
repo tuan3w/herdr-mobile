@@ -529,7 +529,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
       <a href="#faq">FAQ</a>
       <a href="https://github.com/tuan3w/herdr-mobile">GitHub</a>
     </nav>
-    <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download</a>
+    <a class="btn btn-primary" data-hm-apk href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download</a>
   </div>
 </header>
 
@@ -542,9 +542,9 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
     <h1 id="h1"><span class="hl"><span style="--i:0">Approve your coding agents</span></span><span class="hl"><span style="--i:1">from your phone.</span></span></h1>
     <p class="lede fu" style="--i:1;margin-top:24px">See who is waiting. Read the exact command. Then approve.</p>
     <div class="cta fu" style="--i:2">
-      <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">
+      <a class="btn btn-primary" data-hm-apk href="https://github.com/tuan3w/herdr-mobile/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
-        Download the APK
+        <span data-hm-apk-label>Download the APK</span>
       </a>
       <a class="btn btn-ghost" href="#try">Try it now</a>
     </div>
@@ -700,7 +700,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
       <li><h3>Add your computer</h3><p>In the app: Machines, then +. <a href="guides/approve-claude-code-from-android/">Setup guide</a></p></li>
     </ol>
     <div class="cta" style="justify-content:flex-start">
-      <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the latest APK</a>
+      <a class="btn btn-primary" data-hm-apk href="https://github.com/tuan3w/herdr-mobile/releases/latest"><span data-hm-apk-label>Download the latest APK</span></a>
       <a class="btn btn-ghost" href="https://github.com/tuan3w/herdr-mobile">Source</a>
     </div>
     <p class="latest"><!--latest:start--><a href="https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.61">0.1.61 · Delete a worktree to give its disk space back</a><!--latest:end--> · <a href="https://github.com/tuan3w/herdr-mobile/blob/main/CHANGELOG.md">Changelog</a> · <a href="feed.xml">Atom feed</a></p>
@@ -741,7 +741,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
   <div class="wrap">
     <h2 id="final-h">Get it for Android.</h2>
     <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/tuan3w/herdr-mobile/releases/latest">Download the APK</a>
+      <a class="btn btn-primary" data-hm-apk href="https://github.com/tuan3w/herdr-mobile/releases/latest"><span data-hm-apk-label>Download the APK</span></a>
       <a class="btn btn-ghost" href="https://github.com/tuan3w/herdr-mobile">Star on GitHub</a>
     </div>
   </div>
@@ -764,6 +764,7 @@ footer a { display: inline-flex; align-items: center; min-height: 44px; padding:
   </div>
 </footer>
 
+<script src="hm-apk.js"></script>
 <script>
 (function () {
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
