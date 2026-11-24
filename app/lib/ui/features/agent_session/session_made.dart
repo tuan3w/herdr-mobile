@@ -1344,6 +1344,7 @@ class MadeChip extends StatelessWidget {
       final (assets, besideSubagents, reach) = v;
       final partial = reach != MadeReach.whole;
       if (assets.isEmpty && !partial) return const SizedBox.shrink();
+      final made = madeCountOf(assets);
       // `9+`: the rows are the newest ones, the earlier part is not read yet.
       return Padding(
         // The bar's row places the chips; this one follows the subagents chip.
@@ -1351,11 +1352,15 @@ class MadeChip extends StatelessWidget {
             ? const EdgeInsets.only(left: Gap.sm, bottom: Gap.hair)
             : const EdgeInsets.only(bottom: Gap.hair),
         child: AppChip(
-          label: partial ? (assets.isEmpty ? 'Made' : 'Made ${madeCountOf(assets)}+') : 'Made',
-          count: partial ? null : madeCountOf(assets),
+          label: partial ? (assets.isEmpty ? 'Made' : 'Made $made+') : 'Made',
+          // Links are said, not made: a list of only links has no count to show.
+          count: partial || made == 0 ? null : made,
           semanticLabel: partial
-              ? '${countOf(madeCountOf(assets), 'item')} made so far, earlier history not read'
-              : '${countOf(madeCountOf(assets), 'item')} made',
+              ? '${countOf(made, 'item')} made so far, earlier history not read'
+              // The sheet still holds the links, so a reader is told how many, not "0 items made".
+              : made == 0
+              ? countOf(assets.length, 'link')
+              : '${countOf(made, 'item')} made',
           leading: Icon(HerdrIcons.made, size: IconSize.inline, color: context.ds.textSecondary),
           onTap: () => unawaited(showSessionMade(context, session)),
         ),

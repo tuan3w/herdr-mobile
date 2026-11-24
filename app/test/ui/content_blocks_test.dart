@@ -470,6 +470,21 @@ void main() {
       cache.clear();
     });
 
+    testWidgets('clearing the cache forgets the sizes it remembered, not only the bitmaps', (tester) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      final cache = ImagePreviewCache(decoder: _fakeBitmap);
+      final block = ImageBlock(data: _distinct(3), mimeType: 'image/png');
+
+      final entry = cache.acquire(block);
+      await tester.pump();
+      cache.release(entry);
+      expect(cache.sizeOf(block), isNotNull);
+
+      cache.clear();
+      expect(cache.sizeOf(block), isNull);
+    });
+
     test('base64 length without decoding, and the isolate path rejects what isn’t base64', () async {
       expect(base64DecodedLength('AAAA'), 3);
       expect(base64DecodedLength('AAA='), 2);

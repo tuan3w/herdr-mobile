@@ -461,8 +461,18 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// is told where it leads and opens it with a tap.
   void _offerWeb(Uri url) {
     final host = visibleText(url.host);
+    final own = _ownLink(url);
     final String text;
-    if (needsOwnBrowser(url)) {
+    if (own != null) {
+      // The machine's own address (what an agent announces): it is from the
+      // machine, so it opens through the connection like any of its pages.
+      final service = sensitiveServiceOf(own.port);
+      if (service != null) {
+        _toaster.show('${_where(url)} is a $service port. Open its link from the terminal if you mean to.');
+        return;
+      }
+      text = '${_where(url)} is on ${visibleText(_machine.profile.label)}.';
+    } else if (needsOwnBrowser(url)) {
       text = '$host is a sign-in. It opens in your browser.';
     } else if (url.scheme != 'https') {
       text = '$host isn’t encrypted.';
@@ -472,11 +482,23 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     _toaster.show(text, action: ToastAction('Open', () => unawaited(_openWeb(url))));
   }
 
-  /// [url] of the web, on the person's tap: `https` in herdr, over this page
-  /// (Back returns to it); a sign-in in the phone's browser, the one thing that
-  /// can do it; plain `http` through the link sheet.
+  /// [url] as the page the machine itself serves when it names the machine's
+  /// own address, or null (a website's page has no machine). Never loaded
+  /// directly: Android refuses cleartext to it, and off the tailnet it fails.
+  Uri? _ownLink(Uri url) => _isSite ? null : WebPreview.ownHostLink(_machine.profile.host, url);
+
+  /// [url]'s host and port as the toasts name it.
+  String _where(Uri url) => visibleText(url.hasPort ? '${url.host}:${url.port}' : url.host);
+
+  /// [url] of the web, on the person's tap: the machine's own address through
+  /// the connection, as a page of the machine; `https` in herdr, over this
+  /// page (Back returns to it); a sign-in in the phone's browser, the one
+  /// thing that can do it; plain `http` through the link sheet.
   Future<void> _openWeb(Uri url) async {
-    if (needsOwnBrowser(url)) {
+    final own = _ownLink(url);
+    if (own != null) {
+      if (mounted) await openWebPreview(context, _machine, ServerPage(own));
+    } else if (needsOwnBrowser(url)) {
       await _openExternal(url);
     } else if (url.scheme == 'https') {
       if (mounted) await openWebsite(context, url);
@@ -503,7 +525,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// (a front end linking its API) is one deliberate tap away: the same
   /// forward `Open page` would open, never on its own.
   void _refused(Uri url) {
-    final where = visibleText(url.hasPort ? '${url.host}:${url.port}' : url.host);
+    final where = _where(url);
     if (!_isSite && WebPreview.canPreview(url.toString())) {
       final service = sensitiveServiceOf(url.hasPort ? url.port : 80);
       if (service != null) {

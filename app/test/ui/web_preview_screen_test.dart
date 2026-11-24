@@ -382,6 +382,48 @@ void main() {
     },
   );
 
+  testWidgets('the machine’s own address a page links to opens through the connection, never from the phone', (
+    tester,
+  ) async {
+    await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+    final asked = transport.webBridges.length;
+
+    expect(await web.navigate('http://h:8792/runs'), isFalse, reason: 'a page cannot take the view there');
+    await _settle(tester);
+    expect(find.text('h:8792 is on build-box.'), findsOneWidget, reason: 'it is from the machine, not another site');
+    expect(transport.webBridges, hasLength(asked), reason: 'nothing opens by itself');
+
+    transport.webInfo = const WebBridgeInfo(port: 8792, token: _token, entryPort: 51999);
+    web.pagePort = 8792;
+    await tester.tap(find.text('Open'));
+    await _settle(tester);
+
+    expect(find.byType(WebPreviewScreen, skipOffstage: false), findsNWidgets(2), reason: 'a page over the first');
+    expect(transport.webBridges, hasLength(asked + 1));
+    expect(
+      transport.webBridges.last,
+      isA<PortForward>().having((f) => f.host, 'host', 'localhost').having((f) => f.port, 'port', 8792),
+      reason: 'the machine’s own localhost, over the SSH connection',
+    );
+    expect(web.current, 'http://localhost:8792/runs');
+    expect(web.loaded.where((u) => u.host == 'h'), isEmpty, reason: 'off the tailnet it would only fail');
+    expect(launcher.opened, isEmpty);
+  });
+
+  testWidgets('the machine’s own address on a database port says what it is and opens nothing', (tester) async {
+    await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+    final asked = transport.webBridges.length;
+
+    expect(await web.navigate('http://h:5432/'), isFalse);
+    await _settle(tester);
+
+    expect(find.text('h:5432 is a PostgreSQL port. Open its link from the terminal if you mean to.'), findsOneWidget);
+    expect(find.text('Open'), findsNothing, reason: 'no one-tap way to a database');
+    expect(find.byType(WebPreviewScreen, skipOffstage: false), findsOneWidget);
+    expect(transport.webBridges, hasLength(asked));
+    expect(launcher.opened, isEmpty);
+  });
+
   group('a website opened by itself', () {
     Future<void> pumpSite(WidgetTester tester, String url) async {
       await tester.pumpWidget(
