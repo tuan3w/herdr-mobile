@@ -405,6 +405,63 @@ void main() {
       ]);
       expect({for (final s in m.subagents) s.name: s.status}, {'Dead': 'failed', 'Live': 'aborted'});
     });
+
+    // Recorded on 2026-11-24: a task started again under a name in use got the
+    // job id `Rows27Sampling-2` but kept the file `Rows27Sampling.jsonl`. The
+    // roster grew a second subagent named by the job id, and opening it said
+    // the session log could not be read while the agent was working.
+    test('a job id that differs from the agent name (a restarted task) updates the agent, not a new one', () {
+      final m = OmpLogMapper();
+      _feed(m, [
+        _assistant('a1', [
+          _call('c1', 'task', {
+            'tasks': [
+              {'name': 'Rows', 'task': 'x'},
+            ],
+          }),
+        ], stop: 'toolUse'),
+        _result(
+          'r1',
+          'c1',
+          'task',
+          'Spawned 1 background agent.',
+          details: {
+            'progress': [
+              {'id': 'Rows', 'status': 'pending'},
+            ],
+          },
+        ),
+        _result(
+          'w1',
+          'cw1',
+          'wait',
+          '## Still Running (1)',
+          details: {
+            'op': 'wait',
+            'jobs': [
+              {'id': 'Rows-2', 'type': 'task', 'status': 'running', 'label': 'Rows', 'agentUrlId': 'Rows'},
+            ],
+          },
+        ),
+      ]);
+      expect({for (final s in m.subagents) s.name: s.status}, {'Rows': 'running'});
+
+      // The notice names the job id only.
+      _feed(m, [
+        _entry({
+          'type': 'custom_message',
+          'id': 'f1',
+          'customType': 'async-result',
+          'content': 'x',
+          'details': {
+            'jobs': [
+              {'jobId': 'Rows-2', 'type': 'task', 'label': 'Rows', 'status': 'completed'},
+            ],
+          },
+        }),
+      ]);
+      expect({for (final s in m.subagents) s.name: s.status}, {'Rows': 'completed'});
+    });
   });
 
   group('the question tool', () {

@@ -72,6 +72,16 @@ class OmpLogMapper implements SessionLogMapper {
   /// Subagents by name, in the order they first appeared.
   final _subagents = <String, SubagentInfo>{};
 
+  /// The subagent a job id belongs to, where the two differ. omp gives a task
+  /// that is started again under a name still in use a suffixed job id
+  /// (`Rows27Sampling-2`) but keeps the transcript, the `agent://` address and
+  /// the roster name of the agent (`agentUrlId`: `Rows27Sampling`). Learned from
+  /// a snapshot's `jobs`, which carries both; `async-result` and `cancelled`
+  /// name the job id only. Recorded on 2026-11-24: the roster listed a second
+  /// `Rows27Sampling-2` whose file does not exist, and its screen said the
+  /// session log could not be read while the agent was working.
+  final _jobAgent = <String, String>{};
+
   /// Calls that are not shown as tool rows (messages to other agents show as
   /// notes); their results are dropped.
   final _hidden = <String>{};
@@ -117,6 +127,7 @@ class OmpLogMapper implements SessionLogMapper {
     _started.clear();
     _open.clear();
     _subagents.clear();
+    _jobAgent.clear();
     _hidden.clear();
     _ask = null;
     _cwd = null;
@@ -855,7 +866,8 @@ class OmpLogMapper implements SessionLogMapper {
           final id = j['id'];
           final status = j['status'];
           if (id is! String || status is! String) continue;
-          if (_subagents.containsKey(id) || j['type'] == 'task') _setStatus(id, status);
+          final name = _subagentOf(j);
+          if (_subagents.containsKey(name) || j['type'] == 'task') _setStatus(name, status);
         }
       }
       // A kill of a subagent that had already failed or finished keeps that
@@ -865,9 +877,9 @@ class OmpLogMapper implements SessionLogMapper {
         for (final c in cancelled) {
           if (c is! Map<String, dynamic> || c['status'] != 'cancelled') continue;
           final id = c['id'];
-          final old = id is String ? _subagents[id] : null;
+          final old = id is String ? _subagents[_agentOfJob(id)] : null;
           if (old == null || old.status == 'failed' || old.status == 'completed') continue;
-          _setStatus(id as String, 'aborted');
+          _setStatus(_agentOfJob(id as String), 'aborted');
         }
       }
     }
@@ -880,9 +892,22 @@ class OmpLogMapper implements SessionLogMapper {
     for (final j in jobs) {
       if (j is! Map<String, dynamic> || j['type'] != 'task') continue;
       final id = j['jobId'];
-      if (id is String && id.isNotEmpty) _setStatus(id, j['status'] is String ? j['status'] as String : 'completed');
+      if (id is String && id.isNotEmpty) {
+        _setStatus(_agentOfJob(id), j['status'] is String ? j['status'] as String : 'completed');
+      }
     }
   }
+
+  /// The roster name of the snapshot job [j]: its `agentUrlId` when that
+  /// differs from the job id (and remembered for the records that only have the id).
+  String _subagentOf(Map<String, dynamic> j) {
+    final id = j['id'] as String;
+    final url = j['agentUrlId'];
+    if (url is String && url.isNotEmpty && url != id) _jobAgent[id] = url;
+    return _agentOfJob(id);
+  }
+
+  String _agentOfJob(String id) => _jobAgent[id] ?? id;
 
   void _setStatus(String name, String status) {
     final old = _subagents[name];
