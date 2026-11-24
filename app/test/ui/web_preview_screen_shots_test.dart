@@ -15,6 +15,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async' show Completer;
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -60,10 +61,13 @@ void main() {
     Size size = phone,
     double textScale = 1,
     String? appName,
+    Completer<void>? hold,
+    String? site,
     Future<void> Function(WidgetTester tester, FakeWebView web)? then,
   }) async {
     final transport = FakeTransport()
       ..webInfo = const WebBridgeInfo(port: 8790, token: '0123456789abcdef0123456789abcdef', entryPort: 51999);
+    if (hold != null) transport.webGate = hold;
     final web = FakeWebView.install(pagePort: 8790);
     web.titles[_page] = _title;
     final image = await picture(tester, brightness);
@@ -91,10 +95,12 @@ void main() {
     final scale = textScale == 1 ? '' : '-x$textScale';
     await shoot(
       tester,
-      WebPreviewScreen(
-        machine: pageMachine(transport, label: 'tuannd12'),
-        page: ServerPage(Uri.parse(_page), name: appName),
-      ),
+      site == null
+          ? WebPreviewScreen(
+              machine: pageMachine(transport, label: 'tuannd12'),
+              page: ServerPage(Uri.parse(_page), name: appName),
+            )
+          : WebPreviewScreen(page: WebsitePage(Uri.parse(site))),
       '$_out/$state-$mode-${size.width.toInt()}x${size.height.toInt()}$scale.png',
       brightness: brightness,
       size: size,
@@ -122,6 +128,59 @@ void main() {
         brightness: brightness,
         then: (tester, web) async {
           web.startLoading('http://localhost:8790/page2.html', 40);
+          await tester.pump(const Duration(milliseconds: 300));
+        },
+      );
+    });
+
+    // The machine is being asked: the cover says so, with the page named in the bar.
+    testWidgets('asking the machine, $mode', (tester) async {
+      await render(tester, 'asking', brightness: brightness, hold: Completer<void>());
+    });
+
+    // Nothing came back for Dwell.pageSlow: it says so and offers Try again.
+    testWidgets('slow to answer, $mode', (tester) async {
+      await render(
+        tester,
+        'slow',
+        brightness: brightness,
+        hold: Completer<void>(),
+        then: (tester, web) async {
+          await tester.pump(Dwell.pageSlow);
+          await tester.pump(const Duration(milliseconds: 300));
+        },
+      );
+    });
+
+    // A page of the web, in the same screen: the lock in the bar's glyph place, the
+    // site's own title over its host.
+    testWidgets('a website, $mode', (tester) async {
+      const site = 'https://wandb.ai/suneye/qwen-warp/runs/ab12cd';
+      await render(
+        tester,
+        'site',
+        brightness: brightness,
+        site: site,
+        then: (tester, web) async {
+          web.titles[site] = 'qwen-warp · rows27 sampling, 5 seeds';
+          await web.navigate(site);
+          await tester.pump(const Duration(milliseconds: 600));
+        },
+      );
+    });
+
+    testWidgets('a website that failed, small phone, large text, $mode', (tester) async {
+      const site = 'https://wandb.ai/suneye/qwen-warp/runs/ab12cd';
+      await render(
+        tester,
+        'site-failed',
+        brightness: brightness,
+        site: site,
+        size: const Size(320, 640),
+        textScale: 1.6,
+        then: (tester, web) async {
+          web.failing.add(site);
+          await web.navigate(site);
           await tester.pump(const Duration(milliseconds: 300));
         },
       );
@@ -220,7 +279,7 @@ void main() {
         'lost',
         brightness: brightness,
         then: (tester, web) async {
-          final machine = tester.widget<WebPreviewScreen>(find.byType(WebPreviewScreen)).machine;
+          final machine = tester.widget<WebPreviewScreen>(find.byType(WebPreviewScreen)).machine!;
           machine.start();
           for (var i = 0; i < 6; i++) {
             await tester.pump(const Duration(milliseconds: 100));

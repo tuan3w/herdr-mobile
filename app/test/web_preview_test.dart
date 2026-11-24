@@ -86,6 +86,41 @@ void main() {
     });
   });
 
+  // Recorded on 2026-11-24: agents announce dashboards on the machine's tailnet or
+  // LAN address (`http://100.87.64.16:8792`), which Android refuses to load as
+  // cleartext and which a browser on the phone would only reach on the tailnet.
+  group('the address an agent announces for the machine itself', () {
+    Uri? own(String machineHost, String url) => WebPreview.ownHostLink(machineHost, Uri.parse(url));
+
+    test('is the machine’s page as localhost, with its path and query, no credentials and no fragment', () {
+      expect(own('100.87.64.16', 'http://100.87.64.16:8792/runs?x=1#top').toString(), 'http://localhost:8792/runs?x=1');
+      expect(own('100.87.64.16', 'http://user:pw@100.87.64.16/a').toString(), 'http://localhost/a');
+      expect(
+        own('Devbox.Tail.ts.net', 'http://devbox.tail.ts.net.:8000/').toString(),
+        'http://localhost:8000/',
+        reason: 'a name is read without case and without the dot a DNS name may end in',
+      );
+      expect(WebPreview.canPreview(own('100.87.64.16', 'http://100.87.64.16:8792/')!.toString()), isTrue);
+    });
+
+    test(
+      'is only exactly that host over plain http with a port that exists: anything else stays a link to the web',
+      () {
+        for (final (machine, url) in [
+          ('100.87.64.16', 'http://100.87.64.17:8792/'), // another device on the tailnet
+          ('100.87.64.16', 'https://100.87.64.16:8792/'), // a certificate that names the machine, not localhost
+          ('100.87.64.16', 'http://100.87.64.16:0/'),
+          ('100.87.64.16', 'http://100.87.64.16:70000/'),
+          ('100.87.64.16', 'ftp://100.87.64.16/'),
+          ('localhost', 'http://localhost:3000/'), // the machine itself, not an address given for it
+          ('', 'http://x/'),
+        ]) {
+          expect(own(machine, url), isNull, reason: '$machine $url');
+        }
+      },
+    );
+  });
+
   group('a link on the machine', () {
     test('the entry URL is on localhost, carries the token, and keeps path, query and fragment', () async {
       final url = await web.forwardUrl(Uri.parse('http://localhost:3000/app/x%20y?tab=a%26b&n=1#top'));

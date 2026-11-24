@@ -793,7 +793,7 @@ void main() {
   });
 
   testWidgets(
-    'a pull request is a row of Links that opens in the phone’s browser; a video and a picture a tool returned are on Media',
+    'a pull request is a row of Links that opens in herdr; a video and a picture a tool returned are on Media',
     (tester) async {
       onMachine(['$base/renders/intro.mp4']);
       await openSheet(
@@ -815,7 +815,14 @@ void main() {
       expect(find.text('tuan3w/herdr-mobile'), findsOneWidget);
       await tester.tap(find.text('PR #93 feat(observed): send while it works'));
       await _settle(tester);
-      expect(launcher.opened, ['https://github.com/tuan3w/herdr-mobile/pull/93']);
+      expect(
+        launcher.opened,
+        isEmpty,
+        reason: 'herdr stays in front: the phone’s browser would put it in the background',
+      );
+      expect(web.loaded.map((u) => u.toString()), ['https://github.com/tuan3w/herdr-mobile/pull/93']);
+      await tester.tap(find.byTooltip('Close page'));
+      await _settle(tester);
 
       await tapChip(tester, 'Media');
       await _settle(tester);

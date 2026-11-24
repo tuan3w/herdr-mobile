@@ -11,6 +11,7 @@ import '../../../data/acp/session_made.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/models/web_bridge.dart' show sensitiveServiceOf;
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/web_preview.dart' show WebPreview;
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -22,8 +23,9 @@ import '../files/photo_grid.dart' show PhotoThumbFace;
 import '../files/photo_thumbs.dart' show PhotoThumbs;
 import '../photos/photo_item.dart' show PhotoItem;
 import '../photos/photo_viewer.dart' show openPhotoViewer;
+import '../pane/link_sheet.dart' show showLinkSheet;
+import '../web/web_navigation.dart' show needsOwnBrowser;
 import '../web/web_preview_screen.dart';
-import '../../support/open_link.dart' show openInBrowser;
 import 'content_image_cache.dart' show ImageEntry, ImagePreviewCache;
 import 'photo_thread.dart' show showContentImage;
 import 'session_select.dart';
@@ -615,7 +617,10 @@ final _opening = <String>{};
 /// goes up at once and says there if it cannot open), a picture in the photo
 /// viewer with the other [pictures] to swipe to (a picture a tool returned in
 /// the viewer of the chat), a video and a document in the file viewer, and a
-/// link in the phone's browser. A failure is a toast over the sheet.
+/// link in herdr too: the machine's own address through its connection, any
+/// other `https` page over the phone's network. Only what cannot open there (a
+/// plain `http` page, a sign-in) goes to the link sheet. A failure is a toast
+/// over the sheet.
 Future<void> _openMade(
   BuildContext sheet,
   BuildContext opener,
@@ -647,7 +652,16 @@ Future<void> _openMade(
   try {
     switch (asset.kind) {
       case MadeKind.link:
-        if (!await openInBrowser(asset.url.toString())) failed('Couldn’t open the link.');
+        final url = asset.url!;
+        final own = WebPreview.ownHostLink(machine.profile.host, url);
+        if (!opener.mounted) return;
+        if (own != null) {
+          unawaited(openWebPreview(opener, machine, ServerPage(own)));
+        } else if (url.scheme == 'https' && !needsOwnBrowser(url)) {
+          unawaited(openWebsite(opener, url));
+        } else {
+          unawaited(showLinkSheet(opener, url.toString(), machine: machine));
+        }
       case MadeKind.video:
         if (opener.mounted) unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd));
       case MadeKind.doc:

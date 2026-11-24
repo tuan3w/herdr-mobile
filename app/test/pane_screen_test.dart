@@ -1159,6 +1159,65 @@ void main() {
         await teardown(tester);
       });
 
+      testWidgets('an https page of the web opens in herdr, with Open in browser beside it for what needs it', (
+        tester,
+      ) async {
+        final launcher = _Launcher();
+        UrlLauncherPlatform.instance = launcher;
+        final web = FakeWebView.install();
+        transport.readText = 'curves at https://wandb.ai/me/p/runs/ab12 now';
+        await pumpPane(tester);
+        await tapText(tester, 'curves at', column: 16);
+
+        expect(find.text('Open page'), findsOneWidget);
+        expect(find.text('Open in browser'), findsOneWidget, reason: 'the escape stays, second');
+        await tester.tap(find.text('Open page'));
+        await _settle(tester);
+
+        expect(find.byType(WebPreviewScreen), findsOneWidget);
+        expect(web.loaded.map((u) => u.toString()), ['https://wandb.ai/me/p/runs/ab12']);
+        expect(launcher.opened, isEmpty, reason: 'herdr stays in front: its SSH connections stay up');
+        expect(transport.webBridges, isEmpty, reason: 'a site is not carried over the machine');
+        await teardown(tester);
+      });
+
+      testWidgets('a sign-in can only go to the phone’s browser, and says herdr waits meanwhile', (tester) async {
+        transport.readText = 'log in at https://accounts.google.com/o/oauth2/auth now';
+        await pumpPane(tester);
+        await tapText(tester, 'log in at', column: 16);
+
+        expect(find.text('Open page'), findsNothing);
+        expect(find.text('Open in browser'), findsOneWidget);
+        expect(find.textContaining('This is a sign-in.'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      // The machine of these tests is dialled at `h`.
+      testWidgets('the address an agent gave for the machine itself opens its page through the SSH connection', (
+        tester,
+      ) async {
+        final launcher = _Launcher();
+        UrlLauncherPlatform.instance = launcher;
+        final web = FakeWebView.install();
+        transport.readText = 'dashboard on http://h:8792/runs now';
+        await pumpPane(tester);
+        await tapText(tester, 'dashboard on', column: 16);
+
+        expect(
+          find.textContaining('This address is on box. Open page shows it in herdr, over your SSH connection.'),
+          findsOneWidget,
+        );
+        expect(find.text('Open in browser'), findsNothing, reason: 'a browser would reach it only on the tailnet');
+        await tester.tap(find.text('Open page'));
+        await _settle(tester);
+
+        final spec = transport.webBridges.single as PortForward;
+        expect((spec.host, spec.port), ('localhost', 8792));
+        expect(web.loaded.first.queryParameters['to'], '/runs');
+        expect(launcher.opened, isEmpty);
+        await teardown(tester);
+      });
+
       testWidgets('Open page starts the listener and shows the page in herdr, not the browser', (tester) async {
         final launcher = _Launcher();
         UrlLauncherPlatform.instance = launcher;

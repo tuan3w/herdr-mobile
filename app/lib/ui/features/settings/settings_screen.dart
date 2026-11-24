@@ -16,7 +16,7 @@ import '../../../data/words/plural.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-import '../../support/open_link.dart';
+import '../web/web_preview_screen.dart' show openWebsite;
 import '../files/file_format.dart';
 import '../kit/kit_screen.dart';
 import 'font_size_control.dart';
@@ -488,12 +488,7 @@ class _AboutGroup extends StatelessWidget {
       'software under the GNU General Public License v3.0, and comes with no '
       'warranty. Its source is at github.com/tuan3w/herdr-mobile.';
 
-  Future<void> _openRepo(BuildContext context) async {
-    final toaster = Toaster.of(context);
-    if (!await openInBrowser(appRepositoryUrl)) {
-      toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
-    }
-  }
+  Future<void> _openRepo(BuildContext context) => openWebsite(context, Uri.parse(appRepositoryUrl));
 
   void _openLicenses(BuildContext context) => showLicensePage(
     context: context,
@@ -529,10 +524,10 @@ class _AboutGroup extends StatelessWidget {
           titleMaxLines: 1,
           subtitleMaxLines: 8,
           subtitle: update == null
-              ? 'Talks to herdr over SSH and sends nothing anywhere else. '
-                    'Dictation uses your phone’s own speech service.'
-              : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
-                    'to look for a new version and, when you tap Download, to fetch it. '
+              ? 'Talks to herdr over SSH. A page you open from a link loads from its own site, in herdr, '
+                    'only when you tap it. Dictation uses your phone’s own speech service.'
+              : 'Talks to herdr over SSH. The only other places it contacts are GitHub, to look for a new '
+                    'version and, when you tap Download, to fetch it, and the site of a link you tap to open. '
                     'Dictation uses your phone’s own speech service.',
         ),
         EntityRow(
