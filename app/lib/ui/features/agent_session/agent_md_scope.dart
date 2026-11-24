@@ -42,7 +42,7 @@ class _AgentMdScopeState extends State<AgentMdScope> {
   void _path(BuildContext context, String path, int? line) {
     Haptics.tick();
     final session = widget.session;
-    unawaited(openRemoteFile(context, session.machine, path, cwd: session.cwd, line: line));
+    unawaited(openRemoteFile(context, session.machine, path, cwd: session.cwd, line: line, hints: session.pathHints));
   }
 
   @override

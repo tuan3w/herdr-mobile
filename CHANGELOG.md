@@ -4,6 +4,17 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- Tapping a file name an agent wrote finds it more often. A name is now looked
+  for where the agent worked (the folder its commands ran in, the files it
+  touched, the folder of those) before herdr searches your project, so
+  `theme.dart` in a message that also names `motion.dart` opens the one beside
+  it. The name search also goes deeper than three folders. Not run on a phone.
+- A file the agent used and that is gone (a `/tmp` log, a deleted draft) now
+  says `isn’t there any more (the agent used it earlier)` instead of blaming the
+  folder.
+
 ## [0.1.70] - 2026-11-24
 
 ### Every link opens in herdr

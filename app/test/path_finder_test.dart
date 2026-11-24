@@ -263,10 +263,10 @@ void main() {
       expect(fs.calls.where((c) => c.contains('node_modules') || c.contains('.git') || c.contains('/out')), isEmpty);
     });
 
-    test('goes three folders deep and no further', () async {
+    test('goes six folders deep and no further', () async {
       final fs = FakeFs()..addDir('/w');
-      fs.addFile('/w/a/b/c/deep.md', 'x');
-      fs.addFile('/w/a/b/c/d/too-deep.md', 'x');
+      fs.addFile('/w/a/b/c/d/e/f/deep.md', 'x');
+      fs.addFile('/w/a/b/c/d/e/f/g/too-deep.md', 'x');
 
       final f = _finder(fs);
       expect((await f.byName('deep.md', '/w', SearchCancel())).candidates, hasLength(1));

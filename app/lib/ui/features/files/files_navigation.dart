@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../data/acp/path_hints.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/path_finder.dart';
@@ -23,6 +25,10 @@ bool machineSupportsFiles(MachineConnection machine) => machine.files.supported;
 /// [literal] attempt keeps the `:2024` the text ended with (a file really named
 /// `notes:2024`), so its line is the caller's, not the suffix's.
 typedef LookupAttempt = ({String text, String? cwd, bool literal});
+
+/// What the session's own tool calls say about where its work happened. Read
+/// when the path is looked up (inside the page the tap pushed), not on the tap.
+typedef PathHintsOf = PathHints Function();
 
 /// Where to look for a tapped [path], in order. First the path without its
 /// `:line:col` against [cwd] (and, when it had a suffix, the whole text:
@@ -98,7 +104,8 @@ class PathFound extends PathResolution {
 class PathChoices extends PathResolution {
   const PathChoices(this.candidates, int? line) : super(line);
 
-  /// Two or more, newest first.
+  /// Two or more: the ones the session's own tool calls point to first, in
+  /// the order the agent reached them (newest first), then the rest, newest first.
   final List<PathCandidate> candidates;
 }
 
@@ -114,8 +121,17 @@ String cutMiddle(String text, [int max = _quotedPath]) {
   return '${text.substring(0, head)}…${text.substring(text.length - tail)}';
 }
 
-/// "docs/a.md isn’t in herdr-mobile (also looked in 3 worktrees)".
-String pathNotFoundMessage(String shown, {String? folder, int worktrees = 0, bool searched = false}) {
+/// "docs/a.md isn’t in herdr-mobile (also looked in 3 worktrees)". A path the
+/// agent's own tool calls used ([gone]) says it is not there any more instead:
+/// the agent saw it, so "isn’t in the folder" would blame the wrong place.
+String pathNotFoundMessage(
+  String shown, {
+  String? folder,
+  int worktrees = 0,
+  bool searched = false,
+  bool gone = false,
+}) {
+  if (gone) return '${cutMiddle(shown)} isn’t there any more (the agent used it earlier)';
   final also = [if (worktrees > 0) 'looked in ${countOf(worktrees, 'worktree')}', if (searched) 'searched by name'];
   final where = folder == null ? 'isn’t on this machine' : 'isn’t in $folder';
   return '${cutMiddle(shown)} $where${also.isEmpty ? '' : ' (also ${also.join(' and ')})'}';
@@ -132,18 +148,22 @@ String? _belowCwd(String? abs, String? cwd) {
 
 /// Resolves [path] (absolute, `~/...`, or relative to [cwd], then the folders
 /// above it), strips a trailing `:line:col` and stats it. The first place that
-/// exists wins. When none does and the path is below [cwd] (or relative), the
-/// other worktrees of [cwd]'s repository are asked for the same path, and
-/// then, for a name that says enough (or when [search] is true), the folders
-/// below [cwd] for a file of that name ([PathFinder]); [onLooking] is told
-/// before each. Any other failure comes as it is, and a path found nowhere
-/// throws a [PathNotFound] that says where it looked.
+/// exists wins. When none does, the places [hints] (what the session's own tool
+/// calls did) point to are asked next, cheapest first: a folder the agent ran
+/// in, a file a call touched, the folder of one ([hintSteps]). Then, when the
+/// path is below [cwd] (or relative), the other worktrees of [cwd]'s
+/// repository are asked for the same path, and then, for a name that says
+/// enough (or when [search] is true), the folders below [cwd] for a file of
+/// that name ([PathFinder]); [onLooking] is told before each of those. Any
+/// other failure comes as it is, and a path found nowhere throws a
+/// [PathNotFound] that says where it looked, or that the agent used it and it is gone.
 Future<PathResolution> resolveRemotePath(
   MachineConnection machine,
   String path, {
   String? cwd,
   int? line,
   bool search = false,
+  PathHints hints = PathHints.none,
   SearchCancel? cancel,
   void Function(String what)? onLooking,
 }) async {
@@ -160,9 +180,15 @@ Future<PathResolution> resolveRemotePath(
     }
   }
 
+  final token = cancel ?? SearchCancel();
+  for (final step in hintSteps(loc.path, hints, cwd: cwd)) {
+    if (token.isCancelled) break;
+    final found = await _statAll(machine, step.paths, cwd, token);
+    if (found.isNotEmpty) return _choose(found, line ?? loc.line);
+  }
+  final gone = wasTouched(loc.path, hints);
   final rel = _belowCwd(firstAbs, cwd);
   final folder = rel == null ? null : RemotePath.basename(cwd!);
-  final token = cancel ?? SearchCancel();
   var worktrees = 0;
   var searched = false;
   if (rel != null && !token.isCancelled) {
@@ -184,21 +210,58 @@ Future<PathResolution> resolveRemotePath(
     }
   }
   throw PathNotFound(
-    pathNotFoundMessage(loc.path, folder: folder, worktrees: worktrees, searched: searched),
+    pathNotFoundMessage(loc.path, folder: folder, worktrees: worktrees, searched: searched, gone: gone),
     path: loc.path,
     canSearch: rel != null && !searched,
   );
 }
 
+/// Calls in flight at once when a step of hints asks the host.
+const _hintParallel = 6;
+
+/// The places of one hint step that exist, in the step's order. They are asked
+/// a few at a time and the first group with an answer ends it; a place that
+/// fails for any reason is not an answer (the plain lookup before this has
+/// already raised what a person should see).
+Future<List<PathCandidate>> _statAll(
+  MachineConnection machine,
+  List<String> paths,
+  String? cwd,
+  SearchCancel cancel,
+) async {
+  final out = <PathCandidate>[];
+  final seen = <String>{};
+  for (var i = 0; i < paths.length && !cancel.isCancelled; i += _hintParallel) {
+    final group = paths.sublist(i, math.min(i + _hintParallel, paths.length));
+    final stats = await Future.wait([
+      for (final p in group) machine.files.stat(p).then<RemoteStat?>((s) => s, onError: (Object _) => null),
+    ]);
+    for (final s in stats) {
+      if (s == null || !seen.add(s.path)) continue;
+      out.add(
+        PathCandidate(
+          stat: s,
+          root: _belowCwd(s.path, cwd) != null ? cwd! : RemotePath.parent(s.path),
+          source: CandidateSource.agent,
+        ),
+      );
+    }
+    if (out.isNotEmpty) break;
+  }
+  return out;
+}
+
 PathResolution _choose(List<PathCandidate> found, int? line) {
   if (found.length > 1) return PathChoices(found, line);
   final one = found.single;
-  final from = switch (one.source) {
-    CandidateSource.worktree => 'From worktree ${one.rootName}',
-    CandidateSource.search => 'Found in ${one.folder == '.' ? one.rootName : one.folder}',
-  };
-  return PathFound(one.stat, line, from: from);
+  return PathFound(one.stat, line, from: _foundNote(one));
 }
+
+/// Said once when a file opens from somewhere the person did not look.
+String _foundNote(PathCandidate c) => switch (c.source) {
+  CandidateSource.worktree => 'From worktree ${c.rootName}',
+  CandidateSource.search || CandidateSource.agent => 'Found in ${c.folder == '.' ? c.rootName : c.folder}',
+};
 
 /// Opens [path]: the file viewer, or the browser for a folder. The screen is
 /// pushed AT ONCE with the name and (after a moment) a skeleton, and the path
@@ -215,6 +278,7 @@ Future<void> openRemoteFile(
   String path, {
   String? cwd,
   int? line,
+  PathHintsOf? hints,
 }) async {
   final navigator = Navigator.of(context);
   if (!machineSupportsFiles(machine)) {
@@ -228,8 +292,14 @@ Future<void> openRemoteFile(
   try {
     await navigator.push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _OpenPathScreen(machine: machine, path: path, cwd: cwd, line: line, onResolved: () => _opening.remove(key)),
+        builder: (_) => _OpenPathScreen(
+          machine: machine,
+          path: path,
+          cwd: cwd,
+          line: line,
+          hints: hints,
+          onResolved: () => _opening.remove(key),
+        ),
       ),
     );
   } finally {
@@ -290,6 +360,7 @@ class _OpenPathScreen extends StatefulWidget {
     required this.path,
     required this.cwd,
     required this.line,
+    required this.hints,
     required this.onResolved,
   });
 
@@ -297,6 +368,7 @@ class _OpenPathScreen extends StatefulWidget {
   final String path;
   final String? cwd;
   final int? line;
+  final PathHintsOf? hints;
   final VoidCallback onResolved;
 
   @override
@@ -338,6 +410,7 @@ class _OpenPathScreenState extends State<_OpenPathScreen> {
         widget.machine,
         widget.path,
         cwd: widget.cwd,
+        hints: widget.hints?.call() ?? PathHints.none,
         line: widget.line,
         search: search,
         cancel: cancel,
@@ -369,12 +442,7 @@ class _OpenPathScreenState extends State<_OpenPathScreen> {
             unawaited(Navigator.of(context).maybePop());
             return;
           }
-          open(
-            PathFound(picked.stat, line, from: null),
-            picked.source == CandidateSource.worktree
-                ? 'From worktree ${picked.rootName}'
-                : 'Found in ${picked.folder}',
-          );
+          open(PathFound(picked.stat, line, from: null), _foundNote(picked));
       }
     } on RemoteFileException catch (e) {
       if (!mounted || epoch != _epoch) return;
