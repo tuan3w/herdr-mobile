@@ -10,7 +10,6 @@ import '../../../data/services/disk_cache.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-import '../../../data/services/image_decode.dart' show DecodedImage;
 import '../files/file_format.dart';
 import 'content_chip.dart';
 import 'content_image_cache.dart';
@@ -73,8 +72,11 @@ class LogImageView extends StatefulWidget {
 }
 
 class _LogImageViewState extends State<LogImageView> {
-  // The picture is wanted: asked for by a tap, or already held on the phone.
-  late var _requested = DiskCache.shared.knows(widget.block.key);
+  // The picture is wanted: asked for by a tap, already held on the phone, or
+  // already shown in this run (its size is known: it was decoded before).
+  late var _requested =
+      DiskCache.shared.knows(widget.block.key) ||
+      (widget.cache ?? ImagePreviewCache.shared).sizeOf(widget.block) != null;
 
   // The person tapped: the wait that follows is theirs, and shows the spinner.
   var _tapped = false;
@@ -84,12 +86,13 @@ class _LogImageViewState extends State<LogImageView> {
     super.initState();
     // Known at once when the index is loaded (a held picture is then never a
     // chip for a frame, and the row never changes height under the reader);
-    // otherwise as soon as it is: no tap, no radio.
+    // otherwise as soon as it is: no tap, no radio. Until then the row says
+    // nothing: a chip for a picture that turns out to be held is a flash.
     final store = DiskCache.shared;
-    if (!_requested) {
+    if (!store.indexed) {
       unawaited(
         store.ready.then((_) {
-          if (mounted && !_requested && store.knows(widget.block.key)) setState(() => _requested = true);
+          if (mounted) setState(() => _requested = _requested || store.knows(widget.block.key));
         }),
       );
     }
@@ -107,6 +110,8 @@ class _LogImageViewState extends State<LogImageView> {
   Widget build(BuildContext context) {
     final block = widget.block;
     final scope = ThreadPhotos.maybeOf(context);
+    // Not yet told whether the phone holds this picture: no chip, no placeholder.
+    if (!_requested && !DiskCache.shared.indexed && scope != null) return const SizedBox.shrink();
     if (_requested && scope != null) {
       return _InlineImage(
         block: block,
@@ -247,29 +252,27 @@ class _InlineImageState extends State<_InlineImage> {
       );
     }
     final image = _entry.image;
-    final ds = context.ds;
     final name = ImageBlockView.nameOf(widget.block);
     if (image == null) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: _Frame(
-          width: _placeholder.width,
-          height: _placeholder.height,
-          child: ColoredBox(
-            color: ds.fill,
-            // A fetch the person started is a wait they can see: the one spinner.
-            child: Center(
-              child: logPicture && (widget.waited || _retried)
-                  ? const BusySpinner(size: IconSize.lead)
-                  : Icon(HerdrIcons.picture, size: IconSize.lead, color: ds.textTertiary),
-            ),
+      final known = widget.cache.sizeOf(widget.block);
+      return LayoutBuilder(
+        builder: (context, box) => Align(
+          alignment: Alignment.centerLeft,
+          child: _Pending(
+            // The size the picture had when it was last shown, so the list does
+            // not move when it lands; a default for one never seen.
+            size: known == null
+                ? _placeholder
+                : _drawSize(known.width, known.height, box.maxWidth, MediaQuery.devicePixelRatioOf(context)),
+            // A fetch the person started is a wait they can see: the one spinner, at once.
+            spinner: logPicture && (widget.waited || _retried),
           ),
         ),
       );
     }
     return LayoutBuilder(
       builder: (context, box) {
-        final size = _drawSize(image, box.maxWidth, MediaQuery.devicePixelRatioOf(context));
+        final size = _drawSize(image.width, image.height, box.maxWidth, MediaQuery.devicePixelRatioOf(context));
         return Align(
           alignment: Alignment.centerLeft,
           child: PressBuilder(
@@ -302,9 +305,9 @@ class _InlineImageState extends State<_InlineImage> {
   /// The picture's size on screen: its aspect, within [maxWidth] and
   /// [imagePreviewMaxHeight], never more than twice its natural size (a
   /// 48 px icon is not blown up to the width of the screen).
-  static Size _drawSize(DecodedImage image, double maxWidth, double dpr) {
-    final w = image.width / dpr;
-    final h = image.height / dpr;
+  static Size _drawSize(int width, int height, double maxWidth, double dpr) {
+    final w = width / dpr;
+    final h = height / dpr;
     final scale = math.min(2.0, math.min(maxWidth / w, imagePreviewMaxHeight / h));
     return Size(math.max(1, w * scale), math.max(1, h * scale));
   }
@@ -331,6 +334,68 @@ class _Frame extends StatelessWidget {
           border: Border.all(color: ds.hairline),
         ),
         child: ClipRRect(borderRadius: radius, child: child),
+      ),
+    );
+  }
+}
+
+/// What a picture shows while it is made ready: nothing for [Dwell.spinnerDelay],
+/// then a quiet frame with a picture mark. A picture the phone holds is back
+/// within that, and a grey box for a frame or two before it is a flash, not a
+/// wait. The room is reserved from the first frame, so nothing below moves when
+/// the picture lands. A fetch the person started ([spinner]) shows its frame at
+/// once, with the one spinner: that wait is theirs.
+class _Pending extends StatefulWidget {
+  const _Pending({required this.size, required this.spinner});
+
+  final Size size;
+  final bool spinner;
+
+  @override
+  State<_Pending> createState() => _PendingState();
+}
+
+class _PendingState extends State<_Pending> {
+  Timer? _delay;
+  late var _shown = widget.spinner;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_shown) {
+      _delay = Timer(Dwell.spinnerDelay, () {
+        if (mounted) setState(() => _shown = true);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(_Pending old) {
+    super.didUpdateWidget(old);
+    if (widget.spinner && !_shown) setState(() => _shown = true);
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.size;
+    if (!_shown) return SizedBox(width: size.width, height: size.height);
+    final ds = context.ds;
+    return _Frame(
+      width: size.width,
+      height: size.height,
+      child: ColoredBox(
+        color: ds.fill,
+        child: Center(
+          child: widget.spinner
+              ? const BusySpinner(size: IconSize.lead)
+              : Icon(HerdrIcons.picture, size: IconSize.lead, color: ds.textTertiary),
+        ),
       ),
     );
   }
