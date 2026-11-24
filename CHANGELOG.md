@@ -4,6 +4,30 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- Links open inside herdr. A link an agent wrote to a page of the web (`https`)
+  opens in the same screen as a page from a machine, so following it no longer
+  puts herdr in the background, where Android drops your connections after
+  `Stay connected` and you came back to a reconnect. Only a sign-in (Google,
+  Microsoft, Apple, Tailscale) and `Open in browser` still go to your phone's
+  browser. herdr forgets the page's cookies when you close it, so a private page
+  asks you to sign in each time. Not run on a phone.
+- The address an agent announces for its machine (`http://100.87.64.16:8792`)
+  opens through your SSH connection, as a `localhost` link does.
+- `Links` in `Made` lists every link the agent wrote, newest first, not only the
+  pull requests it opened. `Made 3` still counts only what it made.
+- While a page loads, the screen says what it waits for (`Asking devbox`,
+  `Loading · 40%`) and, after 8 s, offers `Try again`. It used to be blank.
+
+**Fixed**
+
+- A picture in a chat that you had already seen no longer flashes a grey box or
+  `Tap to load` while it comes back, and the row keeps its size. Not measured on
+  a phone.
+- Opening a chat picture full screen no longer puts `Preparing…` over a picture
+  that is already on screen. A wait that is real still shows it.
+
 ## [0.1.69] - 2026-11-24
 
 ### A restarted subagent opens its chat
