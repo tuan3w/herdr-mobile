@@ -219,6 +219,28 @@ void main() {
     expect(find.text('3'), findsOneWidget);
   });
 
+  testWidgets('a session of only links says Made with no count, and reads as its links, not 0 items made', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await pumpBar(tester, session([_say('see https://wandb.ai/me/p')], key: 'm/only-links'));
+
+    expect(find.text('Made'), findsOneWidget);
+    expect(find.text('0'), findsNothing, reason: 'a link is said, not made: no count to show');
+    expect(tester.getSemantics(find.text('Made')).label, '1 link');
+    expect(find.bySemanticsLabel('0 items made'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('a session with one made page still reads 1 item made', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpBar(tester, session([_wrote('/home/dev/payments-api/reports/q3.html')], key: 'm/one-page'));
+
+    expect(find.text('1'), findsOneWidget);
+    expect(tester.getSemantics(find.text('Made')).label, '1 item made');
+    handle.dispose();
+  });
+
   testWidgets('the sheet lists them newest first; a server says only what is known', (tester) async {
     final s = session([
       _say('Serving http://localhost:5173/'),
@@ -793,7 +815,7 @@ void main() {
   });
 
   testWidgets(
-    'a pull request is a row of Links that opens in the phone’s browser; a video and a picture a tool returned are on Media',
+    'a pull request is a row of Links that opens in herdr; a video and a picture a tool returned are on Media',
     (tester) async {
       onMachine(['$base/renders/intro.mp4']);
       await openSheet(
@@ -815,7 +837,14 @@ void main() {
       expect(find.text('tuan3w/herdr-mobile'), findsOneWidget);
       await tester.tap(find.text('PR #93 feat(observed): send while it works'));
       await _settle(tester);
-      expect(launcher.opened, ['https://github.com/tuan3w/herdr-mobile/pull/93']);
+      expect(
+        launcher.opened,
+        isEmpty,
+        reason: 'herdr stays in front: the phone’s browser would put it in the background',
+      );
+      expect(web.loaded.map((u) => u.toString()), ['https://github.com/tuan3w/herdr-mobile/pull/93']);
+      await tester.tap(find.byTooltip('Close page'));
+      await _settle(tester);
 
       await tapChip(tester, 'Media');
       await _settle(tester);

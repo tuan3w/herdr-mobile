@@ -89,6 +89,26 @@ void main() {
     expect(await again.totalBytes(), 120);
   });
 
+  // A chat asked `knows` before the index was loaded and, told "no", showed a
+  // `Tap to load` line for a picture the phone held, then the picture.
+  test('knows can be trusted from indexed on: before it a held picture reads as not stored', () async {
+    await (open()).put('a', _bytes(120, 3));
+    final again = open();
+    expect(again.indexed, isFalse);
+    expect(again.knows('a'), isFalse, reason: 'the index is not read yet: this is no answer');
+    await again.ready;
+    expect(again.indexed, isTrue);
+    expect(again.knows('a'), isTrue);
+  });
+
+  test('a directory that cannot be read is indexed too: the answer is no, not wait', () async {
+    final file = File('${dir.path}/blocker')..writeAsStringSync('x');
+    final store = DiskCache(() async => Directory('${file.path}/under'));
+    await store.ready;
+    expect(store.indexed, isTrue);
+    expect(store.knows('a'), isFalse);
+  });
+
   test('a restart keeps the order of use', () async {
     final first = open();
     for (final k in ['a', 'b', 'c']) {

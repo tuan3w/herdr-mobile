@@ -61,8 +61,16 @@ sheets are dark too.
   GIF that may be see-through (`mayHaveTransparency`, header only) sits on a
   checkerboard.
 - **Loading and limits.** The thumbnail the folder grid or the chat preview
-  already made stands in (`PhotoItem.placeholder`), under the one spinner and
-  `4.2 MB of 11 MB` with a thin progress bar; both go when the picture is there.
+  already made stands in (`PhotoItem.placeholder`), and a quiet badge says the
+  wait: the one spinner and `4.2 MB of 11 MB` with a thin progress bar; both go
+  when the picture is there. The badge waits before it shows: `Dwell.spinnerDelay`
+  (120 ms) for a photo with nothing on screen, `Dwell.standInWait` (800 ms) for one
+  that already shows its stand-in. Why: a picture opened from the chat is
+  already on screen, and `Preparing…` over it for the fraction of a second its
+  full size took to come back from the cache read as loading something that
+  was cached (owner, 2026-11-24: "always show loading even it cached"). A wait
+  that is real still says so, and a screen reader hears nothing for one that
+  is not.
   Files are read over SFTP in 2 MB pieces (`photoReadChunk`, `RemoteFiles.readAll`
   with progress and a `ReadCancel`), up to 40 MB (`photoReadCap`); over it
   nothing is read and the panel says `This photo is 52 MB. The viewer opens

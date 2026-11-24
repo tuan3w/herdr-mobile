@@ -3,7 +3,7 @@
 // with four pages and a launch command, a long launch command, a running app, a
 // database port, and an app with no known launch. Media: real thumbnails of
 // pictures from a fake machine, a video and a picture a tool returned. Links: a
-// pull request and a release. Light and dark at 412x892, and 320x640 at text
+// pull request, a release and four said links (a tailnet dashboard, a long label, a Vietnamese label, a very long address). Light and dark at 412x892, and 320x640 at text
 // scale 1.6. Off by default; it writes files:
 //
 //   MADE_SHOTS=1 flutter test test/ui/session_made_shots_test.dart
@@ -150,6 +150,16 @@ void main() {
                 'https://github.com/tuan3w/herdr-mobile/pull/93\n',
               ),
               _printed('gh release create v0.1.51', 'https://github.com/tuan3w/herdr-mobile/releases/tag/v0.1.51\n'),
+              _say('Dashboard: http://100.87.64.16:8792 (LAN: http://192.168.0.108:8792/runs?tab=overview)'),
+              _say(
+                'Curves are in [the sweep: Swift 1.5 27B, rows27 sampling, 5 seeds](https://wandb.ai/suneye/qwen-warp/runs/ab12cd)',
+              ),
+              _say(
+                'Tiến độ: [bảng điều khiển huấn luyện](https://kaggle.com/competitions/gemma-4-developer-agent/submissions)',
+              ),
+              _say(
+                'Paper https://arxiv.org/abs/2401.00001 and https://huggingface.co/Qwen/Qwen3-27B-Instruct-AWQ-INT4-quantized-with-a-very-long-name/blob/main/config.json?download=true&revision=refs%2Fpr%2F12',
+              ),
             ],
           ),
           machine: machine,

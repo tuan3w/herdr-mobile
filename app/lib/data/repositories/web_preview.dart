@@ -94,6 +94,23 @@ class WebPreview {
 
   static bool _portExists(Uri uri) => !uri.hasPort || (uri.port >= 1 && uri.port <= 65535);
 
+  /// A link to the machine by the address the app dials it at (`http://100.87.64.16:8792/runs`
+  /// for the machine `100.87.64.16`: how an agent announces a dashboard on its
+  /// tailnet or LAN address) as the page the machine itself serves,
+  /// `http://localhost:8792/runs`, which [forwardUrl] carries over the SSH
+  /// connection. Why not load it directly: Android refuses cleartext to any host
+  /// but `localhost`, and the bridge works off the tailnet too. Null for any
+  /// other host, `https` (a certificate that names the machine, not
+  /// `localhost`) and a port that does not exist. Exactly the machine's host,
+  /// never a guess: another device's address stays a link to the web.
+  static Uri? ownHostLink(String machineHost, Uri url) {
+    final machine = normalHost(machineHost);
+    if (machine.isEmpty || url.scheme != 'http' || normalHost(url.host) != machine) return null;
+    if (isMachineLocalUrl(url.toString())) return null;
+    final link = url.removeFragment().replace(host: 'localhost', userInfo: '');
+    return canPreview(link.toString()) ? link : null;
+  }
+
   /// The URL that shows [file] in the browser: the listener serves the file's
   /// own folder (so the page's relative links work and nothing above that
   /// folder is ever asked for) and the URL opens [file] in it. Keeps

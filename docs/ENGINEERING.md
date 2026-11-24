@@ -363,17 +363,30 @@ Tailscale.
     `MadeHistory` never keeps it (`MadeFold.history` leaves it out before the cap, so memory,
     disk and the cap agree; the row is read again with the log). A picture with no data is
     left out: the chat shows it as a reference line.
-  - Links (`MadeKind.link`): a GitHub pull request, issue, release or CI run, from what
-    `gh pr create`, `gh issue create`, `gh release create|edit` and `gh run view`
-    printed (`_ghLinks`; `gh` is a probe for banners, so its output is read only for these;
-    a global `-R o/r` before the subcommand is skipped), named from the command (`--title` for a pull
-    request or issue), or from the agent's words after a verb of DOING it on its own
-    line (`opened`, `created`, `published`, `released`, `merged`, `pushed`...: "Opened
-    PR: <url>"). NOT `gh pr view` or `gh release list` (what is already there), NOT
-    `git push`'s "Create a pull request" line (an offer), NOT a link only named ("see
-    <url>"), NOT any other host (a YouTube or Datadog link is mentioned, not made).
-    A row opens in the phone's browser (`openInBrowser`, https only). The same
-    address said twice keeps the longer name.
+  - Links (`MadeKind.link`): every address the agent wrote in its own words, outside
+    a code block (`_sayLinks`), newest first, one row per address; the person asked
+    "web link ?" and "wandb link ?" again and again (about 40 such asks in 569
+    recorded sessions on one machine, 2026-11-24), and agents announced a
+    tailnet or LAN address 186 times in 31 sessions against 37 for localhost, so
+    the earlier rule (only a GitHub item the agent made, "NOT any other host") hid what
+    was asked for. A GitHub pull request, issue, release or CI run is named by what
+    it is (`PR #93 <title>`, `Release v0.1.51`, from `_ghLink`), the title from
+    `gh pr create` / `gh issue create` (`_ghLinks`; a global `-R o/r` before the
+    subcommand is skipped); a markdown link is called by its label, with its host
+    under it; any other address by its host, port and path (the port is part of
+    the name: two dashboards of one machine differ by it), nothing under it. Not a
+    row: loopback in any spelling (`127.x`, `*.localhost`, `[::1]`, `0.0.0.0`: the
+    phone's browser would open its OWN, a dead end, and an address of the machine
+    that can be shown is a server row), a name without a dot, a placeholder
+    (`example.com`, `*.test`, `*.invalid`, the SVG namespace), a template
+    (`{id}`, `$name`), an address longer than 2,000 characters. Credentials and the
+    fragment are dropped, the query kept. NOT `gh pr view` or `gh release list`
+    output (what is already there) and NOT `git push`'s "Create a pull request" line (an
+    offer): only what the agent SAID or `gh` made. A link is said, not made: it is
+    not counted by `madeCountOf`, so `Made N` and "N items made" stay true. A row
+    opens in herdr (`_openMade`): the machine's own address through its SSH
+    connection (`WebPreview.ownHostLink`), any other `https` address as a website
+    (`openWebsite`), and a sign-in or plain `http` through the link sheet.
   - A file the agent says it LEFT alone ("I left /tmp/old_build.html alone",
     "untouched", "not", "never", "without" in the 8 words before the path, looking back over
     a `:` or a line break so a list "Files I did not touch:" works) is named, not made: a
@@ -418,7 +431,7 @@ Tailscale.
     from a launch command's `--port N`, `-p N`, `http.server N` or `PORT=N`; it
     makes NO row by itself (a command is not proof that a server came up). The
     `Made N` chip and the tab count apps, not their pages (`madeCountOf`). The launch is
-    kept with the row, so `madeScanVersion` is 2 (3 since videos, links and returned pictures). A link or a bare `localhost:port`
+    kept with the row, so `madeScanVersion` is 2 (3 since videos, links and returned pictures, 4 since every link the agent said). A link or a bare `localhost:port`
     quoted in the agent's own words (a chat about this very sheet) still makes a
     row: the scan cannot tell a quote from an announcement.
   - A port that is not a web server (SSH, Docker, MySQL, PostgreSQL, Redis,

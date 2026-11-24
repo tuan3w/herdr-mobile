@@ -21,8 +21,14 @@ const imageDecodeLimit = diskCacheEntryLimit;
 /// one.
 const imagePreviewDimension = 1024;
 
-/// How many decoded previews [ImagePreviewCache] keeps once nothing shows them.
-const imageCacheCapacity = 8;
+/// How many decoded previews [ImagePreviewCache] keeps once nothing shows them,
+/// at most; [imageCacheBytes] is the bound that matters for big ones.
+const imageCacheCapacity = 48;
+
+/// What the previews kept once nothing shows them may hold together, decoded
+/// (4 bytes a pixel): about eight full-size ones, or many small ones. The same
+/// memory the count of 8 allowed before, spent where it buys the most.
+const imageCacheBytes = 24 * 1024 * 1024;
 
 /// Base64 text longer than this is decoded off the main isolate.
 const _isolateFromChars = 64 * 1024;
@@ -140,6 +146,9 @@ class ImageEntry extends ChangeNotifier {
 
   bool get loading => _image == null && _problem == null;
 
+  /// What the bitmap holds in memory, decoded; 0 until there is one.
+  int get decodedBytes => (_image?.width ?? 0) * (_image?.height ?? 0) * 4;
+
   void _finish(DecodedImage? image, String? problem, {bool retryable = true}) {
     if (_gone) {
       image?.dispose();
@@ -173,18 +182,31 @@ class ImageEntry extends ChangeNotifier {
 ///
 /// A transcript of 200 images builds a few rows at a time, and each row holds
 /// its entry only while it is built; an entry nobody holds is kept (so scrolling
-/// back is instant) until more than [capacity] are kept, then the oldest is
-/// disposed. Entries somebody draws are never dropped, so the bound is
-/// `capacity` plus what is on screen.
+/// back is instant) until more than [capacity] are kept or their bitmaps pass
+/// [budgetBytes], then the oldest is disposed. Entries somebody draws are never
+/// dropped, so the bounds are those two plus what is on screen.
+///
+/// What a picture measured outlives its bitmap ([sizeOf]): a row built again
+/// before its bitmap is back reserves the size the picture will have, so
+/// nothing below it moves when it lands.
 class ImagePreviewCache {
-  ImagePreviewCache({this.capacity = imageCacheCapacity, this._decoder = decodeImageBytes});
+  ImagePreviewCache({
+    this.capacity = imageCacheCapacity,
+    this.budgetBytes = imageCacheBytes,
+    this._decoder = decodeImageBytes,
+  });
 
   /// The cache the transcript uses.
   static ImagePreviewCache shared = ImagePreviewCache();
 
   final int capacity;
+  final int budgetBytes;
   final ImageDecoder _decoder;
   final _entries = <String, ImageEntry>{};
+
+  /// The decoded size of pictures seen, oldest first, at most [_sizesCap].
+  final _sizes = <String, ({int width, int height})>{};
+  static const _sizesCap = 500;
 
   /// Entries kept, loading and failed ones included.
   int get length => _entries.length;
@@ -226,6 +248,15 @@ class ImagePreviewCache {
   /// loads. Does not start a decode and does not keep anything alive.
   ui.Image? cloneOf(ImageBlock block) => _entries[keyOf(block)]?._image?.image.clone();
 
+  /// The decoded size of the preview of [block] once it has been decoded (its
+  /// bitmap may be gone since), else null.
+  ({int width, int height})? sizeOf(ImageBlock block) {
+    final key = keyOf(block);
+    final image = _entries[key]?._image;
+    if (image != null) return (width: image.width, height: image.height);
+    return _sizes[key];
+  }
+
   void release(ImageEntry entry) {
     entry._refs--;
     _trim();
@@ -243,6 +274,7 @@ class ImagePreviewCache {
     try {
       if (entry.block is LogImageBlock && entry._fetch == null) throw const ImageProblem('Not available here');
       final image = await decodeImageBlock(entry.block, decoder: _decoder, fetch: entry._fetch);
+      _remember(keyOf(entry.block), image);
       entry._finish(image, null);
     } on ImageProblem catch (e) {
       entry._finish(null, e.note, retryable: !e.tooLarge);
@@ -255,23 +287,36 @@ class ImagePreviewCache {
     }
   }
 
+  void _remember(String key, DecodedImage image) {
+    _sizes.remove(key);
+    _sizes[key] = (width: image.width, height: image.height);
+    if (_sizes.length > _sizesCap) _sizes.remove(_sizes.keys.first);
+  }
+
   void _trim() {
-    if (_entries.length <= capacity) return;
+    var bytes = 0;
+    for (final entry in _entries.values) {
+      bytes += entry.decodedBytes;
+    }
+    bool over() => _entries.length > capacity || bytes > budgetBytes;
+    if (!over()) return;
     for (final key in _entries.keys.toList()) {
-      if (_entries.length <= capacity) break;
+      if (!over()) break;
       final entry = _entries[key]!;
       if (entry._refs > 0) continue;
       _entries.remove(key);
+      bytes -= entry.decodedBytes;
       entry._drop();
     }
   }
 
-  /// Disposes every entry (a test's end).
+  /// Disposes every entry and forgets the remembered sizes (a test's end).
   @visibleForTesting
   void clear() {
     for (final entry in _entries.values) {
       entry._drop();
     }
     _entries.clear();
+    _sizes.clear();
   }
 }

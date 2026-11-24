@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -158,16 +159,45 @@ class _Checkerboard extends CustomPainter {
 }
 
 /// The thumbnail (if any) under a quiet progress badge: the one spinner the
-/// app allows, which stops when the picture arrives.
-class _Loading extends StatelessWidget {
+/// app allows, which stops when the picture arrives. The badge waits before it
+/// shows: [Dwell.spinnerDelay] for a photo with nothing on screen, and
+/// [Dwell.standInWait] for one that already shows its stand-in, because a
+/// picture the phone holds comes back within that and a badge for the moment
+/// is a flash, not a wait (the person tapped a picture in the chat, which was
+/// already there, and saw `Preparing…` over it every time).
+class _Loading extends StatefulWidget {
   const _Loading({required this.entry, required this.viewport});
 
   final PhotoEntry entry;
   final Size viewport;
 
   @override
+  State<_Loading> createState() => _LoadingState();
+}
+
+class _LoadingState extends State<_Loading> {
+  Timer? _wait;
+  var _badge = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _wait = Timer(widget.entry.placeholder == null ? Dwell.spinnerDelay : Dwell.standInWait, () {
+      if (mounted) setState(() => _badge = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _wait?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ds = context.ds;
+    final entry = widget.entry;
+    final viewport = widget.viewport;
     final holder = entry.placeholder;
     final total = entry.total;
     final received = entry.received;
@@ -202,43 +232,44 @@ class _Loading extends StatelessWidget {
               },
             ),
           ),
-        Center(
-          child: Semantics(
-            liveRegion: true,
-            label: 'Loading photo, $line',
-            child: ExcludeSemantics(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: holder == null ? Colors.transparent : ds.surface,
-                  borderRadius: BorderRadius.circular(Radii.md),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.md),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const BusySpinner(size: IconSize.row),
-                          const SizedBox(width: Gap.md),
-                          Text(line, style: Type.compact.copyWith(color: ds.textSecondary)),
-                        ],
-                      ),
-                      if (fraction != null) ...[
-                        const SizedBox(height: Gap.md),
-                        SizedBox(
-                          width: math.min(180, viewport.width - 96),
-                          child: ProgressLine(fraction: fraction),
+        if (_badge)
+          Center(
+            child: Semantics(
+              liveRegion: true,
+              label: 'Loading photo, $line',
+              child: ExcludeSemantics(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: holder == null ? Colors.transparent : ds.surface,
+                    borderRadius: BorderRadius.circular(Radii.md),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.md),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const BusySpinner(size: IconSize.row),
+                            const SizedBox(width: Gap.md),
+                            Text(line, style: Type.compact.copyWith(color: ds.textSecondary)),
+                          ],
                         ),
+                        if (fraction != null) ...[
+                          const SizedBox(height: Gap.md),
+                          SizedBox(
+                            width: math.min(180, viewport.width - 96),
+                            child: ProgressLine(fraction: fraction),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

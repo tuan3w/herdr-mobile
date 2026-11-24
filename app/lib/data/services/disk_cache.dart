@@ -95,9 +95,16 @@ class DiskCache {
   String? _path;
   Future<void>? _loaded;
   Future<void>? _chain;
+  bool _indexed = false;
 
   /// The index is loaded (one directory listing). Safe to await repeatedly.
   Future<void> get ready => _loaded ??= _load();
+
+  /// Whether the index is loaded: [knows] says "not stored" truthfully only from
+  /// now on. A screen that must not show a state for a picture it cannot yet
+  /// tell is held (a "tap to load" line for a picture that is on the phone)
+  /// waits for this instead of guessing.
+  bool get indexed => _indexed;
 
   /// Whether [key] is stored, as of now and without touching the disk. False
   /// until [ready].
@@ -143,6 +150,7 @@ class DiskCache {
     } on Object {
       _path = null;
     }
+    _indexed = true;
   }
 
   /// The bytes kept for [key], or null on a miss or any IO error. A hit counts

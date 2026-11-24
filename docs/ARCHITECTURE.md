@@ -449,10 +449,11 @@ Stale data is labelled as stale:
 
 ### Network traffic
 
-The only socket the app opens to the network is the SSH connection
+The only socket the app's own code opens to the network is the SSH connection
 (`SSHSocket.connect`, `ssh_transport.dart:160`). It also listens on the phone's
-loopback address for the pages from a machine it shows (below). Checked in the
-code:
+loopback address for the pages from a machine it shows (below). The WebView
+(the phone's engine, not our code) loads a page of the web over the phone's own
+network, but only when the person opens one (below). Checked in the code:
 
 - `app/pubspec.yaml` has no HTTP client, analytics, crash-reporting or
   telemetry dependency.
@@ -460,25 +461,44 @@ code:
   network images. The loopback listeners below only answer; they never call
   out.
 - One WebView (`webview_flutter`, `WebPreviewScreen`), for pages from a
-  machine's own loopback listeners. Why one at all: a page in a Custom Tab
+  machine's own loopback listeners and for a page of the web the person
+  opened (`WebsitePage`). Why one at all: a page in a Custom Tab
   put herdr in the background, Android dropped the SSH connection the page is
   carried over, and the page sat on "Opening…" forever (seen on a Samsung,
-  Android 14). In the app, the screen holds its machine's connection up while
-  it is open (section 6). Plain `http` is allowed to `localhost` and
-  `127.0.0.1` only (`res/xml/network_security_config.xml`; from Android 9 an
-  app refuses cleartext by default, which the Custom Tab, in Chrome, never
-  met). What the WebView is asked about and what it does
+  Android 14); the same background trip dropped the connections after the
+  grace (`Stay connected`) on every link to the web, so those open here too
+  (2026-11-24). In the app, the screen holds its machine's connection up while
+  it is open (section 6); a website holds none. Plain `http` is allowed to
+  `localhost` and `127.0.0.1` only (`res/xml/network_security_config.xml`;
+  from Android 9 an app refuses cleartext by default, which the Custom Tab, in
+  Chrome, never met), so a plain `http` page of the web never loads in the
+  view. What the WebView is asked about and what it does
   (`web_navigation.dart`):
   - It loads `http` to `localhost` (the name the listeners' cookie is for) on
     a port the bridge opened for that machine (the listeners and the entry
     listener), and `about:blank`.
-  - A navigation to the web (`http`/`https` to a host that is not the phone)
-    opens nowhere by itself: a page's script can navigate without a tap, and
-    must not push herdr behind the browser. A toast names the host (`<host>
-    isn't from <machine>`) with `Open`, the person's tap, which opens an
-    `https` one in the Custom Tab (`openInBrowser`) and shows a plain `http`
-    one in the link sheet first. Sign-in redirects (Google, Tailscale)
-    therefore never run inside herdr.
+  - From a page of a machine, a navigation to the web (`http`/`https` to a
+    host that is not the phone) opens nowhere by itself: a page's script can
+    navigate without a tap, and must not take the person anywhere unasked. A
+    toast names the host (`<host> isn't from <machine>`) with `Open`, the
+    person's tap, which shows an `https` one in herdr over this page (a
+    website, below), opens a sign-in host (`needsOwnBrowser`: Google,
+    Microsoft, Apple, Tailscale) in the Custom Tab (`openInBrowser`), the one
+    thing that can do it, and shows a plain `http` one in the link sheet first.
+    Sign-in redirects therefore never run inside herdr.
+  - A website (`WebsitePage`, `siteNavigation`) has no machine, no bridge and
+    no listener. It loads `https` to any host, and follows its own links,
+    redirects and frames over `https`, as a browser does. It never loads
+    another scheme (`data:` in the top frame, `intent:`, `file:`, `mailto:`),
+    anything the phone itself would answer (`localhost`, any loopback spelling,
+    a `.local` name: it would reach the phone's own services), a plain `http`
+    page, or a sign-in host: those are offered with a tap as above. The same
+    hardening as a machine's page applies: JavaScript with no channel to the
+    app, no file or content access, no geolocation, mixed content never
+    allowed, third-party cookies off. What this adds to the trust model: the
+    phone loads a site the person chose, from the phone's own network, and the
+    site sees the phone, not the machine. The address shown first is the
+    person's check (the link sheet; a label can say anything).
   - Another loopback port or name, in any spelling a browser reads as the
     phone (`localhost.`, `[::ffff:7f00:1]`, `2130706433`, `0x7f.1`:
     `isLoopbackAddress`), opens nowhere: in the browser it would reach the
@@ -506,17 +526,24 @@ code:
 
 Other ways traffic can leave the phone:
 
-- **Links you tap** open in a browser tab over the app (a Chrome Custom Tab,
-  `LaunchMode.inAppBrowserView`, through `url_launcher`;
-  `app/lib/ui/support/open_link.dart`), so Back returns to the app. The page is
-  the phone's browser, not a WebView of ours: Google refuses sign-in inside
-  embedded WebViews and Tailscale's login offers Google. A link from a login banner (Tailscale SSH
-  approval) opens only if it is `https`. A link tapped in terminal output may
-  be `http` or `https`, and the sheet shows the whole address first.
-  Addresses that point at the host itself (`localhost`, loopback addresses,
-  `.local` names) cannot be opened as they are; a plain `http` one can be
-  opened through the SSH connection (`Open page`, next point), an `https`
-  one is copy-only (`docs/ENGINEERING.md` "Links in terminal output").
+- **Links you tap** open in herdr (the WebView above): an `https` page of the
+  web over the phone's own network, and a page on a known machine through its
+  SSH connection, which includes the address an agent announced for the
+  machine itself (`WebPreview.ownHostLink`: exactly the host the app dials,
+  plain `http`, shown as the machine's `localhost`; it needs no cleartext rule
+  and works off the tailnet). The phone's browser, a Chrome Custom Tab
+  (`LaunchMode.inAppBrowserView`, through `url_launcher`;
+  `app/lib/ui/support/open_link.dart`), opens only for what an embedded view
+  cannot do: a sign-in host (Google refuses sign-in inside embedded WebViews
+  and Tailscale's login offers Google), the page's `Open in browser` on the
+  person's request, a plain `http` link to another host after the sheet shows
+  it, and a link from a login banner (Tailscale SSH approval), which opens only
+  if it is `https`. herdr is in the background while it is open. A link tapped
+  in terminal output may be `http` or `https`, and the sheet shows the whole
+  address first. Addresses that point at the host itself (`localhost`, loopback
+  addresses, `.local` names) cannot be opened as they are; a plain `http` one
+  can be opened through the SSH connection (`Open page`, next point), an
+  `https` one is copy-only (`docs/ENGINEERING.md` "Links in terminal output").
 - **Pages from a machine** (`app/lib/data/services/web_bridge.dart`, the
   transport isolate). `Show as page` on an HTML or SVG file, a page or server
   row of `Made`, and `Open page` on a `localhost` link start a listener on
@@ -737,13 +764,15 @@ setting decides whether that text appears there.
   also read anything you upload to its inbox.
 - *Can:* run JavaScript inside herdr's process, in a page from its own
   loopback listener that you opened (a dev server or an HTML file an agent
-  wrote). It runs in the WebView's sandbox with no channel to the app: no
-  JavaScript bridge, no file access; it cannot read the listeners' cookies
-  (they are `HttpOnly`). It can call the listeners you opened (above) and the
-  internet, as in any browser, post a form to any site (which then shows in
-  the view, marked `not from <machine>`), and load any site in a frame. It
-  cannot open the phone's browser: a page of the web it navigates to is only
-  offered, and opens on your tap.
+  wrote), or in a page of the web that you opened. It runs in the WebView's
+  sandbox with no channel to the app: no JavaScript bridge, no file access; it
+  cannot read the listeners' cookies (they are `HttpOnly`). It can call the
+  listeners you opened (above) and the internet, as in any browser, post a form
+  to any site (which then shows in the view, marked `not from <machine>`), and
+  load any site in a frame. It cannot take you to another site or open the
+  phone's browser: a page of a machine that navigates to the web is only
+  offered, and opens on your tap; a website follows its own links over `https`
+  as a browser does, and a sign-in is offered, not run.
 - *Cannot:* run code on the phone outside that sandbox. The app renders
   text, Markdown and images natively. A link from a login banner must be
   `https` and opens only on your tap.

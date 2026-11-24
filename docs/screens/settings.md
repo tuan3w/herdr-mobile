@@ -78,7 +78,8 @@ automatically` (on by default: at most every 12 h while the app is in front;
 the request carries the app name and version, and a download comes from
 GitHub's file servers). Why on by default and why About says so: the app used
 to say it "sends nothing anywhere else"; github.com is now the one other place
-it contacts, and the Connection line says it. The download is only ever
+it contacts on its own, and a page of the web is contacted when the person
+opens a link (in herdr, on a tap), and the Connection line says both. The download is only ever
 started by a tap (it is ~50 MB of the person's radio). Android only:
 `bootApp` builds no updater elsewhere and the screen then shows nothing about
 updates.

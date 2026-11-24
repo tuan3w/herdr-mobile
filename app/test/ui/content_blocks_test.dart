@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -284,7 +285,8 @@ void main() {
     testWidgets('a 200-picture transcript holds a few bitmaps, not 200, and disposes what it lets go', (tester) async {
       _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
       addTearDown(_base.dispose);
-      final cache = ImagePreviewCache(decoder: _fakeBitmap);
+      const capacity = 8;
+      final cache = ImagePreviewCache(capacity: capacity, decoder: _fakeBitmap);
       ImagePreviewCache.shared = cache;
       final blocks = [
         for (var i = 0; i < 200; i++) ImageBlock(data: _distinct(i), mimeType: 'image/png', uri: 'file:///p/$i.png'),
@@ -308,14 +310,103 @@ void main() {
         await tester.pump();
       }
       final onScreen = find.byType(ImageBlockView).evaluate().length;
-      expect(cache.bitmaps, lessThanOrEqualTo(imageCacheCapacity + onScreen + 1));
-      expect(cache.length, lessThan(40));
-      expect(seen.length, greaterThan(imageCacheCapacity), reason: 'many pictures went by');
+      expect(cache.bitmaps, lessThanOrEqualTo(capacity + onScreen + 1));
+      expect(cache.length, lessThanOrEqualTo(capacity + onScreen + 1));
+      expect(seen.length, greaterThan(capacity), reason: 'many pictures went by');
       expect(
         seen.where((i) => i.debugDisposed).length,
-        greaterThan(seen.length - imageCacheCapacity - onScreen - 2),
+        greaterThan(seen.length - capacity - onScreen - 2),
         reason: 'pictures that left are disposed',
       );
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('previews are kept by what they hold in memory: a big one costs more than a small one', (tester) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      // 1000 x 1000 decoded is 4 MB: two fit in 9 MB, a third pushes the oldest out.
+      Future<DecodedImage> big(Uint8List bytes, {required int maxDimension}) async =>
+          DecodedImage(image: _base.clone(), width: 1000, height: 1000, downscaled: false);
+      final cache = ImagePreviewCache(capacity: 20, budgetBytes: 9 * 1000 * 1000, decoder: big);
+      final blocks = [
+        for (var i = 0; i < 5; i++) ImageBlock(data: _distinct(i), mimeType: 'image/png', uri: 'file:///$i'),
+      ];
+      for (final block in blocks) {
+        final entry = cache.acquire(block);
+        await tester.pump();
+        cache.release(entry);
+      }
+      expect(cache.bitmaps, 2, reason: 'by bytes, not by count: 20 entries were allowed');
+      expect(cache.sizeOf(blocks.first), (width: 1000, height: 1000), reason: 'what it measured outlives its bitmap');
+      expect(
+        cache.sizeOf(ImageBlock(data: _distinct(99), mimeType: 'image/png')),
+        isNull,
+        reason: 'never seen',
+      );
+      cache.clear();
+    });
+
+    // A picture the phone holds is back within a few frames, and a grey box for
+    // those frames before it is a flash, not a wait.
+    testWidgets('a picture being decoded paints nothing at first, then a quiet frame if it is slow', (tester) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      final gate = Completer<void>();
+      Future<DecodedImage> slow(Uint8List bytes, {required int maxDimension}) async {
+        await gate.future;
+        return DecodedImage(image: _base.clone(), width: 8, height: 8, downscaled: false);
+      }
+
+      final cache = ImagePreviewCache(decoder: slow);
+      final block = ImageBlock(data: _distinct(1), mimeType: 'image/png', uri: 'file:///a.png');
+      await tester.pumpWidget(host(ImageBlockView(block: block, cache: cache)));
+      expect(find.byIcon(HerdrIcons.picture), findsNothing, reason: 'the first frame paints no placeholder');
+      expect(tester.getSize(find.byType(ImageBlockView)).height, greaterThan(0), reason: 'but the room is kept');
+      await tester.pump(Dwell.spinnerDelay ~/ 2);
+      expect(find.byIcon(HerdrIcons.picture), findsNothing);
+      await tester.pump(Dwell.spinnerDelay);
+      expect(find.byIcon(HerdrIcons.picture), findsOneWidget, reason: 'a slow one shows its frame');
+
+      gate.complete();
+      await until(tester, find.byType(RawImage));
+      expect(find.byIcon(HerdrIcons.picture), findsNothing);
+      cache.clear();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a picture seen before reserves the size it will have, so nothing below it moves when it lands', (
+      tester,
+    ) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      Completer<void>? hold;
+      Future<DecodedImage> decoder(Uint8List bytes, {required int maxDimension}) async {
+        await hold?.future;
+        return DecodedImage(image: _base.clone(), width: 800, height: 400, downscaled: false);
+      }
+
+      final cache = ImagePreviewCache(capacity: 1, decoder: decoder);
+      final first = ImageBlock(data: _distinct(1), mimeType: 'image/png', uri: 'file:///a.png');
+      final other = ImageBlock(data: _distinct(2), mimeType: 'image/png', uri: 'file:///b.png');
+      await tester.pumpWidget(host(ImageBlockView(block: first, cache: cache)));
+      await until(tester, find.byType(RawImage));
+      final landed = tester.getSize(find.byType(ImageBlockView)).height;
+
+      // Its bitmap goes (a second picture pushes it out of a cache of one) ...
+      await tester.pumpWidget(const SizedBox());
+      final entry = cache.acquire(other);
+      await tester.pump();
+      cache.release(entry);
+      expect(cache.sizeOf(first), isNotNull);
+      // ... and a row built again, its decode not yet back, is already the size it will be.
+      hold = Completer<void>();
+      await tester.pumpWidget(host(ImageBlockView(block: first, cache: cache)));
+      expect(find.byType(RawImage), findsNothing);
+      expect(tester.getSize(find.byType(ImageBlockView)).height, landed);
+      hold.complete();
+      await until(tester, find.byType(RawImage));
+      expect(tester.getSize(find.byType(ImageBlockView)).height, landed, reason: 'and it stays that size');
+      cache.clear();
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -377,6 +468,21 @@ void main() {
       expect(cache.cloneOf(after), isNotNull);
       cache.release(second);
       cache.clear();
+    });
+
+    testWidgets('clearing the cache forgets the sizes it remembered, not only the bitmaps', (tester) async {
+      _base = (await tester.runAsync(() => createTestImage(width: 4, height: 4)))!;
+      addTearDown(_base.dispose);
+      final cache = ImagePreviewCache(decoder: _fakeBitmap);
+      final block = ImageBlock(data: _distinct(3), mimeType: 'image/png');
+
+      final entry = cache.acquire(block);
+      await tester.pump();
+      cache.release(entry);
+      expect(cache.sizeOf(block), isNotNull);
+
+      cache.clear();
+      expect(cache.sizeOf(block), isNull);
     });
 
     test('base64 length without decoding, and the isolate path rejects what isn’t base64', () async {

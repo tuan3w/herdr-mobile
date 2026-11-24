@@ -604,25 +604,33 @@ shows recent changes in this folder only. Sorting, `Folders first` and
   phone itself confirms a copy, so the app says nothing more unless only part
   was copied.
 
-**Pages from a machine.** A dev server an agent started, or an HTML file it
-wrote, opens as a page inside herdr: `Open page` on a `localhost` link,
-an app or page in a session's `Made` sheet, or `Show as page` in the file
-viewer. The bar names the page, with where it comes from under the title
-(`devbox · python label_server.py` for an app opened from `Made`, which says
-what started it; `localhost:5173 · devbox` otherwise). `✕` on the left closes
-the page from however deep you went; on the right, the arrow goes back one
-page (hold it for `Pages in this visit`, to jump back to any of them) and `⋯`
-holds `Reload`. The phone's Back goes back in the page first, then leaves, as
-in a browser. While the page is open herdr keeps
-its machine's connection up, also when you switch apps or turn the screen
-off, with the Watching notice (below); if the connection drops anyway, the
-page says so and comes back by itself when it is up again. A link to the web
-never opens by itself: herdr says where it leads (`github.com isn't from
-devbox.`) and `Open` takes it to your phone's browser. `⋯` also holds `Copy link`
-(the address on the machine; `Copy path` for a file) and `Open in browser`,
-for a page that needs your phone's browser, such as a Google sign-in: the
-browser's copy works only while the page stays open in herdr. A page that
-cannot load says why, with `Retry`.
+**Pages in herdr.** A link never takes you out of herdr. A dev server an agent
+started, or an HTML file it wrote, opens as a page inside herdr: `Open page`
+on a `localhost` link, an app or page in a session's `Made` sheet, or `Show as
+page` in the file viewer. So does the address an agent announces for its
+machine (`http://100.87.64.16:8792`, the machine's own address: it opens
+through your SSH connection). A page of the web (`https`) opens in herdr too:
+`Open page` in the link sheet, a link row in `Made`. The bar names the page, with
+where it comes from under the title (`devbox · python label_server.py` for an
+app opened from `Made`, which says what started it; `localhost:5173 · devbox`
+otherwise; a lock and the site's name for a page of the web). `✕` on the left
+closes the page from however deep you went; on the right, the arrow goes back
+one page (hold it for `Pages in this visit`, to jump back to any of them) and
+`⋯` holds `Reload`. The phone's Back goes back in the page first, then leaves,
+as in a browser. While a page of a machine is open herdr keeps its machine's
+connection up, also when you switch apps or turn the screen off, with the
+Watching notice (below); if the connection drops anyway, the page says so and
+comes back by itself when it is up again. While a page loads the screen says
+what it is waiting for, and after 8 s says it is slow and offers `Try again`.
+A page of a machine never takes you to another site by itself: herdr says where
+the link leads (`github.com isn't from devbox.`) and `Open` shows it in herdr.
+A sign-in (Google, Microsoft, Apple, Tailscale) is the one thing that goes to
+your phone's browser, on `Open`: herdr stays in the background while it is
+open. `⋯` also holds `Copy link` (the address on the machine; `Copy path` for
+a file) and `Open in browser`, for a page that needs your phone's browser. herdr
+keeps no web session: cookies and stored data are cleared when the last page
+closes, so a private page asks you to sign in each time. A page that cannot
+load says why, with `Retry`.
 
 **Photos.** Pictures open in the photo viewer: pinch or double-tap to zoom,
 swipe sideways for the next photo, drag down to close. `Save or share` has

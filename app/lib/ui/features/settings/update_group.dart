@@ -10,7 +10,7 @@ import '../../../data/repositories/app_update.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../render/markdown/markdown.dart';
-import '../../support/open_link.dart';
+import '../web/web_preview_screen.dart' show openWebsite;
 import 'clip_player.dart';
 import 'settings_group.dart';
 
@@ -302,15 +302,7 @@ class _NoNotes extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('No notes came with this release.', style: Type.secondary.copyWith(color: ds.textSecondary)),
-        TextAction(
-          label: 'Open on GitHub',
-          onTap: () async {
-            final toaster = Toaster.of(context);
-            if (!await openInBrowser(release.pageUrl)) {
-              toaster.show('Couldn\u2019t open on this phone: no browser could open it.', kind: ToastKind.failed);
-            }
-          },
-        ),
+        TextAction(label: 'Open on GitHub', onTap: () => unawaited(openWebsite(context, Uri.parse(release.pageUrl)))),
       ],
     );
   }

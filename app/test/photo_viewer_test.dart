@@ -794,6 +794,8 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(BusySpinner), findsNothing, reason: 'a wait this short shows no badge');
+      await tester.pump(Dwell.spinnerDelay);
 
       expect(find.byType(BusySpinner), findsOneWidget);
       expect(find.text('4.2 MB'), findsOneWidget, reason: 'the size to expect');
@@ -807,6 +809,89 @@ void main() {
       await pumpUntil(tester, () => find.byType(BusySpinner).evaluate().isEmpty);
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(BusySpinner), findsNothing, reason: 'nothing spins once the wait is over');
+      expect(find.byType(RawImage), findsOneWidget);
+    });
+
+    // The person taps a picture in the chat: its preview is already on screen,
+    // and `Preparing…` over it every time read as loading something cached.
+    testWidgets('a photo that shows its stand-in has no loading badge until the wait is real', (tester) async {
+      final (decoder, log) = await prepared(tester);
+      final standIn = (await tester.runAsync(() => createTestImage(width: 64, height: 48)))!;
+      addTearDown(standIn.dispose);
+      final gate = Completer<void>();
+      usePhoneSurface(tester);
+      late BuildContext host;
+      await pumpApp(
+        tester,
+        Builder(
+          builder: (c) {
+            host = c;
+            return const SizedBox();
+          },
+        ),
+      );
+      unawaited(
+        Navigator.of(host).push(
+          photoViewerRoute(
+            items: [
+              PhotoItem(
+                id: 'chat:1',
+                name: 'a.png',
+                source: FakeSource('a.png', photoBytes(4000, 3000), log, gate: gate, sizeOverride: 4400000),
+                placeholder: standIn.clone,
+              ),
+            ],
+            export: FakeExport(),
+            decoder: decoder.call,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(RawImage), findsOneWidget, reason: 'the stand-in is the picture, at once');
+      expect(find.byType(BusySpinner), findsNothing, reason: 'nothing loads that the person can see');
+      expect(find.text('4.2 MB'), findsNothing);
+      await tester.pump(Dwell.standInWait ~/ 2);
+      expect(find.byType(BusySpinner), findsNothing);
+
+      await tester.pump(Dwell.standInWait);
+      expect(find.byType(BusySpinner), findsOneWidget, reason: 'a wait that is real says so');
+      expect(find.byType(RawImage), findsOneWidget, reason: 'over the stand-in, which stays');
+
+      gate.complete();
+      await pumpUntil(tester, () => find.byType(BusySpinner).evaluate().isEmpty);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(RawImage), findsOneWidget);
+    });
+
+    testWidgets('a photo that comes back at once never shows the badge, stand-in or not', (tester) async {
+      final (decoder, log) = await prepared(tester);
+      usePhoneSurface(tester);
+      late BuildContext host;
+      await pumpApp(
+        tester,
+        Builder(
+          builder: (c) {
+            host = c;
+            return const SizedBox();
+          },
+        ),
+      );
+      unawaited(
+        Navigator.of(host).push(
+          photoViewerRoute(
+            items: [fakePhoto('IMG_1.jpg', log, width: 4000, height: 3000, size: 4400000)],
+            export: FakeExport(),
+            decoder: decoder.call,
+          ),
+        ),
+      );
+      var sawBadge = false;
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (find.byType(BusySpinner).evaluate().isNotEmpty) sawBadge = true;
+      }
+      expect(sawBadge, isFalse, reason: 'ready within the short delay: no badge, no flash');
       expect(find.byType(RawImage), findsOneWidget);
     });
 

@@ -201,7 +201,7 @@ void main() {
       },
     );
 
-    test('only plain http to the machine itself, spelled the ways a dev server spells it', () {
+    test('only plain http to the machine itself is a server, spelled the ways a dev server spells it', () {
       final items = [
         _say(
           'https://localhost:8443/admin http://192.168.1.20:3000 http://printer.local:9100/ http://127.0.0.5:6379/ '
@@ -210,7 +210,22 @@ void main() {
           'http://[::1]:5173/ HTTP://LOCALHOST:3000/',
         ),
       ];
-      expect(_keys(items), ['localhost:3000', 'localhost:5173']);
+      final assets = madeAssetsOf(items);
+      expect(
+        [
+          for (final a in assets)
+            if (a.kind == MadeKind.server) a.key,
+        ],
+        ['localhost:3000', 'localhost:5173'],
+      );
+      // What is not the machine itself is a link; the machine itself, in any spelling, is never one.
+      expect(
+        [
+          for (final a in assets)
+            if (a.kind == MadeKind.link) a.url!.host,
+        ],
+        ['redis.svc.cluster.local', 'printer.local', '192.168.1.20'],
+      );
     });
 
     test('credentials in a link are not kept', () {
@@ -822,7 +837,7 @@ void main() {
     });
   });
 
-  group('links the agent opened or shipped', () {
+  group('links the agent said, opened or shipped', () {
     const repo = 'https://github.com/tuan3w/herdr-mobile';
 
     test('a pull request, an issue, a release and a CI run are rows, named from the command that made them', () {
@@ -865,7 +880,7 @@ void main() {
       expect(_keys(items), isEmpty);
     });
 
-    test('in the agent’s words a link counts after a verb of doing, not when it is only named', () {
+    test('in the agent’s words every link is a row, a GitHub one named by what it is', () {
       final items = [
         _say('Opened PR: $repo/pull/93'),
         _say('The release is out, I published v0.1.51: $repo/releases/tag/v0.1.51'),
@@ -874,7 +889,72 @@ void main() {
         _say('The walkthrough is on https://www.youtube.com/watch?v=abc and https://us3.datadoghq.com/dashboard/x'),
         _say('I created https://github.com/tuan3w/herdr-mobile/tree/main'),
       ];
-      expect([for (final a in madeAssetsOf(items)) a.title], ['Release v0.1.51', 'PR #93']);
+      expect(
+        [for (final a in madeAssetsOf(items)) a.title],
+        [
+          'github.com/tuan3w/herdr-mobile/tree/main',
+          'us3.datadoghq.com/dashboard/x',
+          'www.youtube.com/watch?v=abc',
+          'Release v0.1.40',
+          'Issue #85',
+          'Release v0.1.51',
+          'PR #93',
+        ],
+      );
+    });
+
+    // Recorded on 2026-11-24: agents announce dashboards on the machine's tailnet or
+    // LAN address (186 mentions in 31 sessions on one machine, against 37 for
+    // localhost) and the person asked "web link ?" each time. Such a link opens in the
+    // phone's browser; localhost would open the phone's own.
+    test('a dashboard announced on the machine’s tailnet or LAN address is a link, named with its port', () {
+      final assets = madeAssetsOf([
+        _say('Dashboard: http://100.87.64.16:8792 (LAN: http://192.168.0.108:8792/runs?x=1#top)'),
+      ]);
+      expect(
+        [for (final a in assets) (a.kind, a.title, a.where, a.url.toString())],
+        [
+          (MadeKind.link, '192.168.0.108:8792/runs?x=1', '', 'http://192.168.0.108:8792/runs?x=1'),
+          (MadeKind.link, '100.87.64.16:8792', '', 'http://100.87.64.16:8792/'),
+        ],
+      );
+    });
+
+    test('a markdown link is named by its label; credentials and the fragment are not kept', () {
+      final assets = madeAssetsOf([
+        _say(
+          'Run [the sweep](https://user:pw@wandb.ai/me/p/runs/abc#charts) and [the paper](https://arxiv.org/abs/2401.00001).',
+        ),
+      ]);
+      expect(
+        [for (final a in assets) (a.title, a.where, a.url.toString())],
+        [
+          ('the paper', 'arxiv.org', 'https://arxiv.org/abs/2401.00001'),
+          ('the sweep', 'wandb.ai', 'https://wandb.ai/me/p/runs/abc'),
+        ],
+      );
+    });
+
+    test('what is not a place to look at is no row: a code block, the machine itself, a placeholder, a template', () {
+      final items = [
+        _say('Run:\n```\ncurl https://api.vendor.com/v1/items\n```'),
+        _say('http://127.0.0.1:3000/a http://localhost/b http://[::1]:80/c http://app.localhost:3000/d'),
+        _say('POST https://example.com/api, the namespace https://www.w3.org/2000/svg and http://intranet/wiki'),
+        _say('Use https://api.vendor.com/v1/items/{id}/\$name'),
+      ];
+      expect(madeAssetsOf(items).where((a) => a.kind == MadeKind.link), isEmpty);
+    });
+
+    test('a link is said, not made: not counted, and said again it is one row as new as the later mention', () {
+      final assets = madeAssetsOf([
+        _say('https://wandb.ai/me/p'),
+        _say('Live at https://wandb.ai/me/p again'),
+        _say('http://localhost:5173/'),
+      ]);
+      final links = assets.where((a) => a.kind == MadeKind.link).toList();
+      expect(links, hasLength(1));
+      expect(links.single.order ~/ 1000, 1);
+      expect(madeCountOf(assets), 1, reason: 'the server; the link was said');
     });
 
     test('the same address said again keeps the longer name', () {

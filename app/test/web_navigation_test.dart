@@ -110,4 +110,55 @@ void main() {
       expect(isLoopbackAddress(host), isFalse, reason: host);
     }
   });
+
+  group('a website opened by itself', () {
+    WebNavigation site(String url, {bool mainFrame = true}) => siteNavigation(Uri.parse(url), mainFrame: mainFrame);
+
+    test('any https page loads, a link or a redirect to another site included, as in a browser', () {
+      for (final url in [
+        'https://wandb.ai/me/p',
+        'https://github.com/x/y/pull/1#a',
+        'https://www.arxiv.org:443/abs/1',
+      ]) {
+        expect(site(url), WebNavigation.load, reason: url);
+      }
+      expect(site('about:blank'), WebNavigation.load);
+    });
+
+    test('a sign-in that needs the phone’s browser, and plain http, are offered with a tap, never loaded', () {
+      for (final url in [
+        'https://accounts.google.com/o/oauth2/auth',
+        'https://login.tailscale.com/a/x',
+        'https://appleid.apple.com/auth',
+        'http://example.org/a',
+      ]) {
+        expect(site(url), WebNavigation.web, reason: url);
+      }
+      expect(needsOwnBrowser(Uri.parse('https://ACCOUNTS.google.com./x')), isTrue, reason: 'case and a trailing dot');
+      expect(needsOwnBrowser(Uri.parse('https://google.com/search')), isFalse, reason: 'only the sign-in hosts');
+    });
+
+    test('the phone itself, other schemes and a data page load nowhere', () {
+      for (final url in [
+        'http://localhost:3000/',
+        'https://localhost/',
+        'https://127.0.0.1:8443/',
+        'https://[::1]/',
+        'https://2130706433/',
+        'https://printer.local/',
+        'intent://scan/#Intent;scheme=zxing;end',
+        'mailto:a@b.c',
+        'file:///etc/passwd',
+        'data:text/html,hi',
+      ]) {
+        expect(site(url), WebNavigation.refuse, reason: url);
+      }
+    });
+
+    test('a frame loads https only: a page’s plain http or sign-in frame goes nowhere', () {
+      expect(site('https://cdn.example.net/a.js', mainFrame: false), WebNavigation.load);
+      expect(site('http://ads.example.net/', mainFrame: false), WebNavigation.refuse);
+      expect(site('http://localhost:3000/', mainFrame: false), WebNavigation.refuse);
+    });
+  });
 }
