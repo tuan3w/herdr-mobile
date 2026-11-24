@@ -4,27 +4,49 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.70] - 2026-11-24
 
-- Links open inside herdr. A link an agent wrote to a page of the web (`https`)
-  opens in the same screen as a page from a machine, so following it no longer
-  puts herdr in the background, where Android drops your connections after
-  `Stay connected` and you came back to a reconnect. Only a sign-in (Google,
-  Microsoft, Apple, Tailscale) and `Open in browser` still go to your phone's
-  browser. herdr forgets the page's cookies when you close it, so a private page
-  asks you to sign in each time. Not run on a phone.
-- The address an agent announces for its machine (`http://100.87.64.16:8792`)
-  opens through your SSH connection, as a `localhost` link does.
-- `Links` in `Made` lists every link the agent wrote, newest first, not only the
-  pull requests it opened. `Made 3` still counts only what it made.
-- While a page loads, the screen says what it waits for (`Asking devbox`,
+### Every link opens in herdr
+
+A link an agent wrote opens in herdr, in the same screen as a page from your
+machine, so following it no longer puts herdr in the background. Before, your
+connections dropped after `Stay connected` and you came back to a reconnect.
+
+> [!TIP]
+> Try it: in a chat, tap a link an agent wrote, then `Open page`.
+
+- Only a sign-in (Google, Microsoft, Apple, Tailscale) and `Open in browser`
+  still go to your phone's browser; herdr waits in the background while it is
+  open.
+- herdr keeps no web session: a page's cookies are forgotten when you close it,
+  so a private page asks you to sign in each time.
+- The address an agent gives for its machine (`http://100.87.64.16:8792`) opens
+  through your SSH connection, as a `localhost` link does, also away from the
+  tailnet.
+- While a page loads the screen says what it waits for (`Asking devbox`,
   `Loading · 40%`) and, after 8 s, offers `Try again`. It used to be blank.
+- About says that a page you open loads from its own site.
+- Not run on a phone: the web view loading a site, how fast the first page
+  appears, and sign-in redirects.
+
+### Made lists every link
+
+`Links` in `Made` now holds every link the agent wrote, newest first, not only
+the pull requests it opened. A dashboard or a wandb run it announced is there
+when you ask for it.
+
+> [!TIP]
+> Try it: tap `Made` under a chat's title, then `Links`.
+
+- A link is said, not made: `Made 3` still counts only what the agent made.
+- Addresses that point at your phone itself (`localhost`) are not listed as
+  links.
 
 **Fixed**
 
 - A picture in a chat that you had already seen no longer flashes a grey box or
-  `Tap to load` while it comes back, and the row keeps its size. Not measured on
-  a phone.
+  `Tap to load` while it comes back, and the row keeps its size so nothing
+  below it moves. Not measured on a phone.
 - Opening a chat picture full screen no longer puts `Preparing…` over a picture
   that is already on screen. A wait that is real still shows it.
 
