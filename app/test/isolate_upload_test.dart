@@ -1,3 +1,6 @@
+@Tags(['timing'])
+library;
+
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
