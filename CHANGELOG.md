@@ -4,6 +4,20 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.68] - 2026-11-24
+
+### A restarted subagent opens its chat
+
+A subagent that omp starts again under a name it already used now opens its
+own chat, and shows as working while it works.
+
+**Fixed**
+
+- A subagent restarted under a name still in use was listed a second time as
+  `Name-2`. Opening that entry said `Can’t read the session log` and
+  `Not connected` while the agent was working. It is now one entry and its
+  chat opens. Not measured on a phone.
+
 ## [0.1.67] - 2026-11-15
 
 [![Watch what's new · 1 change · 0:08 · 2.1 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.mp4)
