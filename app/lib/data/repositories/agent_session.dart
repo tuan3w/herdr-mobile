@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../acp/acp_models.dart';
+import '../acp/path_hints.dart';
 import '../acp/auth_needed.dart';
 import '../acp/past_session.dart';
 import '../acp/background/background_work.dart';
@@ -414,6 +415,12 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   /// Stops every running task that has a stop route. With [only], only the
   /// tasks of that kind (the subagent roster stops subagents, not shell jobs).
   Future<BackgroundStopResult> stopAllBackground({BackgroundKind? only});
+}
+
+/// Where this session's own work happened, read from its transcript at the
+/// moment of the call (a tap on a file name), never kept.
+extension SessionPathHints on AgentSessionView {
+  PathHints pathHints() => pathHintsOf(state.items, cwd: cwd);
 }
 
 /// A request ([requestId]) answered by another client of the keeper before

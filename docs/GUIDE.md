@@ -575,7 +575,9 @@ tasks.
 
 Open the file browser from a pane (`Browse files`), a machine's screen, an
 agent session (`Session options` > `Files`), or by tapping a path in a
-terminal or chat. Files are read over SFTP; nothing is run in a shell.
+terminal or chat. Files are read over SFTP; nothing is run in a shell. A name
+an agent wrote is looked for where its commands and edits worked, then in the
+repository's other worktrees, then by name below the session's folder.
 
 **Browsing.** Breadcrumbs at the top, Back goes up one folder.
 `Find in <folder>` filters the current listing; `Changed in the last hour`

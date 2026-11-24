@@ -663,11 +663,15 @@ Future<void> _openMade(
           unawaited(showLinkSheet(opener, url.toString(), machine: machine));
         }
       case MadeKind.video:
-        if (opener.mounted) unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd));
+        if (opener.mounted) {
+          unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd, hints: session.pathHints));
+        }
       case MadeKind.doc:
         // The screen goes up at once and finds the file inside (it says what
         // went wrong itself).
-        if (opener.mounted) unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd));
+        if (opener.mounted) {
+          unawaited(openRemoteFile(opener, machine, asset.path!, cwd: session.cwd, hints: session.pathHints));
+        }
       case MadeKind.picture:
         final image = asset.image;
         if (image != null) {

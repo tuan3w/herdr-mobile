@@ -29,6 +29,10 @@ enum CandidateSource {
 
   /// A file with the tapped name somewhere under the session's folder.
   search,
+
+  /// A place the session's own tool calls worked in: a folder the agent ran
+  /// in, a file it touched, or the folder of one.
+  agent,
 }
 
 /// A place a tapped path may have meant: a file (or folder) that exists.
@@ -115,7 +119,7 @@ class PathFinder {
     this.worktreeBudget = const Duration(seconds: 3),
     this.searchBudget = const Duration(seconds: 2),
     this.maxFolders = 400,
-    this.maxDepth = 3,
+    this.maxDepth = 6,
     this.maxMatches = 12,
     this.cacheFor = const Duration(seconds: 60),
     DateTime Function()? now,
