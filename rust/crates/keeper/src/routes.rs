@@ -1,5 +1,5 @@
-//! The agents that have an ACP route. `routes.json` is the table the app sends
-//! to the python keeper (`agentRoutes` in `app/lib/data/acp/agent_host.dart`);
+//! The agents that have an ACP route. `routes.json` is the table of agents the
+//! app offers (`agentRoutes` in `app/lib/data/acp/agent_host.dart`);
 //! a Dart test keeps the two equal.
 
 use serde::Deserialize;
@@ -17,6 +17,10 @@ pub struct Route {
     /// Run through `npx -y` when the binary is not installed.
     #[serde(default)]
     pub npx: Option<String>,
+    /// An `authMethods` id to `authenticate` with before the first session.
+    /// Cursor only: its flow is initialize, authenticate, session/new.
+    #[serde(default)]
+    pub auth: Option<String>,
     /// Capabilities declared to the agent (`clientCapabilities._meta.jetbrains.air`).
     #[serde(default)]
     pub air: Vec<String>,

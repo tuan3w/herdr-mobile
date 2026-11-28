@@ -22,7 +22,9 @@ panic = "abort"
 strip = true
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny`, not `forbid`: exactly one module (`keeper/src/fds.rs`) allows it, to
+# close the descriptors a child must not inherit. Nothing else may use `unsafe`.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

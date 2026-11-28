@@ -516,7 +516,7 @@ impl Session {
                 match Form::parse(p, now_ms) {
                     Some(form) => self.hold(id, Ask::Question(form), now_ms),
                     // The keeper gives a question to every client and forwards the first answer
-                    // (`HELD` in keeper_script.dart), so this terminal is never the one expected to
+                    // (its held questions), so this terminal is never the one expected to
                     // answer. A refusal here (the phone's invalidParams) would be that first
                     // answer and take the question from the phone, so a mode it cannot show is
                     // only noted and left to the phone.

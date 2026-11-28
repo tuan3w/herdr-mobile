@@ -1,6 +1,6 @@
 //! The keeper's files: `~/.herdr-mobile/keepers/<id>.json` (its record),
-//! `<id>.sock` (its socket) and `<id>.log`. The python keeper writes the same
-//! files, so a record keeps every field it does not know.
+//! `<id>.sock` (its socket) and `<id>.log`. A record keeps every field this
+//! version does not know, so a newer or older keeper's files survive a rewrite.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -151,6 +151,9 @@ impl StateDir {
                 Err(e) => return Err(e),
             }
         }
+        // Both private, even when an earlier keeper (or the installer) left the
+        // base 0755: the records are the phone's sessions, not world-readable.
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o700))?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         Ok(StateDir {
             root,
@@ -168,6 +171,12 @@ impl StateDir {
         std::env::set_current_dir(&self.root)?;
         self.entered = true;
         Ok(())
+    }
+
+    /// The folder the records are in.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     #[must_use]
@@ -213,9 +222,19 @@ impl StateDir {
         fs::rename(tmp, target)
     }
 
-    /// Deletes a keeper's three files; missing ones are fine.
+    /// Deletes a keeper's files; missing ones are fine. A keeper that ran as a
+    /// macOS launchd job has that job unloaded too (best effort, no wait).
     pub fn remove(&self, id: &str) {
-        for ext in ["json", "sock", "log"] {
+        let label = self.read(id).and_then(|i| {
+            i.extra
+                .get("launchd")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
+        if let Some(label) = label {
+            crate::launchd::bootout(&label, false);
+        }
+        for ext in ["json", "sock", "log", "err"] {
             let _ = fs::remove_file(self.path(id, ext));
         }
     }
@@ -340,9 +359,23 @@ pub fn is_keeper_pid(pid: i64) -> bool {
             .ok()
             .map(|o| o.stdout)
     });
-    let Some(cmd) = cmd else { return false };
-    let text = String::from_utf8_lossy(&cmd);
-    text.contains("herdr-keeper") || (text.contains("keeper-") && text.contains(".py"))
+    cmd.is_some_and(|cmd| is_keeper_command(&String::from_utf8_lossy(&cmd)))
+}
+
+/// Whether a command line (the arguments NUL-separated, as `/proc` has them,
+/// or space-separated, as `ps` prints them) is a keeper's: a daemon started as
+/// `herdr-host keeper-daemon …` or, from the terminal client,
+/// `herdr-tui keeper-daemon …`. A bare `herdr-host serve` or `herdr-tui` is not
+/// one. The python keeper of earlier versions (`herdr-keeper`, `keeper-*.py`)
+/// still is, so a `kill` reaches the ones that may still be running.
+#[must_use]
+pub fn is_keeper_command(cmdline: &str) -> bool {
+    let daemon = cmdline
+        .split(|c: char| c == '\0' || c.is_whitespace())
+        .any(|word| word == "keeper-daemon");
+    (daemon && (cmdline.contains("herdr-host") || cmdline.contains("herdr-tui")))
+        || cmdline.contains("herdr-keeper")
+        || (cmdline.contains("keeper-") && cmdline.contains(".py"))
 }
 
 #[cfg(test)]
@@ -501,5 +534,36 @@ mod tests {
         let me = i64::from(std::process::id());
         assert!(System.pid_alive(me));
         assert!(!System.pid_alive(0) && !System.pid_alive(-5) && !System.pid_alive(i64::MAX));
+    }
+
+    #[test]
+    fn a_keeper_is_a_daemon_of_herdr_host_or_herdr_tui_and_nothing_else() {
+        for yes in [
+            "/home/me/.herdr-mobile/bin/herdr-host-0.1.67\0keeper-daemon\0--agent\0omp\0--cwd\0/w\0",
+            "/home/me/.herdr-mobile/bin/herdr-host keeper-daemon --agent omp --cwd /w",
+            "/usr/local/bin/herdr-tui\0keeper-daemon\0--agent\0claude\0--cwd\0/w\0",
+            "herdr-tui keeper-daemon --agent omp --cwd /w",
+            // The python keeper of earlier versions.
+            "python3\0/home/me/.herdr-mobile/keeper-0.1.30.py\0daemon\0",
+            "herdr-keeper abc123",
+        ] {
+            assert!(is_keeper_command(yes), "{yes:?}");
+        }
+        for no in [
+            "",
+            "sleep\x00100\x00",
+            "/home/me/.herdr-mobile/bin/herdr-host-0.1.67\0serve\0",
+            "herdr-tui attach abc123",
+            "herdr-host start --agent omp --cwd /w",
+            "bash\0-c\0keeper-daemon\0",
+            "/usr/bin/vim keeper-daemon",
+        ] {
+            assert!(!is_keeper_command(no), "{no:?}");
+        }
+        assert!(!is_keeper_pid(1) && !is_keeper_pid(0) && !is_keeper_pid(-1));
+        assert!(
+            !is_keeper_pid(i64::from(std::process::id())),
+            "the test process is no keeper"
+        );
     }
 }

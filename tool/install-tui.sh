@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs herdr-tui, the desktop client for herdr-mobile sessions, from a GitHub release.
-# No Rust, no checkout: the binary carries the keeper it needs (python3 must be on PATH).
+# No Rust, no checkout: the binary carries the keeper it needs.
 #
 #   curl -fsSL https://github.com/tuan3w/herdr-mobile/releases/latest/download/install.sh | sh
 #   VERSION=v0.1.30 sh install.sh        # a specific release
@@ -67,7 +67,6 @@ mv "$tmp/$asset" "$bin_dir/herdr-tui.new"
 mv "$bin_dir/herdr-tui.new" "$bin_dir/herdr-tui"
 say "installed $bin_dir/herdr-tui ($("$bin_dir/herdr-tui" --version 2>&1 || echo unknown version))"
 
-command -v python3 >/dev/null 2>&1 || say "python3 was not found: sessions need it (the keeper is a python program)"
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *) say "$bin_dir is not on your PATH; add it to your shell profile" ;;

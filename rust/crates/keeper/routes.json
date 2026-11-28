@@ -5,7 +5,7 @@
   {"id": "pi", "label": "pi", "binary": "pi-acp", "args": [], "npx": "pi-acp"},
   {"id": "kimi", "label": "Kimi", "binary": "kimi", "args": ["acp"], "npx": "@moonshot-ai/kimi-code"},
   {"id": "opencode", "label": "OpenCode", "binary": "opencode", "args": ["acp"], "npx": "opencode-ai"},
-  {"id": "cursor", "label": "Cursor", "binary": "cursor-agent", "args": ["acp"]},
+  {"id": "cursor", "label": "Cursor", "binary": "cursor-agent", "args": ["acp"], "auth": "cursor_login"},
   {"id": "copilot", "label": "Copilot", "binary": "copilot", "args": ["--acp", "--stdio"], "npx": "@github/copilot"},
   {"id": "antigravity_cli", "label": "Antigravity", "binary": "agy", "args": ["acp"]},
   {"id": "hermes", "label": "Hermes", "binary": "hermes", "args": ["acp"]},

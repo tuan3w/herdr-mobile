@@ -1,7 +1,6 @@
 //! Tells herdr what this session is doing, so its agent list shows `working`, `blocked` or `idle`
-//! for the pane `herdr-tui` runs in. A port of `HerdrReport` in the python keeper
-//! (`keeper_script.dart`), which does the same from its `view`: only from inside a herdr pane, only
-//! on a change, never waited for by the screen, one command at a time, the newest state winning.
+//! for the pane `herdr-tui` runs in: only from inside a herdr pane, only on a change, never waited
+//! for by the screen, one command at a time, the newest state winning.
 
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;

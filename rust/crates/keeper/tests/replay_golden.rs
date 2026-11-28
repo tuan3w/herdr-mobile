@@ -1,29 +1,33 @@
-//! The Rust replay log against the python one, on the same seeded random
-//! sessions. `tool/gen-replay-fixtures.py` runs the python reference
-//! (`ReplayLog` in `keeper_script.dart`) and records every step; this replays the
-//! operations and compares counters after each step, then every entry (message
-//! and size) in replay order, and the replays from a few `since` points.
+//! The Rust replay log against frozen decisions of the original python one.
 //!
-//! Skipped, with a message, when python3 is not installed.
+//! `tests/fixtures/replay_golden.json` was recorded once from the python
+//! `ReplayLog` (the keeper's reference implementation, since deleted) on seeded
+//! random sessions; the file is the oracle and nothing is generated at test
+//! time. Each scenario is a list of operations (add a message, remove an
+//! earlier one) with the counters the python log had after every step, the
+//! entries it held at the end (message and size, in replay order) and what it
+//! replayed from a few `since` points. This replays the operations and compares
+//! all of it.
+//!
+//! The recording ran seeds 0..60; a full set is 14 MB of seeded text, so the
+//! committed file keeps nine of them (seeds 6, 7, 15, 31, 44, 45, 57, 58, 59:
+//! all four byte budgets, entry caps 12/40/200/5000, one to three full turns,
+//! with and without a soft budget, every one of them dropping or trimming
+//! entries) to stay under 1 MB.
+//!
+//! The recorder (`tool/gen-replay-fixtures.py`, which loaded the python
+//! `ReplayLog` out of `keeper_script.dart`) is in git history, last present at
+//! the commit before this file replaced `replay_differential.rs`.
 
 use keeper::replay_log::ReplayLog;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::Command;
 
-fn generate() -> Option<Vec<Value>> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let out = std::env::temp_dir().join(format!("herdr-replay-{}.json", std::process::id()));
-    let status = Command::new("python3")
-        .arg(root.join("tool/gen-replay-fixtures.py"))
-        .arg(&out)
-        .status()
-        .ok()?;
-    assert!(status.success(), "the python reference failed");
-    let raw = std::fs::read(&out).expect("the generator wrote its output");
-    let _ = std::fs::remove_file(&out);
-    Some(serde_json::from_slice(&raw).expect("the generator wrote JSON"))
+fn golden() -> Vec<Value> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/replay_golden.json");
+    let raw = std::fs::read(&path).expect("the golden fixture is committed");
+    serde_json::from_slice(&raw).expect("the golden fixture is JSON")
 }
 
 fn stat(log: &ReplayLog) -> Value {
@@ -35,11 +39,8 @@ fn stat(log: &ReplayLog) -> Value {
 
 #[test]
 fn the_rust_log_makes_the_same_decisions_as_the_python_one() {
-    let Some(scenarios) = generate() else {
-        eprintln!("python3 not found: differential test skipped");
-        return;
-    };
-    assert!(scenarios.len() >= 50);
+    let scenarios = golden();
+    assert!(scenarios.len() >= 9);
     for sc in &scenarios {
         let seed = &sc["seed"];
         let p = &sc["params"];

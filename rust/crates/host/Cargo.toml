@@ -1,0 +1,41 @@
+[package]
+name = "host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "herdr-host: the host side of herdr-mobile. `serve` speaks hostwire/1 to the app; the other subcommands are the keeper's command line"
+
+[lib]
+name = "host"
+path = "src/lib.rs"
+
+[[bin]]
+name = "herdr-host"
+path = "src/main.rs"
+
+[dependencies]
+acp.workspace = true
+keeper = { path = "../keeper" }
+wire = { path = "../wire" }
+serde.workspace = true
+serde_json.workspace = true
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+rustix = { version = "0.38", default-features = false, features = ["std", "process", "fs", "stdio", "system", "net"] }
+sha1 = "0.10"
+similar = { version = "2", default-features = false }
+sha2 = "0.10"
+unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
+# `fs.thumb`: pure-Rust decoders (no C, so the static musl builds stay static) and one JPEG encoder.
+jpeg-decoder = { version = "0.3", default-features = false }
+jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
+png = { version = "0.18", default-features = false }
+image-webp = { version = "0.2", default-features = false }
+gif = { version = "0.14", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempfile = "3"
+testkit = { path = "../testkit" }
+
+[lints]
+workspace = true

@@ -1,10 +1,9 @@
-//! What `herdr-tui` relies on from the python keeper, checked against the real thing: the keeper
-//! script is extracted from `app/lib/data/services/keeper_script.dart` as it is now and run with a
-//! scripted agent. A change on the mobile side that breaks the desk client fails here, so the viewer
-//! is updated with it instead of finding out in use.
+//! What `herdr-tui` and the app rely on from the keeper, checked against the real thing: the
+//! built `herdr-host` binary run with a scripted agent. A change that breaks the desk client or the
+//! phone fails here, so the viewer is updated with it instead of finding out in use.
 //!
 //! Hermetic: its own HOME, no herdr (`HERDR_*` removed, `HERDR_MOBILE_NO_PANE=1`), and every process
-//! it starts is stopped by pid. Skipped, with a message, when python3 is missing.
+//! it starts is stopped by pid. The scripted agent is testkit's `fake-acp-agent`.
 
 use acp::{Id, Message};
 use keeper::records::{is_valid_id, State, StateDir};
@@ -18,46 +17,32 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
-const AGENT: &str = r#"
-import json, sys
-def send(o):
-    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
-for line in sys.stdin:
-    m = json.loads(line); i = m.get("id"); method = m.get("method")
-    if method == "initialize":
-        send({"jsonrpc": "2.0", "id": i, "result": {"protocolVersion": 1, "agentCapabilities": {}}})
-    elif method == "session/new":
-        send({"jsonrpc": "2.0", "id": i, "result": {"sessionId": "contract-1"}})
-    elif method == "session/prompt":
-        send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "contract-1",
-              "update": {"sessionUpdate": "agent_message_chunk", "messageId": "m", "content": {"type": "text", "text": "hello"}}}})
-        send({"jsonrpc": "2.0", "id": i, "result": {"stopReason": "end_turn"}})
-"#;
-
-/// An isolated machine: a home with the keeper installed, and a `bin` with a scripted `omp`.
+/// An isolated machine: a home, a `bin` with a scripted `omp`, and the built
+/// `herdr-host` keeper. The keeper is the Rust binary; the agent it starts is
+/// the scripted `omp` (testkit's `fake-acp-agent`, not the keeper).
 struct Host {
     _dir: tempfile::TempDir,
     home: PathBuf,
     bin: PathBuf,
-    script: PathBuf,
+    keeper: PathBuf,
     started: Vec<i64>,
 }
 
 impl Host {
-    fn new() -> Option<Host> {
-        Command::new("python3").arg("--version").output().ok()?;
+    fn new() -> Host {
+        // The keeper under test is the binary cargo built for this crate.
+        let keeper = PathBuf::from(env!("CARGO_BIN_EXE_herdr-host"));
         let dir = tempfile::tempdir().expect("a temp dir");
         let home = dir.path().join("home");
         let bin = dir.path().join("bin");
         std::fs::create_dir_all(&home).expect("home");
         std::fs::create_dir_all(&bin).expect("bin");
-        std::fs::write(dir.path().join("agent.py"), AGENT).expect("agent");
         let omp = bin.join("omp");
         std::fs::write(
             &omp,
             format!(
-                "#!/bin/sh\nexec python3 {}/agent.py\n",
-                dir.path().display()
+                "#!/bin/sh\nexec '{}' \"$@\"\n",
+                testkit::bin("fake-acp-agent").display()
             ),
         )
         .expect("omp");
@@ -66,30 +51,13 @@ impl Host {
             .arg(&omp)
             .status()
             .expect("chmod");
-        // The installer is part of the contract too: it is how a desk gets the keeper.
-        let out = Command::new("sh")
-            .arg(repo().join("tool/install-keeper.sh"))
-            .env("HOME", &home)
-            .output()
-            .expect("the installer runs");
-        assert!(
-            out.status.success(),
-            "install-keeper.sh failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let script = home.join(".herdr-mobile/desktop/keeper-desktop.py");
-        assert!(
-            script.is_file(),
-            "the installer put the keeper at {}",
-            script.display()
-        );
-        Some(Host {
+        Host {
             _dir: dir,
             home,
             bin,
-            script,
+            keeper,
             started: Vec::new(),
-        })
+        }
     }
 
     /// Runs a keeper command the way `herdr-tui` does: no herdr, no second pane.
@@ -104,9 +72,8 @@ impl Host {
         }
         // Only the scripted bin and the system: the real PATH holds the owner's real agents.
         let path = format!("{}:/usr/bin:/bin", self.bin.display());
-        let mut cmd = Command::new("python3");
-        cmd.arg(&self.script)
-            .args(args)
+        let mut cmd = Command::new(&self.keeper);
+        cmd.args(args)
             .stdin(Stdio::null())
             .env("HOME", &self.home)
             .env("PATH", path)
@@ -121,7 +88,7 @@ impl Host {
         ] {
             cmd.env_remove(k);
         }
-        cmd.output().expect("python3 runs")
+        cmd.output().expect("herdr-host runs")
     }
 
     fn start(&mut self, cwd: &Path) -> Value {
@@ -186,10 +153,7 @@ fn exchange(reader: &mut impl BufRead, id: i64) -> (Value, Vec<Message>) {
 
 #[test]
 fn start_gives_what_the_viewer_reads_and_a_session_round_trips_through_the_keeper() {
-    let Some(mut host) = Host::new() else {
-        eprintln!("python3 not found: keeper contract test skipped");
-        return;
-    };
+    let mut host = Host::new();
     let cwd = host.home.join("proj");
     std::fs::create_dir_all(&cwd).expect("cwd");
     let info = host.start(&cwd);
@@ -228,12 +192,12 @@ fn start_gives_what_the_viewer_reads_and_a_session_round_trips_through_the_keepe
         json!({"cwd": cwd.to_string_lossy(), "mcpServers": []}),
     ));
     let (made, _) = exchange(&mut reader, 2);
-    assert_eq!(made["sessionId"], "contract-1", "{made}");
+    assert_eq!(made["sessionId"], "sess-1", "{made}");
 
     send(&Message::request(
         3,
         "session/prompt",
-        json!({"sessionId": "contract-1", "prompt": [{"type": "text", "text": "hi"}]}),
+        json!({"sessionId": "sess-1", "prompt": [{"type": "text", "text": "reply:hi"}]}),
     ));
     let (done, notes) = exchange(&mut reader, 3);
     assert_eq!(done["stopReason"], "end_turn");
@@ -246,27 +210,20 @@ fn start_gives_what_the_viewer_reads_and_a_session_round_trips_through_the_keepe
     });
     assert_eq!(
         chunk.as_deref(),
-        Some("hello"),
+        Some("re: hi"),
         "the agent's update reaches the viewer: {notes:?}"
     );
 
     // The record the phone and `herdr-tui attach` use: the session id, set by whoever created it.
     let record = dir.read(&id).expect("the record");
-    assert_eq!(
-        record.session_id.as_deref(),
-        Some("contract-1"),
-        "{record:?}"
-    );
+    assert_eq!(record.session_id.as_deref(), Some("sess-1"), "{record:?}");
     assert_eq!(record.state, State::Running);
     assert_eq!(record.agent, "omp");
 }
 
 #[test]
 fn the_exit_codes_the_viewer_maps_to_words_are_the_ones_the_keeper_gives() {
-    let Some(host) = Host::new() else {
-        eprintln!("python3 not found: keeper contract test skipped");
-        return;
-    };
+    let host = Host::new();
     let code = |args: &[&str]| host.run(args).status.code();
     assert_eq!(
         code(&["start", "--agent", "nope", "--cwd", "/tmp"]),
@@ -291,10 +248,7 @@ fn the_exit_codes_the_viewer_maps_to_words_are_the_ones_the_keeper_gives() {
 
 #[test]
 fn the_keeper_lists_the_agents_it_can_run_by_the_ids_the_viewer_offers() {
-    let Some(host) = Host::new() else {
-        eprintln!("python3 not found: keeper contract test skipped");
-        return;
-    };
+    let host = Host::new();
     let out = host.run(&["probe"]);
     assert!(out.status.success());
     let probe: Value = serde_json::from_slice(&out.stdout).expect("probe prints JSON");
