@@ -124,7 +124,8 @@ python keeper's one remaining role, the terminal client `view`/`desk`, is
 
 1. **The herdr-pane tab** (`open_pane`) — `pane.rs`. After `initialize`, a
    tick-polled chain of `herdr` CLI calls shows the session in the workspace of
-   the linked worktree that holds the folder, else in `Phone sessions`, running
+   the linked worktree that holds the folder, else in a workspace of its own
+   named `<agent> · <folder>` (one per session, `docs/AGENT_SESSIONS.md`), running
    `herdr-tui attach <id>`. It opens only when both `herdr` and a `herdr-tui`
    (`PATH`, `~/.local/bin`, `~/.herdr-mobile/bin`) resolve — the python `view`
    fallback is gone — and records the pane it used as `pane_id`. A reason not to

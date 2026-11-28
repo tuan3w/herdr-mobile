@@ -116,6 +116,36 @@ void main() {
     expect(ids((items.first as RepoItem).blocks.first.panes), ['keeper']);
   });
 
+  test(
+    'a session in a workspace of its own in the main checkout is listed under that checkout, not as a workspace',
+    () {
+      final s = snapshotOf(
+        workspaces: [
+          wireWorkspace('w1', worktree: wirePrimaryWorktree, number: 1),
+          wireWorkspace('w5', label: 'omp · herdr-mobile', number: 2),
+          wireWorkspace('w6', label: 'omp · scratch', number: 3),
+        ],
+        tabs: [wireTab('w1:t1', 'w1'), wireTab('w5:t1', 'w5'), wireTab('w6:t1', 'w6')],
+        panes: [
+          wirePaneIn('p1', 'w1', 'w1:t1', cwd: _primary),
+          wirePaneIn('keeper', 'w5', 'w5:t1', cwd: _primary, agent: 'omp'),
+          wirePaneIn('flat', 'w6', 'w6:t1', cwd: '/tmp/scratch', agent: 'omp'),
+        ],
+      );
+
+      final items = _layout(s, {'keeper', 'flat'});
+
+      expect(items.whereType<WorkspaceItem>().map((i) => i.workspace.id), [
+        'w1',
+        'w6',
+      ], reason: 'w5 emptied: its session sits under the checkout');
+      expect(ids((items.first as WorkspaceItem).panes), ['p1', 'keeper']);
+      expect(ids((items.last as WorkspaceItem).panes), [
+        'flat',
+      ], reason: 'in no checkout it stays in its own workspace');
+    },
+  );
+
   test('a pane that is not a phone session never leaves its workspace, whatever its folder', () {
     final items = _layout(snap(panes: [wirePaneIn('p', 'w3', 'w3:t1', cwd: _linked)]));
 

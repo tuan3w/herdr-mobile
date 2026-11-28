@@ -490,14 +490,24 @@ coming from its side.
    not looking at, for something done at the desk, is noise). Another phone
    is named `on another phone`.
 4. **herdr sees the session through a pane the keeper opens.** When the agent
-   has answered `initialize`, the keeper opens a tab in the herdr workspace
-   of the linked worktree that holds the session's folder (from
-   `workspace list`'s `worktree.checkout_path`; the deepest wins; none on
-   herdr without worktrees), else in a workspace
-   labelled `Phone sessions` (created when missing, never focused). Why: the
-   desk lists a worktree as its own workspace, and a session in it that sat
-   in `Phone sessions` left that workspace an empty shell. The main checkout's
-   workspace is the person's own, so its sessions stay in `Phone sessions`.
+   has answered `initialize`, the keeper opens the session in herdr, never
+   focused. In the herdr workspace of the linked worktree that holds the
+   session's folder it opens a tab (from `workspace list`'s
+   `worktree.checkout_path`; the deepest wins; none on herdr without
+   worktrees). Every other session gets a workspace of its own
+   (`workspace create --label "<agent> · <folder>" --cwd <folder> --no-focus`;
+   the new workspace's tab and pane are the session's), the main checkout of a
+   repo included, even when herdr already has a workspace for that checkout
+   and when another session has the same label: sessions are never tabs of a
+   shared workspace. Why: one place per session, flat like the person's own
+   workspaces. A single workspace for all of them (it was called `Phone
+   sessions`) hid them: seven tabs, three of them with the same label, no way
+   to tell which was which, and the desk's workspace list showed one row for
+   all. A worktree is the exception because the desk lists it as its own
+   workspace, and a session in it that sat elsewhere left that workspace an
+   empty shell. The main checkout's workspace is the person's own, so no tab
+   is added to it. A `Phone sessions` workspace that an earlier release made
+   is left as it is, tabs and all: nothing moves or closes it.
    A worktree workspace herdr just made has one tab with a bare shell. When the workspace has
    exactly one tab with one pane, no agent in it, and a screen that is one shell prompt and
    nothing else (not output, a half-typed command or a running program), the session takes that
@@ -512,8 +522,12 @@ coming from its side.
    why (`no herdr pane: …`): there is no other client to put in the pane. The pane is
    not opened at all with `HERDR_MOBILE_NO_PANE=1` (a terminal client that is itself the pane
    starts its keeper that way) or while `~/.herdr-mobile/no-panes` exists. The pane the session
-   was put in is recorded as `pane_id`; a tab the keeper made is closed when the session is ended
-   on request (`kill`).
+   was put in is recorded as `pane_id`. When the session is ended on request
+   (`kill`) the keeper closes what it made: `herdr workspace close <id>` for a
+   workspace of the session's own (the id is the one `workspace create`
+   answered), `herdr tab close <id>` for a tab it added to a worktree's
+   workspace. A workspace or tab of the person's (an empty shell the session
+   took, a workspace herdr already had) is never closed.
    **Compatibility between the keeper and `herdr-tui`.** Both link the same
    `keeper` library (`rust/crates/keeper`), so what `start` prints, the record
    fields, the exit codes and the wire change in one place and in one build.
@@ -599,13 +613,15 @@ as before.
 
 **Known edges.** If the agent streams part of its own turn before refusing a
 prompt with `-32003`, the other clients have already seen that prompt's
-message; the log takes it back, their screens do not. Two keepers starting at
-the same instant can each create a `Phone sessions` workspace. Unverified:
+message; the log takes it back, their screens do not. Unverified:
 how herdr's TUI sidebar draws the reported agent (`herdr agent list` was
 checked: `omp · phone`, idle, then blocked on a permission, then idle), and the
 resume command after a herdr server restart. Checked against a scratch herdr 0.9.3
 server: both clients get every update, the first answer wins from either
-side, a number typed in the pane answers, `kill` closes the tab.
+side, a number typed in the pane answers, `kill` closes the tab. The workspace
+per session (`workspace create`, `workspace close`) is tested against a scripted
+`herdr` that answers with the shape of `docs/herdr-api.schema.json`; it was not
+run against a live herdr.
 
 ## Session lifecycle in the app
 

@@ -27,8 +27,9 @@ const WAIT: Duration = Duration::from_secs(30);
 /// like herdr's CLI does (`{"id":"cli","result":{…}}`). What it knows is in
 /// `$HERDR_FAKE_DIR`: `workspaces.items`, `tabs-<workspace>.items`,
 /// `panes-<workspace>.items` (JSON elements, comma-separated, no brackets) and
-/// `screen-<pane>.txt`; `workspace create` makes `Phone sessions` (`w1`) and
-/// the tab and pane counter runs from there.
+/// `screen-<pane>.txt`; `workspace create` makes a workspace of the label it is
+/// given (`ws<n>`, listed from then on, with a tab `ws<n>:t<n>` and a pane
+/// `ws<n>:p<n>`) and the tab and pane counter runs from there.
 const FAKE_HERDR: &str = r#"#!/bin/sh
 D="$HERDR_FAKE_DIR"
 line='['; sep=''
@@ -42,15 +43,17 @@ next() { n=$(cat "$D/counter" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > 
 items() { cat "$D/$1" 2>/dev/null; }
 case "$1 $2" in
   "workspace list")
-    list=$(items workspaces.items)
-    if [ -f "$D/created" ]; then
-      phone='{"workspace_id":"w1","label":"Phone sessions"}'
-      if [ -n "$list" ]; then list="$list,$phone"; else list="$phone"; fi
+    list=$(items workspaces.items); made=$(items made.items)
+    if [ -n "$made" ]; then
+      if [ -n "$list" ]; then list="$list,$made"; else list="$made"; fi
     fi
     printf '{"id":"cli","result":{"type":"workspace_list","workspaces":[%s]}}\n' "$list" ;;
   "workspace create")
-    touch "$D/created"; n=$(next)
-    printf '{"id":"cli","result":{"type":"workspace_created","workspace":{"workspace_id":"w1","label":"Phone sessions"},"tab":{"tab_id":"w1:t%s"},"root_pane":{"pane_id":"w1:p%s"}}}\n' "$n" "$n" ;;
+    NAME=--label; l=$(arg "$@"); n=$(next); w="ws$n"
+    made=$(items made.items); one="{\"workspace_id\":\"$w\",\"label\":\"$l\"}"
+    if [ -n "$made" ]; then one="$made,$one"; fi
+    printf '%s' "$one" > "$D/made.items"
+    printf '{"id":"cli","result":{"type":"workspace_created","workspace":{"workspace_id":"%s","label":"%s"},"tab":{"tab_id":"%s:t%s"},"root_pane":{"pane_id":"%s:p%s"}}}\n' "$w" "$l" "$w" "$n" "$w" "$n" ;;
   "tab create")
     NAME=--workspace; w=$(arg "$@"); n=$(next)
     printf '{"id":"cli","result":{"type":"tab_created","tab":{"tab_id":"%s:t%s"},"root_pane":{"pane_id":"%s:p%s"}}}\n' "$w" "$n" "$w" "$n" ;;
@@ -498,81 +501,19 @@ fn as_pairs<'a>(env: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a str
     env.iter().map(|(k, v)| (*k, v.as_str())).collect()
 }
 
-#[test]
-fn a_plain_folder_gets_phone_sessions_once_and_the_next_session_a_tab_in_it() {
-    let mut m = Machine::new();
-    let tui = m.install_tui();
-    let env = fake_env(&m);
-    let (one, two) = (m.work.join("one"), m.work.join("two"));
-    std::fs::create_dir_all(&one).expect("one");
-    std::fs::create_dir_all(&two).expect("two");
+/// Every `workspace close` and `tab close` the fake herdr has been asked for.
+fn closes(m: &Machine) -> Vec<Vec<String>> {
+    m.herdr_calls()
+        .into_iter()
+        .filter(|c| c.get(1).map(String::as_str) == Some("close"))
+        .collect()
+}
 
-    // No `Phone sessions` yet: the first session makes it and takes its pane.
-    let first = m.start(&one, &as_pairs(&env));
-    let first_id = id_of(&first);
-    wait_for("the first tab to be renamed", || m.herdr_calls().len() >= 4);
-    assert_eq!(
-        m.herdr_calls(),
-        vec![
-            strings(&["workspace", "list"]),
-            strings(&[
-                "workspace",
-                "create",
-                "--label",
-                "Phone sessions",
-                "--cwd",
-                &one.to_string_lossy(),
-                "--no-focus"
-            ]),
-            strings(&["pane", "run", "w1:p1", &pane_command(&tui, &first_id)]),
-            strings(&["tab", "rename", "w1:t1", "omp \u{b7} one"]),
-        ]
-    );
-    // The record says where the session is shown.
-    let dir = m.state_dir();
-    wait_for("pane_id in the record", || {
-        dir.read(&first_id)
-            .is_some_and(|i| i.pane_id.as_deref() == Some("w1:p1"))
-    });
-
-    // The next one gets a tab of its own in that workspace.
-    let second = m.start(&two, &as_pairs(&env));
-    let second_id = id_of(&second);
-    wait_for("the second pane command", || m.herdr_calls().len() >= 7);
-    assert_eq!(
-        m.herdr_calls()[4..],
-        [
-            strings(&["workspace", "list"]),
-            strings(&[
-                "tab",
-                "create",
-                "--workspace",
-                "w1",
-                "--cwd",
-                &two.to_string_lossy(),
-                "--label",
-                "omp \u{b7} two",
-                "--no-focus"
-            ]),
-            strings(&["pane", "run", "w1:p2", &pane_command(&tui, &second_id)]),
-        ]
-    );
-    wait_for("pane_id of the second session", || {
-        dir.read(&second_id)
-            .is_some_and(|i| i.pane_id.as_deref() == Some("w1:p2"))
-    });
-    assert_eq!(
-        m.herdr_calls()
-            .iter()
-            .filter(|c| c[..2] == ["workspace", "create"])
-            .count(),
-        1,
-        "`Phone sessions` is made once"
-    );
-
-    // Ended on request: the tab the keeper made goes with the session.
+/// Ends the session on request, as the phone does, and waits for its keeper to
+/// be gone: the pane's close has run by then (the keeper waits for herdr).
+fn kill_session(m: &Machine, env: &[(&'static str, String)], info: &Value) {
     let killed = m
-        .command(&["kill", second_id.as_str()], &as_pairs(&env))
+        .command(&["kill", id_of(info).as_str()], &as_pairs(env))
         .output()
         .expect("kill runs");
     assert!(
@@ -580,9 +521,102 @@ fn a_plain_folder_gets_phone_sessions_once_and_the_next_session_a_tab_in_it() {
         "{}",
         String::from_utf8_lossy(&killed.stderr)
     );
-    wait_for("the tab to be closed", || {
-        m.herdr_calls().last() == Some(&strings(&["tab", "close", "w1:t2"]))
+    let pid = info["pid"].as_i64().expect("the keeper's pid").to_string();
+    wait_for("the keeper to be gone", || {
+        !Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
     });
+}
+
+#[test]
+fn every_session_in_a_plain_folder_gets_a_workspace_of_its_own() {
+    let mut m = Machine::new();
+    let tui = m.install_tui();
+    let env = fake_env(&m);
+    let (one, two) = (m.work.join("one"), m.work.join("two"));
+    std::fs::create_dir_all(&one).expect("one");
+    std::fs::create_dir_all(&two).expect("two");
+    let create = |label: &str, cwd: &Path| {
+        strings(&[
+            "workspace",
+            "create",
+            "--label",
+            label,
+            "--cwd",
+            &cwd.to_string_lossy(),
+            "--no-focus",
+        ])
+    };
+
+    // The first session makes a workspace named for it and takes its pane.
+    let first = m.start(&one, &as_pairs(&env));
+    let first_id = id_of(&first);
+    wait_for("the first tab to be renamed", || m.herdr_calls().len() >= 4);
+    assert_eq!(
+        m.herdr_calls(),
+        vec![
+            strings(&["workspace", "list"]),
+            create("omp \u{b7} one", &one),
+            strings(&["pane", "run", "ws1:p1", &pane_command(&tui, &first_id)]),
+            strings(&["tab", "rename", "ws1:t1", "omp \u{b7} one"]),
+        ]
+    );
+    // The record says where the session is shown.
+    let dir = m.state_dir();
+    wait_for("pane_id in the record", || {
+        dir.read(&first_id)
+            .is_some_and(|i| i.pane_id.as_deref() == Some("ws1:p1"))
+    });
+
+    // The next one does not join it: a workspace, a tab and a pane of its own.
+    let second = m.start(&two, &as_pairs(&env));
+    let second_id = id_of(&second);
+    wait_for("the second tab to be renamed", || {
+        m.herdr_calls().len() >= 8
+    });
+    assert_eq!(
+        m.herdr_calls()[4..],
+        [
+            strings(&["workspace", "list"]),
+            create("omp \u{b7} two", &two),
+            strings(&["pane", "run", "ws2:p2", &pane_command(&tui, &second_id)]),
+            strings(&["tab", "rename", "ws2:t2", "omp \u{b7} two"]),
+        ]
+    );
+    wait_for("pane_id of the second session", || {
+        dir.read(&second_id)
+            .is_some_and(|i| i.pane_id.as_deref() == Some("ws2:p2"))
+    });
+
+    // The same folder again: the label is the same, the workspace is not (the
+    // listed `omp · one` is another session's, not reused).
+    let third = m.start(&one, &as_pairs(&env));
+    let third_id = id_of(&third);
+    wait_for("the third tab to be renamed", || {
+        m.herdr_calls().len() >= 12
+    });
+    assert_eq!(
+        m.herdr_calls()[8..],
+        [
+            strings(&["workspace", "list"]),
+            create("omp \u{b7} one", &one),
+            strings(&["pane", "run", "ws3:p3", &pane_command(&tui, &third_id)]),
+            strings(&["tab", "rename", "ws3:t3", "omp \u{b7} one"]),
+        ]
+    );
+    assert!(
+        m.herdr_calls().iter().all(|c| c[..2] != ["tab", "create"]),
+        "no session is added as a tab to a workspace: {:?}",
+        m.herdr_calls()
+    );
+
+    // Ended on request: the workspace the keeper made goes with the session,
+    // and only that one.
+    kill_session(&m, &env, &second);
+    assert_eq!(closes(&m), vec![strings(&["workspace", "close", "ws2"])]);
 }
 
 /// A linked worktree `<work>/wt` herdr has open as workspace `w2`, next to the
@@ -634,15 +668,44 @@ fn a_folder_inside_a_linked_worktree_opens_its_tab_in_that_worktrees_workspace()
         ]
     );
 
-    // The main checkout's workspace is the person's own: Phone sessions, as before.
+    // The main checkout has a workspace herdr lists (`w3`, the person's own):
+    // a session in it does not become a tab there, it gets a workspace of its
+    // own like any other.
     let other = m.work.join("main");
     std::fs::create_dir_all(&other).expect("main");
     let second = m.start(&other, &as_pairs(&env));
-    wait_for("the second chain", || m.herdr_calls().len() >= 7);
-    let _ = second;
-    let calls = m.herdr_calls();
-    assert_eq!(calls[4], strings(&["workspace", "list"]));
-    assert_eq!(calls[5][..2], ["workspace", "create"], "{:?}", calls[5]);
+    let second_id = id_of(&second);
+    wait_for("the second chain", || m.herdr_calls().len() >= 8);
+    assert_eq!(
+        m.herdr_calls()[4..],
+        [
+            strings(&["workspace", "list"]),
+            strings(&[
+                "workspace",
+                "create",
+                "--label",
+                "omp \u{b7} main",
+                "--cwd",
+                &other.to_string_lossy(),
+                "--no-focus"
+            ]),
+            strings(&["pane", "run", "ws2:p2", &pane_command(&tui, &second_id)]),
+            strings(&["tab", "rename", "ws2:t2", "omp \u{b7} main"]),
+        ]
+    );
+
+    // Ended on request: the tab the keeper added to the worktree's workspace
+    // goes (the workspace is the person's), and the workspace the keeper made
+    // goes whole.
+    kill_session(&m, &env, &info);
+    kill_session(&m, &env, &second);
+    assert_eq!(
+        closes(&m),
+        vec![
+            strings(&["tab", "close", "w2:t1"]),
+            strings(&["workspace", "close", "ws2"]),
+        ]
+    );
 }
 
 #[test]
@@ -666,6 +729,7 @@ fn a_worktrees_untouched_shell_is_taken_and_anything_else_is_left_alone() {
     );
     let info = m.start(&wt, &as_pairs(&env));
     let id = id_of(&info);
+    let shell_session = info;
     wait_for("the tab to be renamed", || m.herdr_calls().len() >= 6);
     assert_eq!(
         m.herdr_calls(),
@@ -699,6 +763,13 @@ fn a_worktrees_untouched_shell_is_taken_and_anything_else_is_left_alone() {
         strings(&["pane", "run", "w2:p11", &pane_command(&tui, &id)]),
         "nothing is typed into the shell that was left alone: {calls:?}"
     );
+
+    // Ended on request: the tab the keeper made goes; the person's shell, which
+    // only held the session for a while, is left open.
+    kill_session(&m, &env, &shell_session);
+    assert_eq!(closes(&m), Vec::<Vec<String>>::new(), "the person's tab");
+    kill_session(&m, &env, &info);
+    assert_eq!(closes(&m), vec![strings(&["tab", "close", "w2:t11"])]);
 }
 
 /// A start that opens no pane says why in its log, and herdr is never run.

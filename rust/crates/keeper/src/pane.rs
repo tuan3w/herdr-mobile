@@ -1,8 +1,12 @@
-//! The session's tab in herdr on this computer (`docs/AGENT_SESSIONS.md`,
+//! The session's place in herdr on this computer (`docs/AGENT_SESSIONS.md`,
 //! "Shared sessions"). After the agent has answered `initialize`, the keeper
-//! shows the session at the desk: a tab in the workspace herdr has open for the
-//! linked worktree that holds the session's folder, else in `Phone sessions`
-//! (made when missing, never focused), running `herdr-tui attach <id>`.
+//! shows the session at the desk, never focused, running `herdr-tui attach
+//! <id>`: a tab in the workspace herdr has open for the linked worktree that
+//! holds the session's folder, else a workspace of its own, named
+//! `<agent> · <folder>`. Every other session gets its own workspace, even in
+//! the main checkout of a repo whose workspace herdr already has (that one is
+//! the person's); a workspace shared by sessions hid them, seven tabs with the
+//! same few names.
 //!
 //! A chain of `herdr` CLI commands, one in flight at a time, each started
 //! without waiting and polled on the daemon's tick ([`Pane::poll`]); a command
@@ -10,7 +14,8 @@
 //! or any failure is logged and nothing else changes. Ported from the python
 //! `open_pane` family (`keeper_script.dart` 2349-2532); unlike the python the
 //! pane runs only `herdr-tui` (the python `view` is gone), so without one on
-//! this host no tab is opened.
+//! this host no pane is opened. A session ended on request closes what this
+//! chain made, the workspace or the tab, and nothing of the person's.
 
 use crate::fds;
 use crate::search;
@@ -22,13 +27,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// The workspace sessions without a worktree of their own go to.
-pub const WORKSPACE: &str = "Phone sessions";
 /// Seconds a herdr command may take.
 const HERDR_TIMEOUT: Duration = Duration::from_secs(10);
 /// The first command doubles as "is a herdr server running": it fails at once.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-/// The tab close, which a `kill` waits for.
+/// The close of a workspace or a tab, which a `kill` waits for.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
 const OUT_MAX: usize = 4 * 1024 * 1024;
 
@@ -126,9 +129,10 @@ enum Then {
         tid: String,
         pid: String,
     },
-    /// `workspace create` / `tab create` answered; the new tab takes the
-    /// session, and a new workspace's tab is renamed.
-    Made { rename: bool },
+    /// `workspace create` / `tab create` answered; what it made takes the
+    /// session. A new workspace (`workspace: true`) comes with a tab, which is
+    /// renamed after the session starts, and is closed with the session.
+    Made { workspace: bool },
     /// `pane run` answered; the tab is renamed after it.
     Rename { tid: String },
     /// The last command of a chain.
@@ -154,9 +158,13 @@ pub struct Pane {
     cwd: String,
     label: String,
     job: Option<Job>,
-    /// The tab this chain made: closed when the session is ended on request.
-    /// (A worktree's own empty shell is the person's, never closed.)
+    /// The tab this chain made in a workspace of the person's (a worktree's):
+    /// closed when the session is ended on request. (A worktree's own empty
+    /// shell is the person's, never closed.)
     tab: Option<String>,
+    /// The workspace this chain made: closed, with its tab, when the session is
+    /// ended on request. Never one that was there before.
+    workspace: Option<String>,
     /// The pane the session was put in, until the daemon has recorded it.
     new_pane: Option<String>,
 }
@@ -179,6 +187,7 @@ impl Pane {
             label: format!("{route_label} \u{b7} {folder}"),
             job: None,
             tab: None,
+            workspace: None,
             new_pane: None,
         };
         let mut log = Vec::new();
@@ -304,7 +313,7 @@ impl Pane {
             Then::Tabs { wid } => self.on_tabs(&job.out, &wid, log),
             Then::Panes { wid, tid } => self.on_panes(&job.out, &wid, &tid, log),
             Then::Read { wid, tid, pid } => self.on_read(&job.out, &wid, &tid, &pid, log),
-            Then::Made { rename } => self.on_made(&job.out, rename, log),
+            Then::Made { workspace } => self.on_made(&job.out, workspace, log),
             Then::Rename { tid } => {
                 let label = self.label.clone();
                 self.call(
@@ -328,7 +337,7 @@ impl Pane {
             .unwrap_or_default();
         // A session in a worktree belongs in that worktree's workspace: at the
         // desk the person opens the worktree and finds its agent there, not an
-        // empty shell beside a tab in `Phone sessions`.
+        // empty shell beside a workspace of the session.
         if let Some(wid) = checkout_workspace(&spaces, &self.cwd) {
             // A worktree herdr just made has one tab: an empty shell. The
             // session takes that one rather than sit in a second tab beside it
@@ -342,27 +351,20 @@ impl Pane {
             );
             return;
         }
-        for w in &spaces {
-            if w.get("label").and_then(Value::as_str) == Some(WORKSPACE) {
-                if let Some(wid) = w.get("workspace_id").and_then(Value::as_str) {
-                    self.new_tab(wid, log);
-                    return;
-                }
-            }
-        }
-        // A new workspace comes with a tab and a pane: this session takes them.
-        let cwd = self.cwd.clone();
+        // Any other session, the main checkout included, gets a workspace of
+        // its own: it comes with a tab and a pane, which the session takes.
+        let (cwd, label) = (self.cwd.clone(), self.label.clone());
         self.call(
             &[
                 "workspace",
                 "create",
                 "--label",
-                WORKSPACE,
+                &label,
                 "--cwd",
                 &cwd,
                 "--no-focus",
             ],
-            Then::Made { rename: true },
+            Then::Made { workspace: true },
             None,
             HERDR_TIMEOUT,
             log,
@@ -383,7 +385,7 @@ impl Pane {
                 &label,
                 "--no-focus",
             ],
-            Then::Made { rename: false },
+            Then::Made { workspace: false },
             None,
             HERDR_TIMEOUT,
             log,
@@ -468,7 +470,7 @@ impl Pane {
         ));
     }
 
-    fn on_made(&mut self, out: &[u8], rename: bool, log: &mut Vec<String>) {
+    fn on_made(&mut self, out: &[u8], workspace: bool, log: &mut Vec<String>) {
         let result = herdr_result(out);
         let name = |key: &str, id: &str| {
             result
@@ -485,9 +487,14 @@ impl Pane {
             ));
             return;
         };
-        self.tab = Some(tid.clone());
+        if workspace {
+            self.workspace = name("workspace", "workspace_id");
+        }
+        // Closing the workspace takes its tab; the tab alone is closed only
+        // when the tab is all this chain made.
+        self.tab = self.workspace.is_none().then(|| tid.clone());
         let command = self.command();
-        let then = if rename {
+        let then = if workspace {
             Then::Rename { tid: tid.clone() }
         } else {
             Then::End
@@ -504,22 +511,27 @@ impl Pane {
     }
 
     /// The agent ended by itself (or the keeper is going away): the command in
-    /// flight stops; the tab stays, the terminal says why the session ended.
+    /// flight stops; the workspace or tab stays, the terminal says why the
+    /// session ended.
     pub fn stop(&mut self) {
         if let Some(mut job) = self.job.take() {
             kill_job(&mut job);
         }
     }
 
-    /// The session was ended on request: its tab goes too. Waits for herdr, at
-    /// most three seconds. Returns the sentences for the diagnostic log.
+    /// The session was ended on request: the workspace this chain made goes
+    /// too, or its tab when it is in a workspace of the person's. Waits for
+    /// herdr, at most three seconds. Returns the sentences for the diagnostic
+    /// log.
     pub fn close(&mut self) -> Vec<String> {
         self.stop();
-        let Some(tab) = self.tab.take() else {
-            return Vec::new();
+        let (kind, target) = match (self.workspace.take(), self.tab.take()) {
+            (Some(workspace), _) => ("workspace", workspace),
+            (None, Some(tab)) => ("tab", tab),
+            (None, None) => return Vec::new(),
         };
         let mut cmd = Command::new(&self.programs.herdr);
-        cmd.args(["tab", "close", &tab])
+        cmd.args([kind, "close", &target])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -527,7 +539,7 @@ impl Pane {
         fds::close_inherited(&mut cmd, fds::Strategy::from_env());
         let mut child = match cmd.spawn() {
             Ok(c) => c,
-            Err(e) => return vec![format!("herdr tab close failed: {e}")],
+            Err(e) => return vec![format!("herdr {kind} close failed: {e}")],
         };
         let end = Instant::now() + CLOSE_TIMEOUT;
         loop {
@@ -538,7 +550,7 @@ impl Pane {
                         spawn::kill_group_hard(pid);
                     }
                     let _ = child.wait();
-                    return vec!["herdr tab close failed: timed out".to_string()];
+                    return vec![format!("herdr {kind} close failed: timed out")];
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(10)),
             }

@@ -330,12 +330,13 @@ What a keeper does on the host (`docs/AGENT_SESSIONS.md` "The keeper"):
 - It listens on a unix socket only. Its state lives in `~/.herdr-mobile/keepers/`
   (directory 0700, files 0600). Every attached client gets every update; the
   first answer to a waiting request wins.
-- When herdr runs on the host and a `herdr-tui` can be found there, it opens a
-  tab in the workspace of the linked worktree that holds the session's folder,
-  else in herdr's `Phone sessions` workspace (never focused), that runs
+- When herdr runs on the host and a `herdr-tui` can be found there, it opens
+  the session in herdr (never focused): a tab in the workspace of the linked
+  worktree that holds the session's folder, else a workspace of its own named
+  `<agent> · <folder>`. Either way it runs
   `herdr-tui attach <id>`: a terminal client of the keeper that reports the
   session's state to herdr, so herdr on any connected computer lists it. Without
-  a `herdr-tui` no tab is opened. `~/.herdr-mobile/no-panes` turns this off
+  a `herdr-tui` no pane is opened. `~/.herdr-mobile/no-panes` turns this off
   (`rust/crates/keeper/src/pane.rs`, `docs/AGENT_SESSIONS.md` "Shared sessions").
 - `kill` sends SIGTERM to the agent's process group, then SIGKILL after 2 s. It
   signals only a process whose command line is a keeper daemon (`herdr-host` or

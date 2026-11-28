@@ -4,6 +4,19 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- Each session started from the phone is now its own workspace in herdr, named
+  `<agent> · <folder>` (for example `omp · herdr-mobile`). Before, they all
+  shared one workspace called `Phone sessions`, whose tabs carried the same few
+  names and could not be told apart. A session in a linked worktree still opens
+  as a tab in that worktree's workspace; one in a repo's main checkout gets a
+  workspace of its own and never adds a tab to yours.
+- Ending a session from the phone closes its workspace in herdr (its tab, for a
+  worktree). A workspace or tab of yours is never closed.
+- Sessions already in `Phone sessions` stay there, as they were; it is not
+  moved or closed. Not checked on a live herdr desktop yet.
+
 ## [0.1.71] - 2026-11-28
 
 ### Find files and see photos faster

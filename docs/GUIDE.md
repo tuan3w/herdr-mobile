@@ -471,16 +471,18 @@ when it can.
 one.
 
 **At the computer.** When herdr runs on the machine, each agent session also
-gets a tab in a herdr workspace: the worktree's own when the session runs in
-a linked worktree, else one called `Phone sessions`. herdr lists it with
+appears in herdr: as a workspace of its own named `<agent> · <folder>` (for
+example `omp · herdr-mobile`), or, when the session runs in a linked worktree,
+as a tab in that worktree's workspace. herdr lists it with
 the other agents (working, blocked or idle), on that machine and on any
-computer connected to it. The tab shows the conversation: type a line and
+computer connected to it. Its pane shows the conversation: type a line and
 press Enter to send it, type the number of an option to answer a permission,
 `/cancel` stops the turn and `/quit` closes the view (the agent keeps
 running). Questions with a form are answered on the phone. The phone and the
 terminal share the session: whichever answers first wins, and the other says
-who answered. Ending the session on the phone closes the tab. To turn the
-tabs off on a machine, create the file `~/.herdr-mobile/no-panes` there.
+who answered. Ending the session on the phone closes its workspace (its tab,
+in a worktree). To turn the
+panes off on a machine, create the file `~/.herdr-mobile/no-panes` there.
 
 How well each agent is tested:
 
