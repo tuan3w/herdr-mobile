@@ -43,12 +43,18 @@ void main() {
 
   File local(String name, Uint8List bytes) => File('${phone.path}/$name')..writeAsBytesSync(bytes);
 
-  HostUpload upload(HostLink link, File file, String inbox, {void Function(int, int)? onProgress}) => HostUpload(
+  HostUpload upload(
+    HostLink link,
+    File file,
+    String inbox, {
+    void Function(int, int)? onProgress,
+    Duration interval = Duration.zero,
+  }) => HostUpload(
     link: Future.value(link),
     localPath: file.path,
     inboxPath: inbox,
     onProgress: onProgress,
-    progressInterval: Duration.zero,
+    progressInterval: interval,
   );
 
   group('the inbox path the host picks', () {
@@ -100,6 +106,23 @@ void main() {
       expect(File('$inbox.part').existsSync(), isFalse);
       expect(File('$inbox.part.meta').existsSync(), isFalse);
       expect(Directory(stored.parent.path).listSync().whereType<File>(), hasLength(1), reason: 'nothing left behind');
+    });
+
+    test('a fresh upload reports its start once, and no tick before the interval has passed', () async {
+      final (_, link) = await host.connect();
+      final bytes = pattern(3 * 1024 * 1024);
+      final inbox = await HostTransfer(link).reserve(key: 'k', name: 'once.bin');
+
+      final seen = <(int, int)>[];
+      await upload(
+        link,
+        local('once.bin', bytes),
+        inbox,
+        onProgress: (s, t) => seen.add((s, t)),
+        interval: const Duration(days: 1),
+      ).done;
+
+      expect(seen, [(0, bytes.length), (bytes.length, bytes.length)], reason: 'the start, then the end');
     });
 
     test('an empty file is a file', () async {

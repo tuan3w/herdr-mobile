@@ -144,11 +144,17 @@ class MadeVerification extends ChangeNotifier {
     if (had && !_disposed) notifyListeners();
   }
 
-  /// The app is in the background: nobody looks, so the host stops watching,
-  /// the ports go back to unknown and [check] asks nothing until [resume].
+  /// The app is in the background: nobody looks, so the host stops watching and
+  /// what it said goes back to unknown: the ports AND the files (one deleted or
+  /// recreated meanwhile would keep its old row for as long as the sheet stays
+  /// open). [check] asks nothing until [resume], then asks it all again.
   void pause() {
     _paused = true;
     _stop();
+    final had = _exists.isNotEmpty;
+    _exists.clear();
+    _askedPaths.clear();
+    if (had && !_disposed) notifyListeners();
   }
 
   /// The app is back: [check] asks again.

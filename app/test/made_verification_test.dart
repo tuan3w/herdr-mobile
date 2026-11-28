@@ -202,4 +202,35 @@ void main() {
     v.dispose();
     expect(cancelled, 2);
   });
+
+  test('a file that vanished or came back while the app was in the background is asked again on return', () async {
+    // The host's answer changes between the two asks, as when a file is deleted or recreated meanwhile.
+    var present = true;
+    transport.onHostCall = (service, method, args) async {
+      final items = (args['items']! as List).cast<Map<String, Object?>>();
+      verified.add(items);
+      return {
+        'results': [
+          for (final item in items) {'id': item['id'], 'exists': present},
+        ],
+      };
+    };
+    final v = model();
+    await v.check(paths: ['/work/a.html']);
+    expect(v.isGone('/work/a.html'), isFalse);
+
+    v.pause();
+    present = false;
+    v.resume();
+    await v.check(paths: ['/work/a.html']);
+    expect(verified, hasLength(2), reason: 'the answer from before the background is not trusted');
+    expect(v.isGone('/work/a.html'), isTrue, reason: 'deleted meanwhile');
+
+    v.pause();
+    present = true;
+    v.resume();
+    await v.check(paths: ['/work/a.html']);
+    expect(verified, hasLength(3));
+    expect(v.isGone('/work/a.html'), isFalse, reason: 'recreated meanwhile');
+  });
 }

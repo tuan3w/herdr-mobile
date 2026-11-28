@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:herdr_mobile/ui/core/kit.dart' show Dwell;
+
 import '../../../data/models/remote_file.dart';
 import '../../../data/services/remote_files.dart';
 import 'file_format.dart';
@@ -49,7 +51,7 @@ class FileViewerViewModel extends ChangeNotifier {
     this._formatJson = formatJson,
     this.firstChunk = viewerFirstChunk,
     this.textLimit = viewerTextLimit,
-    this.watchRetry = const Duration(seconds: 15),
+    this.watchRetry = Dwell.watchRetry,
     this._forceText = false,
   });
 

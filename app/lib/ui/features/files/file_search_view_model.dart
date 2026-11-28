@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/models/remote_search.dart';
 import '../../../data/services/remote_files.dart';
-import '../../core/motion.dart';
+import '../../core/kit.dart' show Dwell;
 
 /// How recently a match changed.
 enum SearchWindow {
@@ -222,9 +222,7 @@ class FileSearchViewModel extends ChangeNotifier {
       root: root,
       query: _query.trim(),
       kind: kind,
-      modifiedWithin: within == null
-          ? null
-          : (within < const Duration(seconds: 1) ? const Duration(seconds: 1) : within),
+      modifiedWithin: within == null ? null : (within < Dwell.second ? Dwell.second : within),
       maxResults: maxResults,
       hidden: hidden,
     );

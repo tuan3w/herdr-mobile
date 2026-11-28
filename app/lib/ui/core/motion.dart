@@ -273,6 +273,9 @@ abstract final class Dwell {
 
   /// A photo zoomed back out to fit keeps its sharp decode this long: zooming in again does not decode twice.
   static const photoSharp = Duration(seconds: 2);
+
+  /// A file viewer whose watch ended (the machine could not be asked) listens again after this long.
+  static const watchRetry = Duration(seconds: 15);
 }
 
 /// The app's haptic vocabulary, as `Motion` is its motion vocabulary. Five

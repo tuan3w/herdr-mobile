@@ -211,7 +211,10 @@ class _FileSearchScreenState extends State<FileSearchScreen> {
             )
           else
             SliverToBoxAdapter(
-              child: Padding(padding: const EdgeInsets.fromLTRB(Gap.gutter, Gap.md, Gap.gutter, 0), child: panel),
+              child: Padding(
+                padding: const EdgeInsets.only(left: Gap.gutter, top: Gap.md, right: Gap.gutter),
+                child: panel,
+              ),
             ),
         ];
       case SearchPhase.done:

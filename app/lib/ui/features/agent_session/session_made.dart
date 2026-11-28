@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -157,7 +158,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
       _verification.pause();
     } else if (state == AppLifecycleState.resumed) {
       _verification.resume();
-      unawaited(_verification.check(ports: _wantedPorts, paths: _wantedPaths));
+      _verify();
     }
   }
 
@@ -170,11 +171,11 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
     super.dispose();
   }
 
-  /// Asks the machine about what the rows show: the ports of the servers that
-  /// can be web pages, and the files of the page and document rows built on the
-  /// tab in front (one `made.verify` for what was not asked yet). Pictures are
-  /// checked by their own tiles, which read the file anyway.
-  void _scheduleVerify(List<MadeAsset> shown, MadeKind? tab) {
+  /// What the rows show that the machine can answer for: the ports of the
+  /// servers that can be web pages, and the files of the page and document rows
+  /// built on the tab in front. Pictures are checked by their own tiles, which
+  /// read the file anyway. Asked by [_VerifyWhenChanged], not by the build.
+  void _wantVerified(List<MadeAsset> shown, MadeKind? tab) {
     _wantedPorts = {
       for (final a in shown)
         if (a.kind == MadeKind.server && a.port != null && sensitiveServiceOf(a.port!) == null) a.port!,
@@ -184,10 +185,10 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
         for (final a in shown.where((a) => _inTab(a, tab!)).take(_limit(tab!)))
           if (a.path != null) a.path!,
     ];
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_verification.check(ports: _wantedPorts, paths: _wantedPaths));
-    });
   }
+
+  /// One `made.verify` for what was not asked yet.
+  void _verify() => unawaited(_verification.check(ports: _wantedPorts, paths: _wantedPaths));
 
   List<MadeAsset> _stable(List<MadeAsset> assets) {
     final order = _order ??= [for (final a in assets) a.key];
@@ -498,74 +499,113 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
           ),
       ],
     );
-    _scheduleVerify(shown, tab);
-    return SheetScaffold(
-      title: 'Made in this session',
-      kind: SheetKind.list,
-      child: Padding(
-        // The list kind's inset 4 + 12: the rows sit 16 from the edge.
-        padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-        child: LayoutBuilder(
-          builder: (context, box) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (shown.isEmpty && reach == MadeReach.whole)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Gap.xl),
-                  child: Text(
-                    'Nothing has come up in this session yet.',
-                    style: Type.secondary.copyWith(color: ds.textSecondary),
+    _wantVerified(shown, tab);
+    return _VerifyWhenChanged(
+      ports: _wantedPorts,
+      paths: _wantedPaths,
+      verify: _verify,
+      child: SheetScaffold(
+        title: 'Made in this session',
+        kind: SheetKind.list,
+        child: Padding(
+          // The list kind's inset 4 + 12: the rows sit 16 from the edge.
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          child: LayoutBuilder(
+            builder: (context, box) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (shown.isEmpty && reach == MadeReach.whole)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Gap.xl),
+                    child: Text(
+                      'Nothing has come up in this session yet.',
+                      style: Type.secondary.copyWith(color: ds.textSecondary),
+                    ),
                   ),
-                ),
-              if (tabbed)
-                _KindTabs(
-                  tabs: [
-                    for (final k in kinds)
-                      (
-                        k,
-                        _tabLabel(k),
-                        k == MadeKind.server ? apps.length : shown.where((a) => _inTab(a, k)).length,
-                        k == MadeKind.server && running,
-                      ),
-                  ],
-                  selected: tab!,
-                  onChanged: _pick,
-                ),
-              if (tab != null)
-                SizedBox(
-                  height: () {
-                    final cap = MediaQuery.sizeOf(context).height * _bodyShare;
-                    return math.min(
-                      _bodyHeight(
-                        shown,
-                        kinds,
-                        box.maxWidth,
-                        scaler,
-                        files,
-                        tasks: tasks,
-                        listening: listening,
-                        cap: cap,
-                      ),
-                      cap,
-                    );
-                  }(),
-                  // A swipe sideways goes to the next kind, as the switch above does.
-                  child: tabbed
-                      ? PageView(
-                          controller: _pager,
-                          onPageChanged: _paged,
-                          children: [for (final k in kinds) scroller(k)],
-                        )
-                      : scroller(tab),
-                ),
-              if (reach != MadeReach.whole) _EarlierNote(reach: reach, onRead: session.readEarlierMade),
-            ],
+                if (tabbed)
+                  _KindTabs(
+                    tabs: [
+                      for (final k in kinds)
+                        (
+                          k,
+                          _tabLabel(k),
+                          k == MadeKind.server ? apps.length : shown.where((a) => _inTab(a, k)).length,
+                          k == MadeKind.server && running,
+                        ),
+                    ],
+                    selected: tab!,
+                    onChanged: _pick,
+                  ),
+                if (tab != null)
+                  SizedBox(
+                    height: () {
+                      final cap = MediaQuery.sizeOf(context).height * _bodyShare;
+                      return math.min(
+                        _bodyHeight(
+                          shown,
+                          kinds,
+                          box.maxWidth,
+                          scaler,
+                          files,
+                          tasks: tasks,
+                          listening: listening,
+                          cap: cap,
+                        ),
+                        cap,
+                      );
+                    }(),
+                    // A swipe sideways goes to the next kind, as the switch above does.
+                    child: tabbed
+                        ? PageView(
+                            controller: _pager,
+                            onPageChanged: _paged,
+                            children: [for (final k in kinds) scroller(k)],
+                          )
+                        : scroller(tab),
+                  ),
+                if (reach != MadeReach.whole) _EarlierNote(reach: reach, onRead: session.readEarlierMade),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Asks the machine ([verify]) when the sheet first shows and whenever what it
+/// wants verified changes (another tab, `N more`, a new row): from the State's
+/// own update path, never from a build. Why: a build runs for every row change
+/// and must stay free of side effects; the ask is also idempotent, so an input
+/// that did not change needs no call.
+class _VerifyWhenChanged extends StatefulWidget {
+  const _VerifyWhenChanged({required this.ports, required this.paths, required this.verify, required this.child});
+
+  final Set<int> ports;
+  final List<String> paths;
+  final VoidCallback verify;
+  final Widget child;
+
+  @override
+  State<_VerifyWhenChanged> createState() => _VerifyWhenChangedState();
+}
+
+class _VerifyWhenChangedState extends State<_VerifyWhenChanged> {
+  @override
+  void initState() {
+    super.initState();
+    widget.verify();
+  }
+
+  @override
+  void didUpdateWidget(_VerifyWhenChanged old) {
+    super.didUpdateWidget(old);
+    if (!setEquals(old.ports, widget.ports) || !listEquals(old.paths, widget.paths)) widget.verify();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Under the list while the rows may not be all of them: the phone read the end

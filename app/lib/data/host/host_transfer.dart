@@ -192,7 +192,8 @@ class HostUpload implements UploadJob {
         var sent = math.min(held, size);
         await file.setPosition(sent);
         final clock = Stopwatch()..start();
-        var reported = -1;
+        // The start is the first report; the next waits for the interval.
+        var reported = 0;
         _progress(sent, size);
         while (sent < size) {
           final bytes = await file.read(math.min(piece, size - sent));
@@ -204,8 +205,7 @@ class HostUpload implements UploadJob {
           await stream.write(bytes);
           sent += bytes.length;
           if (_cancelled) return;
-          if (sent < size &&
-              (reported < 0 || clock.elapsedMilliseconds - reported >= progressInterval.inMilliseconds)) {
+          if (sent < size && clock.elapsedMilliseconds - reported >= progressInterval.inMilliseconds) {
             reported = clock.elapsedMilliseconds;
             _progress(sent, size);
           }
