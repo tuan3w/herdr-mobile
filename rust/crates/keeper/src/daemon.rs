@@ -260,9 +260,10 @@ pub fn run() -> i32 {
     let agent_out_raw = child.stdout.take().expect("the agent's stdout is piped");
     let agent_err_raw = child.stderr.take().expect("the agent's stderr is piped");
     let (tx, rx) = mpsc::channel::<Ev>();
+    let err_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     // The agent's pipes are read from the very start: the handshake and the
     // loop both take their lines from this one channel.
-    reader_threads(agent_out_raw, agent_err_raw, &tx);
+    reader_threads(agent_out_raw, agent_err_raw, &tx, &err_done);
     let mut conns: Vec<Conn> = Vec::new();
     let mut agent = Router::new(
         id.clone(),
@@ -303,6 +304,7 @@ pub fn run() -> i32 {
     let err_tail: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     if let Err(code) = handshake(&mut agent, &mut agent_in, &rx, &dir, &route, &err_tail) {
+        settle_stderr(&rx, &err_tail, &err_done, Instant::now() + STDERR_SETTLE);
         // The agent refused `initialize`/`authenticate` (or left before
         // answering): the record must say so, and the formatted reason must
         // reach the starter — a separate process that only reads files — so it
@@ -459,6 +461,7 @@ pub fn run() -> i32 {
         // reap it here, and then `finish`'s wait would see nothing — so the
         // exit status is read once, in `finish`.
         if agent_gone {
+            settle_stderr(&rx, &err_tail, &err_done, Instant::now() + STDERR_SETTLE);
             return finish(
                 agent,
                 &dir,
@@ -478,13 +481,20 @@ fn reader_threads(
     out: std::process::ChildStdout,
     err: std::process::ChildStderr,
     tx: &mpsc::Sender<Ev>,
+    err_done: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
-    agent_reader(out, tx, true);
-    agent_reader(err, tx, false);
+    agent_reader(out, tx, true, err_done);
+    agent_reader(err, tx, false, err_done);
 }
 
-fn agent_reader<R: io::Read + Send + 'static>(r: R, tx: &mpsc::Sender<Ev>, is_stdout: bool) {
+fn agent_reader<R: io::Read + Send + 'static>(
+    r: R,
+    tx: &mpsc::Sender<Ev>,
+    is_stdout: bool,
+    err_done: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
     let tx = tx.clone();
+    let err_done = std::sync::Arc::clone(err_done);
     std::thread::spawn(move || {
         for line in Lines::new(io::BufReader::new(r), MAX_AGENT_LINE) {
             match line {
@@ -503,6 +513,10 @@ fn agent_reader<R: io::Read + Send + 'static>(r: R, tx: &mpsc::Sender<Ev>, is_st
         }
         if is_stdout {
             let _ = tx.send(Ev::AgentGone);
+        } else {
+            // After the last line was sent: `settle_stderr` reads "done and the
+            // queue is empty" as "every line the agent wrote is in the tail".
+            err_done.store(true, std::sync::atomic::Ordering::Release);
         }
     });
 }
@@ -607,6 +621,51 @@ fn next_agent_line(
             Ok(_) => {}
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
+    }
+}
+
+/// How long a dead agent's stderr is waited for (it is already closed; this
+/// only covers a reader thread that has not been scheduled yet).
+const STDERR_SETTLE: Duration = Duration::from_millis(500);
+
+/// Takes the rest of a dead agent's stderr into `err_tail`.
+///
+/// The two reader threads feed one queue, so the agent's `AgentGone` (stdout
+/// closed) can be read before the last stderr line it wrote just before
+/// exiting: a failed start then said "the agent failed to start" without the
+/// agent's own reason (`cannot start: no login`), and a late exit lost its
+/// last line. The stderr reader sets `err_done` after its last send, so
+/// "done, and nothing left in the queue" means every line is in the tail.
+/// Gives up at `deadline`; other events are dropped (the agent is gone).
+fn settle_stderr(
+    rx: &mpsc::Receiver<Ev>,
+    err_tail: &std::sync::Mutex<Vec<String>>,
+    err_done: &std::sync::atomic::AtomicBool,
+    deadline: Instant,
+) {
+    loop {
+        match rx.recv_timeout(Duration::from_millis(10)) {
+            Ok(Ev::AgentErr(line)) => {
+                let text = line.trim_end();
+                if !text.is_empty() {
+                    let mut tail = err_tail.lock().expect("the stderr tail is not poisoned");
+                    tail.push(crate::router::trunc(text, 300));
+                    if tail.len() > 20 {
+                        tail.remove(0);
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if err_done.load(std::sync::atomic::Ordering::Acquire) {
+                    return;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+        if Instant::now() >= deadline {
+            return;
         }
     }
 }
@@ -807,5 +866,41 @@ mod tests {
             never_active(&conns, t0 + Duration::from_secs(10_000), limit),
             vec![1, 3]
         );
+    }
+
+    fn settled(events: Vec<Ev>, done: bool, deadline: Instant) -> Vec<String> {
+        let (tx, rx) = mpsc::channel();
+        for ev in events {
+            tx.send(ev).expect("the queue is open");
+        }
+        let tail = std::sync::Mutex::new(Vec::new());
+        let done = std::sync::atomic::AtomicBool::new(done);
+        settle_stderr(&rx, &tail, &done, deadline);
+        tail.into_inner().expect("the tail is not poisoned")
+    }
+
+    #[test]
+    fn a_stderr_line_queued_after_the_agent_went_is_still_in_the_tail() {
+        // The order the two reader threads can produce: stdout's end first, the
+        // reason the agent wrote just before exiting after it.
+        let tail = settled(
+            vec![
+                Ev::AgentGone,
+                Ev::AgentErr("cannot start: no login\n".into()),
+            ],
+            true,
+            Instant::now() + Duration::from_secs(60),
+        );
+        assert_eq!(tail, ["cannot start: no login"]);
+    }
+
+    #[test]
+    fn the_tail_keeps_the_last_twenty_lines_and_skips_blank_ones() {
+        let mut events: Vec<Ev> = (0..30).map(|i| Ev::AgentErr(format!("line {i}"))).collect();
+        events.insert(5, Ev::AgentErr("   \n".into()));
+        let tail = settled(events, true, Instant::now() + Duration::from_secs(60));
+        assert_eq!(tail.len(), 20);
+        assert_eq!(tail.first().map(String::as_str), Some("line 10"));
+        assert_eq!(tail.last().map(String::as_str), Some("line 29"));
     }
 }
