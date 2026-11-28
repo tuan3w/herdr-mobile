@@ -288,10 +288,22 @@ void main() {
     });
 
     testWidgets('backgrounds are not part of the text style', (tester) async {
+      // Default text reads on black, so the run needs no style at all.
+      await _pump(tester, '\x1b[40mblack\x1b[0m');
+
+      final run = rowSpan(tester.widget(terminalRow('black'))).children!.single as TextSpan;
+      expect(run.style, isNull);
+    });
+
+    testWidgets('default text on a background it cannot be read on is lifted; the style still has no background', (
+      tester,
+    ) async {
       await _pump(tester, '\x1b[44mblue\x1b[0m');
 
       final run = rowSpan(tester.widget(terminalRow('blue'))).children!.single as TextSpan;
-      expect(run.style, isNull);
+      expect(run.style!.background, isNull);
+      expect(run.style!.backgroundColor, isNull);
+      expect(run.style!.color, isNotNull);
     });
 
     testWidgets('prepared rows are reused for unchanged lines', (tester) async {

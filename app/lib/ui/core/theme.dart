@@ -9,6 +9,55 @@ import 'tokens.dart';
 
 export 'tokens.dart';
 
+/// WCAG contrast ratio of two colours (1 to 21).
+double contrastRatio(Color a, Color b) => _ratio(a.computeLuminance(), b.computeLuminance());
+
+double _ratio(double la, double lb) => (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+
+/// [fg] moved towards readable on [bg]: the lightness changes, the hue and the
+/// saturation do not (HSL), as little as it takes to reach [floor]:1.
+///
+/// A colour that already reaches it comes back as the very same object.
+/// Lighter or darker is the direction the floor can be reached in; where both
+/// can, the way [fg] already leans (lighter than [bg] goes lighter). A floor
+/// neither white nor black reaches on [bg] gives the better of the two.
+Color liftToContrast(Color fg, Color bg, double floor) {
+  final lb = bg.computeLuminance();
+  final lf = fg.computeLuminance();
+  if (_ratio(lf, lb) >= floor) return fg;
+  final maxLighter = 1.05 / (lb + 0.05);
+  final maxDarker = (lb + 0.05) / 0.05;
+  final bool lighter;
+  if (maxLighter >= floor && maxDarker >= floor) {
+    lighter = lf >= lb;
+  } else if (maxLighter >= floor || maxDarker >= floor) {
+    lighter = maxLighter >= floor;
+  } else {
+    return maxLighter >= maxDarker ? const Color(0xFFFFFFFF) : const Color(0xFF000000);
+  }
+  final hsl = HSLColor.fromColor(fg);
+  bool reads(double l) => _ratio(_quantized(hsl.withLightness(l)).computeLuminance(), lb) >= floor;
+  // Luminance never falls as HSL lightness rises, so the first lightness that
+  // reads is found by halving. [good] reads, [bad] does not.
+  var good = lighter ? 1.0 : 0.0;
+  var bad = hsl.lightness;
+  for (var i = 0; i < 16; i++) {
+    final mid = (good + bad) / 2;
+    if (reads(mid)) {
+      good = mid;
+    } else {
+      bad = mid;
+    }
+  }
+  return _quantized(hsl.withLightness(good));
+}
+
+/// [c] on the 8-bit channels a screen has, so what is measured is what is drawn.
+Color _quantized(HSLColor c) {
+  final rgb = c.toColor();
+  return Color.fromARGB(255, (rgb.r * 255).round(), (rgb.g * 255).round(), (rgb.b * 255).round());
+}
+
 /// The dark terminal colours. The ANSI parser resolves colour codes to these,
 /// whatever theme is showing; [TerminalPalette.light] maps them to its own
 /// when a pane is drawn on paper (see [TerminalPalette.recolor]).
@@ -18,16 +67,15 @@ abstract final class TerminalColors {
   static const dim = Color(0xFF7C8591);
   static const border = Color(0xFF1E2127);
 
-  /// The 16 ANSI colours (0-7 normal, 8-15 bright), tuned for [background]:
-  /// every one reaches 4.5:1 on it except black, and bright white is the only
-  /// one lighter than [foreground] (`terminal_palette_test.dart` measures all
-  /// of it). Black is the exception on purpose: it is also the background of
-  /// a status line, and text on it must read too, so it sits where both hold
-  /// as well as they can, 3.3:1 as text on the page and 4.4:1 for [foreground]
-  /// on it. Lifted to 4.5:1 as text it left [foreground] on it at 3.1:1; the
-  /// near-black it replaced (#3B4252) was 1.96:1 as text and vanished.
+  /// The 16 ANSI colours (0-7 normal, 8-15 bright): the true ones, nord-ish,
+  /// so a TUI that paints a black block or a black status line gets one, and
+  /// its own text on it (default, white) reads. They are NOT tuned to be
+  /// legible as text on [background]: black is `#3B4252`, 2:1 on it. Text in
+  /// any colour is lifted at render time to 4.5:1 against its cell's own
+  /// background (`TerminalContrast`), so a black word on the page reads and a
+  /// black block stays a block. `terminal_palette_test.dart` measures it.
   static const ansi = <Color>[
-    Color(0xFF5A6376),
+    Color(0xFF3B4252),
     Color(0xFFE06C75),
     Color(0xFF98C379),
     Color(0xFFE5C07B),
@@ -51,8 +99,10 @@ abstract final class TerminalColors {
 /// on paper, or [dark] on both when the person wants a dark terminal.
 ///
 /// The parser always produces [TerminalColors] values. [recolor] turns them
-/// into this palette's at the moment a row is prepared, so the dark palette
-/// costs nothing and a theme switch only needs the prepared rows dropped.
+/// into this palette's at the moment a row is prepared and lifts text that
+/// does not read on its own background (see [minContrast]); a row with
+/// nothing to change comes back as it is, and a theme switch only needs the
+/// prepared rows dropped.
 @immutable
 class TerminalPalette extends ThemeExtension<TerminalPalette> {
   TerminalPalette._({
@@ -83,8 +133,9 @@ class TerminalPalette extends ThemeExtension<TerminalPalette> {
   /// [foreground].
   final Color selection;
 
-  /// The 16 ANSI colours, each legible (>= 4.5:1) on [background]; on the dark
-  /// page black is the one exception, 3:1 (see [TerminalColors.ansi]).
+  /// The 16 ANSI colours as the parser's [TerminalColors] map to them. Text in
+  /// them reads on [background] once drawn (the contrast guard lifts what does
+  /// not), whatever these values are.
   final List<Color> ansi;
 
   static final dark = TerminalPalette._(
@@ -127,10 +178,10 @@ class TerminalPalette extends ThemeExtension<TerminalPalette> {
     ],
   );
 
-  /// Text on a background must reach this contrast on paper, or it is pulled
-  /// towards black: a TUI that picked pale greys for a dark screen stays
-  /// readable.
-  static const minContrast = 3.5;
+  /// Text must reach this contrast against its own cell's background (WCAG
+  /// 1.4.3) or it is lifted when a row is prepared, on either palette: a TUI
+  /// that painted black or pale grey for a screen it imagined, stays readable.
+  static const minContrast = 4.5;
 
   late final Map<Color, Color> _fromDark = {
     TerminalColors.foreground: foreground,
@@ -142,25 +193,6 @@ class TerminalPalette extends ThemeExtension<TerminalPalette> {
   /// any other colour is returned as is. The terminal renderer's `recolor`
   /// applies it to a run.
   Color mapped(Color dark) => _fromDark[dark] ?? dark;
-
-  /// [fg], darkened until it reaches [minContrast] on [on].
-  static Color readable(Color fg, Color on) => _readable(fg, on);
-
-  static double _contrast(Color a, Color b) {
-    final la = a.computeLuminance();
-    final lb = b.computeLuminance();
-    return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
-  }
-
-  static Color _readable(Color fg, Color on) {
-    if (_contrast(fg, on) >= minContrast) return fg;
-    final target = on.computeLuminance() > 0.5 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
-    for (var t = 0.1; t < 1; t += 0.1) {
-      final c = Color.lerp(fg, target, t)!;
-      if (_contrast(c, on) >= minContrast) return c;
-    }
-    return target;
-  }
 
   @override
   TerminalPalette copyWith() => this;

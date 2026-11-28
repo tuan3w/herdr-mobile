@@ -10,14 +10,12 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import 'ansi.dart';
 import 'cell_width.dart';
 import 'box_drawing.dart';
+import 'terminal_contrast.dart';
 import 'terminal_document.dart';
 import 'terminal_links.dart';
 
 /// Row height as a multiple of the font size, before snapping to pixels.
 const terminalLineHeightFactor = 1.3;
-
-/// How far dim (SGR 2) text is blended from the background to its colour.
-const _dimBlend = 0.62;
 
 /// Rows kept prepared (text span, recorded picture) after they have been
 /// built. Many times what fits a screen, so scrolling back a little reuses
@@ -131,7 +129,7 @@ final class CellMetrics {
 /// background, otherwise the foreground (default when unset). [run] is already
 /// in [palette]'s colours.
 Color runForeground(AnsiRun run, TerminalPalette palette) => run.dim
-    ? Color.lerp(run.bg ?? palette.background, run.fg ?? palette.foreground, _dimBlend)!
+    ? Color.lerp(run.bg ?? palette.background, run.fg ?? palette.foreground, terminalDimBlend)!
     : (run.fg ?? palette.foreground);
 
 /// Text style of [run]. Backgrounds are not part of it (they are painted by
@@ -181,8 +179,7 @@ String blankSprites(String text) {
 ///
 /// Owns a native [ui.Picture]; [dispose] releases it.
 final class TerminalLine {
-  TerminalLine(List<AnsiRun> runs, this.metrics, {this.links = const []})
-    : runs = metrics.palette.isDark ? runs : [for (final run in runs) metrics.palette.recolor(run)];
+  TerminalLine(List<AnsiRun> runs, this.metrics, {this.links = const []}) : runs = metrics.palette.recolor(runs);
 
   /// The row's runs in the colours of [CellMetrics.palette].
   final List<AnsiRun> runs;
@@ -256,7 +253,7 @@ final class TerminalLine {
   Color _linkForeground(AnsiRun run) {
     final palette = metrics.palette;
     if (run.fg != null) return runForeground(run, palette);
-    return run.dim ? Color.lerp(run.bg ?? palette.background, palette.link, _dimBlend)! : palette.link;
+    return run.dim ? Color.lerp(run.bg ?? palette.background, palette.link, terminalDimBlend)! : palette.link;
   }
 
   /// Underlines under the linked cells, in the colour of the text above.
