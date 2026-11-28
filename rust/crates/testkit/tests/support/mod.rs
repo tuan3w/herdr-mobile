@@ -17,6 +17,7 @@ pub struct Proc {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     stderr: Arc<Mutex<Vec<u8>>>,
+    stderr_collector: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Proc {
@@ -60,7 +61,7 @@ impl Proc {
         });
         let captured = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&captured);
-        std::thread::spawn(move || {
+        let collector = std::thread::spawn(move || {
             let mut chunk = [0u8; 4096];
             while let Ok(n) = stderr.read(&mut chunk) {
                 if n == 0 {
@@ -77,6 +78,7 @@ impl Proc {
             stdin,
             lines,
             stderr: captured,
+            stderr_collector: Some(collector),
         }
     }
 
@@ -139,9 +141,9 @@ impl Proc {
     /// Waits for the process to exit (polls; panics after [`WAIT`]).
     pub fn wait(&mut self) -> ExitStatus {
         let start = Instant::now();
-        loop {
+        let status = loop {
             if let Some(status) = self.child.try_wait().expect("wait") {
-                return status;
+                break status;
             }
             assert!(
                 start.elapsed() < WAIT,
@@ -149,7 +151,15 @@ impl Proc {
                 self.stderr()
             );
             std::thread::sleep(Duration::from_millis(5));
+        };
+        // The collector is a thread of its own: without this a test that reads
+        // `stderr()` right after the exit can run before the last text is in
+        // (it failed on a CI runner). The pipe closed with the exit, so the
+        // thread is at its end or about to be.
+        if let Some(collector) = self.stderr_collector.take() {
+            let _ = collector.join();
         }
+        status
     }
 }
 
