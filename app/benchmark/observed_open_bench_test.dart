@@ -214,6 +214,7 @@ class _Open {
     required this.hostMs,
     required this.items,
     required this.batches,
+    required this.paints,
   });
 
   final int wireBytes;
@@ -225,6 +226,11 @@ class _Open {
   final double hostMs;
   final int items;
   final int batches;
+
+  /// How many different transcripts the screen was told of on the way to the
+  /// whole tail (a counter, not a time): 1 is the rows coming in as one swap,
+  /// more is the transcript growing in steps while the person watches.
+  final int paints;
 
   double modelledMs(double rttMs, double mbit) =>
       streamRtts * rttMs + math.max(gateMs, firstByteMs + wireBytes * 8 / (mbit * 1000)) + postMs;
@@ -261,7 +267,14 @@ class _Held {
   /// opened since [fromProbe].
   Future<_Open> acquire({int fromProbe = 0, int items = 1}) async {
     final live = Completer<double>();
+    var paints = 0;
+    var shown = 0;
     void listener() {
+      final n = session.state.items.length;
+      if (n != shown) {
+        if (n > 0) paints++;
+        shown = n;
+      }
       // Live AND the whole tail applied: a session calls itself live after
       // the first batch, while more of the replay is still on its way.
       if (!live.isCompleted && session.link == AgentLink.live && session.state.items.length >= items) {
@@ -297,6 +310,7 @@ class _Held {
       hostMs: lastUs == null ? 0 : clock.at(lastUs) - started,
       items: session.state.items.length,
       batches: source.batches,
+      paints: paints,
     );
   }
 
@@ -416,6 +430,7 @@ void _report(String q, List<_Open> runs) {
   _metric('${q}_host_ms', _median(runs.map((o) => o.hostMs)));
   _metric('${q}_phone_cpu_ms', _median(runs.map((o) => o.cpuMs)));
   _metric('${q}_batches', runs.first.batches);
+  _metric('${q}_paints', runs.first.paints);
   for (final (name, rtt, mbit) in _links) {
     _metric('${q}_open_${name}_ms', _median(runs.map((o) => o.modelledMs(rtt, mbit))));
   }

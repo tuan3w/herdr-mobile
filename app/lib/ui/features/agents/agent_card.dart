@@ -7,7 +7,9 @@ import '../../../data/models/herdr_models.dart';
 import '../../../data/models/pane_preview.dart';
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/agent_session.dart' show Preconnect;
 import '../../../data/repositories/pane_previews.dart';
+import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/words/elapsed.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -17,6 +19,7 @@ import '../../support/tap_guard.dart';
 import 'agent_navigation.dart';
 import 'answer_surface.dart';
 import 'agents_grouping.dart';
+import 'preconnect_tap.dart';
 import 'reply_chips.dart';
 import 'reply_sheet.dart';
 import 'board_selection.dart';
@@ -172,10 +175,10 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
     if (!_unsettled) _openSheet();
   }
 
-  void _open() {
+  void _open(Preconnect? preconnect) {
     Haptics.tick();
     _agent.machine.markReviewed(_agent.paneId);
-    openAgent(context, PaneAgent(_agent.machine.profile.id, _agent.paneId));
+    openAgent(context, PaneAgent(_agent.machine.profile.id, _agent.paneId), preconnect: preconnect);
   }
 
   void _openSheet() => showReplySheet(context, key: _agent.key);
@@ -227,52 +230,56 @@ class _AgentCardState extends State<AgentCard> with TapGuardState<AgentCard>, An
       duration: Motion.of(context, Motion.expand),
       curve: Motion.easeOut,
       alignment: Alignment.topCenter,
-      child: PressBuilder(
-        onTap: sel.active ? _pick : _open,
-        onLongPress: () => _pick(feedback: false),
-        selected: sel.active ? sel.selected : null,
-        semanticLabel: _semanticLabel(prompt),
-        builder: (context, pressed) => AnimatedContainer(
-          duration: Motion.pressing(pressed),
-          curve: Motion.easeOut,
-          decoration: BoxDecoration(
-            color: pressed ? Color.alphaBlend(ds.pressTint, tint) : tint,
-            borderRadius: BorderRadius.circular(_radius),
-            border: Border.all(color: edge),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(_pad, Gap.md, _pad, _pad),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Header(agent: a, showTime: !stackTime),
-                Padding(
-                  padding: const EdgeInsets.only(left: _glyphColumn),
-                  child: _Subtitle(text: a.subtitle),
-                ),
-                if (a.meta.isNotEmpty)
+      child: PreconnectTap(
+        enabled: !sel.active,
+        start: (context) => warmPane(context, _agent),
+        builder: (context, take) => PressBuilder(
+          onTap: sel.active ? _pick : () => _open(take()),
+          onLongPress: () => _pick(feedback: false),
+          selected: sel.active ? sel.selected : null,
+          semanticLabel: _semanticLabel(prompt),
+          builder: (context, pressed) => AnimatedContainer(
+            duration: Motion.pressing(pressed),
+            curve: Motion.easeOut,
+            decoration: BoxDecoration(
+              color: pressed ? Color.alphaBlend(ds.pressTint, tint) : tint,
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(color: edge),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(_pad, Gap.md, _pad, _pad),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Header(agent: a, showTime: !stackTime),
                   Padding(
                     padding: const EdgeInsets.only(left: _glyphColumn),
-                    child: _Subtitle(text: a.meta, quiet: true),
+                    child: _Subtitle(text: a.subtitle),
                   ),
-                if (stackTime)
-                  Padding(
-                    padding: const EdgeInsets.only(left: _glyphColumn),
-                    child: StateTime(agent: a),
-                  ),
-                const SizedBox(height: Gap.md),
-                if (prompt != null) ...[
-                  QuestionWash(
-                    question: prompt.question,
-                    subject: prompt.subject,
-                    // Room for the `Reply…` that floats over the wash's end.
-                    trailing: canReply ? SizedBox(width: replyRoom) : null,
-                    onReadAll: _more,
-                  ),
-                  SizedBox(height: Gap.md + chipsHeight),
-                ] else
-                  _PreviewPanel(rows: _previewRows, lines: preview?.lines, replyRoom: canReply ? replyRoom : 0),
-              ],
+                  if (a.meta.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: _glyphColumn),
+                      child: _Subtitle(text: a.meta, quiet: true),
+                    ),
+                  if (stackTime)
+                    Padding(
+                      padding: const EdgeInsets.only(left: _glyphColumn),
+                      child: StateTime(agent: a),
+                    ),
+                  const SizedBox(height: Gap.md),
+                  if (prompt != null) ...[
+                    QuestionWash(
+                      question: prompt.question,
+                      subject: prompt.subject,
+                      // Room for the `Reply…` that floats over the wash's end.
+                      trailing: canReply ? SizedBox(width: replyRoom) : null,
+                      onReadAll: _more,
+                    ),
+                    SizedBox(height: Gap.md + chipsHeight),
+                  ] else
+                    _PreviewPanel(rows: _previewRows, lines: preview?.lines, replyRoom: canReply ? replyRoom : 0),
+                ],
+              ),
             ),
           ),
         ),
@@ -623,6 +630,21 @@ class _PreviewPanel extends StatelessWidget {
   }
 }
 
+/// What a finger going down on a pane's card or row starts, ~100 ms before the
+/// tap completes: the pane that opens as the chat of its log starts following
+/// it (`preconnectObservedChat`); one that opens as its terminal has its tail
+/// read (`PaneTails.warm`), which the screen joins. The hold goes to
+/// [openAgent] and is let go with the finger.
+Preconnect? warmPane(BuildContext context, AgentRowData agent) {
+  final pane = PaneAgent(agent.machine.profile.id, agent.paneId);
+  return preconnectObservedChat(context, pane) ??
+      context.read<PanePreviews?>()?.tails.warm(
+        agent.machine,
+        agent.paneId,
+        wrap: context.read<TerminalSettings?>()?.wrap ?? false,
+      );
+}
+
 /// The dense two-line row (the old list), with the same time-in-state label.
 class AgentCompactRow extends StatelessWidget {
   const AgentCompactRow({super.key, required this.agent, required this.divider});
@@ -651,42 +673,46 @@ class AgentCompactRow extends StatelessWidget {
         child: ReviewAction(
           enabled: swipeable,
           onReviewed: review,
-          child: ListRow(
-            // Staleness dims the row's glyph and softens its words (see ListRow.dim).
-            leading: StatusGlyph(status: agent.status, size: IconSize.lead),
-            title: agent.title,
-            subtitle: agent.subtitle,
-            subtitle2: agent.meta,
-            titleMaxLines: 2,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                StateTime(agent: agent),
-                if (sel.active) ...[
-                  const SizedBox(width: Gap.sm),
-                  SelectMark(selected: sel.selected, size: IconSize.bar),
+          child: PreconnectTap(
+            enabled: !sel.active,
+            start: (context) => warmPane(context, agent),
+            builder: (context, take) => ListRow(
+              // Staleness dims the row's glyph and softens its words (see ListRow.dim).
+              leading: StatusGlyph(status: agent.status, size: IconSize.lead),
+              title: agent.title,
+              subtitle: agent.subtitle,
+              subtitle2: agent.meta,
+              titleMaxLines: 2,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StateTime(agent: agent),
+                  if (sel.active) ...[
+                    const SizedBox(width: Gap.sm),
+                    SelectMark(selected: sel.selected, size: IconSize.bar),
+                  ],
                 ],
-              ],
+              ),
+              dim: agent.stale,
+              // Merged from the glyph and the texts, plus what dimming only implies.
+              semanticLabel: agent.stale
+                  ? [
+                      agent.status.label,
+                      agent.title,
+                      if (agent.subtitle.isNotEmpty) agent.subtitle,
+                      if (agent.meta.isNotEmpty) agent.meta,
+                      'offline',
+                    ].join(', ')
+                  : null,
+              onTap: sel.active
+                  ? pick
+                  : () {
+                      Haptics.tick();
+                      agent.machine.markReviewed(agent.paneId);
+                      openAgent(context, PaneAgent(agent.machine.profile.id, agent.paneId), preconnect: take());
+                    },
+              onLongPress: () => pick(feedback: false),
             ),
-            dim: agent.stale,
-            // Merged from the glyph and the texts, plus what dimming only implies.
-            semanticLabel: agent.stale
-                ? [
-                    agent.status.label,
-                    agent.title,
-                    if (agent.subtitle.isNotEmpty) agent.subtitle,
-                    if (agent.meta.isNotEmpty) agent.meta,
-                    'offline',
-                  ].join(', ')
-                : null,
-            onTap: sel.active
-                ? pick
-                : () {
-                    Haptics.tick();
-                    agent.machine.markReviewed(agent.paneId);
-                    openAgent(context, PaneAgent(agent.machine.profile.id, agent.paneId));
-                  },
-            onLongPress: () => pick(feedback: false),
           ),
         ),
       ),

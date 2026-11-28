@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 
 import '../models/herdr_models.dart' show Pane;
 import '../observed/observed_kind.dart';
+import 'agent_session.dart' show Preconnect;
 import 'fleet_repository.dart';
 import 'background_grace.dart';
 import 'machine_connection.dart';
@@ -28,6 +30,8 @@ class ObservedSessions extends ChangeNotifier {
     required this._kinds,
     this.idleAfter = const Duration(minutes: 10),
     this.detachAfter = defaultBackgroundGrace,
+    this.preconnectHold = const Duration(seconds: 6),
+    this.maxWarm = 3,
   }) {
     _fleet.addListener(_prune);
   }
@@ -43,6 +47,15 @@ class ObservedSessions extends ChangeNotifier {
   /// How long the app may stay in the background before a session stops
   /// following its log, asked when the app goes away.
   final BackgroundGrace detachAfter;
+
+  /// How long a [preconnect] hold that nobody cancels lasts.
+  final Duration preconnectHold;
+
+  /// How many logs a [preconnect] may start following at once that nothing
+  /// else holds: a scroll across the board must not open a stream per card.
+  final int maxWarm;
+  int _warm = 0;
+  final _holds = <_FollowHold>{};
 
   final _sessions = <String, ObservedAgentSession>{};
   bool _disposed = false;
@@ -137,6 +150,38 @@ class ObservedSessions extends ChangeNotifier {
     );
   }
 
+  /// Starts following the log of pane [paneId] before its screen asks for it
+  /// (a finger went down on its row or card): the first batch is on its way
+  /// while the route is pushed. Cancel the hold when the finger leaves, or
+  /// hand it to the screen, which holds the session itself ([Preconnect.cancel]
+  /// once it has). Nothing starts in the background (the radio sleeps), for a
+  /// machine that is not live, for a pane that cannot be observed, or past
+  /// [maxWarm] logs; then the hold is inert. A hold nobody cancels lets go by
+  /// itself after [preconnectHold], and a press that came to nothing leaves
+  /// the log followed for that long, not the usual wait of a screen that was
+  /// left. Reads the same tail the screen would ask for, once.
+  Preconnect preconnect(MachineConnection machine, String paneId) {
+    if (_disposed || _backgroundedAt != null || !machine.isLive) return Preconnect.none;
+    final have = _sessions['pane/${machine.profile.id}/$paneId'];
+    final costs = have == null || !have.following;
+    if (costs && _warm >= maxWarm) return Preconnect.none;
+    final session = forPane(machine, paneId);
+    if (session == null) return Preconnect.none;
+    final cold = !session.following;
+    if (cold) _warm++;
+    final hold = _FollowHold(
+      session,
+      preconnectHold,
+      cold: cold,
+      onDone: (hold) {
+        _holds.remove(hold);
+        if (cold) _warm--;
+      },
+    );
+    _holds.add(hold);
+    return hold;
+  }
+
   /// The session with [key] (`pane/...` or `sub/...`), if it exists.
   ObservedAgentSession? byKey(String key) => _sessions[key];
 
@@ -202,6 +247,11 @@ class ObservedSessions extends ChangeNotifier {
     switch (state) {
       case AppLifecycleState.hidden || AppLifecycleState.paused:
         _backgroundedAt ??= DateTime.now();
+        // Nobody is looking: a finger-down hold does not outlive the app's
+        // being in front.
+        for (final hold in _holds.toList()) {
+          hold.cancel();
+        }
       case AppLifecycleState.resumed:
         _backgroundedAt = null;
       case AppLifecycleState.inactive || AppLifecycleState.detached:
@@ -234,5 +284,32 @@ class ObservedSessions extends ChangeNotifier {
     }
     _sessions.clear();
     super.dispose();
+  }
+}
+
+/// A finger-down hold on an observed session ([ObservedSessions.preconnect]):
+/// a hold like a screen's, let go when cancelled or by itself after the TTL.
+/// A log it started following ([cold]) is not followed for long after a hold
+/// that came to nothing: [ttl], not the session's usual wait.
+class _FollowHold implements Preconnect {
+  _FollowHold(this._session, this._ttl, {required this.cold, required this.onDone}) {
+    _session.acquire();
+    _timer = Timer(_ttl, cancel);
+  }
+
+  final ObservedAgentSession _session;
+  final Duration _ttl;
+  final bool cold;
+  final void Function(_FollowHold hold) onDone;
+  late final Timer _timer;
+  var _done = false;
+
+  @override
+  void cancel() {
+    if (_done) return;
+    _done = true;
+    _timer.cancel();
+    _session.release(linger: cold ? _ttl : null);
+    onDone(this);
   }
 }

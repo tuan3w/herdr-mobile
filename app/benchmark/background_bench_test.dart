@@ -25,6 +25,9 @@
 //   steady      the same without the turbulence, 1 h: what watching costs when
 //               nothing goes wrong (`steady_*`)
 //   suspended   notifications off: 1 h in the background, then the resume
+//   warm        the board in front with 2 agents waiting, 3 min with and without
+//               the warming of their tails (`warm_*`): reads and KB per minute,
+//               and what is read once the board is covered or the app leaves
 //
 // `bg_score_s_per_h` is the one number to lower: the radio cost per hour (see
 // the assumptions) plus an hour's worth of radio for every share of the time a
@@ -67,6 +70,7 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:dartssh2/dartssh2.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/models/herdr_models.dart' show AgentStatus;
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/agent_session_repository.dart';
 import 'package:herdr_mobile/data/repositories/attention_notifier.dart';
@@ -76,6 +80,8 @@ import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
+import 'package:herdr_mobile/data/repositories/pane_tails.dart' show paneTailRows;
+import 'package:herdr_mobile/ui/features/pane/pane_view_model.dart';
 import 'package:herdr_mobile/data/services/bridge_command.dart' show muxDeltaMin, muxReadyLine;
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrTransportException;
@@ -310,6 +316,8 @@ class _Host {
         _heldAnswer(q, d, d['result'] as Map<String, dynamic>, 'snapshot', rows, snapshot: true);
       case 'pane.read':
         meter.count('pane_reads');
+        // The pane screen's 300-row tail, which the board warms for waiting agents.
+        if (params['lines'] == 300) meter.count('pane_tail_reads');
         final pane = params['pane_id'] as String;
         final text = _screen(pane, params['lines'] as int? ?? 24);
         final read = <String, dynamic>{'text': text, 'truncated': false};
@@ -934,6 +942,28 @@ class _Rig {
     });
   }
 
+  /// What the Agents board tells the pane tails while it is in front: the
+  /// agents that wait on the person, in board order.
+  void engageTails() {
+    zone.run(() {
+      previews.tails.board(
+        inFront: true,
+        targets: [
+          for (final c in fleet.connections)
+            for (final p in c.snapshot.panes)
+              if (p.status == AgentStatus.blocked) (machine: c, paneId: p.id),
+        ],
+      );
+    });
+    async.flushMicrotasks();
+  }
+
+  /// Another screen covers the board.
+  void coverTails() {
+    zone.run(() => previews.tails.board(inFront: false));
+    async.flushMicrotasks();
+  }
+
   /// Every machine shows what herdr says.
   bool get fresh => hosts.values.every((h) {
     final c = fleet.connection(h.id);
@@ -1227,6 +1257,106 @@ Future<void> _suspended() async {
   }
 }
 
+/// Tapping an agent on the board: when the pane screen has text, and when that
+/// text is live, counted from the tap (finger up, ~100 ms after it went down).
+/// Three ways: as before (the screen reads when it opens), with the last tail
+/// kept (the first frame has text, marked saved), and with the press as well
+/// (the read starts while the finger is down). Written as `open_*` on the
+/// model's link (`rtt`), not measured on a phone.
+Future<void> _open() async {
+  for (final way in ['before', 'kept', 'press']) {
+    final async = FakeAsync(initialTime: DateTime.utc(2026, 1, 1, 12));
+    final r = _Rig.start(async, notifications: false);
+    r.openBoard();
+    await r.elapse(const Duration(seconds: 5));
+    final conn = r.fleet.connection('a')!;
+    final tails = r.previews.tails;
+    // The pane was open a while ago: its tail is in memory, and old.
+    r.zone.run(() => unawaited(tails.read(conn, 'p1', ReadSource.recent, paneTailRows)));
+    await r.elapse(const Duration(seconds: 12));
+    final reads = r.meter.counts['pane_tail_reads'] ?? 0;
+
+    r.zone.run(() {
+      if (way == 'press') tails.warm(conn, 'p1', wrap: false);
+    });
+    await r.elapse(const Duration(milliseconds: 100), step: const Duration(milliseconds: 10));
+    final tap = r.now;
+    final vm = r.zone.run(
+      () => PaneViewModel.forMachine(conn, 'p1', wrap: false, tails: way == 'before' ? null : tails),
+    );
+    final firstFrame = vm.text.isNotEmpty;
+    var liveAt = Duration.zero;
+    for (var i = 0; i < 300 && (vm.isSaved || vm.lastRead == null); i++) {
+      await r.elapse(const Duration(milliseconds: 10), step: const Duration(milliseconds: 10));
+    }
+    liveAt = r.now - tap;
+    _metric('open_${way}_first_frame_has_text', firstFrame ? 1 : 0);
+    _metric('open_${way}_live_after_tap_ms', liveAt.inMilliseconds);
+    _metric('open_${way}_tail_reads', (r.meter.counts['pane_tail_reads'] ?? 0) - reads);
+    r.zone.run(vm.dispose);
+    r.dispose();
+  }
+}
+
+/// The board in front with two agents waiting on the person, with and without
+/// the pane tails' warming of those two (`PaneTails.board`): what it costs the
+/// radio, and that nothing is read once the board is covered or the app leaves.
+/// Written as `warm_*`. The tail reads are the pane screen's 300 rows, which
+/// the mux sends as a delta against the last read of the same pane.
+Future<void> _warm() async {
+  Future<({double kbPerMin, double readsPerMin, _Rig rig, FakeAsync async})> run({required bool warm}) async {
+    final async = FakeAsync(initialTime: DateTime.utc(2026, 1, 1, 12));
+    final r = _Rig.start(async, notifications: false);
+    r.every(const Duration(milliseconds: 100), () {
+      for (final h in r.hosts.values) {
+        h.churn();
+      }
+    });
+    r.hosts['a']!
+      ..setStatus('p1', 'blocked')
+      ..setStatus('p2', 'blocked');
+    r.openBoard();
+    await r.elapse(const Duration(seconds: 5));
+    if (warm) r.engageTails();
+    await r.elapse(const Duration(seconds: 5));
+    final from = r.now.inMilliseconds;
+    final readsFrom = r.meter.counts['pane_tail_reads'] ?? 0;
+    await r.elapse(const Duration(minutes: 3));
+    final window = r.meter.window(from, r.now.inMilliseconds);
+    final reads = (r.meter.counts['pane_tail_reads'] ?? 0) - readsFrom;
+    return (kbPerMin: window.bytes / 1024 / 3, readsPerMin: reads / 3, rig: r, async: async);
+  }
+
+  final off = await run(warm: false);
+  off.rig.dispose();
+  final on = await run(warm: true);
+  final r = on.rig;
+  _metric('warm_off_fg_kb_per_min', off.kbPerMin);
+  _metric('warm_on_fg_kb_per_min', on.kbPerMin);
+  _metric('warm_tail_reads_per_min', on.readsPerMin);
+  _metric('warm_fg_kb_regression_pct', off.kbPerMin == 0 ? 0 : (on.kbPerMin - off.kbPerMin) / off.kbPerMin * 100);
+  if (off.readsPerMin != 0) _failures.add('warm: tails were read with no board warming (${off.readsPerMin}/min)');
+
+  // The board is covered by another screen: nothing is read.
+  r.coverTails();
+  var from = r.meter.counts['pane_tail_reads'] ?? 0;
+  await r.elapse(const Duration(minutes: 2));
+  final covered = (r.meter.counts['pane_tail_reads'] ?? 0) - from;
+  _metric('warm_covered_tail_reads', covered);
+  if (covered != 0) _failures.add('warm: $covered tail reads while the board was covered');
+
+  // Back in front, then the app leaves: nothing is read in the background.
+  r.engageTails();
+  await r.elapse(const Duration(seconds: 5));
+  from = r.meter.counts['pane_tail_reads'] ?? 0;
+  r.life(AppLifecycleState.paused);
+  await r.elapse(const Duration(minutes: 10));
+  final away = (r.meter.counts['pane_tail_reads'] ?? 0) - from;
+  _metric('warm_background_tail_reads', away);
+  if (away != 0) _failures.add('warm: $away tail reads in the background');
+  r.dispose();
+}
+
 /// The first board request on a machine nobody has talked to yet: the SSH
 /// connection, the exec channel, then the helper's HELLO, `herdr.mux`, ready and
 /// the answer. The app writes our HELLO, the mux OPEN and the request together,
@@ -1262,11 +1392,15 @@ Future<void> _coldStart() async {
 }
 
 void main() {
+  // The pane screen's view model observes the app lifecycle.
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('what watching agents costs the radio and the battery', () async {
     // The score is the turbulent run's; the steady run is its quiet baseline.
     await _watch(prefix: 'bg', watchFor: const Duration(hours: 2), turbulent: true);
     await _watch(prefix: 'steady', watchFor: const Duration(hours: 1), turbulent: false);
     await _suspended();
+    await _warm();
+    await _open();
     await _coldStart();
 
     final path = Platform.environment['BENCH_OUT'];

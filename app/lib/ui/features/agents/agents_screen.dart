@@ -10,6 +10,9 @@ import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/batch_actions.dart' show BatchAction;
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/pane_previews.dart';
+import '../../../data/repositories/pane_tails.dart';
+import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/words/elapsed.dart';
 import '../../../data/words/plural.dart';
@@ -80,6 +83,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   late final AppLifecycleListener _lifecycle;
   bool? _reportedVisible;
   AgentSessions? _sessions;
+  PaneTails? _tails;
   // The machines the strip last spoke of: it keeps saying them while it closes
   // (the list is empty by then), so the strip folds away with its words.
   List<TroubledMachine> _stripFor = const [];
@@ -153,6 +157,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   void dispose() {
     _lifecycle.dispose();
     _sessions?.setBoardVisible(false);
+    _tails?.board(inFront: false);
     _selection
       ..removeListener(_onSelection)
       ..dispose();
@@ -221,12 +226,29 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     });
   }
 
+  /// Tells the pane tails which agents wait on the person while the board is
+  /// in front: the first two cards' tails are kept warm, so a tap opens on
+  /// text (`PaneTails.board`: blocked agents only, nothing once it is
+  /// covered or the app leaves).
+  void _warmNeedsYou(BoardLayout layout) {
+    final tails = _tails = context.read<PanePreviews?>()?.tails;
+    tails?.board(
+      inFront: true,
+      targets: [
+        for (final item in layout.needsYou)
+          if (item is PaneItem && !item.row.stale) (machine: item.row.machine, paneId: item.row.paneId),
+      ],
+      wrap: context.read<TerminalSettings?>()?.wrap ?? false,
+    );
+  }
+
   /// Tells the sessions when the board is on screen (not under a pushed
   /// page): they list their hosts every minute only then.
   void _reportVisible(bool visible) {
     if (_reportedVisible == visible) return;
     if (visible) _seen = {};
     _reportedVisible = visible;
+    if (!visible) _tails?.board(inFront: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _sessions?.setBoardVisible(_reportedVisible ?? false);
@@ -279,6 +301,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     final sessionList = sessions?.sessions ?? const <AgentSessionView>[];
     final layout = boardLayout(overview.agents, sessionList, attention);
     _askBranches(layout);
+    _warmNeedsYou(layout);
     final entries = boardEntries(
       layout,
       collapsed: _collapsed,

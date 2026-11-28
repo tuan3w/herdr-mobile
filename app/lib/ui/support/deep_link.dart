@@ -267,7 +267,7 @@ class DeepLinks with WidgetsBindingObserver {
         _say("That link isn’t one herdr can open.", next: HomePage.agents);
         return;
       }
-      var first = await _present(connection, () => list.byKey(key) != null);
+      var first = await _present(connection, () => list.byKey(key) != null, listing: list);
       // A session this phone has not listed yet (the app was just started) is
       // looked for on the host before it is called gone.
       if (first == _Pane.gone && !stale()) {
@@ -349,8 +349,11 @@ class DeepLinks with WidgetsBindingObserver {
   /// Whether the thing a link names ([have]) is on [connection]. A pane in the
   /// last snapshot counts at once, even a cached one: the pane screen shows
   /// what is reachable. A live snapshot without it means it is gone. While the
-  /// machine is still connecting the answer is awaited, for [patience].
-  Future<_Pane> _present(MachineConnection connection, bool Function() have) {
+  /// machine is still connecting the answer is awaited, for [patience]; a
+  /// change of [listing] (the sessions the hosts report) is asked about too,
+  /// so a session is opened the moment its machine lists it, not once the
+  /// connection has said it is up and the list was asked for again.
+  Future<_Pane> _present(MachineConnection connection, bool Function() have, {Listenable? listing}) {
     _Pane? decide() {
       if (have()) return _Pane.here;
       return switch (connection.state) {
@@ -370,14 +373,17 @@ class DeepLinks with WidgetsBindingObserver {
       if (answer == null || done.isCompleted) return;
       timer.cancel();
       connection.removeListener(check);
+      listing?.removeListener(check);
       done.complete(answer);
     }
 
     timer = Timer(patience, () {
       connection.removeListener(check);
+      listing?.removeListener(check);
       if (!done.isCompleted) done.complete(_Pane.unreachable);
     });
     connection.addListener(check);
+    listing?.addListener(check);
     return done.future;
   }
 

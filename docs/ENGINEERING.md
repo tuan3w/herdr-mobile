@@ -951,6 +951,41 @@ measured.
   attach a finished-unseen session to warm it (the keeper clears `unseen_done`
   on load for every device; read its copy instead).
 
+### Opening a terminal pane is instant, and a saved copy is never live
+
+`data/repositories/pane_tails.dart` (`PaneTails`, owned by `PanePreviews`:
+`previews.tails`), `PaneViewModel`, `AgentsScreen._warmNeedsYou`.
+
+- **The first frame has text.** Every successful 300-row tail read is kept (one
+  per pane, at most 8 panes and 1 MiB in all, least recently read out first;
+  dropped when its machine is removed or its pane is gone). A pane opens on its
+  kept tail, else on the board card's rows (`PanePreviews.known`, the agent's
+  own input box taken off), as `PaneViewModel.isSaved`: dimmed and
+  `stale · 12s` (`LiveEdge`) until the screen's first read lands. A kept tail
+  goes through `ScrollbackHistory` like any read, so a first read that finds
+  the same rows moves nothing; a card's rows are not rows of the window and are
+  dropped when the read lands. The answer dock reads the live preview, never
+  this text; its chips keep the tap guard and the recheck before a send.
+- **A finger going down starts the read.** `PreconnectTap` on a board card or
+  row -> `PaneTails.warm`: 40 ms after the press (a scroll leaves the touch
+  slop sooner and lets go: nothing is sent) one tail read, never in the
+  background, never for a pane read in the last 5 s, at most 2 in flight per
+  machine. The screen's first read joins a read on its way (or one that landed
+  under 300 ms ago): one read per open. A sent read cannot be recalled; its
+  answer is kept either way.
+- **The board warms the likeliest taps.** While the Agents board is in front
+  and the app is too, the first two blocked agents' tails are read when they
+  start to wait, when their question changes and when the kept tail is 30 s
+  old; at most one read in flight per machine for this, one per pane per
+  10 s, never for an agent that is not blocked, and none once the board is
+  covered or the app leaves (the 15 s timer goes with it). Modelled in
+  `autoresearch.sh` (`warm_*`, `open_*`, virtual time; no phone baseline is
+  recorded yet): two waiting agents cost 2.7 reads and +0.5 KB per minute
+  (+0.1% of the board's foreground KB), and nothing in the background or with
+  the board covered. Worst case is one read per waiting agent per 10 s.
+- Do not paint a kept tail without the saved mark, answer from it, or keep it
+  across a machine removal.
+
 ### Background work
 
 `data/acp/background/`, `background_strip.dart`, `background_sheet.dart`.

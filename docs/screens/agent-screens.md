@@ -131,12 +131,16 @@ one scan surface; an agent screen is for one agent.
   pushing, and a
   notification or a link replaces the agent screen in front, if one is. Why:
   walking ten agents must not leave ten screens to back out of.
-- **Motion.** A swipe replaces the route: the new screen slides a short way
-  (0.2 of the width) and fades in over `Motion.standard`, from the side the
-  finger came from, while the screen under it stays still (no parallax). The
-  toggle only fades, over `Motion.fade`: the same agent, so nothing slides.
-  Under reduced motion a swipe is that fade. At launch the screen is back at
-  once (below, "What survives a launch"). Once in, the route is a page like
+- **Motion.** Opening an agent (a tap on the board's row or card, a
+  notification or link, the title switcher, a form) is a cut: the screen is
+  there, opaque and in place, the first frame it is shown, over a board that
+  does not move (two opaque screens cross-fading would show the board's text
+  through the new one). A swipe replaces the route: the new screen slides a
+  short way (0.2 of the width) over `Motion.standard`, from the side the
+  finger came from, opaque the whole way, while the screen under it stays
+  still (no parallax). The toggle is a cut too: the same agent, so nothing
+  slides. Under reduced motion a swipe is a cut. At launch the screen is back
+  at once (below, "What survives a launch"). Once in, the route is a page like
   any other: Back and the edge swipe use the page transition.
 
 ## Pane bar
@@ -191,12 +195,24 @@ and keeps its words while fading out.
 **Live edge** (`live_edge.dart`, bottom of the terminal panel, inside the
 outline). A 2 px rule: accent-tinted when the last read brought new output
 (`PaneViewModel.streaming`), `hairline` when it found nothing new. While the
-link is down or a read failed, the text dims to the closed-pane alpha (0.6)
-and the rule is `danger` (read failed) or `textMuted` (link down only) with
+link is down, a read failed or the text is a saved copy (see below), the text
+dims to the closed-pane alpha (0.6)
+and the rule is `danger` (read failed) or `textMuted` (link down or a saved
+copy) with
 a label `stale · 12s`, seconds since `PaneViewModel.lastRead` (then `1m`,
 `1h`). One timer a second redraws that label, only while stale and on
 screen; a live pane has no timer and no ticker. The
 screen reader hears `Output is stale` once. A closed pane is dimmed, not stale.
+
+**A pane opens on a saved copy** (`PaneViewModel.isSaved`, `PaneTails`,
+`docs/ENGINEERING.md` "Opening a terminal pane is instant"). The first frame
+already has text: the pane's last tail read, else the rows its board card
+showed. It is marked as any stale text is (dimmed, `stale · 12s` from when it
+was read) until the screen's first read lands, then it is live and the mark
+goes; a first read that finds the same rows moves nothing, and the view stays
+at the newest row. The saved text answers nothing: the answer dock follows
+the live preview, behind its tap guard, and a send is checked against a fresh
+read. A pane never seen has no text and no mark, as before.
 
 
 ## Composers

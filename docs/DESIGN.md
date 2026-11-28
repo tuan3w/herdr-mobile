@@ -145,9 +145,12 @@ their wash, pressed too (why paper `blockedText` is `#A84A13`, a shade darker
 than it was); toast text and its action reach 4.5:1 on `inverseSurface`;
 status shapes reach 3:1 on `bg`, and `textTertiary` (icons, chevrons, the
 switch when off, a disabled `TextAction`) reaches 3:1 on `bg`, `surface` and
-`fill`; the terminal's 16 colours reach 4.5:1 on their page, except dark black
-(3.3:1: it is also a status line's background, and the default text on it
-holds 4.4:1; lifted to 4.5 as text, that fell to 3.1). Stale data dims a whole
+`fill`; terminal text reaches 4.5:1 against its own cell's background, whatever
+colour it is drawn in (ANSI, 256, truecolour, dim): the palette keeps the true
+ANSI colours (black is `#3B4252`, a block is a block), and at render time text
+below the floor is lifted in lightness, hue kept, never the background and
+never a shape (box drawing, blocks, blanks), cached per colour pair
+(`terminal_contrast.dart`). Stale data dims a whole
 row once, never its glyph as well.
 
 ### Type (`Type`, `Mono`)
@@ -490,7 +493,8 @@ the phone; `flutter test` paints a `BoxShadow` without its blur unless
 which once read as a hard band.
 
 **Pages.** A push is the Cupertino slide at `Motion.page` with edge-swipe back
-(a `Motion.fade` cross-fade under reduced motion). The native launch window is
+(a `Motion.fade` cross-fade under reduced motion). Opening an agent is the
+exception: a cut in, the pop out is the page's own. The native launch window is
 paper in day and night (the chosen theme is not readable before Flutter
 starts).
 

@@ -6,15 +6,13 @@ import 'package:herdr_mobile/ui/core/kit.dart' show Dwell;
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../../data/repositories/pane_tails.dart';
 import '../../../data/repositories/terminal_prompt.dart';
 import '../../../data/services/herdr_api.dart' show ReadSource;
 import '../../../data/words/error_words.dart';
 import '../../../data/services/herdr_transport.dart';
 import '../../render/terminal/terminal_view.dart' show TerminalTop;
 import 'scrollback_history.dart';
-
-/// Rows requested by the live tail: cheap enough to read every 120 ms.
-const _tailRows = 300;
 
 /// The most rows herdr serves in one read (it clamps `lines` to this). A read
 /// this deep is ~250 KB and runs on herdr's main loop, so it is only made
@@ -30,12 +28,20 @@ typedef PaneReader = Future<PaneRead> Function(ReadSource source, int lines);
 /// emit continuously, so a debounce would never fire), with a slow poll as a
 /// backstop for lost events. Nothing runs while the app is not resumed.
 ///
-/// The tail is [_tailRows] rows. When the user scrolls near the top of what is
+/// The tail is [paneTailRows] rows. When the user scrolls near the top of what is
 /// loaded and herdr has more, reads go [_serverRows] deep until they have
 /// been back at the newest row for [deepRevertDelay]; while deep, reads are at
 /// most one per [deepReadInterval]. Rows that scroll off the top of the window
 /// are kept (see [ScrollbackHistory]), so the user can scroll back further
 /// than herdr serves, for as long as the screen is open.
+///
+/// The screen opens on [saved], when the phone has something of the pane in
+/// memory (its last tail, else the board card's rows): that is [isSaved] and
+/// the view says so (`stale · 12s`) until the first read lands and replaces
+/// it. Rows of a saved tail go through [ScrollbackHistory] like any other
+/// read, so a first read that finds the same rows moves nothing; a card's
+/// rows (the agent's own input box taken off) are not rows of the pane's
+/// window, so they are shown alone and dropped when the read lands.
 ///
 /// In [wrap] mode the pane is read as `recent_unwrapped` (herdr joins the rows
 /// the terminal soft-wrapped, leaving one logical line per line, for the view
@@ -56,7 +62,17 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     this.clock = DateTime.now,
     this.machineName,
     this._notRunning,
+    PaneTail? saved,
   }) {
+    if (saved != null) {
+      _saved = true;
+      _lastRead = saved.at;
+      if (saved.preview) {
+        _cardRows = saved.text;
+      } else {
+        _history.update(saved.text, truncated: saved.truncated);
+      }
+    }
     WidgetsBinding.instance.addObserver(this);
     // The fallback poll covers a failed activity stream.
     _activity = activity.listen(_onActivity, onError: (Object _) {});
@@ -65,17 +81,36 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   /// The pane [paneId] of [machine]. This is the one place the pane screen
   /// reaches the machine's API: the widget tree only sees the view model.
-  factory PaneViewModel.forMachine(MachineConnection machine, String paneId, {required bool wrap}) => PaneViewModel(
-    activity: machine.paneActivity,
-    paneId: paneId,
-    read: (source, lines) => machine.api.readPane(paneId, source: source, lines: lines, ansi: true),
-    sendLine: (text) => machine.api.sendLine(paneId, text),
-    sendPrompt: (p) => sendTerminalPrompt(machine.api, paneId, p),
-    sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
-    wrap: wrap,
-    machineName: machine.profile.label,
-    notRunning: () => machine.paneById(paneId)?.restoreError != null,
-  );
+  /// With [tails] the reads are remembered and join one a press started, and
+  /// the screen opens on what the phone last had of the pane.
+  factory PaneViewModel.forMachine(MachineConnection machine, String paneId, {required bool wrap, PaneTails? tails}) {
+    // Only the screen's first read may take the press's read that just landed.
+    var first = true;
+    Future<PaneRead> read(ReadSource source, int lines) {
+      final joinLanded = first;
+      first = false;
+      return tails == null
+          ? machine.api.readPane(paneId, source: source, lines: lines, ansi: true)
+          : tails.read(machine, paneId, source, lines, first: joinLanded);
+    }
+
+    return PaneViewModel(
+      activity: machine.paneActivity,
+      paneId: paneId,
+      read: read,
+      sendLine: (text) => machine.api.sendLine(paneId, text),
+      sendPrompt: (p) => sendTerminalPrompt(machine.api, paneId, p),
+      sendKeys: (keys) => machine.api.sendKeys(paneId, keys),
+      wrap: wrap,
+      clock: tails?.clock ?? DateTime.now,
+      machineName: machine.profile.label,
+      notRunning: () => machine.paneById(paneId)?.restoreError != null,
+      // A pane herdr could not bring back has nothing to show.
+      saved: machine.paneById(paneId)?.restoreError != null
+          ? null
+          : tails?.seed(machine.profile.id, paneId, wrap: wrap),
+    );
+  }
 
   final String paneId;
 
@@ -135,6 +170,12 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? _lastRead;
   bool _streaming = false;
 
+  /// What is shown came from memory ([PaneTail]) and no read has landed yet.
+  bool _saved = false;
+
+  /// The board card's rows, shown alone while [_saved] (see the class doc).
+  String? _cardRows;
+
   /// A send failed and its error is the one on screen. A read that succeeds
   /// does not wipe it (the next poll would hide a message that never went
   /// out); a send that succeeds, or [clearSendError], does.
@@ -142,8 +183,8 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   bool _sending = false;
 
   /// The live window: what the last read returned, as raw text. The rows above
-  /// it are [history].
-  String get text => _history.window;
+  /// it are [history]. Before the first read: what was saved ([isSaved]).
+  String get text => _cardRows ?? _history.window;
 
   /// Rows that scrolled off the top of [text], oldest first. The same list
   /// while nothing changed.
@@ -165,8 +206,13 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// The last read failed, so [text] may be out of date.
   bool get isStale => _stale;
 
-  /// When a read last succeeded (by [clock]); null before the first one. It
-  /// does not notify: the view reads it when [isStale] flips, which does.
+  /// [text] is a copy from memory, painted on the first frame, and no read of
+  /// this open has landed yet: not live, and the view says so until one does.
+  bool get isSaved => _saved;
+
+  /// When a read last succeeded (by [clock]), or the saved copy was read; null
+  /// when there is neither. It does not notify: the view reads it when
+  /// [isStale] or [isSaved] flips, which does.
   DateTime? get lastRead => _lastRead;
 
   /// The last successful read brought new output, so the pane is moving; false
@@ -249,7 +295,10 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _cooldown = Timer(deep ? deepReadInterval : minReadInterval, _cooledDown);
     final wrap = _wrap;
     try {
-      final read = await _read(wrap ? ReadSource.recentUnwrapped : ReadSource.recent, deep ? _serverRows : _tailRows);
+      final read = await _read(
+        wrap ? ReadSource.recentUnwrapped : ReadSource.recent,
+        deep ? _serverRows : paneTailRows,
+      );
       // The mode changed while reading: this is the other source's text, and
       // setWrap already queued a read of the right one.
       if (wrap == _wrap) _apply(read: read, error: null, stale: false);
@@ -287,6 +336,12 @@ class PaneViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (_resetHistory) {
         _history.clear();
         _resetHistory = false;
+      }
+      // The first read of this open replaces what was painted from memory.
+      if (_saved) {
+        _saved = false;
+        _cardRows = null;
+        changed = true;
       }
       _history.update(read.text, truncated: read.truncated);
       moved = _history.revision != before;

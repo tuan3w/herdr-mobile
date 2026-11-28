@@ -8,11 +8,13 @@ import 'package:provider/provider.dart';
 
 import '../../../data/acp/prompt_content.dart' show composePrompt;
 import '../../../data/models/herdr_models.dart';
+import '../../../data/repositories/agent_session.dart' show Preconnect;
 import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/observed_sessions.dart';
 import '../../../data/repositories/attach_target.dart' show AttachMode;
+import '../../../data/repositories/pane_previews.dart';
 import '../../../data/repositories/sent_phrases.dart';
 import '../../../data/repositories/pane_attach_target.dart';
 import '../../../data/repositories/command_source.dart';
@@ -75,7 +77,12 @@ class PaneScreen extends StatefulWidget {
     this.prepare = prepareImage,
     this.attachKit,
     this.readFile,
+    this.preconnect,
   });
+
+  /// The hold a finger's press took on the card (`PreconnectTap`), let go once
+  /// the screen is built: the read it started is joined, not held.
+  final Preconnect? preconnect;
 
   final PaneAgent agent;
 
@@ -121,6 +128,7 @@ class _PaneScreenState extends State<PaneScreen> {
     super.initState();
     _fleet.addListener(_onFleet);
     _sync();
+    widget.preconnect?.cancel();
     _screens?.shown(this, widget.agent, AgentView.terminal);
   }
 
@@ -149,7 +157,14 @@ class _PaneScreenState extends State<PaneScreen> {
       // Its page is still mounted until the next frame.
       if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
       _machine = machine;
-      final vm = _vm = machine == null ? null : PaneViewModel.forMachine(machine, _paneId, wrap: _settings.wrap);
+      final vm = _vm = machine == null
+          ? null
+          : PaneViewModel.forMachine(
+              machine,
+              _paneId,
+              wrap: _settings.wrap,
+              tails: context.read<PanePreviews?>()?.tails,
+            );
       _page = machine == null || vm == null
           ? null
           : KeyedSubtree(
@@ -829,11 +844,13 @@ class _TerminalPanel extends StatelessWidget {
                     ),
                   );
               final restoreError = machine.restoreError;
-              final read = context.select<PaneViewModel, ({bool failed, bool streaming})>(
-                (v) => (failed: v.isStale, streaming: v.streaming),
+              final read = context.select<PaneViewModel, ({bool failed, bool saved, bool streaming})>(
+                (v) => (failed: v.isStale, saved: v.isSaved, streaming: v.streaming),
               );
               final closed = machine.closed;
-              final stale = !closed && (read.failed || machine.linkDown);
+              // A copy painted from memory is not live either: the same veil
+              // and `stale · 12s` as a failed read, until a read lands.
+              final stale = !closed && (read.failed || read.saved || machine.linkDown);
               final settings = context.read<TerminalSettings>();
               final vm = context.read<PaneViewModel>();
               final content = context.select<PaneViewModel, ({List<String> history, String text, TerminalTop top})>(

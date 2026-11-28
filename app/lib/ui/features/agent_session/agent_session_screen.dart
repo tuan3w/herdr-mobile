@@ -607,8 +607,11 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
                   // A code block or a table that scrolls sideways keeps its
                   // swipe: it is not a step to the next agent.
                   child: switch (widget.agent) {
-                    final agent? => AgentSwipe(agent: agent, child: _transcript),
-                    null => _transcript,
+                    final agent? => AgentSwipe(
+                      agent: agent,
+                      child: _QuietUntilRows(session: widget.session, child: _transcript),
+                    ),
+                    null => _QuietUntilRows(session: widget.session, child: _transcript),
                   },
                 ),
                 LayoutId(id: _SessionLayout.bottom, child: _bottom),
@@ -722,6 +725,25 @@ class _Bottom extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The transcript's place while the link is first coming up and nothing has
+/// been read: empty and quiet (the strip above says `Connecting…`), not
+/// `Nothing said yet`, which would be untrue. The first rows come in as one
+/// swap, in the same place and at the same size, so nothing moves under the
+/// person's eyes.
+class _QuietUntilRows extends StatelessWidget {
+  const _QuietUntilRows({required this.session, required this.child});
+
+  final AgentSessionView session;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SessionSelect<bool>(
+    session: session,
+    select: (s) => s.link == AgentLink.connecting && s.state.items.isEmpty,
+    builder: (context, quiet) => quiet ? const SizedBox.expand() : child,
+  );
 }
 
 /// The board says this session needs the person, but its request cannot be

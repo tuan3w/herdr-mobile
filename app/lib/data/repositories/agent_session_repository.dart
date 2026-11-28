@@ -244,9 +244,16 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
     ]);
   }
 
-  Future<void> _refreshMachine(_Machine m) async {
-    if (_disposed || m.listing || _suspended) return;
-    m.listing = true;
+  /// Lists [m]'s keepers, or joins the listing already under way: a caller
+  /// that asked "list now" (pull to refresh, a link that names a session the
+  /// phone does not know yet) gets its answer when that listing has landed,
+  /// not at once with nothing.
+  Future<void> _refreshMachine(_Machine m) {
+    if (_disposed || _suspended) return Future<void>.value();
+    return m.listing ??= _list(m);
+  }
+
+  Future<void> _list(_Machine m) async {
     final startedAt = _clock();
     try {
       final keepers = await m.host.list();
@@ -256,7 +263,7 @@ class AgentSessionRepository extends ChangeNotifier implements AgentSessions {
       // The host did not answer: keep what is known; the next refresh tries
       // again.
     } finally {
-      m.listing = false;
+      m.listing = null;
     }
   }
 
@@ -791,7 +798,7 @@ class _Machine {
   final MachineConnection connection;
   final AgentHost host;
   bool live = false;
-  bool listing = false;
+  Future<void>? listing;
 
   /// The last listing had a running keeper that has no view pane yet: it may
   /// open one, so a new agent pane on this machine is worth a `list`.

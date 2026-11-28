@@ -1123,11 +1123,15 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     _refresh();
   }
 
+  /// Lets go of one hold. The last one leaves the log followed for [linger]
+  /// (the session's own unless the caller says less: a press that came to
+  /// nothing has not earned the usual wait) and the session kept for
+  /// [idleAfter].
   @override
-  void release() {
+  void release({Duration? linger}) {
     if (_disposed || _holds == 0) return;
     if (--_holds > 0) return;
-    _lingerTimer = Timer(linger, _stopFollowing);
+    _lingerTimer = Timer(linger ?? this.linger, _stopFollowing);
     _armIdle();
     _refresh();
   }
@@ -1203,6 +1207,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   void _dropStream() {
     final sub = _sub;
     _sub = null;
+    _releaseFirst();
     if (sub != null) unawaited(sub.cancel());
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -1404,14 +1409,29 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     // moment.
     final ready = Timer(readyAfter, () {
       if (!_alive(epoch) || _ready) return;
+      _releaseFirst();
       _ready = true;
       _failure = null;
       _setLink(AgentLink.live);
     });
     return done.future.whenComplete(() {
       ready.cancel();
-      if (identical(_sub, sub)) _sub = null;
+      if (!identical(_sub, sub)) return;
+      _sub = null;
+      _releaseFirst();
     });
+  }
+
+  /// The first read of a log has come in whole or in part and is not yet
+  /// shown ([_applyBatch] holds it until the helper says it caught up).
+  bool _heldFirst = false;
+
+  /// Lets what the first read has made so far be shown: the read ended
+  /// without its end, or the stream was dropped.
+  void _releaseFirst() {
+    if (!_heldFirst) return;
+    _heldFirst = false;
+    _batching = false;
   }
 
   Future<void> _applyBatch(LogBatch batch, int epoch) async {
@@ -1437,8 +1457,18 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       }
       if (at < lines.length) await Future<void>.delayed(Duration.zero);
     }
-    _batching = false;
     _offset = batch.endOffset;
+    // The tail of a log comes in several batches. Shown as they come the
+    // transcript would grow in steps while the person watches; it is made
+    // whole in the background and shown in one swap once the helper says it
+    // reached the end of the file (the quiet fallback of [_followOnce] and a
+    // stream that ends show what there is).
+    if (!_ready && !wide && !batch.caughtUp) {
+      _heldFirst = true;
+      return;
+    }
+    _heldFirst = false;
+    _batching = false;
     final first = !_ready;
     if (first) _toldSinceFirstBatch = false;
     _ready = true;

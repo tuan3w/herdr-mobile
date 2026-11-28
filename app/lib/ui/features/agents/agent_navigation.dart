@@ -39,28 +39,50 @@ import 'agents_grouping.dart';
 /// the current route (a start form, the chat a session continues from). An
 /// agent already in front, in that view, is left as it is.
 ///
-/// [preconnect] is the hold taken when a finger went down on a session's row
-/// (`AgentSessions.preconnect`): the screen lets it go once it holds the
-/// session itself, and it is let go at once when nothing opens. A session
-/// that is no longer listed says so in a toast and opens nothing.
+/// [preconnect] is the hold taken when a finger went down on a row or card
+/// (`PreconnectTap`: a session's attach, a pane chat's log follow): the screen
+/// lets it go once it holds the session itself, and it is let go at once when
+/// nothing opens. A session that is no longer listed says so in a toast and
+/// opens nothing. The screen is simply there ([_Entrance.tap]).
 Future<void> openAgent(
   BuildContext context,
   AgentRef agent, {
   AgentView? view,
   bool replace = false,
   Preconnect? preconnect,
-}) => _open(context, agent, view: view, replace: replace, entrance: _Entrance.page, preconnect: preconnect);
+}) => _open(context, agent, view: view, replace: replace, entrance: _Entrance.tap, preconnect: preconnect);
 
 /// Opens [agent] from a notification or a link: in place of the agent screen
 /// in front, if one is (one agent per screen; Back still goes to the board),
-/// else over whatever is in front.
+/// else over whatever is in front. The attach (a session) or the log's follow
+/// (a pane's chat) starts before the route is pushed, as it does for a finger
+/// going down on a row.
 Future<void> openAgentFromLink(BuildContext context, AgentRef agent) {
   final top = _topRoute(Navigator.of(context));
-  return _open(context, agent, replace: top is _AgentRoute, entrance: _Entrance.page);
+  final hold = switch (agent) {
+    SessionAgent(:final sessionKey) => context.read<AgentSessions?>()?.preconnect(sessionKey),
+    PaneAgent() => preconnectObservedChat(context, agent),
+  };
+  return _open(context, agent, replace: top is _AgentRoute, entrance: _Entrance.tap, preconnect: hold);
+}
+
+/// The hold to take when a finger goes down on the row or card of pane
+/// [agent] and it would open as a chat over its log: the log starts being
+/// followed while the route is pushed (`ObservedSessions.preconnect`). Null
+/// when the pane opens as its terminal, or its agent has no log this app can
+/// follow, or the app should not start anything now (the background, a
+/// machine that is not live). Hand it to [openAgent] (`preconnect`).
+Preconnect? preconnectObservedChat(BuildContext context, PaneAgent agent) {
+  if (_defaultView(context, agent) != AgentView.chat) return null;
+  final machine = context.read<FleetRepository>().connection(agent.machineId);
+  final observed = context.read<ObservedSessions?>();
+  if (machine == null || observed == null) return null;
+  final hold = observed.preconnect(machine, agent.paneId);
+  return identical(hold, Preconnect.none) ? null : hold;
 }
 
 /// The menu's `Show terminal` / `Show chat` ([agentViewAction]): shows [agent]
-/// in [view] in place of the screen in front, with a fade (the same agent, so
+/// in [view] in place of the screen in front, as a cut (the same agent, so
 /// nothing slides), and remembers the choice for this agent for the app run.
 Future<void> showAgentView(BuildContext context, AgentRef agent, AgentView view) {
   context.read<AgentScreens?>()?.choose(agent, view);
@@ -276,7 +298,7 @@ Future<void> _open(
   final navigator = Navigator.of(context);
   // Opened any way but a step (the board, a link, a form): a walk begins
   // afresh at the first swipe from here.
-  if (entrance == _Entrance.page) _walks[navigator] = null;
+  if (entrance == _Entrance.page || entrance == _Entrance.tap) _walks[navigator] = null;
   final screen = _screenFor(context, agent, want, preconnect: preconnect);
   if (screen == null) {
     preconnect?.cancel();
@@ -330,11 +352,11 @@ Widget? _screenFor(
       if (view == AgentView.chat) {
         final machine = context.read<FleetRepository>().connection(machineId);
         final session = machine == null ? null : context.read<ObservedSessions?>()?.forPane(machine, paneId);
-        if (session != null) return AgentSessionScreen(session: session, agent: agent);
+        if (session != null) return AgentSessionScreen(session: session, agent: agent, preconnect: preconnect);
         if (strict) return null;
       }
       if (strict && context.read<FleetRepository>().connection(machineId) == null) return null;
-      return PaneScreen(agent: agent);
+      return PaneScreen(agent: agent, preconnect: preconnect);
   }
 }
 
@@ -351,14 +373,24 @@ Route<dynamic>? _topRoute(NavigatorState navigator) {
 
 /// How an agent screen comes in.
 enum _Entrance {
-  /// The app's page transition (from the board, a form, a link).
+  /// The app's page transition (slide from the right): the screen put back
+  /// after a launch that found it waiting.
   page,
 
-  /// A swipe: a short slide from the side the finger came from, with a fade.
+  /// A tap that opens an agent (the board's row or card, a notification, a
+  /// link, the title switcher, a form): the most frequent move in the app, so
+  /// no motion at all. A cut: the screen is fully there, opaque and in place,
+  /// the first frame it is shown (two opaque screens cross-fading would show
+  /// the board's text through the new one). Back is the page's own pop.
+  tap,
+
+  /// A swipe: a short slide from the side the finger came from. The screen
+  /// is opaque the whole way, over the one it replaces (a fade would show the
+  /// old screen's text through the new one).
   fromRight,
   fromLeft,
 
-  /// The other view of the same agent: a fade, nothing moves.
+  /// The other view of the same agent: a cut, nothing moves.
   fade,
 
   /// At launch, as if the app never closed.
@@ -371,9 +403,9 @@ enum _Entrance {
 /// the app's page (Back and the edge swipe as everywhere else).
 ///
 /// A swipe or the toggle replaces the screen in front: that one stays still
-/// under the new one (no parallax), which slides a short way and fades in
-/// over [Motion.standard], or only fades over [Motion.fade] (the toggle, and
-/// reduced motion).
+/// under the new one (no parallax), which slides a short way, opaque, over
+/// [Motion.standard]; the toggle, a tap from the board and reduced motion are
+/// cuts.
 class _AgentRoute extends MaterialPageRoute<void> {
   _AgentRoute(this.agent, this.view, this.entrance, Widget screen) : super(builder: (_) => screen);
 
@@ -391,7 +423,7 @@ class _AgentRoute extends MaterialPageRoute<void> {
   Duration get transitionDuration => switch (entrance) {
     _Entrance.page => super.transitionDuration,
     _Entrance.fromRight || _Entrance.fromLeft => Motion.standard,
-    _Entrance.fade => Motion.fade,
+    _Entrance.fade || _Entrance.tap => Duration.zero,
     _Entrance.instant => Duration.zero,
   };
 
@@ -401,7 +433,13 @@ class _AgentRoute extends MaterialPageRoute<void> {
     if (entrance == _Entrance.page) {
       _entered = true;
     } else {
-      future.whenCompleteOrCancel(() => _entered = true);
+      future.whenCompleteOrCancel(() {
+        _entered = true;
+        // Now the page under follows this route's animation (see
+        // [canTransitionFrom]). After the frame: a route this one replaced is
+        // gone by then, and the page under is the one that stays.
+        if (entrance == _Entrance.tap) WidgetsBinding.instance.addPostFrameCallback((_) => _tieUnder());
+      });
     }
     return future;
   }
@@ -415,6 +453,26 @@ class _AgentRoute extends MaterialPageRoute<void> {
     return super.didPop(result);
   }
 
+  /// The route under this one, while it sits under it: the page it comes in
+  /// over.
+  Route<dynamic>? _under;
+
+  void _tieUnder() {
+    final under = _under;
+    if (under != null && under.isActive && isActive) under.didChangeNext(this);
+  }
+
+  /// A tap's cut leaves the board where it is: the page under is not tied to
+  /// this route's animation until the entrance has played (the route is first
+  /// built off screen with its animation at the end, which would shift the
+  /// board for that frame), and then it is, so Back and the edge swipe move
+  /// the board as under any page.
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) {
+    _under = previousRoute;
+    return entrance != _Entrance.tap || _entered;
+  }
+
   @override
   bool canTransitionTo(TransitionRoute<dynamic> nextRoute) =>
       !(nextRoute is _AgentRoute && nextRoute.entrance != _Entrance.page) && super.canTransitionTo(nextRoute);
@@ -426,7 +484,7 @@ class _AgentRoute extends MaterialPageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (entrance == _Entrance.page || entrance == _Entrance.instant) {
+    if (entrance != _Entrance.fromRight && entrance != _Entrance.fromLeft) {
       return super.buildTransitions(context, animation, secondaryAnimation, child);
     }
     // The page transition sees a page already in place until the entrance
@@ -437,11 +495,7 @@ class _AgentRoute extends MaterialPageRoute<void> {
     );
     return _EntranceTransition(
       animation: animation,
-      from: switch (entrance) {
-        _Entrance.fromRight => const Offset(0.2, 0),
-        _Entrance.fromLeft => const Offset(-0.2, 0),
-        _ => null,
-      },
+      from: entrance == _Entrance.fromRight ? const Offset(0.2, 0) : const Offset(-0.2, 0),
       child: page,
     );
   }
@@ -462,14 +516,13 @@ class _UntilEntered extends Animation<double> with AnimationWithParentMixin<doub
   AnimationStatus get status => entered() ? parent.status : AnimationStatus.completed;
 }
 
-/// The entrance: a fade, with a short slide from [from] (a fraction of the
-/// width) when it has one. Gone once it has played, so nothing holds an
-/// opacity layer at rest.
+/// The entrance of a swipe's step: a short slide from [from] (a fraction of
+/// the width), opaque. Gone once it has played.
 class _EntranceTransition extends StatefulWidget {
   const _EntranceTransition({required this.animation, required this.from, required this.child});
 
   final Animation<double> animation;
-  final Offset? from;
+  final Offset from;
   final Widget child;
 
   @override
@@ -478,16 +531,22 @@ class _EntranceTransition extends StatefulWidget {
 
 class _EntranceTransitionState extends State<_EntranceTransition> {
   late final ExitCurvedAnimation _curve = Motion.curved(widget.animation);
-  late bool _done = widget.animation.isCompleted;
+  bool _done = false;
+
+  /// The animation has been seen running. A route is first built off screen
+  /// with its animation already at the end (the navigator measures it that
+  /// way: [ModalRoute.offstage]); that is not an entrance that has played.
+  bool _ran = false;
 
   @override
   void initState() {
     super.initState();
-    if (!_done) widget.animation.addStatusListener(_onStatus);
+    widget.animation.addStatusListener(_onStatus);
   }
 
   void _onStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed || status == AnimationStatus.reverse) {
+    if (status == AnimationStatus.forward) _ran = true;
+    if (status == AnimationStatus.reverse || (status == AnimationStatus.completed && _ran)) {
       widget.animation.removeStatusListener(_onStatus);
       if (mounted) setState(() => _done = true);
     }
@@ -503,12 +562,9 @@ class _EntranceTransitionState extends State<_EntranceTransition> {
   @override
   Widget build(BuildContext context) {
     if (_done) return widget.child;
-    final faded = FadeTransition(opacity: _curve, child: widget.child);
-    final from = widget.from;
-    if (from == null) return faded;
     return SlideTransition(
-      position: Tween(begin: from, end: Offset.zero).animate(_curve),
-      child: faded,
+      position: Tween(begin: widget.from, end: Offset.zero).animate(_curve),
+      child: widget.child,
     );
   }
 }

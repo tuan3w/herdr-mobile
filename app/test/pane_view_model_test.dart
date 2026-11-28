@@ -5,6 +5,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/herdr_models.dart';
+import 'package:herdr_mobile/data/repositories/pane_tails.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart' show ReadSource;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/words/error_words.dart';
@@ -75,6 +76,7 @@ class _Fake {
     Duration fallbackInterval = const Duration(seconds: 4),
     bool wrap = false,
     bool Function()? notRunning,
+    PaneTail? saved,
   }) => PaneViewModel(
     activity: activity.stream,
     paneId: _pane,
@@ -94,6 +96,7 @@ class _Fake {
     wrap: wrap,
     clock: clock,
     notRunning: notRunning,
+    saved: saved,
   );
 
   /// Wall-clock time on the fake clock, so `lastRead` is exact.
@@ -264,6 +267,71 @@ void main() {
       expect(f.reads, hasLength(2));
       async.elapse(_ms(100)); // 7900 = 3900 + 4 s
       expect(f.reads, hasLength(3));
+      vm.dispose();
+    });
+  });
+
+  group('saved copy', () {
+    PaneTail tail(String text, {bool preview = false}) =>
+        PaneTail(text: text, at: _Fake.epoch.subtract(_ms(12000)), unwrapped: false, preview: preview);
+
+    _scenario('opens on the saved tail, marked saved and dated by when it was read', (async, f) {
+      f.latency = _ms(300);
+      f.text = 'one\ntwo';
+      final vm = f.vm(saved: tail('one'));
+      expect(vm.text, 'one');
+      expect(vm.isSaved, isTrue);
+      expect(vm.lastRead, _Fake.epoch.subtract(_ms(12000)));
+      expect(vm.isStale, isFalse, reason: 'a saved copy is not a failed read');
+
+      async.elapse(_ms(300));
+      expect(vm.text, 'one\ntwo');
+      expect(vm.isSaved, isFalse, reason: 'the first read of this open is live');
+      expect(vm.lastRead, _Fake.epoch.add(_ms(300)));
+      vm.dispose();
+    });
+
+    _scenario('a first read that finds the same rows changes none, and tells the view it is live', (async, f) {
+      f.latency = _ms(100);
+      f.text = 'one\ntwo';
+      final vm = f.vm(saved: tail('one\ntwo'));
+      final history = vm.history;
+      var notified = 0;
+      vm.addListener(() => notified++);
+
+      async.elapse(_ms(100));
+
+      expect(notified, 1, reason: 'the mark goes, once');
+      expect(vm.isSaved, isFalse);
+      expect(vm.text, 'one\ntwo');
+      expect(identical(vm.history, history), isTrue, reason: 'the rows are the same list: nothing moves');
+      vm.dispose();
+    });
+
+    _scenario('the board card\'s rows are shown alone, and dropped when the read lands', (async, f) {
+      f.latency = _ms(100);
+      f.text = 'a\nb\nc\nd';
+      final vm = f.vm(saved: tail('c\nd', preview: true));
+      expect(vm.text, 'c\nd');
+      expect(vm.history, isEmpty, reason: 'the card\'s rows are not rows of the pane\'s window');
+      expect(vm.isSaved, isTrue);
+
+      async.elapse(_ms(100));
+
+      expect(vm.text, 'a\nb\nc\nd');
+      expect(vm.history, isEmpty);
+      expect(vm.isSaved, isFalse);
+      vm.dispose();
+    });
+
+    _scenario('a failed first read leaves the saved copy, saved and now stale', (async, f) {
+      f.readFailure = const HerdrTransportException('down');
+      final vm = f.vm(saved: tail('one'));
+      async.flushMicrotasks();
+
+      expect(vm.text, 'one');
+      expect(vm.isSaved, isTrue, reason: 'nothing has confirmed it');
+      expect(vm.isStale, isTrue);
       vm.dispose();
     });
   });

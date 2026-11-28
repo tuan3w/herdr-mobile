@@ -8,9 +8,11 @@ import '../../../data/repositories/agent_session.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-/// Starts attaching to a session the moment a finger goes DOWN on its row,
-/// ~100 ms before the tap completes and the route is pushed
-/// (`AgentSessions.preconnect`).
+/// Starts the work of opening an agent the moment a finger goes DOWN on its
+/// row or card, ~100 ms before the tap completes and the route is pushed: a
+/// session's attach (`AgentSessions.preconnect`, by [sessionKey]), a pane
+/// chat's log follow (`preconnectObservedChat`) or a terminal's first read, by
+/// [start].
 ///
 /// The hold is let go when the finger slides away (past the touch slop, which
 /// is also what a scroll or a swipe does), when the pointer is cancelled, and
@@ -21,9 +23,16 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 /// that is down does). Raw pointer events: no gesture is claimed, the row's
 /// own tap, long press and swipe are untouched.
 class PreconnectTap extends StatefulWidget {
-  const PreconnectTap({super.key, required this.sessionKey, required this.builder, this.enabled = true});
+  const PreconnectTap({super.key, this.sessionKey, this.start, required this.builder, this.enabled = true})
+    : assert(sessionKey != null || start != null, 'a hold needs a session key or a way to start one');
 
-  final String sessionKey;
+  /// The agent session whose attach the hold starts (`AgentSessions.preconnect`).
+  final String? sessionKey;
+
+  /// Starts the hold some other way (a pane's observed chat, its terminal's
+  /// first read): called with a finger down, it returns the hold or null.
+  /// Wins over [sessionKey].
+  final Preconnect? Function(BuildContext context)? start;
 
   /// Off while the row is not a tap target (a selection is under way).
   final bool enabled;
@@ -50,7 +59,9 @@ class _PreconnectTapState extends State<PreconnectTap> {
     _release();
     _pointer = e.pointer;
     _origin = e.position;
-    _hold = context.read<AgentSessions?>()?.preconnect(widget.sessionKey);
+    final start = widget.start;
+    final key = widget.sessionKey;
+    _hold = start != null ? start(context) : context.read<AgentSessions?>()?.preconnect(key!);
   }
 
   void _move(PointerMoveEvent e) {

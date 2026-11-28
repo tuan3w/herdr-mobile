@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/models/pane_preview.dart';
+import 'package:herdr_mobile/data/repositories/pane_tails.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
@@ -30,6 +31,12 @@ import 'ui_harness.dart';
 /// exact text, a prompt, or to count watchers.
 class FakePreviews implements PanePreviews {
   final Map<String, ValueNotifier<PanePreview?>> _data = {};
+
+  /// The real tails over what the test controls: a pane opened from the
+  /// board in a test remembers its reads like the app's, and a card's rows
+  /// are what it falls back to.
+  @override
+  late final PaneTails tails = PaneTails(connection: (_) => null, preview: (m, p) => _data['$m/$p']?.value);
 
   /// `machine/pane` of every watch ever opened, in order.
   final List<String> opened = [];

@@ -10,6 +10,7 @@ import '../models/pane_preview.dart';
 import '../services/herdr_api.dart';
 import '../services/herdr_transport.dart' show HerdrApiException;
 import 'machine_connection.dart';
+import 'pane_tails.dart';
 import 'prompt_detector.dart';
 
 /// A claim on one pane's live preview. [release] it exactly when the card or
@@ -87,6 +88,12 @@ class PanePreviews {
   final int retainReleased;
 
   final Map<String, _MachineWatch> _machines = {};
+
+  /// The last full tail read of a few panes, and the reads that start an open
+  /// early ([PaneTails]). Here because it shares what is already in memory
+  /// of a pane (a card's rows are the fallback), the lifecycle and the
+  /// fleet's changes.
+  late final PaneTails tails = PaneTails(connection: _connection, preview: known, clock: _clock);
   final LinkedHashMap<String, _Retained> _retained = LinkedHashMap();
   bool _foreground = true;
   bool _disposed = false;
@@ -132,6 +139,7 @@ class PanePreviews {
     };
     if (foreground == _foreground || _disposed) return;
     _foreground = foreground;
+    tails.onLifecycleState(state);
     for (final m in _machines.values.toList()) {
       m.sync();
     }
@@ -145,6 +153,7 @@ class PanePreviews {
   int get retainedPanes => _retained.length;
 
   void _onChanges() {
+    tails.prune();
     for (final m in _machines.values.toList()) {
       m.sync();
     }
@@ -152,6 +161,7 @@ class PanePreviews {
 
   void dispose() {
     _disposed = true;
+    tails.dispose();
     _changes.removeListener(_onChanges);
     for (final m in _machines.values.toList()) {
       m.close();
