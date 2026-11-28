@@ -202,6 +202,7 @@ fn thumb_over_the_real_binary_returns_msg_jpeg_end_and_the_typed_errors() {
 
 /// A lossless WebP in a VP8X container whose EXIF flag is set and whose EXIF
 /// chunk announces about 4 GiB but holds no bytes (a 100-byte file).
+#[cfg(target_os = "linux")]
 fn webp_announcing_4_gib_of_exif(w: u32, h: u32) -> Vec<u8> {
     let mut plain = Vec::new();
     image_webp::WebPEncoder::new(&mut plain)

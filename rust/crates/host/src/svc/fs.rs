@@ -700,14 +700,12 @@ mod tests {
     fn a_fifo_is_refused_without_waiting_for_a_writer() {
         let dir = tempfile::tempdir().expect("tempdir");
         let fifo = dir.path().join("pipe");
-        rustix::fs::mknodat(
-            rustix::fs::CWD,
-            &fifo,
-            rustix::fs::FileType::Fifo,
-            rustix::fs::Mode::from_raw_mode(0o600),
-            0,
-        )
-        .expect("mkfifo");
+        // `mkfifo` rather than `rustix::fs::mknodat`, which macOS does not have.
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success(), "mkfifo");
         let c = open_regular(&fifo, "pipe").expect_err("fifo");
         assert_eq!(c.code, ErrorCode::NotAFile);
     }
