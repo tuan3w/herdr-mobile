@@ -310,12 +310,13 @@ class ImagePreviewCache {
     }
   }
 
-  /// Disposes every entry (a test's end).
+  /// Disposes every entry and forgets the remembered sizes (a test's end).
   @visibleForTesting
   void clear() {
     for (final entry in _entries.values) {
       entry._drop();
     }
     _entries.clear();
+    _sizes.clear();
   }
 }

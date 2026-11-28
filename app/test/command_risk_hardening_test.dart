@@ -1,3 +1,10 @@
+// Wall-clock bounds (500 ms budgets): they run in the `timing` job, on their
+// own, not in the shared `rest` bucket where a loaded runner made one miss it
+// by 37 ms in the 0.1.70 release run (AGENTS.md: a test that cannot be made
+// independent of the clock gets @Tags(['timing'])).
+@Tags(['timing'])
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/repositories/command_risk.dart';
 import 'package:herdr_mobile/data/repositories/prompt_detector.dart' show longCommand;
