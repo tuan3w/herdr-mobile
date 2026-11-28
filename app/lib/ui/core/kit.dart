@@ -19,6 +19,7 @@ export 'gesture_math.dart';
 export 'glyphs.dart';
 export 'herdr_icons.dart';
 export 'hold_confirm.dart';
+export 'icon_swap.dart';
 export 'key_cap.dart';
 export 'large_title.dart';
 export 'loading_row.dart';

@@ -11,6 +11,7 @@ import 'package:herdr_mobile/ui/features/files/file_row.dart';
 import 'package:herdr_mobile/ui/features/files/file_search_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_thumb.dart';
 import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
+import 'package:herdr_mobile/ui/features/files/match_ellipsis.dart';
 
 import 'support/fake_fs.dart';
 import 'support/fake_transport.dart';
@@ -208,7 +209,11 @@ void main() {
       await tester.pump();
 
       expect(find.text('Searched 3,000 items'), findsOneWidget);
-      expect(find.textContaining('more than 3'), findsOneWidget);
+      expect(
+        find.textContaining('Showing the first 3.'),
+        findsOneWidget,
+        reason: 'it says how many are shown, from the model',
+      );
       await tester.ensureVisible(find.text('Narrow the search'));
       await tester.tap(find.text('Narrow the search'));
       await tester.pump();
@@ -256,6 +261,46 @@ void main() {
       await tester.pump();
       expect(find.text('avocado.txt'), findsNothing);
       expect(find.text('abc.txt'), findsOneWidget);
+    });
+
+    testWidgets('a long name is cut around what matched: the typed part is whole, marked, and the extension stays', (
+      tester,
+    ) async {
+      await openBrowser(tester);
+      await openSearch(tester);
+
+      await type(tester, 'report');
+      runs.single.found([
+        _file('$_dir/payment_service_integration_report_with_the_ledger_and_retries....test.dart'),
+        _file('$_dir/short.md'),
+      ]);
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.descendant(of: find.byType(MatchedNameText), matching: find.byType(Text)));
+      final spans = (text.textSpan! as TextSpan).children!.cast<TextSpan>();
+      final marked = [
+        for (final s in spans)
+          if (s.style?.backgroundColor != null) s.text,
+      ];
+      expect(marked, ['report'], reason: 'the ellipsis must not eat the part the person typed');
+      expect(spans.map((s) => s.text).join(), contains('…'), reason: 'the name really was cut');
+      expect(spans.last.text, endsWith('test.dart'));
+      expect(find.byType(MatchedNameText), findsOneWidget, reason: 'a name that does not contain it has no mark');
+    });
+
+    testWidgets('the counts under the title tick without shifting: tabular figures, in the search and the browser', (
+      tester,
+    ) async {
+      await openBrowser(tester);
+      bool tabular(Finder f) =>
+          tester.widget<Text>(f.first).style!.fontFeatures!.contains(const FontFeature.tabularFigures());
+      expect(tabular(find.textContaining(' item')), isTrue, reason: 'the folder count');
+
+      await openSearch(tester);
+      await type(tester, 'report');
+      runs.single.found([_file('$_dir/a/b/report.md')]);
+      await tester.pump();
+      expect(tabular(find.text('1 found so far')), isTrue, reason: 'the search count');
     });
   });
 

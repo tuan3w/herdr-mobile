@@ -156,6 +156,11 @@ class _StatusGlyphState extends State<StatusGlyph> with SingleTickerProviderStat
     if (old._shape == widget._shape || Motion.reduced(context)) return;
     final controller = _controller ??= AnimationController(vsync: this, duration: Motion.settle);
     _progress ??= CurvedAnimation(parent: controller, curve: Motion.easeOut);
+    // A settle still moving keeps going from where it is: the shape it was
+    // leaving keeps fading out and the new target takes the place of the one
+    // that was drawing in. Restarting at 0 would snap the glyph back to the
+    // old shape and replay the whole settle.
+    if (controller.isAnimating) return;
     _from = old._shape;
     controller
       ..value = 0

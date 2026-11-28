@@ -699,7 +699,8 @@ void main() {
         ),
       );
       expect(rich('Audio'), findsOneWidget);
-      expect(rich('Content this app can’t show'), findsOneWidget);
+      expect(rich('Can’t show'), findsOneWidget);
+      expect(rich('hologram'), findsOneWidget, reason: 'the type says what it was');
     });
   });
 

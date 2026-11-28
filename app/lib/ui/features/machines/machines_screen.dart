@@ -14,6 +14,7 @@ import 'approval_button.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'machine_form_screen.dart';
+import 'machine_removal.dart';
 import 'machine_screen.dart';
 
 class MachinesScreen extends StatelessWidget {
@@ -104,21 +105,6 @@ class _MachineRow extends StatelessWidget {
   void _open(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MachineScreen(machine: machine)));
 
-  Future<void> _remove(BuildContext context, MachineRepository repo) async {
-    final p = machine.profile;
-    final ok = await showConfirmSheet(
-      context,
-      title: 'Remove ${p.label}?',
-      message:
-          'The saved connection and its credentials are deleted from this '
-          'phone. Agents on the machine keep running.',
-      confirmLabel: 'Remove',
-      // Credentials are deleted and cannot be brought back: a hold, not a tap.
-      hold: true,
-    );
-    if (ok) await repo.remove(p.id);
-  }
-
   void _menu(BuildContext context) {
     final repo = context.read<MachineRepository>();
     final p = machine.profile;
@@ -136,7 +122,12 @@ class _MachineRow extends StatelessWidget {
           icon: p.enabled ? LucideIcons.powerOff : LucideIcons.power,
           onTap: () => repo.save(p.copyWith(enabled: !p.enabled)),
         ),
-        SheetAction(label: 'Remove', icon: LucideIcons.trash2, destructive: true, onTap: () => _remove(context, repo)),
+        SheetAction(
+          label: 'Remove',
+          icon: LucideIcons.trash2,
+          destructive: true,
+          onTap: () => confirmRemoveMachine(context, p),
+        ),
       ],
     );
   }
@@ -155,6 +146,7 @@ class _MachineRow extends StatelessWidget {
     final waiting = context.select<AttentionSet, int>((a) => a.needsYouOn(p.id));
     final problem = state == LinkState.attention || state == LinkState.reconnecting;
     final approval = machine.approvalUrl;
+    final changed = hostKeyChanged(machine);
     final indent = Gap.gutter + _tile + _gap;
 
     final semantic = [p.label, state.label, if (waiting > 0) needYou(waiting)].join(', ');
@@ -239,13 +231,23 @@ class _MachineRow extends StatelessWidget {
             child: StatusPanel(
               color: state.color(ds),
               message: machine.error,
-              messageMaxLines: 3,
-              trailing: AppButton(
-                label: 'Retry',
-                kind: AppButtonKind.secondary,
-                compact: true,
-                onPressed: machine.retry,
-              ),
+              // A changed host key is not cured by trying again: the way out is Remove, under
+              // the whole sentence (it says when to use it, and must not be cut to make room).
+              messageMaxLines: changed ? null : 3,
+              trailing: changed
+                  ? null
+                  : AppButton(label: 'Retry', kind: AppButtonKind.secondary, compact: true, onPressed: machine.retry),
+              footer: changed
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppButton(
+                        label: 'Remove',
+                        kind: AppButtonKind.secondary,
+                        compact: true,
+                        onPressed: () => confirmRemoveMachine(context, p),
+                      ),
+                    )
+                  : null,
             ),
           ),
         if (approval != null)

@@ -208,13 +208,10 @@ class _HostTabState extends State<HostTab> {
           // Top-aligned, not centred: at half height the lower part of the
           // tab is below the screen.
           sliver: const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: Gap.xl),
-              child: EmptyState(
-                icon: HerdrIcons.machinesOff,
-                title: 'Files are unavailable on this machine',
-                message: 'This machine doesn’t allow browsing files.',
-              ),
+            // One sentence: the title and the message said the same thing twice.
+            child: EmptyState.inline(
+              'Files are unavailable on this machine',
+              padding: EdgeInsets.fromLTRB(Gap.gutter, Gap.xl, Gap.gutter, Gap.lg),
             ),
           ),
         ),

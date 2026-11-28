@@ -72,12 +72,14 @@ class Ds extends ThemeExtension<Ds> {
   /// Three text tiers (ratios in `docs/DESIGN.md`): [text] primary,
   /// [textSecondary] supporting copy and unselected navigation,
   /// [textMuted] meta lines, counts, helper text and placeholders. All three
-  /// reach 4.5:1 on [bg], [surface] and [fill].
+  /// reach 4.5:1 on [bg], [surface], [fill] and [fillPressed] (a key or chip
+  /// label while it is touched); `token_contrast_test.dart` measures it.
   final Color textSecondary;
   final Color textMuted;
 
-  /// Icons, status rings, chevrons and decoration only (>= 3:1 on [bg]). Never
-  /// text: it does not reach 4.5:1.
+  /// Icons, status rings, chevrons, the switch when off, and a disabled
+  /// control's label (>= 3:1 on [bg], [surface] and [fill]). Never live text: it
+  /// does not reach 4.5:1.
   final Color textTertiary;
 
   /// A drawn outline that is decoration (~1.5:1): diagram boxes, table rules,
@@ -198,8 +200,8 @@ class Ds extends ThemeExtension<Ds> {
     hairline: Color(0xFFEAE9E6),
     text: Color(0xFF37352F),
     textSecondary: Color(0xFF5F5E5A),
-    textMuted: Color(0xFF6E6D69),
-    textTertiary: Color(0xFF8F8E8A),
+    textMuted: Color(0xFF686764),
+    textTertiary: Color(0xFF8A8985),
     border: Color(0xFFD3D1CC),
     controlBorder: Color(0xFF8F8E8A),
     accent: Color(0xFF5E6AD2),
@@ -228,7 +230,7 @@ class Ds extends ThemeExtension<Ds> {
     hairline: Color(0xFF24262A),
     text: Color(0xFFECEDEF),
     textSecondary: Color(0xFF8D9098),
-    textMuted: Color(0xFF868993),
+    textMuted: Color(0xFF8B8E97),
     textTertiary: Color(0xFF6A6D75),
     border: Color(0xFF3A3D44),
     controlBorder: Color(0xFF60646D),

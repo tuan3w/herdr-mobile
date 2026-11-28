@@ -117,8 +117,8 @@ named by its role, so every timing lives in `motion.dart` and is tuned there.
 | `controlBorder` | `#8F8E8A` | `#60646D` | the edge of a field or picker (3:1 on `surface`, WCAG 1.4.11) |
 | `text` | `#37352F` | `#ECEDEF` | titles, values |
 | `textSecondary` | `#5F5E5A` | `#8D9098` | subtitles, labels, unselected segments |
-| `textMuted` | `#6E6D69` | `#868993` | meta lines, counts, helper text |
-| `textTertiary` | `#8F8E8A` | `#6A6D75` | icons, chevrons, rings: never text |
+| `textMuted` | `#686764` | `#8B8E97` | meta lines, counts, helper text |
+| `textTertiary` | `#8A8985` | `#6A6D75` | icons, chevrons, rings, a disabled label: never live text |
 | `accent` / `accentText` | `#5E6AD2` / `#4B57BE` | `#5E6AD2` / `#9AA3F2` | the accent; as text |
 | `blocked` / `working` / `done` / `danger` | `#CC5A1E` `#B07F00` `#258A53` `#D44C47` | `#F2994A` `#F2C94C` `#4CB782` `#EB5757` | status shapes |
 | `blockedText` / `dangerText` | `#A84A13` / `#B5342F` | `#F2994A` / `#F26B6B` | status words |
@@ -136,13 +136,19 @@ dimmed control, a glyph's ring). A count badge fills with `blockedText`, not
 `blocked`: white on the paper shape colour is 4.2:1, under the 4.5 an 11 pt
 number needs.
 
-Contrast is asserted by `test/ui/core_controls_test.dart`, so a token change
-says what it broke: the three text tiers reach 4.5:1 on `bg`, `surface` and
-`fill`, on a pressed row and on the accent wash; status words reach 4.5:1 on
+Contrast is asserted by `test/ui/token_contrast_test.dart` (and
+`core_controls_test.dart`, `terminal_palette_test.dart`), so a token change
+says what it broke: the three text tiers reach 4.5:1 on `bg`, `surface`, `fill`
+and `fillPressed` (a key's label while it is touched), on a pressed row and on
+the accent wash; status words reach 4.5:1 on
 their wash, pressed too (why paper `blockedText` is `#A84A13`, a shade darker
 than it was); toast text and its action reach 4.5:1 on `inverseSurface`;
-status shapes reach 3:1 on `bg`. Stale data dims a whole row once, never its
-glyph as well.
+status shapes reach 3:1 on `bg`, and `textTertiary` (icons, chevrons, the
+switch when off, a disabled `TextAction`) reaches 3:1 on `bg`, `surface` and
+`fill`; the terminal's 16 colours reach 4.5:1 on their page, except dark black
+(3.3:1: it is also a status line's background, and the default text on it
+holds 4.4:1; lifted to 4.5 as text, that fell to 3.1). Stale data dims a whole
+row once, never its glyph as well.
 
 ### Type (`Type`, `Mono`)
 
@@ -427,7 +433,8 @@ first.
   place), `sheetIn` / `sheetOut`, no fade; reduced motion fades.
 - **Time.** `ToastTiming`: 1.5 s under 20 characters, 2.75 s longer, 5 s with an
   action or a failure (Telegram's ladder). The clock starts once it is in place
-  and stops while a finger is on it. No caller passes its own `duration`: the
+  and stops while a finger is on it, and while the app is in the background (an
+  Undo must not run out unseen; it resumes with the time it had left). No caller passes its own `duration`: the
   ladder already gives a failure and an action 5 s (the old 6 s batch result
   and 8 s unsent prompt went with it).
 - **Gestures.** A sideways swipe puts it away (a third of its width or a fling);
@@ -543,6 +550,11 @@ follows:
 - Page titles, section labels, sheet titles and empty-state titles are
   headings. `LabeledField` names its field by the label.
 - Collapsed content is excluded from semantics, focus and hit testing.
+- **Keyboard.** A `PressBuilder` with an `onTap` is a Tab stop; Enter and Space
+  press it. A 2 dp `accent` ring (`onAccent` on an accent fill) follows the
+  control's own shape while the person uses the keyboard, and never after a
+  touch. A hold has no key, so a control with only `onLongPress` is not a stop.
+  The focus node adds no semantics: the control stays one node.
 
 ## Layout and state
 

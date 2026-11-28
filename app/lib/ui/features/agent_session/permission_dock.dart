@@ -273,6 +273,10 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
   }();
   final _scroll = ScrollController();
 
+  /// The evidence above the pinned answers, and what is approved in it.
+  final _evidenceScroll = ScrollController();
+  final _approvedKey = GlobalKey();
+
   String? _confirming;
   String _confirmReason = '';
   Timer? _timer;
@@ -291,10 +295,34 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
 
   bool get _unread => _overflows && !_atEnd && !_opened;
 
+  /// The person has scrolled the evidence themselves: it stays where they put it.
+  bool _evidenceMoved = false;
+
+  bool _onEvidenceScroll(ScrollNotification n) {
+    if (n.depth == 0 && n is ScrollStartNotification && n.dragDetails != null) _evidenceMoved = true;
+    return false;
+  }
+
+  /// What is being approved (the plan, else the command) is always in front of
+  /// the person. When the evidence is taller than the room the pinned answers
+  /// leave it, the question and what the agent said scroll away first, not the
+  /// thing to approve. Kept as the evidence settles (a box that finds it is
+  /// cut, a plan that measures itself), until the person scrolls it themselves.
+  bool _onEvidenceMetrics(ScrollMetricsNotification n) {
+    if (n.depth != 0 || _evidenceMoved || n.metrics.maxScrollExtent <= 0) return false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final approved = _approvedKey.currentContext;
+      if (!mounted || _evidenceMoved || approved == null) return;
+      unawaited(Scrollable.ensureVisible(approved));
+    });
+    return false;
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
     _scroll.dispose();
+    _evidenceScroll.dispose();
     super.dispose();
   }
 
@@ -424,28 +452,117 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
     // is then the only thing that names the request.
     final header = _showSubject && info.title == info.subject ? toolKindLabel(kind) : info.title;
     final lines = '\n'.allMatches(info.subject).length + 1;
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            QuestionWash(
-              question: header,
-              size: QuestionWashSize.full,
-              questionIsHeader: true,
-              leading: Icon(toolIcon(kind), size: IconSize.row, color: ds.blockedText),
-              details: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_evidence.intent case final said?) EvidenceIntent(text: said),
-                  const SizedBox(height: Gap.sm),
-                  if (_evidence.planMarkdown case final plan?) ...[
-                    PlanEvidence(markdown: plan),
-                    const SizedBox(height: Gap.sm),
+    // The answers stay pinned under the evidence: on a small phone or at a large
+    // text size the command and the diff do not fit, and the answers (what the
+    // person came for) must never be what scrolls away. Only the evidence scrolls.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onEvidenceScroll,
+            child: NotificationListener<ScrollMetricsNotification>(
+              onNotification: _onEvidenceMetrics,
+              child: SingleChildScrollView(
+                controller: _evidenceScroll,
+                padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+                child: _evidenceWash(ds, header, kind, info, lines),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: Gap.sm),
+              for (final option in request.options) ...[
+                AnswerChip(
+                  // A hold belongs to this option of this request (the panel is
+                  // keyed by request): anything else under the finger drops it.
+                  key: ValueKey(option.optionId),
+                  label: visibleText(option.name),
+                  reason: _confirming == option.optionId ? _confirmReason : _gate(option),
+                  risk: _gate(option) == null ? AnswerRisk.none : AnswerRisk.gate,
+                  state: _sent == option.optionId
+                      ? AnswerChipState.sending
+                      : _confirming == option.optionId
+                      ? AnswerChipState.primed
+                      : AnswerChipState.rest,
+                  // A primed option stays held until its window ends, even when
+                  // its gate went away (the command was read meanwhile): a finger
+                  // that is already on it must not send by lifting.
+                  hold: _gate(option) != null || _confirming == option.optionId,
+                  enabled: live,
+                  onTap: () => _choose(option),
+                  onHeld: () => _held(option),
+                ),
+                const SizedBox(height: Gap.sm),
+              ],
+              // Side by side while both fit; at a large text size Cancel goes
+              // under the count rather than lose its words.
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: widget.more > 0 ? WrapAlignment.spaceBetween : WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (widget.more > 0)
+                      Text('${widget.more} more waiting', style: Type.labelStrong.copyWith(color: ds.blockedText)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+                      child: TextAction(
+                        label: 'Cancel request',
+                        tone: TextActionTone.quiet,
+                        // The answer's own haptic fires once it is handed over.
+                        haptic: false,
+                        enabled: live,
+                        onTap: _cancel,
+                      ),
+                    ),
                   ],
-                  if (_showSubject) ...[
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The wash with what lets the person judge the request: the question, the
+  /// agent's last sentence, the plan, the command, the diff, the files, the risk.
+  Widget _evidenceWash(Ds ds, String header, ToolKind kind, PermissionInfo info, int lines) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        QuestionWash(
+          question: header,
+          size: QuestionWashSize.full,
+          questionIsHeader: true,
+          leading: Icon(toolIcon(kind), size: IconSize.row, color: ds.blockedText),
+          details: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_evidence.intent case final said?) EvidenceIntent(text: said),
+              const SizedBox(height: Gap.sm),
+              if (_evidence.planMarkdown case final plan?) ...[
+                KeyedSubtree(
+                  key: _approvedKey,
+                  child: PlanEvidence(markdown: plan),
+                ),
+                const SizedBox(height: Gap.sm),
+              ],
+              if (_showSubject)
+                Column(
+                  key: _evidence.planMarkdown == null ? _approvedKey : null,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                     NotificationListener<ScrollMetricsNotification>(
                       onNotification: _onMetrics,
                       child: NotificationListener<ScrollNotification>(
@@ -461,90 +578,38 @@ class _PermissionPanelState extends State<PermissionPanel> with TapGuardState<Pe
                     ),
                     if (_overflows) ReadAllCue(text: _atEnd ? null : 'More below · $lines lines', onOpen: _openFull),
                   ],
-                  if (_evidence.diffs.isNotEmpty) ...[
-                    const SizedBox(height: Gap.sm),
-                    DiffEvidence(evidence: _evidence),
-                  ],
-                  if (_paths.isNotEmpty) ...[
-                    const SizedBox(height: Gap.sm),
-                    _Paths(
-                      paths: _paths,
-                      style: Mono.base.copyWith(color: ds.text),
+                ),
+              if (_evidence.diffs.isNotEmpty) ...[const SizedBox(height: Gap.sm), DiffEvidence(evidence: _evidence)],
+              if (_paths.isNotEmpty) ...[
+                const SizedBox(height: Gap.sm),
+                _Paths(
+                  paths: _paths,
+                  style: Mono.base.copyWith(color: ds.text),
+                ),
+              ],
+              if (info.risk != null) ...[
+                const SizedBox(height: Gap.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: Gap.hair),
+                      child: Icon(LucideIcons.triangleAlert, size: IconSize.inline, color: ds.dangerText),
+                    ),
+                    const SizedBox(width: Gap.sm),
+                    Expanded(
+                      child: Text(
+                        'Look closely: ${info.risk}',
+                        style: Type.secondaryStrong.copyWith(color: ds.dangerText),
+                      ),
                     ),
                   ],
-                  if (info.risk != null) ...[
-                    const SizedBox(height: Gap.sm),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(top: Gap.hair),
-                          child: Icon(LucideIcons.triangleAlert, size: IconSize.inline, color: ds.dangerText),
-                        ),
-                        const SizedBox(width: Gap.sm),
-                        Expanded(
-                          child: Text(
-                            'Look closely: ${info.risk}',
-                            style: Type.secondaryStrong.copyWith(color: ds.dangerText),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: Gap.sm),
-            for (final option in request.options) ...[
-              AnswerChip(
-                // A hold belongs to this option of this request (the panel is
-                // keyed by request): anything else under the finger drops it.
-                key: ValueKey(option.optionId),
-                label: visibleText(option.name),
-                reason: _confirming == option.optionId ? _confirmReason : _gate(option),
-                risk: _gate(option) == null ? AnswerRisk.none : AnswerRisk.gate,
-                state: _sent == option.optionId
-                    ? AnswerChipState.sending
-                    : _confirming == option.optionId
-                    ? AnswerChipState.primed
-                    : AnswerChipState.rest,
-                // A primed option stays held until its window ends, even when
-                // its gate went away (the command was read meanwhile): a finger
-                // that is already on it must not send by lifting.
-                hold: _gate(option) != null || _confirming == option.optionId,
-                enabled: live,
-                onTap: () => _choose(option),
-                onHeld: () => _held(option),
-              ),
-              const SizedBox(height: Gap.sm),
+                ),
+              ],
             ],
-            // Side by side while both fit; at a large text size Cancel goes
-            // under the count rather than lose its words.
-            SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                alignment: widget.more > 0 ? WrapAlignment.spaceBetween : WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (widget.more > 0)
-                    Text('${widget.more} more waiting', style: Type.labelStrong.copyWith(color: ds.blockedText)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-                    child: TextAction(
-                      label: 'Cancel request',
-                      tone: TextActionTone.quiet,
-                      // The answer's own haptic fires once it is handed over.
-                      haptic: false,
-                      enabled: live,
-                      onTap: _cancel,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

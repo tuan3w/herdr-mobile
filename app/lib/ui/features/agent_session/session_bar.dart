@@ -409,7 +409,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
                 label: 'Made in this session',
                 icon: LucideIcons.globe,
                 onTap: _made,
-                unavailable: nothing ? 'Nothing has come up yet' : null,
+                unavailable: nothing ? 'Nothing made yet' : null,
               ),
               onTap: _made,
             );

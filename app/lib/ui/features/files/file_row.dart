@@ -10,6 +10,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import 'file_format.dart';
 import 'file_thumb.dart';
 import 'file_widgets.dart';
+import 'match_ellipsis.dart';
 import 'middle_ellipsis.dart';
 
 /// One entry of a folder: a glyph (a small picture for a small image), the
@@ -33,6 +34,7 @@ class FileRow extends StatelessWidget {
     this.selected,
     this.detail,
     this.detailSuffix,
+    this.match,
   });
 
   final RemoteEntry entry;
@@ -59,6 +61,10 @@ class FileRow extends StatelessWidget {
   /// Words kept whole after [detail] on its line (`3m ago`).
   final String? detailSuffix;
 
+  /// What a search typed: the part of the name it matched stays in view when
+  /// the name is cut, and is marked.
+  final String? match;
+
   /// `12 KB · 3 min ago`, `Link → target`, `No permission`.
   String subtitle() {
     final e = entry;
@@ -78,6 +84,8 @@ class FileRow extends StatelessWidget {
     final ds = context.ds;
     final e = entry;
     final sub = detail ?? subtitle();
+    final span = match == null ? null : matchSpan(e.name, match!);
+    final nameStyle = Type.row.copyWith(color: ds.text);
     final indent = Gap.gutter + 32 + Gap.md;
     Widget row = Column(
       mainAxisSize: MainAxisSize.min,
@@ -100,7 +108,9 @@ class FileRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    MiddleEllipsisText(e.name, style: Type.row.copyWith(color: ds.text)),
+                    span == null
+                        ? MiddleEllipsisText(e.name, style: nameStyle)
+                        : MatchedNameText(e.name, span: span, style: nameStyle),
                     if (sub.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: Gap.hair),

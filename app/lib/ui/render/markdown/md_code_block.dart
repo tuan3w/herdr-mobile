@@ -272,8 +272,8 @@ class _Header extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    copied ? LucideIcons.check : LucideIcons.copy,
+                  IconSwap(
+                    icon: copied ? LucideIcons.check : LucideIcons.copy,
                     size: IconSize.row,
                     color: copied || pressed ? context.ds.accentText : colors.muted,
                   ),

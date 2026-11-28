@@ -697,6 +697,85 @@ void main() {
       await teardownBoard(tester, h);
     });
 
+    testWidgets('a message that failed for some is given back: they stay picked, the text is in the next sheet', (
+      tester,
+    ) async {
+      final h = await BoardHarness.create([
+        _machine('a', [_pane(1, 'idle')], label: 'studio-mac'),
+        _machine('b', [_pane(2, 'idle')], label: 'build-box'),
+      ]);
+      await _pump(tester, h);
+      await _pick(tester, ['task 1', 'task 2']);
+      await _tap(tester, find.text('Message'));
+      const text = 'rebase onto main\nthen run the tests';
+      await tester.enterText(find.byType(TextField), text);
+      await _settle(tester);
+      h.transports['b']!.failure = const HerdrTransportException('Connection reset');
+
+      await _tap(tester, find.text('Message 2 agents'));
+      // The reason stays on screen: nothing opens over the toast.
+      expect(find.text('Messaged 1 · 1 failed: build-box: Connection reset'), findsOneWidget);
+      expect(find.byType(BatchSheet), findsNothing);
+      // The agent that missed it is picked again, the one that got it is not.
+      expect(_selected(1), findsOneWidget);
+
+      h.transports['b']!.failure = null;
+      await _tap(tester, find.text('Message'));
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, text, reason: 'what was typed is back');
+      await _tap(tester, _sheetCancel);
+      await _tap(tester, find.text('Message'));
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, text, reason: 'a Cancel keeps it too');
+
+      final before = _sent(h, 'a', 'agent.prompt').length;
+      final missed = _sent(h, 'b', 'agent.prompt').length;
+      await _tap(tester, find.text('Message 1 agent'));
+      expect(_panesOf(_sent(h, 'b', 'agent.prompt')).skip(missed), [
+        'w1:p2',
+      ], reason: 'sent again, to the one that missed it');
+      expect(_sent(h, 'a', 'agent.prompt').length, before, reason: 'the others do not get it twice');
+
+      // Sent to everyone now: the next message starts empty.
+      await _pick(tester, ['task 1']);
+      await _tap(tester, find.text('Message'));
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('leaving picking drops the unsent text', (tester) async {
+      final h = await BoardHarness.create([
+        _machine('b', [_pane(2, 'idle')], label: 'build-box'),
+      ]);
+      await _pump(tester, h);
+      await _pick(tester, ['task 2']);
+      await _tap(tester, find.text('Message'));
+      await tester.enterText(find.byType(TextField), 'old news');
+      await _settle(tester);
+      h.transports['b']!.failure = const HerdrTransportException('Connection reset');
+      await _tap(tester, find.text('Message 1 agent'));
+      h.transports['b']!.failure = null;
+
+      await _tap(tester, find.text('Cancel'));
+      expect(find.textContaining('selected'), findsNothing);
+      await _pick(tester, ['task 2']);
+      await _tap(tester, find.text('Message'));
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+      await teardownBoard(tester, h);
+    });
+
+    testWidgets('a message that reached everyone gives nothing back', (tester) async {
+      final h = await _studio([_pane(1, 'idle'), _pane(2, 'idle')]);
+      await _pump(tester, h);
+      await _pick(tester, ['task 1', 'task 2']);
+      await _tap(tester, find.text('Message'));
+      await tester.enterText(find.byType(TextField), 'hello');
+      await _settle(tester);
+
+      await _tap(tester, find.text('Message 2 agents'));
+      expect(find.text('Messaged 2'), findsOneWidget);
+      expect(find.byType(BatchSheet), findsNothing);
+      await teardownBoard(tester, h);
+    });
+
     testWidgets('a long message with many lines is fine', (tester) async {
       final h = await _studio([_pane(1, 'idle')]);
       await _pump(tester, h, height: 640);

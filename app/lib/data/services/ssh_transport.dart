@@ -26,9 +26,7 @@ import 'web_bridge.dart';
 
 /// Thrown (wrapped in [HerdrTransportException]) when a pinned host key no
 /// longer matches.
-const hostKeyChangedMessage =
-    'Host key changed since it was first trusted. Re-add the machine if the '
-    'change is expected.';
+const hostKeyChangedMessage = 'Host key changed. If that’s expected, remove the machine and add it again.';
 
 /// What to do with the host key a machine presented.
 enum HostKeyVerdict {

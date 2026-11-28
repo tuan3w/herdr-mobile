@@ -292,8 +292,8 @@ class _Header extends StatelessWidget {
             minTapSize: kMinTap,
             builder: (context, pressed) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
-              child: Icon(
-                copied ? LucideIcons.check : LucideIcons.copy,
+              child: IconSwap(
+                icon: copied ? LucideIcons.check : LucideIcons.copy,
                 size: IconSize.row,
                 color: copied || pressed ? ds.accentText : ds.textMuted,
               ),

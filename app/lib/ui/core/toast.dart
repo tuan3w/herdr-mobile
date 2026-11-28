@@ -69,7 +69,7 @@ void showToast(
 /// that shows a toast after an `await` (or after its screen popped) captures
 /// one first, before the gap.
 class Toaster {
-  const Toaster(this._overlay);
+  const Toaster(this._overlay, {this.now = DateTime.now});
 
   /// The overlay of the root navigator. Throws without one (a context above
   /// the `MaterialApp`).
@@ -87,6 +87,10 @@ class Toaster {
   }
 
   final OverlayState _overlay;
+
+  /// The time, to count what is left of a toast's clock when the app leaves and
+  /// comes back. A test injects its own: fake time does not move `DateTime.now`.
+  final DateTime Function() now;
 
   /// Shows [message]. A toast of the same [groupKey] still on screen changes
   /// its text in place; any other message takes over: the toast showing
@@ -140,7 +144,7 @@ class Toaster {
     } else {
       live?.discard();
     }
-    final slot = _ToastSlot(_overlay, next);
+    final slot = _ToastSlot(_overlay, next, now);
     _live = slot;
     slot.entry = OverlayEntry(builder: (_) => _ToastView(slot: slot));
     _overlay.insert(slot.entry);
@@ -210,7 +214,9 @@ class _ToastSpec {
 }
 
 class _ToastSlot {
-  _ToastSlot(this.overlay, this.spec);
+  _ToastSlot(this.overlay, this.spec, this.now);
+
+  final DateTime Function() now;
 
   final OverlayState overlay;
   late final OverlayEntry entry;
@@ -348,7 +354,7 @@ class _ToastView extends StatefulWidget {
   State<_ToastView> createState() => _ToastViewState();
 }
 
-class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
+class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin, WidgetsBindingObserver {
   /// In and out: 0 below its place (hidden behind the bar it stands on), 1 in place.
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -364,6 +370,17 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
   bool leaving = false;
   bool _touched = false;
 
+  /// The app is in the background: no clock runs.
+  bool _away = false;
+
+  /// When, and for how long, the running clock was armed: what a pause measures
+  /// its remainder from.
+  DateTime _armedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _armedFor = Duration.zero;
+
+  /// What is left of the clock, kept while the app is away.
+  Duration? _left;
+
   static const _maxWidth = 480.0;
 
   /// A fling faster than this (dp/s) puts it away whatever the distance.
@@ -373,6 +390,9 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     widget.slot.view = this;
+    final state = WidgetsBinding.instance.lifecycleState;
+    _away = state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
+    WidgetsBinding.instance.addObserver(this);
     _controller.forward();
   }
 
@@ -389,10 +409,55 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
   _ToastSpec get _spec => widget.slot.spec;
 
   /// Starts the clock, unless the toast is still arriving or a finger holds it.
-  void _arm() {
+  /// [left] is what a pause kept of it; null is the full time. While the app is
+  /// away nothing runs: the time waits in [_left] for the return.
+  void _arm({Duration? left}) {
     _timer?.cancel();
+    _timer = null;
     if (leaving || _touched || _controller.status != AnimationStatus.completed) return;
-    _timer = Timer(_spec.duration, dismiss);
+    final wait = left ?? _spec.duration;
+    if (_away) {
+      _left = wait;
+      return;
+    }
+    _armedAt = widget.slot.now();
+    _armedFor = wait;
+    _timer = Timer(wait, dismiss);
+  }
+
+  /// The app left the screen (home, another app, the screen off). An Undo
+  /// that runs out unseen is a lost promise, so the clock stops here and keeps
+  /// what was left of it.
+  void _pause() {
+    _away = true;
+    if (_timer == null) return;
+    _timer!.cancel();
+    _timer = null;
+    final spent = widget.slot.now().difference(_armedAt);
+    _left = _armedFor - spent;
+  }
+
+  /// The app is back: the clock runs on with the time it had left, not a fresh
+  /// full one (a toast does not get longer by being switched away from).
+  void _resume() {
+    _away = false;
+    final left = _left;
+    _left = null;
+    if (left != null) _arm(left: left);
+  }
+
+  /// [AppLifecycleState.inactive] (a permission dialog, split screen) is still
+  /// on screen: only a real background counts.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused || AppLifecycleState.hidden:
+        _pause();
+      case AppLifecycleState.resumed:
+        _resume();
+      case AppLifecycleState.inactive || AppLifecycleState.detached:
+        break;
+    }
   }
 
   /// A joined or swapped toast: the new text, a full clock.
@@ -465,6 +530,7 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     if (widget.slot.view == this) widget.slot.view = null;
     if (_live == widget.slot) _live = null;

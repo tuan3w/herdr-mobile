@@ -19,9 +19,15 @@ abstract final class TerminalColors {
   static const border = Color(0xFF1E2127);
 
   /// The 16 ANSI colours (0-7 normal, 8-15 bright), tuned for [background]:
-  /// black and bright black stay legible, and nothing outshines [foreground].
+  /// every one reaches 4.5:1 on it except black, and bright white is the only
+  /// one lighter than [foreground] (`terminal_palette_test.dart` measures all
+  /// of it). Black is the exception on purpose: it is also the background of
+  /// a status line, and text on it must read too, so it sits where both hold
+  /// as well as they can, 3.3:1 as text on the page and 4.4:1 for [foreground]
+  /// on it. Lifted to 4.5:1 as text it left [foreground] on it at 3.1:1; the
+  /// near-black it replaced (#3B4252) was 1.96:1 as text and vanished.
   static const ansi = <Color>[
-    Color(0xFF3B4252),
+    Color(0xFF5A6376),
     Color(0xFFE06C75),
     Color(0xFF98C379),
     Color(0xFFE5C07B),
@@ -77,7 +83,8 @@ class TerminalPalette extends ThemeExtension<TerminalPalette> {
   /// [foreground].
   final Color selection;
 
-  /// The 16 ANSI colours, each legible (>= 4.5:1) on [background].
+  /// The 16 ANSI colours, each legible (>= 4.5:1) on [background]; on the dark
+  /// page black is the one exception, 3:1 (see [TerminalColors.ansi]).
   final List<Color> ansi;
 
   static final dark = TerminalPalette._(

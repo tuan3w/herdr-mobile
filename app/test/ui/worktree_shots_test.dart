@@ -354,7 +354,10 @@ void main() {
           await t.ensureVisible(find.byType(CheckoutField));
           await t.tap(find.byType(CheckoutField));
           await settle(t);
-          await t.ensureVisible(find.text('New worktree…'));
+          // Twelve checkouts are a tall sheet: it opens at half and `New worktree…`, the last row, is
+          // below the screen until the sheet is dragged up (`ensureVisible` cannot move the sheet).
+          await t.drag(find.textContaining('extra/0').first, const Offset(0, -1200));
+          await settle(t);
           await t.tap(find.text('New worktree…'));
           await settle(t);
           if (name.contains('prefilled')) {

@@ -89,6 +89,16 @@ class SheetFrame extends StatefulWidget {
   /// The tallest a sheet grows in [room] with [top] taken by the status bar.
   static double fullHeight({required double room, required double top}) => math.max(200.0, room - top - topGap);
 
+  /// The shortest any sheet is (dp, from its top edge to the screen's bottom,
+  /// the gesture-bar inset included), or all the room it may take on a small
+  /// screen. One floor for every sheet, so none opens as a sliver and what
+  /// arrives after it opened (the ports, a tab's rows) does not move its top
+  /// edge under the thumb: 320 holds four list rows under their title and is
+  /// no more than a sheet of a one-to-three line confirmation already takes
+  /// (about 240 to 280), so those are not stretched. Sheets no longer keep a
+  /// minimum of their own.
+  static const minHeight = 320.0;
+
   @override
   State<SheetFrame> createState() => _SheetFrameState();
 }
@@ -466,7 +476,8 @@ class _RenderSheetPlace extends RenderBox with RenderObjectWithChildMixin<Render
     final cap = SheetFrame.fullHeight(room: room, top: _top);
     final width = _fill ? size.width : math.min(size.width, SheetFrame.maxWidth);
     child.layout(
-      BoxConstraints.tightFor(width: width).copyWith(minHeight: _fill ? cap : 0, maxHeight: cap),
+      BoxConstraints.tightFor(width: width)
+          .copyWith(minHeight: _fill ? cap : math.min(SheetFrame.minHeight, cap), maxHeight: cap),
       parentUsesSize: true,
     );
     final full = child.size.height;

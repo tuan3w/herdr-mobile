@@ -79,7 +79,7 @@ FakeAgentSession waitingTerminal() => FakeAgentSession(state: _state(turn: true)
   ..paneId = 'p1'
   ..forcedDelivery = SendDelivery.now;
 
-Finder get stripIcon => find.descendant(of: find.byType(BackgroundStrip), matching: find.byIcon(LucideIcons.layers));
+Finder get stripIcon => find.descendant(of: find.byType(BackgroundStrip), matching: find.byIcon(LucideIcons.chevronUp));
 
 void main() {
   setUpAll(loadAppFonts);

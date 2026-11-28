@@ -261,7 +261,7 @@ class _ObservedRosterState extends State<ObservedRoster> {
         kind: SheetKind.list,
         scrolls: items.isNotEmpty,
         child: items.isEmpty
-            ? const EmptyState.inline('None started yet.', padding: EdgeInsets.fromLTRB(Gap.lg, Gap.xs, Gap.lg, Gap.md))
+            ? const EmptyState.inline('No subagents yet.', padding: EdgeInsets.fromLTRB(Gap.lg, Gap.xs, Gap.lg, Gap.md))
             : ListView.builder(
                 shrinkWrap: items.length <= _shrinkWrapUntil,
                 padding: const EdgeInsets.only(bottom: Gap.xs),

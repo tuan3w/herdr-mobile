@@ -84,8 +84,6 @@ class _StripRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: Gap.md - PressRow.inset, vertical: Gap.xs),
         child: Row(
           children: [
-            Icon(LucideIcons.layers, size: IconSize.inline, color: ds.textSecondary),
-            const SizedBox(width: Gap.sm),
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -142,7 +140,6 @@ class BackgroundChip extends StatelessWidget {
           child: AppChip(
             label: chipLabel(work),
             semanticLabel: stripSemantics(work, waiting: waiting, turnRunning: turnRunning),
-            leading: Icon(LucideIcons.layers, size: IconSize.inline, color: context.ds.textSecondary),
             onTap: () => unawaited(showBackgroundWork(context, session)),
           ),
         );

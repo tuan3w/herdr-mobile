@@ -822,7 +822,8 @@ class _ConnectedPanel extends StatelessWidget {
                   if (detail.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: Gap.hair),
-                      child: Text(detail, style: Mono.base.copyWith(color: ds.textSecondary)),
+                      // Selectable: the host key is read to the machine's owner, or compared by eye.
+                      child: SelectableText(detail, style: Mono.base.copyWith(color: ds.textSecondary)),
                     ),
                 ],
               ),

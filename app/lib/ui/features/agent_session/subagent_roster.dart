@@ -179,7 +179,7 @@ class SubagentRoster extends StatelessWidget {
         scrolls: items.isNotEmpty,
         child: items.isEmpty
             ? const EmptyState.inline(
-                'None started yet.',
+                'No subagents yet.',
                 padding: EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.sm),
               )
             : list,

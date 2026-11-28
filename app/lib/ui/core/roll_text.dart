@@ -58,9 +58,15 @@ class _RollTextState extends State<RollText> with SingleTickerProviderStateMixin
       _from = null;
       return;
     }
+    final controller = _controller ??= _create();
+    // A roll still moving keeps going from where it is: the text it was
+    // leaving keeps leaving (in the same direction) and the new text takes the
+    // place of the one that was arriving. Restarting at 0 would snap the
+    // count back to invisible and replay the whole roll.
+    if (controller.isAnimating && _from != null) return;
     _from = old.text;
     _up = widget.upward ?? _rose(old.text, widget.text);
-    (_controller ??= _create()).forward(from: 0);
+    controller.forward(from: 0);
   }
 
   AnimationController _create() => AnimationController(vsync: this, duration: Motion.settle)

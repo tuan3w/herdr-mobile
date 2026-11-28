@@ -460,14 +460,15 @@ class _CollapseState extends State<Collapse> with SingleTickerProviderStateMixin
 }
 
 /// Quiet empty state: text first, one optional action. The art is an [icon]
-/// on a soft tile, or a [mark] widget in its place (the brand mark on first
-/// run).
+/// on a soft tile, a [mark] widget in its place (the brand mark on first
+/// run), or nothing when the title already says it all (`No agents running`:
+/// a moon beside it said it twice).
 ///
 /// [EmptyState.inline] is the small form: one muted line where a list in a
 /// sheet or a section has nothing yet (`None started yet.`).
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, this.icon, this.mark, required this.title, required this.message, this.action})
-    : assert((icon == null) != (mark == null), 'an icon or a mark, not both'),
+    : assert(icon == null || mark == null, 'an icon or a mark, not both'),
       padding = null;
 
   /// One line in place of a list: [title] in muted secondary text. [padding]
@@ -508,14 +509,16 @@ class EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              mark ??
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(color: ds.fill, borderRadius: BorderRadius.circular(Radii.md)),
-                    child: Icon(icon, size: 24, color: ds.textSecondary),
-                  ),
-              const SizedBox(height: Gap.lg),
+              if (mark != null || icon != null) ...[
+                mark ??
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(color: ds.fill, borderRadius: BorderRadius.circular(Radii.md)),
+                      child: Icon(icon, size: 24, color: ds.textSecondary),
+                    ),
+                const SizedBox(height: Gap.lg),
+              ],
               Semantics(
                 header: true,
                 child: Text(

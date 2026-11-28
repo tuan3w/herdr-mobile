@@ -206,11 +206,11 @@ void main() {
       await pumpBar(tester, session([_say('Refactored the ledger, no pages.')]));
       await openOptions(tester);
       expect(find.text('Made in this session'), findsOneWidget);
-      expect(find.text('Nothing has come up yet'), findsOneWidget);
+      expect(find.text('Nothing made yet'), findsOneWidget);
 
       await tester.tap(find.text('Made in this session'));
       await _settle(tester);
-      expect(find.text('Nothing has come up yet'), findsOneWidget, reason: 'an inert row opens nothing');
+      expect(find.text('Nothing made yet'), findsOneWidget, reason: 'an inert row opens nothing');
     });
 
     testWidgets('once something is made the row opens the same sheet as the chip', (tester) async {
@@ -219,7 +219,7 @@ void main() {
         session([_say('Serving http://localhost:5173/'), _wrote('/home/dev/payments-api/reports/q3.html')]),
       );
       await openOptions(tester);
-      expect(find.text('Nothing has come up yet'), findsNothing);
+      expect(find.text('Nothing made yet'), findsNothing);
 
       await tester.tap(find.text('Made in this session'));
       await _settle(tester);
@@ -1214,7 +1214,7 @@ void main() {
     },
   );
 
-  testWidgets('an app named by a long command that wraps is shown whole, with the list no shorter than three rows', (
+  testWidgets('an app named by a long command that wraps is shown whole, in a sheet that is not a sliver', (
     tester,
   ) async {
     final launch = TranscriptTool(
@@ -1242,7 +1242,11 @@ void main() {
       0,
       reason: 'one app needs no scrolling',
     );
-    expect(area.height, greaterThanOrEqualTo(3 * 56), reason: 'a lone row is not a sliver of a sheet');
+    expect(
+      tester.getRect(find.byType(SheetSurface)).height,
+      greaterThanOrEqualTo(SheetFrame.minHeight),
+      reason: 'a lone row is not a sliver of a sheet: every sheet has the same floor',
+    );
   });
 
   testWidgets(

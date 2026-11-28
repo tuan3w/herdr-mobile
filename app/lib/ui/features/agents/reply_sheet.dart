@@ -19,6 +19,7 @@ import '../../../data/words/plural.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../support/tap_guard.dart';
+import '../agent_session/composer.dart' show composerReason;
 import '../composer/composer_frame.dart';
 import 'agent_navigation.dart';
 import 'agent_card.dart';
@@ -435,7 +436,17 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
   /// controller like the Enter key button does. Typed text is deliberate, and
   /// is not a tap on something that moved: it only needs a live agent.
   Future<void> _submit() async {
-    if (widget.agent.stale || _reply.busy) return;
+    if (_reply.busy) return;
+    if (widget.agent.stale) {
+      // Refused where the person can feel it and read it, as the session
+      // composer does (typed text stays in the field): a silent nothing reads
+      // as a Send that was lost.
+      if (_input.text.trim().isNotEmpty) {
+        Haptics.failed();
+        showToast(context, 'Not connected. Try again when it is back');
+      }
+      return;
+    }
     final text = _input.text;
     if (text.trim().isEmpty) {
       if (!settled) return;
@@ -539,7 +550,7 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
             hint: composerHint(switch (a.machine.paneById(a.paneId)) {
               final p? => agentLabelOf(p),
               null => agentName(null),
-            }, linkWord: live ? null : 'Offline'),
+            }, linkWord: live ? null : composerReason(AgentLink.reconnecting)),
             onSubmit: _submit,
             // A line for the agent's prompt, in the terminal's font.
             mono: true,

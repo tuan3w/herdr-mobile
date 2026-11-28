@@ -16,6 +16,34 @@ release.
   worktree). A workspace or tab of yours is never closed.
 - Sessions already in `Phone sessions` stay there, as they were; it is not
   moved or closed. Not checked on a live herdr desktop yet.
+- On a small phone or with large text, a permission request keeps `Allow once`,
+  `Always allow` and `Reject` on screen: only the command and the diff scroll,
+  and they open scrolled to the command being approved. Before, the buttons
+  could sit below the fold with nothing saying so.
+- The board no longer jumps when a machine drops or comes back: the line that
+  names it opens and closes in its own height instead of pushing every card
+  down at once.
+- In Files search, a long name is cut around what matched and the match is
+  marked, so the word you typed stays visible in the middle of a long name.
+- A machine whose host key changed offers `Remove` instead of a `Retry` that
+  could never work, and the key on the add-machine screen can be selected and
+  copied.
+- Replying to an agent from the board while the machine is offline now says
+  `Offline · reconnecting` and `Not connected` and keeps what you typed, as the
+  chat does. A message to several agents that fails for some gives your text
+  back.
+- Every sheet opens at the same minimum height, so rows arriving no longer move
+  its top edge.
+- Hardware keyboards can press any button or row with Enter or Space; a focus
+  ring shows only for keyboard focus.
+- Easier to read: pressed key caps, the Files tertiary text, and black in a
+  dark terminal. An `Undo` toast keeps its remaining time while the app is in
+  the background. The status mark and counts finish their animation when they
+  change twice in a row instead of starting over. Copying code fades to the
+  check mark. The subagent list no longer checks the machine every 4 s while
+  the app is in the background.
+- Words: `Read earlier messages`, `No subagents yet.`, `Nothing made yet`, and
+  empty states without a decorative icon.
 
 ## [0.1.71] - 2026-11-28
 

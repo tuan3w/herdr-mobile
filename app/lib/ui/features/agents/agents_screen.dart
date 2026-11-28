@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/herdr_models.dart';
 import '../../../data/repositories/fleet_repository.dart';
+import '../../../data/repositories/batch_actions.dart' show BatchAction;
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/words/elapsed.dart';
@@ -79,6 +80,9 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   late final AppLifecycleListener _lifecycle;
   bool? _reportedVisible;
   AgentSessions? _sessions;
+  // The machines the strip last spoke of: it keeps saying them while it closes
+  // (the list is empty by then), so the strip folds away with its words.
+  List<TroubledMachine> _stripFor = const [];
 
   // Folded sections, by status name, one per line, so the set survives the
   // process being reclaimed. Needs you never folds; a name this version does
@@ -98,6 +102,11 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
   Set<String> _liveRefs = const {};
   bool _retainQueued = false;
   bool _wasSelecting = false;
+
+  // A message that did not reach every agent it was typed for, kept for the
+  // next Message sheet while the agents that missed it stay picked. Gone when
+  // picking ends (Cancel, Back, or a batch that reached everyone).
+  String _unsent = '';
 
   // Answers on cards move when a card above them comes or goes: the gate
   // closes for a moment so a tap aimed at the old place cannot answer for
@@ -135,6 +144,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     final active = _selection.active;
     if (active == _wasSelecting) return;
     _wasSelecting = active;
+    if (!active) _unsent = '';
     widget.onSelectingChanged?.call(active);
     setState(() {});
   }
@@ -281,6 +291,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     final indexes = entryIndexes(listed);
 
     final troubled = overview.troubled;
+    if (troubled.isNotEmpty) _stripFor = troubled;
     final needYouCount = attention.needsYou.length;
     final working = layout.working;
 
@@ -356,24 +367,25 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
           // Kept as a strip, not folded into the status line: it carries the
           // next step (Retry, Approve, or Machines), which words in a subtitle
           // cannot. It sits right under the header, where the status line is,
-          // and both come back with the top of the list.
-          if (troubled.isNotEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.gutter),
-              sliver: SliverToBoxAdapter(
-                child: _ConnectionStrip(troubled: troubled, onShowMachines: _showMachines),
+          // and both come back with the top of the list. It opens and closes in
+          // its own height ([Collapse]): a machine dropping on a flaky radio
+          // used to move every card down by the strip in one frame, and back
+          // when it recovered, under the thumb.
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.gutter),
+            sliver: SliverToBoxAdapter(
+              child: Collapse(
+                open: troubled.isNotEmpty,
+                child: _ConnectionStrip(troubled: _stripFor, onShowMachines: _showMachines),
               ),
             ),
+          ),
           if (overview.agents.isEmpty && troubled.isEmpty && sessionList.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
                 padding: EdgeInsets.only(bottom: inset),
-                child: const EmptyState(
-                  icon: LucideIcons.moon,
-                  title: 'No agents running',
-                  message: 'Start one in herdr and it shows here.',
-                ),
+                child: const EmptyState(title: 'No agents running', message: 'Start one in herdr and it shows here.'),
               ),
             )
           else ...[
@@ -441,10 +453,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
               left: 0,
               right: 0,
               bottom: 0,
-              child: BatchActionBar(
-                onAction: (action) => unawaited(performBatchAction(context, action, _selection)),
-                onReview: _markReviewed,
-              ),
+              child: BatchActionBar(onAction: (action) => unawaited(_batch(action)), onReview: _markReviewed),
             ),
           ],
         ),
@@ -575,6 +584,14 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
     );
     if (n > 0) Haptics.sent();
     _selection.cancel();
+  }
+
+  /// One action-bar button. A message that failed for some agents comes back
+  /// in the next Message sheet ([performBatchAction]).
+  Future<void> _batch(BatchAction action) async {
+    final message = action == BatchAction.message;
+    final unsent = await performBatchAction(context, action, _selection, text: message ? _unsent : '');
+    if (mounted && message) _unsent = unsent;
   }
 
   void _queueRetain() {

@@ -17,6 +17,7 @@ import '../create/new_agent_session_screen.dart';
 import '../files/files_navigation.dart';
 import 'closed_worktrees.dart';
 import 'machine_pane_rows.dart';
+import 'machine_removal.dart';
 import 'machine_repo_section.dart';
 
 /// Everything running on one machine: workspaces (herdr's order) → tabs
@@ -49,6 +50,13 @@ class _MachineViewState extends State<_MachineView> {
   /// to scroll. [key] is a workspace id or a repo key.
   bool _isOpen(String key, AgentStatus status, int sections) =>
       _toggled[key] ?? (sections <= 4 || status == AgentStatus.blocked || status == AgentStatus.done);
+
+  /// Removes the machine and leaves: a removed machine has no screen to stay on.
+  Future<void> _remove(BuildContext context, MachineConnection machine) async {
+    final navigator = Navigator.of(context);
+    final removed = await confirmRemoveMachine(context, machine.profile);
+    if (removed && navigator.mounted) navigator.pop();
+  }
 
   @override
   void initState() {
@@ -137,13 +145,28 @@ class _MachineViewState extends State<_MachineView> {
                     color: state.color(ds),
                     icon: LucideIcons.cloudOff,
                     message: machine.error,
-                    messageMaxLines: 3,
-                    trailing: AppButton(
-                      label: 'Retry',
-                      kind: AppButtonKind.secondary,
-                      compact: true,
-                      onPressed: machine.retry,
-                    ),
+                    // A changed host key is not cured by trying again: the way out is Remove, under
+                    // the whole sentence (it says when to use it, and must not be cut to make room).
+                    messageMaxLines: hostKeyChanged(machine) ? null : 3,
+                    trailing: hostKeyChanged(machine)
+                        ? null
+                        : AppButton(
+                            label: 'Retry',
+                            kind: AppButtonKind.secondary,
+                            compact: true,
+                            onPressed: machine.retry,
+                          ),
+                    footer: hostKeyChanged(machine)
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: AppButton(
+                              label: 'Remove',
+                              kind: AppButtonKind.secondary,
+                              compact: true,
+                              onPressed: () => unawaited(_remove(context, machine)),
+                            ),
+                          )
+                        : null,
                   ),
                 ),
               ),
@@ -167,7 +190,6 @@ class _MachineViewState extends State<_MachineView> {
               const SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
-                  icon: LucideIcons.layoutDashboard,
                   title: 'No workspaces',
                   message: 'Create a workspace in herdr and it will show up here.',
                 ),

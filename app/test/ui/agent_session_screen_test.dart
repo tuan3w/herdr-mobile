@@ -141,7 +141,7 @@ void main() {
       expect(find.text('first'), findsOneWidget);
       expect(find.textContaining('notes.txt', findRichText: true), findsOneWidget);
       expect(find.textContaining('Image', findRichText: true), findsOneWidget);
-      expect(find.textContaining('can’t show', findRichText: true), findsOneWidget);
+      expect(find.textContaining('Can’t show', findRichText: true), findsOneWidget);
       for (final title in ['Read lib/main.dart', 'Run the tests', 'Search for usages', 'Fetch docs']) {
         expect(find.text(title), findsOneWidget);
       }

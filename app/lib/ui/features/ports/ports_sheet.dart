@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderBox, RenderFlex, RenderObject;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/repositories/machine_connection.dart';
@@ -57,25 +59,39 @@ class _PortsSheetState extends State<PortsSheet> with WidgetsBindingObserver {
 
   void _open(PortRow row) => unawaited(openWebPreview(context, widget.machine, ServerPage(row.url, name: row.process)));
 
-  /// The least the list takes, in rows: the sheet does not open as a sliver
-  /// and grow when the answer arrives, and a short list leaves room for the
-  /// port that opens next.
-  static const _minHeight = 4 * 60.0;
-
   final _bodyKey = GlobalKey();
 
   /// The height the list had when its first rows arrived, kept for the life of
-  /// the sheet. A bottom sheet grows upward, so a port that opened later would
-  /// push every row up under the thumb that is about to tap one: the new row
-  /// joins at the end, inside this height, and scrolls in when it does not fit.
+  /// the sheet: its own plus the room the sheet's floor leaves under it (a
+  /// short list has room for a port that opens next). A bottom sheet grows
+  /// upward, so a port that opened later would push every row up under the
+  /// thumb that is about to tap one: the new row joins at the end, inside this
+  /// height, and scrolls in when it does not fit. It is a floor for what the
+  /// body shows, not its height: an error or a note that replaces the list
+  /// takes the room it needs.
   double? _locked;
 
   void _lock() {
     if (_locked != null || _vm.phase != PortsPhase.live || _vm.rows.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final height = _bodyKey.currentContext?.size?.height;
-      if (mounted && _locked == null && height != null) setState(() => _locked = height);
+      final body = _bodyKey.currentContext?.findRenderObject() as RenderBox?;
+      if (!mounted || _locked != null || body == null || !body.hasSize) return;
+      setState(() => _locked = body.size.height + _floorRoom());
     });
+  }
+
+  /// How much taller than its content the sheet is: the floor's room, under
+  /// the content and above the bottom inset (the surface column's height less
+  /// what its child, the content and the inset, takes).
+  double _floorRoom() {
+    RenderObject? child = context.findRenderObject();
+    while (child != null && child.parent is! RenderFlex) {
+      child = child.parent;
+    }
+    final surface = child?.parent;
+    if (child is! RenderBox || surface is! RenderFlex) return 0;
+    final below = surface.size.height - child.localToGlobal(Offset.zero, ancestor: surface).dy - child.size.height;
+    return math.max(0, below);
   }
 
   @override
@@ -90,9 +106,7 @@ class _PortsSheetState extends State<PortsSheet> with WidgetsBindingObserver {
         final locked = _locked;
         return ConstrainedBox(
           key: _bodyKey,
-          constraints: locked == null
-              ? const BoxConstraints(minHeight: _minHeight)
-              : BoxConstraints.tightFor(height: locked),
+          constraints: BoxConstraints(minHeight: locked ?? 0),
           child: _body(context),
         );
       },
@@ -150,12 +164,14 @@ class _PortsSheetState extends State<PortsSheet> with WidgetsBindingObserver {
       case PortsPhase.live:
         final rows = _vm.rows;
         if (rows.isEmpty) return note('Nothing is listening on this machine.');
-        return ListView.builder(
+        final list = ListView.builder(
           shrinkWrap: _locked == null,
           padding: side,
           itemCount: rows.length,
           itemBuilder: (context, i) => _PortTile(row: rows[i], divider: i < rows.length - 1, onTap: _open),
         );
+        // Locked: the list fills the height it had and scrolls inside it.
+        return _locked == null ? list : SizedBox(height: _locked, child: list);
     }
   }
 }

@@ -125,7 +125,8 @@ class _FileSearchScreenState extends State<FileSearchScreen> {
                   _subtitle(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Type.secondary.copyWith(color: ds.textSecondary),
+                  // The count ticks while matches arrive: tabular, so the line does not shiver.
+                  style: Type.secondary.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
                 ),
               ),
               SliverToBoxAdapter(
@@ -151,6 +152,7 @@ class _FileSearchScreenState extends State<FileSearchScreen> {
                     root: widget.root,
                     rootName: widget.rootName,
                     thumbs: widget.thumbs,
+                    match: _vm.query,
                     onTap: () {
                       Haptics.tick();
                       FocusManager.instance.primaryFocus?.unfocus();
@@ -274,7 +276,7 @@ class _FileSearchScreenState extends State<FileSearchScreen> {
           Text('$looked$cant', style: Type.secondary.copyWith(color: ds.textMuted)),
           if (_vm.truncated) ...[
             Text(
-              'There are more than ${groupDigits(_vm.resultCount)}. Showing the first ones.',
+              'Showing the first ${groupDigits(_vm.resultCount)}. There are more.',
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             TextAction(label: 'Narrow the search', onTap: _focus.requestFocus),
@@ -329,6 +331,7 @@ class _Match extends StatelessWidget {
     required this.root,
     required this.rootName,
     required this.thumbs,
+    required this.match,
     required this.onTap,
   });
 
@@ -338,6 +341,7 @@ class _Match extends StatelessWidget {
   final String root;
   final String rootName;
   final ThumbLoader? thumbs;
+  final String match;
   final VoidCallback onTap;
 
   /// The folder of [e] below [root]: its path from the searched folder, or the
@@ -359,6 +363,7 @@ class _Match extends StatelessWidget {
       thumbs: thumbs,
       detail: folderOf(entry, root, rootName),
       detailSuffix: when == null ? null : formatAgo(when, now),
+      match: match,
       onTap: onTap,
     );
   }

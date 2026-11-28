@@ -349,7 +349,7 @@ class _BrowserViewState extends State<_BrowserView> {
               count,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Type.secondary.copyWith(color: ds.textSecondary),
+              style: Type.secondary.copyWith(color: ds.textSecondary, fontFeatures: Type.tabular),
             ),
             actions: [
               CircleButton(

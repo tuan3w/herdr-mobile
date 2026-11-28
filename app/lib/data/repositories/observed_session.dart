@@ -2375,7 +2375,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Future<void> _listArtifacts() async {
     final subs = kind.subagents;
     final path = _followedPath;
-    if (subs == null || path == null || !machine.isLive || _disposed) return;
+    // Backgrounded: nobody looks, and `isLive` stays true under the keep-alive
+    // profile, so the poll would keep the radio awake for a hidden roster.
+    if (subs == null || path == null || !machine.isLive || _backgroundedAt != null || _disposed) return;
     Map<String, SubagentState>? refined;
     try {
       refined = await subs.refine(machine, path, _mapper.subagents, running: subagentActive * 4);

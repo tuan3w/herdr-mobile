@@ -953,7 +953,7 @@ class EarlierRow extends StatelessWidget {
       child: Center(
         child: switch (earlier) {
           EarlierHistory.available => AppButton(
-            label: 'Load earlier messages',
+            label: 'Read earlier messages',
             kind: AppButtonKind.ghost,
             compact: true,
             onPressed: onLoad,
@@ -961,7 +961,7 @@ class EarlierRow extends StatelessWidget {
           // As tall as the button it replaces, so the list does not jump.
           EarlierHistory.loading => const SizedBox(
             height: kMinTap,
-            child: LoadingRow('Loading earlier messages…', padding: EdgeInsets.zero, center: true),
+            child: LoadingRow('Reading earlier messages…', padding: EdgeInsets.zero, center: true),
           ),
           // 64 MB: `_maxTail` of the observed session and the host's ceiling.
           EarlierHistory.tooLong => Text(

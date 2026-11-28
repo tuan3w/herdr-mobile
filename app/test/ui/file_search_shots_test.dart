@@ -81,6 +81,20 @@ List<RemoteEntry> _matches(int n, {int offset = 0}) {
   ];
 }
 
+/// Matches for [query] with names whose match is far from both ends, so the cut
+/// has to choose what to keep.
+List<RemoteEntry> _namedLike(String query) {
+  final names = [
+    'payment_service_integration_${query}_with_the_ledger_and_retries....test.dart',
+    '${query}_2026_q3.md',
+    'Báo cáo tổng hợp quý ba năm 2026 bản cuối cùng đã $query sửa.docx',
+    'a-very-long-prefix-before-the-part-you-typed-$query.txt',
+    'x$query',
+    '$query-${'z' * 60}.png',
+  ];
+  return [for (var i = 0; i < names.length; i++) _file('$_dir/lib/${names[i]}', ago: Duration(minutes: 2 + 7 * i))];
+}
+
 void main() {
   if (Platform.environment['SEARCH_SHOTS'] == null) {
     test('search shots are off (set SEARCH_SHOTS=1)', () {}, skip: 'set SEARCH_SHOTS=1 to render PNGs');
@@ -207,6 +221,32 @@ void main() {
       b,
       scale: k,
       type: 'report',
+    ),
+    'match-report': (t, b, s, k) => shoot(
+      t,
+      'match-report',
+      machine((c, spec) {
+        c
+          ..add(FileSearchBatch(_namedLike('report')))
+          ..add(const FileSearchDone(scanned: 1234, truncated: false, skippedDirs: 0));
+      }),
+      s,
+      b,
+      scale: k,
+      type: 'report',
+    ),
+    'match-viet': (t, b, s, k) => shoot(
+      t,
+      'match-viet',
+      machine((c, spec) {
+        c
+          ..add(FileSearchBatch(_namedLike('chỉnh')))
+          ..add(const FileSearchDone(scanned: 1234, truncated: false, skippedDirs: 0));
+      }),
+      s,
+      b,
+      scale: k,
+      type: 'CHỈNH',
     ),
     'truncated-2000': (t, b, s, k) => shoot(
       t,

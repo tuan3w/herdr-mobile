@@ -16,8 +16,8 @@ enum TextActionTone {
 /// `12 more`, `Mark reviewed`. No fill and no underline; the colour says
 /// it can be tapped. Paints its text only, takes a 44 dp touch target, and
 /// warms to the primary text colour while pressed. A long label wraps to a
-/// second line rather than lose its words. Disabled ([enabled] false) it
-/// dims like a disabled [AppButton], takes no tap and reads as disabled.
+/// second line rather than lose its words. Disabled ([enabled] false) it drops
+/// to `textTertiary` (still 3:1), takes no tap and reads as disabled.
 class TextAction extends StatelessWidget {
   const TextAction({
     super.key,
@@ -50,7 +50,9 @@ class TextAction extends StatelessWidget {
       TextActionTone.accent => ds.accentText,
       TextActionTone.quiet => ds.textSecondary,
     };
-    final color = enabled ? rest : Ds.fade(rest, 0.4);
+    // Dimmed by tone, not alpha: `rest` at 40% was ~2:1 on every surface, a word
+    // that cannot be made out; `textTertiary` holds 3:1 on bg, surface and fill.
+    final color = enabled ? rest : ds.textTertiary;
     return PressBuilder(
       onTap: enabled ? onTap : null,
       haptic: haptic,

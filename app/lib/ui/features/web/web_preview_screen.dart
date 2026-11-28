@@ -367,7 +367,8 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     } on Object catch (e) {
       if (mine != _attempt) return;
       debugPrint('herdr: page not opened: $e');
-      _fail('Couldn’t open this page', 'Something went wrong on the phone. Retry tries again.', at);
+      // Nothing more is known, and the title already says what happened: the button says the rest.
+      _fail('Couldn’t open this page', '', at);
     }
   }
 

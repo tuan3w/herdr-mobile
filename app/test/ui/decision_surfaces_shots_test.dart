@@ -172,6 +172,17 @@ void main() {
         ],
       ),
     ),
+    // A short command at the smallest phone and the largest text: is it still in front of the person?
+    'dock-short': () => FakeAgentSession(
+      state: stateWith(
+        items: _history(),
+        options: [_mode('default', 'Default'), _model, _effort],
+        turnActive: true,
+        pending: [
+          PendingPermission(7, permissionRequest(rawInput: {'command': 'git status --short'})),
+        ],
+      ),
+    ),
     'dock-plan': () => FakeAgentSession(
       state: stateWith(
         items: _history(),

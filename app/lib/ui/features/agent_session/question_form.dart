@@ -458,14 +458,24 @@ class _FieldBlock extends StatelessWidget {
       ),
     };
     final isBool = f is BooleanField;
+    // A failed Accept names what is missing in a line that was already there: the
+    // dock grows upward, so a line that appeared would shift the field under the eye.
+    final canFail = switch (f) {
+      EnumField() || UnknownField() => f.required,
+      MultiEnumField(:final minItems, :final maxItems) => f.required || minItems != null || maxItems != null,
+      _ => false,
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         control,
-        if (errorText != null && (isBool || f is EnumField || f is MultiEnumField || f is UnknownField))
+        if ((errorText != null && isBool) || canFail)
           Padding(
             padding: const EdgeInsets.only(top: Gap.hair),
-            child: Text(errorText, style: Type.caption.copyWith(color: ds.dangerText)),
+            child: ExcludeSemantics(
+              excluding: errorText == null,
+              child: Text(errorText ?? ' ', style: Type.caption.copyWith(color: ds.dangerText)),
+            ),
           ),
       ],
     );
@@ -520,7 +530,16 @@ class _TextControl extends StatelessWidget {
             onChanged: (_) => onChanged(),
             style: Type.input.copyWith(color: ds.text),
             cursorColor: ds.accent,
-            decoration: InputDecoration(hintText: hint, errorText: error, errorMaxLines: 2),
+            decoration: InputDecoration(
+              hintText: hint,
+              errorText: error,
+              errorMaxLines: 2,
+              // A blank helper holds the line the error will take (as `LabeledField` does): the
+              // dock grows upward from the composer, so a field that grew would shift everything
+              // above it, this field too, at the moment the person is looking at it.
+              helperText: ' ',
+              helperStyle: Type.caption.copyWith(color: ds.textMuted),
+            ),
           ),
         ),
       ],

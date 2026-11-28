@@ -931,6 +931,12 @@ void main() {
       await tapButton(tester, 'Test connection');
       expect(find.textContaining('Connected · herdr 9.9.9'), findsOneWidget);
       expect(find.textContaining('Host key SHA256:abc'), findsOneWidget);
+      // The one moment the person must read the key to the machine's owner: it can be selected and copied.
+      expect(
+        tester.widget<SelectableText>(find.byType(SelectableText)).data,
+        contains('Host key SHA256:abc'),
+        reason: 'a fingerprint to compare is selectable, not just painted',
+      );
 
       await tester.enterText(field(1), 'other.example');
       await _flush(tester);

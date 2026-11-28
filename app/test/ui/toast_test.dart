@@ -258,6 +258,82 @@ void main() {
       await _end(tester);
     });
 
+    // An Undo toast (5 s) is a promise: it must not run out while nobody can
+    // see it. The clock counts in fake time, and the toast's own `now` follows it.
+    Toaster fakeTimed(WidgetTester tester) =>
+        Toaster(Overlay.of(_ctx, rootOverlay: true), now: () => tester.binding.clock.now());
+
+    void lifecycle(WidgetTester tester, List<AppLifecycleState> states) {
+      for (final s in states) {
+        tester.binding.handleAppLifecycleStateChanged(s);
+      }
+    }
+
+    const away = [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused];
+    const back = [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed];
+
+    testWidgets('the clock stops while the app is away and resumes with what was left', (tester) async {
+      await _pump(tester);
+      fakeTimed(tester).show('Closed tab', action: ToastAction('Undo', () {}));
+      await _ms(tester, 250 + 3000);
+
+      lifecycle(tester, away);
+      await tester.pump(const Duration(minutes: 10));
+      await _ms(tester, _exit);
+      expect(_toast, findsOneWidget, reason: 'ten minutes in the background cost it nothing');
+
+      lifecycle(tester, back);
+      await _ms(tester, 1800);
+      expect(_toast, findsOneWidget, reason: '2 s were left, not the full 5 and not none');
+      await _ms(tester, 350);
+      await _ms(tester, _exit);
+      expect(_toast, findsNothing, reason: 'gone once what was left has run');
+      await _end(tester);
+    });
+
+    testWidgets('a toast shown while the app is away starts its clock when it is back', (tester) async {
+      await _pump(tester);
+      lifecycle(tester, away);
+      fakeTimed(tester).show('Closed tab', action: ToastAction('Undo', () {}));
+      await _ms(tester, 250 + 6000);
+      expect(_toast, findsOneWidget);
+
+      lifecycle(tester, back);
+      await _ms(tester, 4800);
+      expect(_toast, findsOneWidget, reason: 'the full 5 s, from the return');
+      await _ms(tester, 350);
+      await _ms(tester, _exit);
+      expect(_toast, findsNothing);
+      await _end(tester);
+    });
+
+    testWidgets('a brief interruption (inactive) does not stop the clock', (tester) async {
+      await _pump(tester);
+      fakeTimed(tester).show('Closed tab', action: ToastAction('Undo', () {}));
+      await _ms(tester, 250 + 1000);
+      lifecycle(tester, [AppLifecycleState.inactive]);
+      await _ms(tester, 4200);
+      await _ms(tester, _exit);
+      expect(_toast, findsNothing, reason: 'a permission dialog is not the background');
+      lifecycle(tester, [AppLifecycleState.resumed]);
+      await _end(tester);
+    });
+
+    testWidgets('a toast that joins one shown while the app is away gets a full clock on return', (tester) async {
+      await _pump(tester);
+      final toaster = fakeTimed(tester);
+      toaster.show('Closed tab', groupKey: 'tabs', action: ToastAction('Undo', () {}));
+      await _ms(tester, 250 + 2000);
+      lifecycle(tester, away);
+      toaster.show('Closed tab', groupKey: 'tabs', action: ToastAction('Undo', () {}));
+      await _ms(tester, 60000);
+      expect(_toast, findsOneWidget);
+      lifecycle(tester, back);
+      await _ms(tester, 4800);
+      expect(_toast, findsOneWidget, reason: 'a join restarts the clock: the full 5 s after the return');
+      await _end(tester);
+    });
+
     test('the defaults come from one table', () {
       expect(ToastTiming.of(ToastKind.info, hasAction: false, message: 'Copied'), Dwell.toastShort);
       expect(ToastTiming.of(ToastKind.success, hasAction: false, message: 'Marked 3 agents reviewed'), Dwell.toastLong);

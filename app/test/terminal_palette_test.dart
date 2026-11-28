@@ -16,14 +16,32 @@ void main() {
   final dark = TerminalPalette.dark;
   final light = TerminalPalette.light;
 
-  group('the light palette', () {
-    test('every ANSI colour reads on its page', () {
-      for (var i = 0; i < 16; i++) {
-        expect(contrast(light.ansi[i], light.background), greaterThanOrEqualTo(4.5), reason: 'colour $i');
-      }
-      expect(contrast(light.foreground, light.background), greaterThanOrEqualTo(7));
-      expect(contrast(light.dim, light.background), greaterThanOrEqualTo(4.5));
-      expect(contrast(light.link, light.background), greaterThanOrEqualTo(4.5));
+  group('each palette', () {
+    // `TerminalPalette.ansi` promises every colour is legible (>= 4.5:1) on its
+    // page. The dark palette once held black at 1.96:1 with that promise in its
+    // comment, because only the light one was ever measured. Dark black is the
+    // one exception (3:1): it is also the background of a status line.
+    for (final (name, palette) in [('dark', dark), ('light', light)]) {
+      test('$name: every ANSI colour reads on its page', () {
+        for (var i = 0; i < 16; i++) {
+          final floor = palette.isDark && i == 0 ? 3.0 : 4.5;
+          expect(contrast(palette.ansi[i], palette.background), greaterThanOrEqualTo(floor), reason: 'colour $i');
+        }
+        expect(contrast(palette.foreground, palette.background), greaterThanOrEqualTo(7));
+        expect(contrast(palette.dim, palette.background), greaterThanOrEqualTo(4.5));
+        expect(contrast(palette.link, palette.background), greaterThanOrEqualTo(4.5));
+      });
+    }
+
+    test('dark: black is both a text colour and a background, and serves both', () {
+      // The reason black is held at 3:1 and not 4.5: lifted to 4.5 as text, the
+      // default text on a black background fell to 3.1:1, which is the common
+      // way agents draw a status line.
+      expect(contrast(dark.foreground, dark.ansi[0]), greaterThanOrEqualTo(4.0), reason: 'text on a black background');
+      expect(contrast(dark.ansi[7], dark.ansi[0]), greaterThanOrEqualTo(3.0), reason: 'white on black');
+      // And it stays apart from bright black (the dim text TUIs draw), below it.
+      expect(contrast(dark.ansi[8], dark.ansi[0]), greaterThanOrEqualTo(1.3), reason: 'bright black vs black');
+      expect(dark.ansi[7].computeLuminance(), greaterThan(dark.ansi[8].computeLuminance()));
     });
 
     test('it is light and the other is dark', () {

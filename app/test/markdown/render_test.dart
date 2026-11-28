@@ -398,6 +398,8 @@ void main() {
       expect(_clipboard, 'final a = 1;\n  print(a); // \u202Ex');
       expect(find.byIcon(LucideIcons.check), findsOneWidget, reason: 'the button turns into a check');
       await tester.pump(const Duration(seconds: 2));
+      // The check gives way to the copy glyph by a cross-fade, which has to finish.
+      await tester.pump(Motion.standard * 2);
       expect(find.byIcon(LucideIcons.check), findsNothing);
       expect(find.byIcon(LucideIcons.copy), findsOneWidget);
       await tester.pump(const Duration(seconds: 4)); // the toast's clock

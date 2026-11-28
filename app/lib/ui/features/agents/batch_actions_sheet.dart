@@ -28,13 +28,26 @@ String agentCount(int n) => countOf(n, 'agent');
 /// One button of the action bar, start to finish: the confirm sheet, the run
 /// (the bar shows a spinner while it lasts), the result line, and the end of
 /// selection mode.
-Future<void> performBatchAction(BuildContext context, BatchAction action, BoardSelection selection) async {
+///
+/// Returns the message to start the next Message sheet with: [text] again when
+/// the sheet was cancelled, and the typed message when it did not reach every
+/// agent, as the composers give back a text that failed to send. The agents
+/// that missed it are picked again, so Message is one tap and the text is
+/// there; the ones that got it are not asked twice. Nothing reopens by
+/// itself: a sheet pushed now would take the failure's toast off the screen.
+/// Empty when nothing is owed.
+Future<String> performBatchAction(
+  BuildContext context,
+  BatchAction action,
+  BoardSelection selection, {
+  String text = '',
+}) async {
   final toaster = Toaster.of(context);
   final request = await showAppSheet<BatchRequest>(
     context,
-    builder: (_) => BatchSheet(action: action, refs: selection.refs),
+    builder: (_) => BatchSheet(action: action, refs: selection.refs, text: text),
   );
-  if (request == null) return;
+  if (request == null) return text;
   final verb = switch (action) {
     BatchAction.stop => 'Stopping',
     BatchAction.message => 'Messaging',
@@ -52,6 +65,12 @@ Future<void> performBatchAction(BuildContext context, BatchAction action, BoardS
     kind: result.failed.isEmpty ? ToastKind.success : ToastKind.failed,
     duration: Dwell.batchResult,
   );
+  if (action != BatchAction.message || result.failed.isEmpty) return '';
+  selection.selectOnly([
+    for (final f in result.failed)
+      f.target.kind == BatchKind.terminal ? paneRef(f.target.key) : sessionRef(f.target.key),
+  ]);
+  return request.text;
 }
 
 /// The confirm sheet of one batch action. It lists the targets from live data
@@ -59,19 +78,23 @@ Future<void> performBatchAction(BuildContext context, BatchAction action, BoardS
 /// answer moves to the skipped group before the button can be tapped. Public
 /// for tests.
 class BatchSheet extends StatefulWidget {
-  const BatchSheet({super.key, required this.action, required this.refs});
+  const BatchSheet({super.key, required this.action, required this.refs, this.text = ''});
 
   final BatchAction action;
 
   /// What the board had selected when the sheet opened.
   final Set<String> refs;
 
+  /// What the message field starts with: the text of a batch that failed for
+  /// some agents, given back.
+  final String text;
+
   @override
   State<BatchSheet> createState() => _BatchSheetState();
 }
 
 class _BatchSheetState extends State<BatchSheet> {
-  final _text = TextEditingController();
+  late final _text = TextEditingController(text: widget.text);
 
   /// "Send anyway" is on for exactly these waiting terminal agents: one that
   /// starts waiting later is skipped, and the switch turns itself off.

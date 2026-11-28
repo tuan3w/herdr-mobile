@@ -139,7 +139,7 @@ void main() {
       await tester.drag(find.byType(ListView).last, const Offset(0, -4000));
       await tester.pump();
       expect(find.text('Subagents from earlier in this chat are not listed.'), findsOneWidget);
-      await tester.tap(find.text('Load earlier messages'));
+      await tester.tap(find.text('Read earlier messages'));
       expect(session.loadEarlierCalls, 1);
     });
 

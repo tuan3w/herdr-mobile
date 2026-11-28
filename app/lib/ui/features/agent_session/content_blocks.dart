@@ -35,7 +35,8 @@ class ContentBlockView extends StatelessWidget {
     AudioBlock(:final mimeType) => ContentChip(icon: LucideIcons.audioLines, title: 'Audio', detail: mimeType),
     UnknownBlock(:final type) => ContentChip(
       icon: LucideIcons.circleHelp,
-      title: 'Content this app can’t show',
+      // The type is the useful word: it follows the title in mono.
+      title: type.isEmpty ? 'Can’t show this content' : 'Can’t show',
       detail: type,
       muted: true,
     ),

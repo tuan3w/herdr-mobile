@@ -78,7 +78,7 @@ void main() {
 
   testWidgets('the top row says what is going on, and nothing when the transcript is whole', (tester) async {
     final session = await _open(tester, _turns(98, 100), EarlierHistory.loading);
-    expect(find.text('Loading earlier messages…'), findsOneWidget);
+    expect(find.text('Reading earlier messages…'), findsOneWidget);
     session.setEarlier(EarlierHistory.tooLong);
     await tester.pump();
     expect(find.textContaining('last 64 MB'), findsOneWidget);

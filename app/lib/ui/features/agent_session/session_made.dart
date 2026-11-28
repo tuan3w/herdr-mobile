@@ -290,11 +290,6 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
   /// cap (which the pinned title and switch share) still applies on a small one.
   static const _bodyShare = 0.6;
 
-  /// The least the scrolling area takes, in rows: a session with one app and
-  /// one with five open to a sheet of the same height, and a lone row is not a
-  /// sliver of a sheet.
-  static const _minRows = 3;
-
   /// What [text] takes in [style] at [width], ending in an ellipsis after
   /// [maxLines] like the row's own text.
   static double _textHeight(String text, TextStyle style, int maxLines, double width, TextScaler scaler) {
@@ -328,8 +323,9 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
   /// longer one push it up): the switch is pinned above the area, and the area
   /// is as tall as the tallest tab's first batch, or [_bodyShare] of the screen
   /// if that is less, whichever tab is open (a sheet filling the screen around
-  /// a two-row tab is worse than a list that scrolls), and never under
-  /// [_minRows] rows. `N more` adds rows inside the area, it does not grow it.
+  /// a two-row tab is worse than a list that scrolls). A lone row is not a
+  /// sliver of a sheet: the sheet's own floor ([SheetFrame.minHeight]) holds.
+  /// `N more` adds rows inside the area, it does not grow it.
   /// Estimated, not measured by building: the tabs that are not open are not
   /// built. Rows are laid out as text (titles wrap), so only the chips under
   /// an app (one wrapped line assumed) can be off, by a few dp: a little room
@@ -346,12 +342,11 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBinding
     required double cap,
   }) {
     double line(TextStyle s) => scaler.scale(s.fontSize!) * s.height!;
-    final floor = _minRows * (math.max(56.0, 2 * Gap.md + line(Type.row) + 2 + line(Type.secondary)) + 1);
     final tile =
         (width - (_PictureGrid.columns - 1) * _PictureGrid.gap) / _PictureGrid.columns * 3 / 4 +
         Gap.xs +
         line(Type.caption);
-    var tallest = floor;
+    var tallest = 0.0;
     for (final kind in kinds) {
       if (tallest >= cap) break;
       final items = shown.where((a) => _inTab(a, kind));
