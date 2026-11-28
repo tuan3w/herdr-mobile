@@ -431,7 +431,7 @@ says `Summary only.` (the same slot shows `Loading…` or the retry row, so
 nothing moves when a read ends without a log), the figures it reported (model, tokens, cost, progress), what it was asked (Markdown),
 what it is doing, its recent output (mono, 5 lines of 300 characters at most),
 the retry or note, why it stopped and its result. omp's run gets the
-conversation too when its own log on the host can be read (best effort, SFTP,
+conversation too when its own log on the host can be read (best effort, file service,
 AGENT_SESSIONS.md "omp subagent transcripts"): the same `TranscriptView`, with
 one caption row under the pinned prompt (`LogOriginNote`: `From omp's log on the
 host`, plus `Earlier part not shown` when a cap cut the start). While that first
@@ -506,12 +506,23 @@ through `ContentBlockView`, in an agent message, in the person's own message
   codec decodes it, so the full bitmap never exists. Previews live in
   `ImagePreviewCache` keyed by what the picture IS (its data; a log picture's
   cache key), so a re-attach, which builds new blocks with equal data, finds the
-  preview it already decoded: eight are kept once nothing
-  draws them, the least recently used is disposed first, and one a row is
+  preview it already decoded: once nothing draws them, previews are kept up to
+  48 and 24 MB decoded together (4 bytes a pixel: about eight full-size ones,
+  or many small ones; the memory the count of eight allowed before, spent where
+  it buys the most), the least recently used is disposed first, and one a row is
   drawing is never disposed. A 200-picture transcript builds the rows near the
-  screen, so it holds those plus eight, not 200 (test: `content_blocks_test.dart`).
-  The viewer decodes its own copy (2048 px, the file viewer's cap) and disposes
-  it with the screen.
+  screen, so it holds those plus what the bounds allow, not 200 (test:
+  `content_blocks_test.dart`). The viewer decodes its own copy (2048 px, the
+  file viewer's cap) and disposes it with the screen.
+- **No flash for a picture that was already shown.** What a picture measured
+  (`ImagePreviewCache.sizeOf`, 500 kept) outlives its bitmap, so a row built
+  again before its decode is back is already the size the picture will have:
+  nothing below it moves when it lands. While the decode is out the row paints
+  nothing for `Dwell.spinnerDelay` (120 ms), then the quiet frame with the
+  picture mark: a picture the phone holds is back within that, and a grey box
+  for a frame or two before it read as a flash (owner, 2026-11-24: "still
+  see loading flashing"). A fetch the person started shows its frame and
+  spinner at once.
 - **Pictures of a terminal-log chat** (Claude Code, Codex, omp: the host does
   not send picture bytes with the log; `LogImageView`). A quiet line, `Image ·
   105 KB · image/png` (the size first: at 2x text the type may wrap or be cut,
@@ -520,10 +531,14 @@ through `ContentBlockView`, in an agent message, in the person's own message
   frame (a wait the person started); a failure says why with `Tap to retry.`; a
   picture over 12 MB, a log the host says is not what it was, and a view that
   cannot fetch (`Not available here`, a subagent's transcript) have no retry. A
-  picture the phone already holds (`DiskCache`) simply shows: its first frame is
-  already the picture frame (no chip first, no spinner: nobody tapped), so a row
-  never changes height after it is first painted. A retry after the row was
-  scrolled away and back asks again; it does not show the old failure.
+  picture the phone already holds (`DiskCache`) or has already shown this run
+  simply shows: no chip first, no spinner (nobody tapped), and the room it
+  will take is kept from the first frame, so a row never changes height after
+  it is first painted. The index of what the phone holds is read at launch
+  (`bootApp`) and a row that is built before it is loaded says nothing (it
+  cannot yet tell a held picture from one to fetch: `DiskCache.indexed`; it
+  used to show the chip, then the frame, then the picture). A retry after the
+  row was scrolled away and back asks again; it does not show the old failure.
 - **Privacy: nothing is fetched on its own.** (Except the line above: a log
   picture is fetched only on a tap, or read from the cache.) A block with only a `uri` is a line, `Image ·
   tracker.example.com` (host only; the query string is for the sheet), and never

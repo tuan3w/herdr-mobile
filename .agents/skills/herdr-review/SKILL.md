@@ -108,7 +108,7 @@ A sweep is for a subsystem or a release: the owner has asked for breadth, so spe
 
 - **Round 1: split by ground,** following the layering (`ui/` → view models → `data/repositories`
   → `data/services`): `data/services`; `data/repositories`; `data/acp` and `data/observed`;
-  `ui/features` by feature group; `tool/`, Android and CI; `keeper_script.dart`. One read-only
+  `ui/features` by feature group; `tool/`, Android and CI; `rust/crates/keeper` and `rust/crates/host` (the host helper). One read-only
   reviewer each (`reviewer`; `scout` when only reading is needed). A small area gets one
   reviewer per lens instead.
 - **Round 2: split by lens,** only when round 1 was dense: lifecycle, error handling,

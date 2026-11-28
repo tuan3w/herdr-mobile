@@ -94,7 +94,8 @@ every step to the end, and remove what does not serve them (skill
    obsolete, giving the reason next to the rule. Update a doc only when the
    change makes what it says wrong (see "Writing things down").
 10. **Protocol facts come from `docs/herdr-api.schema.json`** (`herdr api
-    schema`), not from memory.
+    schema`) for herdr and `docs/host-api.json` (`herdr-host api`) for the
+    host helper, not from memory.
 
 ## Rules that do real damage when forgotten
 
@@ -144,6 +145,8 @@ upstream instead of editing them, or the next refresh loses the edit.
 cd app && flutter analyze && flutter test   # Flutter 3.47 on PATH
 ```
 
+The Dart tests that talk to a host run the real Rust helper: build it first
+(`cd rust && cargo build --release -p host -p testkit`, `docs/DEVELOPMENT.md`).
 `tool/check.sh [--quick | --tests]` runs pub get, analyze and the tests in one command; run it
 before yielding (`HERDR_FLUTTER_BIN` points it at another Flutter). On the
 phone, `./autoresearch-keyboard.sh` measures the keyboard and `./autoresearch-stream.sh`

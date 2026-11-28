@@ -1,0 +1,456 @@
+{
+  "proto": 1,
+  "services": [
+    {
+      "name": "fs",
+      "methods": [
+        {
+          "name": "stat",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "What `path` is, following links: kind file|dir|other, size in bytes, modification time in milliseconds since the epoch, and the permission bits. Errors not_found, permission.",
+          "args": {
+            "path": "~/notes.txt"
+          },
+          "result": {
+            "kind": "file",
+            "size": 1204,
+            "mtime_ms": 1760000000000,
+            "mode": 420
+          }
+        },
+        {
+          "name": "list",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "The entries of a folder, as MSG {entries} of at most 500 each (never `.` or `..`, in the order the system gives them, a link is kind `link`). Ends with {count}. Errors not_found, permission, not_a_directory.",
+          "args": {
+            "path": "~/projects"
+          },
+          "result": {
+            "count": 1
+          }
+        },
+        {
+          "name": "real_path",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "The absolute path `path` really is: `~` and `~/x` expand to the home folder, links and `..` are resolved. Errors not_found, permission.",
+          "args": {
+            "path": "~"
+          },
+          "result": {
+            "path": "/home/dev"
+          }
+        },
+        {
+          "name": "read",
+          "kind": "stream",
+          "class": "bulk",
+          "summary": "Bytes of a file. First MSG {size,mtime_ms} of the file being read; if `if_match` is given and differs the stream ends with error `changed` and no data. Then DATA, then END {eof}: eof is true when fewer than `length` bytes were there. `length` is at most 64 MiB (too_large). Never compressed unless `z` is true.",
+          "args": {
+            "path": "~/notes.txt",
+            "offset": 0,
+            "length": 65536,
+            "if_match": {
+              "size": 1204,
+              "mtime_ms": 1760000000000
+            },
+            "z": false
+          },
+          "result": {
+            "eof": true
+          }
+        },
+        {
+          "name": "watch",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "Polls up to 32 paths every `interval_ms` (at least 500). One MSG per path at once, then one per change. size and mtime_ms are absent when the path does not exist.",
+          "args": {
+            "paths": [
+              "~/notes.txt"
+            ],
+            "interval_ms": 2000
+          },
+          "result": {}
+        },
+        {
+          "name": "thumb",
+          "kind": "stream",
+          "class": "bulk",
+          "summary": "A JPEG thumbnail of a picture (JPEG, PNG, WebP, GIF first frame; no HEIC, SVG or RAW). The longest edge is `max_px` (32..1024, default 256), never enlarged; `quality` is 30..90 (default 70); EXIF orientation is applied. First MSG {width,height,size,mtime_ms,format:\"jpeg\",source_size}: width and height of the thumbnail, size, mtime_ms and source_size of the source file. Then DATA (the JPEG bytes), then END {}. `if_match` differing from the file ends with error `changed` before anything is decoded. Errors not_found, permission, not_a_file, too_large (source over 64 MiB or 64 Mpx), changed, failed with a message starting `unsupported image` for anything that cannot be decoded. Nothing is cached or written on the host.",
+          "args": {
+            "path": "~/Pictures/cat.jpg",
+            "max_px": 256,
+            "quality": 70,
+            "if_match": {
+              "size": 2400000,
+              "mtime_ms": 1760000000000
+            }
+          },
+          "result": {}
+        },
+        {
+          "name": "search",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "Finds files and folders by name under `root`, breadth first (shallow matches first). `query` is a case-insensitive part of the NAME (absent or empty matches everything, useful with `modified_within_s`); `kind` any|file|dir; `modified_within_s` keeps entries changed that many seconds ago or less; `max_results` (default 500, at most 2000); `max_depth` (default 12, at most 32; the entries of `root` are depth 1); `hidden` includes names starting with a dot (default false); `ignore` names a folder is skipped by, and not reported, wherever it is (default .git node_modules target .cache __pycache__ .venv build; [] searches everything). Links are reported as kind `link` and never followed. MSG {entries:[{path,name,kind:file|dir|link|other,size,mtime_ms}]} of at most 100, the first as soon as there is an entry, then when full or every 150 ms. END {scanned,truncated,elapsed_ms,skipped_dirs}: truncated is true when max_results or the scan caps (200000 entries, 20 s) stopped the walk; skipped_dirs counts folders that could not be read. Errors not_found, permission, not_a_directory (the root).",
+          "args": {
+            "root": "~/projects",
+            "query": "readme",
+            "kind": "file",
+            "modified_within_s": 86400,
+            "max_results": 500,
+            "max_depth": 12,
+            "hidden": false,
+            "ignore": [
+              ".git",
+              "node_modules"
+            ]
+          },
+          "result": {
+            "scanned": 4210,
+            "truncated": false,
+            "elapsed_ms": 38,
+            "skipped_dirs": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "herdr",
+      "methods": [
+        {
+          "name": "mux",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "Pipelined requests to the backend's own API. The host sends one MSG {\"ready\":true} once the backend is reachable (END error `unavailable` before it when it is not), then the client sends MSG {id,method,params,have?} per request and gets exactly one MSG per request, out of order: the backend's response object, cut down by projections[method]. session.snapshot and pane.read answers carry seq and rows or a delta against the answer `have` names.",
+          "args": {
+            "session": "default",
+            "socket": null,
+            "projections": {
+              "pane.read": {
+                "id": true,
+                "error": true,
+                "result": {
+                  "read": {
+                    "text": true,
+                    "truncated": true
+                  }
+                }
+              }
+            },
+            "delta": {
+              "min_chars": 512,
+              "max_rows": 4000,
+              "keep": 256,
+              "keep_chars": 4194304
+            }
+          },
+          "result": {}
+        },
+        {
+          "name": "events",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "The backend's event feed. First MSG is the backend's acknowledgement; then one MSG per event cut down to `projection` (a line that is not JSON arrives as a JSON string). Open with zctx. Optional `coalesce_ms` (integer 0..=5000, default 0 = off; larger values are capped at 5000, a non-integer is bad_request): per pane_id, a pane_updated whose pruned data.pane equals the last one sent is dropped, the first after a quiet period goes out at once and later ones inside the window are held and only the latest is sent when the window ends; any other event is sent at once, after the held update of the pane it names (after all held updates when it names no pane). Frames of this stream are batched by the writer (30 ms).",
+          "args": {
+            "session": "default",
+            "socket": null,
+            "subscriptions": [
+              {
+                "type": "pane.updated"
+              }
+            ],
+            "projection": {
+              "event": true,
+              "data": {
+                "pane": {
+                  "pane_id": true,
+                  "agent_status": true
+                }
+              }
+            },
+            "coalesce_ms": 250
+          },
+          "result": {}
+        }
+      ]
+    },
+    {
+      "name": "keeper",
+      "methods": [
+        {
+          "name": "probe",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "The agent ids this machine can run (binary on PATH, or an npx fallback).",
+          "args": {},
+          "result": {
+            "routes": [
+              "omp",
+              "claude"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "Every keeper on this machine, newest first: the array `herdr-host list` prints. A keeper whose process is gone is listed as exited.",
+          "args": {},
+          "result": [
+            {
+              "id": "k3x9q2",
+              "agent": "omp",
+              "cwd": "/home/me/proj",
+              "state": "running",
+              "started_at": 1700000000000,
+              "pid": 4242,
+              "pending": 0,
+              "turn_active": false,
+              "unseen_done": false,
+              "clients": 1,
+              "session_id": "s1"
+            }
+          ]
+        },
+        {
+          "name": "start",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "Starts a keeper that owns one agent in `cwd` (`~` allowed) and answers with its record once the agent has answered `initialize`. Errors: bad_request (unknown agent, bad cwd), not_found (folder missing), agent_missing (not installed), failed (the agent did not start; the message holds its stderr).",
+          "args": {
+            "agent": "omp",
+            "cwd": "~/proj"
+          },
+          "result": {
+            "id": "k3x9q2",
+            "agent": "omp",
+            "cwd": "/home/me/proj",
+            "state": "running",
+            "pid": 4242
+          }
+        },
+        {
+          "name": "history",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "What an agent remembers, for the start form: the object `herdr-host history` prints. With `cwd` only that folder's sessions, otherwise every folder. Errors: not_found (folder), agent_missing, failed.",
+          "args": {
+            "agent": "omp",
+            "cwd": "~/proj"
+          },
+          "result": {
+            "agent": "omp",
+            "list": true,
+            "load": true,
+            "resume": false,
+            "more": false,
+            "sessions": [
+              {
+                "sessionId": "s1",
+                "cwd": "/home/me/proj",
+                "title": "Fix the build",
+                "updatedAt": "2026-01-01T10:00:00Z"
+              }
+            ]
+          }
+        },
+        {
+          "name": "kill",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "Stops a keeper and its agent (SIGTERM to the group, SIGKILL after 2 s) and removes its files. Errors: bad_request (not a keeper id), not_found.",
+          "args": {
+            "id": "k3x9q2"
+          },
+          "result": {
+            "ok": true
+          }
+        },
+        {
+          "name": "attach",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "Joins a keeper: DATA both ways is the keeper socket's line-delimited ACP JSON-RPC. The client may split lines across DATA frames; a line to the keeper is written whole (32 MiB cap, a longer one is dropped). The host ends the stream when the keeper hangs up; the client ends or resets to detach, and the keeper keeps running. Open with zctx. Errors: not_found (no such keeper), agent_exited (the message says why), failed (still starting, retryable).",
+          "args": {
+            "id": "k3x9q2"
+          },
+          "result": {}
+        },
+        {
+          "name": "follow",
+          "kind": "stream",
+          "class": "bulk",
+          "summary": "Streams an agent's on-disk session log (an absolute .jsonl path under the home folder) as DATA text records: `<endOffset>\\t<json>`, `S\\t<offset>` (a tail read's start), `R\\t<offset>` (the file shrank or was replaced), `C\\t<offset>` (up to here is sent), `E\\t<message>`. Runs until the client ends or resets its side, `to` is reached, or `idle_exit` seconds pass without growth. Errors: bad_request, not_found.",
+          "args": {
+            "path": "/home/me/.omp/agent/sessions/s1.jsonl",
+            "from": 0,
+            "digest": false,
+            "poll_ms": 250,
+            "idle_exit": 0,
+            "tail_bytes": 196608
+          },
+          "result": {}
+        },
+        {
+          "name": "blob",
+          "kind": "stream",
+          "class": "bulk",
+          "summary": "The binary payload `follow` dropped from the log line that starts at byte `start` and whose payload hash is `hash` (16 hex digits, the `ref=` of its note): DATA `B\\t<base64 piece>` records, then `D\\t<length>`. Errors: bad_request, not_found.",
+          "args": {
+            "path": "/home/me/.omp/agent/sessions/s1.jsonl",
+            "start": 1024,
+            "hash": "0123456789abcdef"
+          },
+          "result": {}
+        }
+      ]
+    },
+    {
+      "name": "made",
+      "methods": [
+        {
+          "name": "verify",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "facts for up to 200 items, each a path (exists, kind, size, mtime) or a port (listening now, and by whom)",
+          "args": {
+            "items": [
+              {
+                "id": "a",
+                "path": "~/app/dist/index.html"
+              },
+              {
+                "id": "b",
+                "port": 3000
+              }
+            ]
+          },
+          "result": {
+            "results": [
+              {
+                "id": "a",
+                "exists": true,
+                "kind": "file",
+                "size": 1024,
+                "mtime_ms": 1700000000000
+              },
+              {
+                "id": "b",
+                "listening": true,
+                "pid": 4242,
+                "process": "node"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "ports",
+      "methods": [
+        {
+          "name": "list",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "TCP listeners on this machine; pid, process and user only where this user may see the owner",
+          "args": {},
+          "result": {
+            "source": "proc",
+            "listeners": [
+              {
+                "family": 4,
+                "addr": "127.0.0.1",
+                "port": 3000,
+                "pid": 4242,
+                "process": "node",
+                "user": "dev"
+              }
+            ]
+          }
+        },
+        {
+          "name": "watch",
+          "kind": "stream",
+          "class": "interactive",
+          "summary": "the full listener list first, then {opened,closed} whenever the set changes",
+          "args": {
+            "interval_ms": 2000
+          },
+          "result": {
+            "opened": [
+              {
+                "family": 4,
+                "addr": "127.0.0.1",
+                "port": 3000
+              }
+            ],
+            "closed": []
+          }
+        },
+        {
+          "name": "probe",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "whether a loopback port accepts a connection (500 ms timeout); the host must be a loopback address",
+          "args": {
+            "port": 3000,
+            "host": "127.0.0.1"
+          },
+          "result": {
+            "open": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "transfer",
+      "methods": [
+        {
+          "name": "reserve",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "Picks the inbox path for the phone file `name` of the session `key` and creates its folders (0700). The name is made safe (letters of any script, digits, `.-_`; never a dotfile; at most 100 characters) and unique (-2, -3 before the extension).",
+          "args": {
+            "key": "session-1",
+            "name": "Report 1.pdf"
+          },
+          "result": {
+            "path": "/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf"
+          }
+        },
+        {
+          "name": "put",
+          "kind": "stream",
+          "class": "bulk",
+          "summary": "Uploads one file to a reserved path. The host answers MSG {have} (bytes it already holds of this exact upload, resume from there), the client sends DATA from `have` and then END; the host checks size and sha256, renames into place (mode 0600) and ends {path,size}. A mismatch deletes the partial file and ends with error `changed`; a dropped connection keeps it for the next try. At most 2 GiB (too_large).",
+          "args": {
+            "path": "/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf",
+            "size": 1204,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "result": {
+            "path": "/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf",
+            "size": 1204
+          }
+        },
+        {
+          "name": "sweep",
+          "kind": "call",
+          "class": "interactive",
+          "summary": "Removes regular files older than `max_age_days` directly inside the inbox's session folders, oldest first, at most `max_files`, plus unfinished uploads untouched for a day, then the folders that are left empty. Links are never followed or removed; nothing outside the inbox is touched.",
+          "args": {
+            "max_age_days": 14,
+            "max_files": 200
+          },
+          "result": {
+            "removed": 3
+          }
+        }
+      ]
+    }
+  ]
+}

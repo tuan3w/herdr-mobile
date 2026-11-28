@@ -47,28 +47,33 @@ fails on raw values and on Material widgets.
 
 - herdr's socket takes **one request per connection** and `events.subscribe`
   is the only long-lived herdr channel. Latency comes from not paying a
-  connection per request: `SshTransport` multiplexes requests over one
-  persistent channel (`mux_client.dart`) and falls back to a channel per
-  request only when the mux is unavailable. Never open a channel per call in
-  new code.
-- **Wire format** (`bridge_command.dart`, `mux_client.dart`):
-  - The remote mux script deflates answers over 512 B (`Z<n>\n` + n zlib
-    bytes).
-  - It cuts snapshots, pane reads and events to the fields the models read
-    (`muxProjections`, `eventProjection`, built from
-    `snapshotWireFields`/`paneWireFields` in `herdr_models.dart`): add a field
-    there when a `fromJson` starts reading it; `herdr_models_test.dart` fails
-    otherwise; `paneReadWireFields` likewise.
-  - It answers a `pane.read` or `session.snapshot` with row deltas against the
-    answer the client names in `mux_have` (a snapshot always travels as rows,
-    and the client must keep the script's own row strings: the ops index into
-    them).
-  - Requests go up as `Q<n>` frames of one zlib stream (`MuxRequestEncoder`,
-    used by the SSH channel; the script also takes plain lines).
-  - Event subscriptions use `buildEventsCommand` (one zlib stream, `E<n>`
-    frames) and fall back to the bridge on exit 78.
-  - `benchmark/transfer_bench.dart` measures it; its fake herdr is
-    `benchmark/fake_herdr.py`.
+  connection per request: `SshTransport` multiplexes requests over one stream
+  (`herdr.mux`) of the machine's one host link (`herdr-host serve`, one SSH exec
+  channel, `docs/HOST_PROTOCOL.md`; `mux_client.dart`) and falls back to a
+  channel per request (`herdr remote-api-bridge`/`socat`) only when the helper
+  is not on the host or the mux is unavailable. Never open a channel per call
+  in new code: open a stream on the link.
+- **Wire format** (`docs/HOST_PROTOCOL.md`, `app/lib/data/host/`,
+  `bridge_command.dart`, `mux_client.dart`):
+  - Frames are `len · kind · stream · payload` with credit-based flow control
+    per stream. The host deflates a payload of 512 B or more when that is
+    smaller; a stream opened with `zctx` (mux, events, keeper attach and
+    follow) deflates everything of 64 B or more through one continuous zlib
+    stream per direction, so a request that repeats the shape of the last costs
+    about 16 bytes and an event about 30.
+  - The host cuts snapshots, pane reads and events to the fields the models
+    read. The app sends the cut (`muxProjections`, `eventProjection`, built
+    from `snapshotWireFields`/`paneWireFields` in `herdr_models.dart`) when it
+    opens the stream, so the host knows no field names: add a field there when
+    a `fromJson` starts reading it; `herdr_models_test.dart` fails otherwise;
+    `paneReadWireFields` likewise.
+  - The host answers a `pane.read` or `session.snapshot` with row deltas
+    against the answer the client names in `have` (a snapshot always travels
+    as rows, and the client must keep the host's own row strings: the ops
+    index into them). The rules are in `rust/crates/host/src/mux.rs` and the
+    golden fixture `rust/crates/host/tests/fixtures/mux_golden.json` pins them.
+  - `benchmark/transfer_bench.dart` measures it; its fake herdr is the Rust
+    `fake-herdr` of `rust/crates/testkit`.
 - Never read the SSH channel's stream with `await for`/`async*`: the pause per
   chunk cost 40 ms per round trip. Read lines with `splitLines`.
 - Every `HerdrTransportException` must say whether it is `fatal`; fatal means
@@ -85,8 +90,82 @@ fails on raw values and on Material widgets.
 - **Never probe a live herdr with mutating methods and empty params**: an empty
   `tab.create` really creates a tab. Use scratch workspaces with a real label,
   `focus: false`, and close them. herdr answers an unknown method with
-  `"id":""`; the mux restores the request id (test in
-  `bridge_command_test.dart`).
+  `"id":""`; the mux restores the request id (`restore_id` in
+  `rust/crates/host/src/backend/herdr.rs`).
+
+### Battery and latency of the host link
+
+What the link does for the radio and the clock, and why. The numbers are
+desktop and modelled unless said otherwise; none is measured on a phone.
+
+- **Pipelined cold start.** `HostLink.start` sends the HELLO, the `herdr.mux`
+  (or `herdr.events`) OPEN and the first request in one burst instead of one
+  after the other, because the host reads frames in order and its HELLO window
+  is fixed (1 MiB). Over a mobile link a round trip is the cost, not the bytes.
+  Modelled first request on an 80 ms RTT link: 560 to 400 ms (`cold_first_request_ms`
+  in `app/benchmark/background_bench_test.dart`). A helper that is not installed
+  fails the streams opened early with `HostMissing`, so the app installs and
+  retries instead of treating it as a dropped link.
+- **Coalesced events.** `herdr.events` takes `coalesce_ms` (the app sends 250;
+  default 0 = off, capped at 5000): an identical pruned `pane_updated` is
+  dropped and at most one per pane per window is sent (the first at once, then
+  the latest), and every other event goes through at once. A streaming agent
+  makes herdr announce its pane many times a second; the app needs the newest
+  state, and the radio does not need the rest. This is a foreground rule: the
+  background profile does not subscribe to `pane_updated` at all.
+- **Batched writes.** The host's writer holds a batched stream's frames for up
+  to 30 ms (`herdr.events`, `keeper.attach`, `keeper.follow`): the first goes
+  at once, those inside the window leave in one write, and any other stream's
+  frame flushes the lot. 30 ms is under two frames of a 60 Hz redraw, and
+  behind SSH one write is one packet. On a throwaway bench (5 panes at 10
+  events per second for 5 s, in process, desktop): socket writes 251 to 64
+  (-75%), MSG frames 251 to 106.
+- **Ports cache.** `ports.watch` remembers which process owns each socket
+  inode, so a tick where nothing changed reads `/proc/net/tcp{,6}` and walks no
+  `/proc/<pid>/fd`, which a scan every 2 s while the Ports sheet or Made is
+  open would otherwise repeat for every process (how much cheaper the tick is
+  was not measured). The watch exists only while a sheet that shows it is open:
+  nothing polls in the background.
+- **Thumbnails on the host.** A photo tile or row asks `fs.thumb` for a 256 px
+  JPEG instead of reading the file: a 4000x3000 3.3 MB photo came to 9,401 bytes
+  at 256 px (44.6 ms median on the host; desktop, release, warm cache). On a
+  fake host in a test a 3 MB JPEG tile went from a glyph (over the grid's 2 MB
+  limit) or the whole 1.45 MB file to 3,815 bytes; a real photo is likely 10-30
+  KB (unmeasured). Why: a phone photo is several MB and a tile draws a few
+  dozen pixels of it. A tile that scrolls away sends
+  RESET and the host stops decoding, so a fast scroll does not queue work on
+  the machine. A picture the host cannot decode is asked once and remembered.
+  Not measured on a phone: the saving over a real radio, and decoding the small
+  JPEG in the isolate.
+- **Search on the host.** `fs.search` walks and filters on the machine and
+  sends batches of at most 100 matches as it finds them, so the phone sends
+  one request and receives matches, where the SFTP walk costs one round trip
+  per folder (it is capped at 3,000 entries and 4 s for that reason). The host
+  walk scanned 51,000 entries in 10-13 ms (desktop, host side only; the link
+  is not in that number). The screen stops the stream when it is covered,
+  backgrounded or closed, so a search never keeps the radio busy unseen.
+- **A status event is shown at once.** `MachineConnection._patchStatus` applies
+  a working/blocked/idle change of a known agent pane when its event arrives
+  and the urgent verification refresh still follows, so a wrong patch lives for
+  one round trip. `eventProjection` keeps the flat status event data
+  (`pane_id`, `workspace_id`, `agent`, `agent_status`) because the background
+  `pane.agent_status_changed` event carries no `pane`. A confirmed patch is one
+  notification at event time; a reversed one cancels like a blip. Modelled
+  (80 ms RTT, virtual clock, desktop): attention latency p95 0.230 s to 0.000 s
+  from event arrival; radio cost, wakeups and snapshots unchanged
+  (`bg_score_s_per_h` 356.075). Unverified against a live herdr: a 900 s
+  read-only subscription saw no status events (the agents were idle), so the
+  event shape rests on `docs/herdr-api.schema.json` and the bench fake.
+- **What the model says** (`./autoresearch.sh`, desktop, virtual clock and a
+  radio model, not a phone): foreground traffic `fg_kb_per_min` 3820.7 to 561.5
+  and `resume_kb` 1440 to 216, while the background radio cost (356 s/h) and
+  wakeups (29/h) did not move. Timers, not bytes, set the background cost: it
+  is the heartbeat, the idle ping and the safety poll (`Notifications and the
+  background profile`), and this link did not add or remove one.
+- **Footprint** (desktop, measured): the release binary is 1.87 MB stripped
+  (1,867,056 bytes; the picture decoders and encoder added 423 KiB to 1.43 MB)
+  and an idle `serve` holds 3.8 MB resident, 5.3 MB after a 256 px JPEG and
+  24 MB at the peak of a 1024 px one.
 
 ## Frames, motion and haptics
 
@@ -275,7 +354,9 @@ Tailscale.
     reload 0.54 s against 1.49 s cold. An extensionless HTML navigation to a
     missing path gets `index.html` (single-page apps).
   - One SFTP read is two round trips (open, read), so reads go three at a time,
-    256 KiB each: a 6 MiB page 5.9 s instead of 11.3 s, peak 63 MB.
+    256 KiB each: a 6 MiB page 5.9 s instead of 11.3 s, peak 63 MB (measured
+    over SFTP; an `fs.read` through the helper is one round trip, not
+    re-measured: the three-at-a-time rule is kept).
   - `HttpServer.idleTimeout` is 15 s: Chrome keeps sockets it has finished with,
     and the idle timer only runs with nothing open.
   - Aborting a body in dart:io: `detachSocket` throws once headers are out;
@@ -363,17 +444,30 @@ Tailscale.
     `MadeHistory` never keeps it (`MadeFold.history` leaves it out before the cap, so memory,
     disk and the cap agree; the row is read again with the log). A picture with no data is
     left out: the chat shows it as a reference line.
-  - Links (`MadeKind.link`): a GitHub pull request, issue, release or CI run, from what
-    `gh pr create`, `gh issue create`, `gh release create|edit` and `gh run view`
-    printed (`_ghLinks`; `gh` is a probe for banners, so its output is read only for these;
-    a global `-R o/r` before the subcommand is skipped), named from the command (`--title` for a pull
-    request or issue), or from the agent's words after a verb of DOING it on its own
-    line (`opened`, `created`, `published`, `released`, `merged`, `pushed`...: "Opened
-    PR: <url>"). NOT `gh pr view` or `gh release list` (what is already there), NOT
-    `git push`'s "Create a pull request" line (an offer), NOT a link only named ("see
-    <url>"), NOT any other host (a YouTube or Datadog link is mentioned, not made).
-    A row opens in the phone's browser (`openInBrowser`, https only). The same
-    address said twice keeps the longer name.
+  - Links (`MadeKind.link`): every address the agent wrote in its own words, outside
+    a code block (`_sayLinks`), newest first, one row per address; the person asked
+    "web link ?" and "wandb link ?" again and again (about 40 such asks in 569
+    recorded sessions on one machine, 2026-11-24), and agents announced a
+    tailnet or LAN address 186 times in 31 sessions against 37 for localhost, so
+    the earlier rule (only a GitHub item the agent made, "NOT any other host") hid what
+    was asked for. A GitHub pull request, issue, release or CI run is named by what
+    it is (`PR #93 <title>`, `Release v0.1.51`, from `_ghLink`), the title from
+    `gh pr create` / `gh issue create` (`_ghLinks`; a global `-R o/r` before the
+    subcommand is skipped); a markdown link is called by its label, with its host
+    under it; any other address by its host, port and path (the port is part of
+    the name: two dashboards of one machine differ by it), nothing under it. Not a
+    row: loopback in any spelling (`127.x`, `*.localhost`, `[::1]`, `0.0.0.0`: the
+    phone's browser would open its OWN, a dead end, and an address of the machine
+    that can be shown is a server row), a name without a dot, a placeholder
+    (`example.com`, `*.test`, `*.invalid`, the SVG namespace), a template
+    (`{id}`, `$name`), an address longer than 2,000 characters. Credentials and the
+    fragment are dropped, the query kept. NOT `gh pr view` or `gh release list`
+    output (what is already there) and NOT `git push`'s "Create a pull request" line (an
+    offer): only what the agent SAID or `gh` made. A link is said, not made: it is
+    not counted by `madeCountOf`, so `Made N` and "N items made" stay true. A row
+    opens in herdr (`_openMade`): the machine's own address through its SSH
+    connection (`WebPreview.ownHostLink`), any other `https` address as a website
+    (`openWebsite`), and a sign-in or plain `http` through the link sheet.
   - A file the agent says it LEFT alone ("I left /tmp/old_build.html alone",
     "untouched", "not", "never", "without" in the 8 words before the path, looking back over
     a `:` or a line break so a list "Files I did not touch:" works) is named, not made: a
@@ -418,7 +512,7 @@ Tailscale.
     from a launch command's `--port N`, `-p N`, `http.server N` or `PORT=N`; it
     makes NO row by itself (a command is not proof that a server came up). The
     `Made N` chip and the tab count apps, not their pages (`madeCountOf`). The launch is
-    kept with the row, so `madeScanVersion` is 2 (3 since videos, links and returned pictures). A link or a bare `localhost:port`
+    kept with the row, so `madeScanVersion` is 2 (3 since videos, links and returned pictures, 4 since every link the agent said). A link or a bare `localhost:port`
     quoted in the agent's own words (a chat about this very sheet) still makes a
     row: the scan cannot tell a quote from an announcement.
   - A port that is not a web server (SSH, Docker, MySQL, PostgreSQL, Redis,
@@ -484,9 +578,10 @@ Tailscale.
     `Docs 8`, a live dot before Apps while one runs), only when two or more
     kinds exist, the choice remembered per session; the default is the newest
     non-app kind. Pictures are a lazy grid of real thumbnails (`PhotoThumbs`, the
-    folder grid's cache; a file over 2 MB shows its size): only the tiles at the
+    folder grid's cache; with the helper each is the machine's own 256 px
+    thumbnail, without it a file over 2 MB shows its size): only the tiles at the
     viewport and a row beyond ask the machine for their stat and picture (each is
-    up to 2 MiB over the radio), and the crossed-out picture is for a file the
+    a few tens of KB from the helper, up to 2 MiB over SFTP), and the crossed-out picture is for a file the
     machine says is not there; a stat that failed (link down, a timeout) is a
     neutral tile that asks again on a tap, never cached as gone. The rest are rows; at most
     60 rows / 24 tiles built, `N more` for the rest. How it got here: a stand-in
@@ -519,7 +614,7 @@ Tailscale.
     ones above it (6 levels, not the home), `~/.agents/skills` and
     `~/.codex/skills`. Pins and usage remember a skill as `$name`, so it never
     collides with `/name`.
-  - Discovery is SFTP, best effort, never throws.
+  - Discovery reads through the file backend (`fs`, SFTP without the helper), best effort, never throws.
   - The built-in tables are hand-written per herdr agent label and WILL drift
     from the agents: they only fill the composer, the agent decides on send.
     Add agents to `builtInSlashCommands` and to `SlashCatalog._project/_user`
@@ -582,33 +677,52 @@ inbox and types its path, as a person would.
   none is written, so a message with a picture is never empty. (A Claude picture
   with a fetchable ref is a block instead, see "Observed Claude Code and Codex".)
 
-### Files are SFTP, never a shell
+### Files come over the helper, never a shell
 
 - File access goes through the transport isolate
-  (`statFile/listDirectory/readFile/realPath`, `SftpFiles`). Reads are clamped
-  to 8 MB per call (a larger file is read in pieces: `readAll`, which the photo
-  viewer calls with 2 MB pieces up to 40 MB, progress and a `ReadCancel`);
-  bytes cross the isolate as `TransferableTypedData`.
-- A host without the sftp subsystem is reported as `unsupported` after a short
-  handshake timeout.
+  (`statFile/listDirectory/readFile/realPath`) over a `RemoteFileBackend`:
+  `HostFiles` (`app/lib/data/host/host_files.dart`: the helper's read-only `fs`
+  service, one request and one answer per call, reads that carry
+  `if_match:{size,mtime_ms}` and so fail with `changed` instead of mixing two
+  versions of a file, a real `watch`) when the host has `fs`, else `SftpFiles`
+  (SFTP, on a host without the helper). The choice is made per call from the
+  machine's one link. Reads are clamped to 8 MB per call by the app
+  (`remoteReadCap`; the host's own cap is 64 MiB); a larger file is read in
+  pieces (`readAll`, which the photo viewer calls with 2 MB pieces up to 40 MB,
+  progress and a `ReadCancel`); bytes cross the isolate as
+  `TransferableTypedData`.
+- A host that has neither the helper nor the sftp subsystem is reported as
+  `unsupported` after a short handshake timeout.
 - A remote path reaches a shell only as a validated, single-quoted word: the
-  keeper's working folder and follow/blob log path (`keeper_command.dart`), the
   socket path (`bridge_command.dart`) and the sign-in terminal's `cd`
-  (`session_launcher.dart`). Each is injection-tested.
-- File screens are pushed BEFORE the host is asked (never `await` SFTP ahead
-  of a `push`), one `FileBrowserSession` per walk owns the stack (a breadcrumb
-  pops, it never pushes) and the shared options, the viewer polls the file's
-  mtime only while it is the screen in front, and thumbnails read at most 3
-  files at a time; see `docs/screens/files.md`.
+  (`session_launcher.dart`). Each is injection-tested. Everything else, file
+  paths included, is a field of a message to the helper, which validates it
+  (tested in Rust).
+- File screens are pushed BEFORE the host is asked (never `await` a file call
+  ahead of a `push`), one `FileBrowserSession` per walk owns the stack (a
+  breadcrumb pops, it never pushes) and the shared options, the viewer waits
+  for the host's change event (`fs.watch`; a `stat` every 15 s over SFTP) only
+  while it is the screen in front, and thumbnails load at most 3 at a
+  time (an `fs.thumb` from the helper; over SFTP a read, of files up to 512 KB
+  in rows and 2 MB in the grid); Search is `fs.search` with a bounded SFTP walk
+  as the fallback (`file_walk_search.dart`); see `docs/screens/files.md`.
 
 ### Upload
 
-Sending a phone file TO the host is `RemoteFiles.upload` (`makeDirs`,
-`remove`, `UploadJob`): read and written inside the transport isolate, only
-paths and counters (every 100 ms) cross, one SFTP channel shared with browsing
-(the write window shrinks while a listing is in flight), 200 MB cap, 2 at a
-time, no resume. The target path always comes from `reserveInboxPath`
-(`host_inbox.dart`), never from a name the phone or agent supplied; see
+Sending a phone file TO the host is the helper's `transfer` service
+(`host_transfer.dart`; without the helper there are no uploads). The phone asks
+the host to `reserve` a path (`HerdrTransport.reserveInboxFile`): the host
+builds `~/.herdr-mobile/inbox/<12 hex of sha1(key)>/<UTC time>-<safe name>`
+itself, so the target never comes from a name the phone or agent supplied (the
+rules and their tests are in `rust/crates/host/src/svc/transfer.rs`). The
+transport isolate then computes the file's sha256 and streams it with
+`transfer.put`: only paths and counters (every 100 ms) cross to the UI, the
+write is a bulk stream on the shared link (so a permission answer is never
+queued behind it), 200 MB cap in the app (2 GiB on the host), 2 at a time. It
+**resumes**: the host keeps `<path>.part` and says how many bytes it has
+(`have`) when the same size and sha256 are asked for again, and a mismatch at
+the end deletes it and fails with `changed` rather than leave a wrong file.
+Once a day the app asks for a sweep (`HerdrTransport.sweepInbox`). See
 `docs/AGENT_SESSIONS.md` "Sending a phone file to the host".
 
 ### One photo viewer
@@ -626,8 +740,9 @@ on zoom; hold only the open photo and its neighbours.
 `data/services/disk_cache.dart`, `DiskCache.shared`: the only cache of fetched
 bytes on disk (named for bytes, not pictures: a file viewer can use it later,
 see below), shared by the photo viewer (whole files up to 12 MB), both
-folder thumbnail loaders (one 240 px thumbnail per file, JPEG q80 or PNG when
-the source may be see-through, under the same `t:` key) and the chat pictures
+folder thumbnail loaders (one thumbnail per file under the same `t:` key: the
+helper's 256 px JPEG q70 kept as it came, or, for a file read over SFTP, a 240 px
+JPEG q80 or PNG when the source may be see-through) and the chat pictures
 of terminal-log sessions (`l:` keeper, `o:` omp). Hard cap 192 MB, trimmed to
 160 MB, least recently used first (recency is the file's modified time, so a
 restart keeps the order); Settings > Storage shows the size (`Cache · 38 MB`)
@@ -652,7 +767,7 @@ a thumbnail is encoded in the isolate.
 a copy on the phone: the player and the share sheet open files by path, and a
 video is far past the `DiskCache` (12 MB an entry, 192 MB in all, bytes under a
 key). So the copy goes to `remote_files/` in the temporary directory, in 2 MB
-reads (memory stays flat, a read is one SFTP round trip), to a `.part` file that
+reads (memory stays flat, a read is one round trip), to a `.part` file that
 is renamed when whole. One file at a time: starting another removes the rest; the
 last stays, because an app that was handed it may still be reading it. A copy of
 the same file (machine, path, size, mtime) is reused, so Save to gallery after
@@ -679,8 +794,8 @@ MediaStore code, which this app has none of: the share sheet is the way out.
   Gallery panel, nothing queries the library in the background, and the
   gallery's thumbnails go through `ThumbCache` (LRU, evictions evict the
   decoded bitmap).
-- A phone file is streamed to the host inbox over SFTP
-  (`RemoteFiles.upload`), never read whole into memory.
+- A phone file is streamed to the host inbox with `transfer.put`
+  (`HerdrTransport.uploadFile`), never read whole into memory.
 
 ## Board, prompts and actions
 
@@ -744,17 +859,19 @@ Layers:
 
 - `data/acp/` is pure Dart (client, models, reducer; `LiveText` only borrows
   `Listenable` from `flutter/foundation`).
-- The keeper (`keeper_script.dart`, python3 on the host, installed once per
-  host through `keeperInstallCommand`, then short commands) owns the agent
-  process so it survives SSH drops.
-- `SshAgentHost` runs keeper commands over exec channels on the machine's ONE
-  SSH connection (`HerdrTransport.openExec`, never a second connection).
+- The keeper (`herdr-host`, a Rust binary on the host, installed once per host
+  through `keeperInstallCommand`, then reached as a service of `herdr-host
+  serve`) owns the agent process so it survives SSH drops.
+- `SshAgentHost` calls and streams the `keeper` service over the machine's ONE
+  host link (`HerdrTransport.hostCall` / `openHostStream`, on the one SSH
+  connection, never a second connection); the link installs the helper when
+  the host does not have it.
 - `AgentSessionRepository` / `AcpAgentSession` are what screens read through
   the `AgentSessionView` / `AgentSessions` interfaces.
 
 Rules:
 
-- Read lines with `splitLines`, never `await for` an SSH channel.
+- Read lines with `splitLines`, never `await for` a channel.
 - The app implements `AcpClientHandler` and nothing may allow a permission
   silently, by default or on a timeout (`AcpAgentSession` answers only through
   `answerPermission`/`answerQuestion`, and cancel/end/dispose answer
@@ -777,9 +894,12 @@ read passes `visibleText()`; a long or overflowing command needs `Read all` or
 a hold; a new request ignores taps for 450 ms; nothing is cut silently; links
 in agent text show their full URL first. The session list comes from ONE short
 `list` per machine (30 s while the board is visible); at most 4 sessions per
-machine hold an exec channel (waiting ones first, a screen that is open always
-wins), because sshd's `MaxSessions` (default 10) is shared with the mux, events
-and SFTP.
+machine hold an attach stream (waiting ones first, a screen that is open always
+wins). The cap dates from when each attach was an exec channel against sshd's
+`MaxSessions` (default 10); it was kept because a stream on the one link is a
+thread on the host and a share of the radio, and the link holds 64 streams for
+everything (`limits.max_streams`). Whether 4 is still the right number is not
+measured.
 
 ### Streaming transcript
 
@@ -872,7 +992,7 @@ desktop number for the phone.
 
 ### `benchmark/session_open_bench.dart` measures opening a chat
 
-Real keeper script, sessions tiled from those traces, RTT 40/120 ms link
+Real keeper (the `herdr-host` binary), sessions tiled from those traces, RTT 40/120 ms link
 models, the real `AgentSessionScreen`: `flutter test
 benchmark/session_open_bench.dart`. It prints where an open spends its time
 (the replay bytes, then 4 round trips); those are desktop numbers, never quote
@@ -881,19 +1001,25 @@ them for the phone.
 ### `benchmark/session_open_wire_bench_test.dart` measures what an open costs the link
 
 `BENCH_OUT=/tmp/open.txt flutter test benchmark/session_open_wire_bench_test.dart`
-(macOS or Linux, python3, about 20 s, no sshd). The real keeper and the real
-`AcpAgentSession.acquire()` over the attach command the app runs; every byte
+(macOS or Linux, no python, about 20 s, no sshd). The real keeper and the real
+`AcpAgentSession.acquire()` over a `keeper.attach` stream of the link; every byte
 the keeper writes is counted before anything reads it. Per variant (`plain`,
 `zip`) and scenario (`cold`: nothing on the phone; `copy`: a new session
 object that holds the saved copy of an earlier open): `wire_kb`, `rtts` (the
-depth of the chain of requests the open waits on, plus the 2 round trips of an
-SSH exec channel), `phone_cpu_ms` (main-thread CPU of this machine, JIT, asserts
-on) and `open_<fast|mid|slow>_ms`, the modelled time on a link: `rtts * RTT +
-wire * 8 / rate + phone_cpu_ms`. The links (40 ms / 30 Mbit, 120 / 10, 300 / 2)
-and `phone_cpu_ms` are assumptions, not a phone's measurements: compare
-changes with them, never quote them. On a 600-item chat: cold 1.5 MB / 4 round
-trips plain, 172 KB / 3 zipped; copy 172 KB zipped, 3 KB with `session/load`
-asked from the copy's last turn.
+depth of the chain of requests the open waits on; the link is already up, so a
+stream costs no channel to open), `phone_cpu_ms` (main-thread CPU of this
+machine, JIT, asserts on) and `open_<fast|mid|slow>_ms`, the modelled time on a
+link: `rtts * RTT + wire * 8 / rate + phone_cpu_ms`. The links (40 ms / 30
+Mbit, 120 / 10, 300 / 2) and `phone_cpu_ms` are assumptions, not a phone's
+measurements: compare changes with them, never quote them. The variants are
+`zip` (the stream opened as the app does, with `zctx`) and `plain` (without it,
+which still deflates each frame of 512 B or more on its own: the difference is
+what the shared zlib context saves). The figures this paragraph used to carry
+(a 600-item chat: cold 1.5 MB / 4 round trips plain, 172 KB / 3 zipped; copy
+172 KB zipped, 3 KB with `session/load` asked from the copy's last turn) were
+measured with the python keeper, one exec channel per attach; they have not
+been re-measured on the helper link (unverified): run the bench before quoting
+any.
 
 ### Observed Claude Code and Codex
 
@@ -931,7 +1057,7 @@ mappers turn a note with a `ref` into a `LogImageBlock` (Claude user messages;
 Codex only when an `image` part of the `UserMessage` carries one: the captured
 `UserMessage` lists a `local_image` path only, so Codex pictures stay an
 `[image]` line); omp's `blob:sha256:<hex>` image is a plain file at
-`<agentDir>/blobs/<hex>`, read over SFTP. A picture of a tool result stays
+`<agentDir>/blobs/<hex>`, read through the file backend. A picture of a tool result stays
 text. The chat shows `Tap to load` and fetches only on the tap (a picture the
 cache holds shows by itself). Only a picture in a log line of up to 4 MiB (`FOLLOW_LINE`, about 3 MiB of picture) gets a ref; a bigger one stays `[line of N bytes not sent]`.
 
@@ -1006,32 +1132,33 @@ marked "not captured" in the tables are the ones to check first.
 ### `benchmark/observed_open_bench_test.dart` measures opening the chat of an agent in a pane
 
 `BENCH_OUT=/tmp/obs.txt flutter test benchmark/observed_open_bench_test.dart`
-(python3, about 15 s, no sshd). The real helper (`keeper follow`), `SshLogSource`
+(no python, about 15 s, no sshd). The real helper (`keeper.follow` of
+`herdr-host serve`), `SshLogSource`
 over a new `SshAgentHost` per session (as `boot.dart` makes it),
-`ObservedAgentSession`, `OmpLogMapper` and the reducer; SSH is `sh -c`, and a
-`zipped` exec is read back through `ZippedExecChannel` as the transport does.
+`ObservedAgentSession`, `OmpLogMapper` and the reducer; SSH is `sh -c`, and the
+follow is a stream on a `HostLink` as in the app.
 The log (`support/omp_log_workload.dart`, fixed seed) has the shape of a real
 omp log; its sizes are assumptions the file states. `cold` is a new session
 object; `relink` is the same session coming back after the follow was dropped.
 The formula is in the bench's header (host start and the transfer in series,
 parse and apply after); `./autoresearch-open.sh` sums this bench and the wire
 bench over the three links into `open_score_ms`, a trend number whose two parts
-are modelled differently. On the benchmark log (desktop, JIT, modelled link,
-not a phone): cold 45 KB, 0.19 / 0.37 / 0.88 s on the fast / mid / slow link;
-back to the same chat 0.17 / 0.33 / 0.69 s. There is no switch for the old
-behaviour, so the before figures (2.6 s and 3.1 s on the slow link, 159 KB) are
-from the benchmark's first run on this log with the old code and cannot be
-reproduced from the tree.
+are modelled differently. The figures this paragraph carried (desktop, JIT,
+modelled link, not a phone: cold 45 KB, 0.19 / 0.37 / 0.88 s on the fast / mid /
+slow link; back to the same chat 0.17 / 0.33 / 0.69 s; before the work that
+shortened it, 2.6 s and 3.1 s on the slow link, 159 KB) were measured with the
+python helper and one exec channel per follow; they have not been re-measured
+on the helper link (unverified), and the before figures cannot be reproduced
+from the tree.
 
 How the open of an observed chat is kept short, and why:
 
-- **No fixed wait for the channel.** `SshAgentHost` holds an attach channel for
-  `attachCheck` to catch the helper's exit 65 ("not installed") when it does not
-  know the host has it, and `boot.dart` makes a new host per session, so a fixed
-  2 s was paid by every cold open. The follow takes the channel at once
-  (`verify: false`); `SshLogSource` reads a 65 from the exit status and
-  installs, then reopens (`missing: true`). Attach keeps the gate: its first
-  request must not meet a 65.
+- **No fixed wait for the channel.** A follow is a stream on the machine's one
+  link, opened at once: `HostLink.start` does not wait for the host's HELLO, and
+  a helper that is not installed (exit 65) ends the stream with `HostMissing`,
+  after which the transport installs it once and the follow is opened again.
+  Before the link, every cold open paid a fixed 2 s watching an attach channel
+  for that exit code (`boot.dart` makes a new host per session).
 - **The helper says when it has caught up.** An empty log, or a resume at its
   end, prints no record, so the session cannot tell "caught up" from "not here
   yet"; it used to call itself live after `readyAfter` (2.5 s) of silence. The
@@ -1039,26 +1166,24 @@ How the open of an observed chat is kept short, and why:
   `SshLogSource` turns it into an empty batch only when nothing else was
   delivered. `readyAfter` stays as the fallback for a channel that is quiet
   without failing.
-- **Less on the wire.** `follow --z` sends batches of >= 512 bytes as `Z` lines
-  of one zlib stream, as attach does, and the helper leaves out what only omp
-  reads (`usage`, `contextSnapshot`, the response envelope of an assistant
+- **Less on the wire.** The follow stream is opened with `zctx` (one zlib
+  stream per direction), and the helper leaves out what only omp reads
+  (`usage`, `contextSnapshot`, the response envelope of an assistant
   message, `thinkingSignature`, `details.displayContent`, `credential_pin`
   entries). On the benchmark log the replay is 159 KB plain; the cut alone makes
-  it 97 KB, deflate ~3x makes that 33 KB, base64 45 KB. The cut's share is
+  it 97 KB, deflate ~3x makes that 33 KB (figures from the python follower,
+  not re-measured on the Rust one). The cut's share is
   partly by construction (the generated log holds these fields in the
   proportions its author chose); the real share on a real log is unverified.
   The omp fixtures read identically with and without it
   (`log_follower_test.dart`), but that test cannot see a key the mapper starts to
-  read later: such a key MUST leave `FOLLOW_MESSAGE_NOISE`.
+  read later: such a key MUST leave `MESSAGE_NOISE`
+  (`rust/crates/keeper/src/follow.rs`).
 - **The first batch is shown at once.** `ObservedAgentSession._changed` held
   every notification for `notifyEvery` (16 ms), so the first paint of an open
   came a frame late. The change that shows the first batch of a follow goes out
   on the next turn of the event loop (never synchronously: `acquire()` runs in
   `initState`); the following ones are held to one per 16 ms as before.
-- **A lighter start for `follow`.** The helper imports `traceback`,
-  `subprocess`, `secrets` and others only for the commands that use them
-  (`load_daemon_modules`): about 30 ms of a start on Python 3.14 here, less on
-  older Pythons.
 
 Not done, and why:
 

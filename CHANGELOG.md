@@ -4,6 +4,64 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [Unreleased]
+
+- The machines no longer need `python3`. The first time the app connects to a
+  machine it puts one small program there (about 1.9 MB, from this version's
+  release; the machine downloads it and checks it), and everything goes over
+  one SSH channel instead of one per feature. Linux and macOS, x86-64 and
+  arm64. A machine that cannot get it (offline, no GitHub, another kind of
+  CPU) still shows your agents through herdr itself, and says
+  `Needs the agent helper on this machine.` where something needs it: agent
+  sessions, attaching a file, `Ports`. Files then read over SFTP, read-only.
+- New: `Ports`. In a pane, `Pane options` > `Ports` lists what is listening on
+  the machine, live while it is open, and a tap opens a web server as a page.
+  Services that are not web pages, such as SSH or a database, are dimmed and
+  say which. Without the helper it says so instead of staying empty.
+- `Made` says `Running` or `Stopped` for a server only when the machine itself
+  confirms it, once when the sheet opens and live while it stays open;
+  otherwise it says `Status unknown`. A file the agent made that has since
+  been deleted is dimmed with `File is gone`, not dropped.
+- Uploads and file copies pick up where they stopped. A file you attach to a
+  chat that was cut off by a dropped connection continues from what the
+  machine already has, and the machine checks it arrived whole. A copy of a
+  large file to the phone continues the same way when the file has not
+  changed (not over SFTP). Not tried on a phone.
+- Files open and update faster on a machine with the helper: one round trip
+  per file or folder instead of two, and the viewer hears about a changed file
+  from the machine instead of asking every 15 s.
+- Opening a machine, and waking it after you were away, takes fewer round
+  trips: the first request leaves with the connection. On a modelled 80 ms link
+  the first herdr request goes from 560 to 400 ms; not measured on a phone.
+- Less data while you watch an agent work. The machine drops a repeated
+  update of a pane and sends at most one every 250 ms, and groups what is left
+  into fewer packets. In the model of watching agents with the app open this
+  went from 3.8 MB to 0.56 MB a minute, and a reconnect from 1.4 MB to 0.2 MB;
+  those are desktop models, not measured on a phone, and the battery cost of
+  watching in the background (set by timers, not bytes) did not change.
+- New: search in Files. The magnifier at the top right of a folder looks for
+  part of a name in that folder and the ones below it, and `Last hour` and
+  `Today` show what changed lately, with the field empty if you like. Matches
+  appear as they are found and stay where they are; the foot says how many items
+  were searched, and `Narrow the search` when it stopped at a limit. Folders
+  such as `.git` and `node_modules` are skipped. On a machine with the helper
+  it scanned 51,000 items in 10-13 ms on the machine itself (a desktop, not the
+  link or a phone); without it the app looks folder by folder and stops after
+  about 3,000 items or 4 s, and says so. The `Photos` grid switch moved from the
+  top bar to a `Photos` chip under the title to make room.
+- Pictures load as small previews, a lot less data on mobile. A machine with
+  the helper shrinks each picture to a 256 px preview before sending it, so a
+  4000x3000 3.3 MB photo is 9 KB in a desktop test, and a folder of big photos
+  fills in instead of showing plain tiles; a photo scrolled away stops being
+  prepared. Works for JPEG, PNG, WebP and GIF; other formats (HEIC, RAW, SVG)
+  keep a plain tile. Without the helper nothing changes. Not measured on a
+  phone.
+- `Needs you` appears the moment herdr says an agent is blocked, then is
+  confirmed by reading the board again: before, it waited for that round trip
+  (about 0.23 s on a modelled 80 ms link, 0 s now; not measured on a phone or
+  with a live herdr). If the board disagrees, the agent goes back and a
+  notification for it is withdrawn.
+
 ## [0.1.67] - 2026-11-15
 
 [![Watch what's new · 1 change · 0:08 · 2.1 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.67/0.1.67-whats-new.mp4)

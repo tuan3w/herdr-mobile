@@ -85,7 +85,9 @@ element has the same weight" is a fail.
    not its header: the count said four times on one screen was noise).
 6. **Header budget.** A top bar holds at most two trailing actions, ⋯
    included (`AppTopBar` asserts it): a third truncated the title, which is
-   what the person is answering for. The leading slot holds Back, or on home
+   what the person is answering for. A mode switch that would be a third goes
+   below the title as a chip (Files: Search and hidden files are the actions,
+   `Photos` is a chip). The leading slot holds Back, or on home
    the machines chip (status first, the way to Machines second); it takes
    what the actions leave and shrinks before they move.
 7. **Spacing says what belongs together.** `Gap.xl` between groups, `Gap.md`

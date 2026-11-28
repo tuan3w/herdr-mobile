@@ -3,7 +3,7 @@
 Direction for the second session type, and what is built. Terminal sessions
 exist; agent sessions are new. Built and exercised against a real `omp acp`
 over SSH: the protocol layer (`app/lib/data/acp/`), the host keeper, the SSH
-exec channel, the session repository, the board section, the start form and
+host link, the session repository, the board section, the start form and
 the chat screen. Checked through the keeper and the app's own client against
 omp, Claude Code, Codex and pi (see "Checked on this machine" below for what
 each did); only omp was also driven from a phone. Facts below cite the upstream
@@ -17,7 +17,7 @@ marked UNVERIFIED. omp facts come from `omp acp` 18.4.12 on this machine.
 | What the phone is | An observer and keyboard for a TUI that runs in a herdr pane | An ACP client: it owns the conversation |
 | Source of truth | The screen: `pane.read` rows, status from herdr's detector | Structured messages: `session/update`, requests |
 | Prompts and questions | Scraped from the screen (`prompt_detector.dart`), layouts drift weekly | `session/request_permission`, `elicitation/create`: typed, with tool kind and raw input |
-| Slash commands | Hand-written tables, SFTP discovery (`slash_catalog.dart`) | `available_commands_update`, with input hints |
+| Slash commands | Hand-written tables, discovery through the file service (`slash_catalog.dart`) | `available_commands_update`, with input hints |
 | Good for | Anything already running; every TUI feature; agents without an ACP route | Phone-first work: approve, answer, steer, read a clean transcript |
 | Cannot | Tell reliably what a prompt will do | Attach to a TUI already running (below) |
 
@@ -209,41 +209,51 @@ minutes, and a permission or a question waiting at that moment would be lost.
   `initialize` + `session/load` and contradicts itself on whether sessions
   survive (`:74` vs `:291`); v1 has no stream replay, v2 plans `Last-Event-ID`.
 
-So the keeper is ours to write. It is built: `app/lib/data/services/keeper_script.dart`
-(a single python3 file, standard library, python 3.6+, embedded as a Dart
-string; `keeper_command.dart` installs it once per host, below). One keeper per
-agent process, state in
+So the keeper is ours to write. It is built: the phone path runs the
+`herdr-host` binary (`rust/crates/keeper`, served by `rust/crates/host`), one
+self-contained file per platform, shipped in the git release with `herdr-tui`
+and installed once per host (below). The herdr pane a keeper opens, the alert
+hook and the macOS launchd start are the binary's too (`pane.rs`, `alerts.rs`,
+`launchd.rs`; see "What the binary keeper had not ported" in
+`docs/research/rust-host.md`), and the terminal client is `herdr-tui`, which
+links the keeper as a library. One keeper per agent process, state in
 `~/.herdr-mobile/keepers/` (directory 0700; `<id>.json`, `<id>.sock` and
 `<id>.log`, files 0600; ids are six unambiguous random characters). Tests run
-the real script against a scripted agent (`app/test/keeper_*_test.dart`,
-`app/test/support/fake_acp_agent.py`).
+the real binary against a scripted agent (`app/test/keeper_*_test.dart`,
+`rust/crates/host/tests/keeper_parity.rs`, `serve_keeper.rs`).
 
-Installed once per host, not shipped per command (it is ~22 KB deflated; `list`
-runs every few minutes and `attach` on every reconnect). `keeperInstallCommand()`
-is a command of about 1.5 KB, and the script travels on the exec channel's
-stdin (`keeperInstallPayload()`: base64 lines; the caller writes them and then
-closes stdin, the installer reads to EOF), because some SSH servers refuse a
-long command (Dropbear: 9000 bytes). It writes
-`~/.herdr-mobile/keeper-<version>.py` atomically (temp file, rename; directory
-and file 0700), prints `{"ok":true}` and removes other versions' files and
-stale temp files. `<version>` is 12 hex digits of FNV-1a 64 over the script
-text, so a new app version never collides with an old file; a keeper already
-running holds its script in memory, so deleting its file is safe. Every other
-command is a few hundred bytes: it runs that file with `python3` and exits
-**65** ("not installed") when the file of this app version is missing; the
-caller installs and retries once. Different app versions installing on one host
-would delete each other's file and reinstall on every use; one app version per
-host is assumed.
+Installed once per host, pinned to the app's version, not shipped per command.
+`keeperInstallCommand()` is the text of `tool/install-host.sh` (a test keeps
+the two in step), base64'd into one `sh -c` word: it fetches
+`herdr-host-<os>-<arch>` from the git release of the app's version, checks it
+against `herdr-host-SHA256SUMS`, and puts it in place at
+`~/.herdr-mobile/bin/herdr-host-<version>` (0700) by a rename, so a keeper that
+is running keeps running (a keeper is a process of the old file; two app
+versions on one host each find their own). Pure shell — no interpreter, no Rust,
+no checkout: the bootstrap must not need the thing it replaces. It prints
+`{"ok":true}` as its last stdout line (progress goes to stderr) and travels
+entirely in the command line (a few KB, far under the 9000-byte Dropbear cap),
+so nothing is written to the channel's stdin. The one command the app runs
+every time is `herdr-host-<version> serve` (`hostServeCommand()`): it execs
+that binary and exits **65** ("not installed") when it is missing; the caller
+installs and retries once (`docs/HOST_PROTOCOL.md`).
 
-Commands: `probe` (routes runnable on the host), `list`,
-`start --agent ID --cwd DIR`, `attach ID`, `kill ID`, `view ID` (the terminal
-client a herdr pane runs, see "Shared sessions"). The agent command comes
-from `agentRoutes`: the binary, else `npx -y <package>`. PATH is widened with
+Everything below is a method of the `keeper` service of that one `serve`
+stream, not a command of its own (`docs/host-api.json` has the catalogue):
+`probe` (routes runnable on the host), `list`, `start {agent,cwd}`, `attach
+{id}`, `kill {id}`, `history`, and `follow` and `blob` (the session log, see
+"The log"). `herdr-host` keeps the same operations as command-line verbs for
+desk use and tests (`herdr-host list`, `start --agent ID --cwd DIR`, `attach
+ID`, `kill ID`), with the exit codes below. The agent command comes from
+`agentRoutes`: the binary, else `npx -y <package>`. PATH is widened with
 `~/.local/bin`, the adapters folder, bun/cargo/nvm/homebrew dirs, because a
-non-interactive SSH PATH is poor. Exit codes: 0 done, 64 bad arguments, 65 not
-installed, 66 folder missing (`start`) or no such keeper (`attach`, `kill`), 67
-the keeper's agent has exited (`attach`), 69 agent not installed on the host, 70
-agent failed `initialize`, 78 python3 missing.
+non-interactive SSH PATH is poor. Keeper exit codes and the wire error code
+each maps to: 64 `bad_request` (bad arguments), 66 `not_found` (folder missing
+for `start`, no such keeper for `attach` and `kill`), 67 `agent_exited` (the
+keeper's agent has exited, `attach`), 69 `agent_missing` (agent not installed
+on the host), 70 `failed` (the agent failed `initialize`). 65 and 78 are not
+the keeper's: 65 is the `serve` wrapper's "not installed", and 78 is the herdr
+bridge's (`bridge_command.dart`, hosts without the helper).
 
 1. `start` double-forks (`setsid`), redirects its std streams, ignores SIGHUP
    and spawns the agent with pipes in its own process group (no inherited file
@@ -327,7 +337,7 @@ agent failed `initialize`, 78 python3 missing.
    a later duplicate is logged and ignored; an agent `$/cancel_request` drops
    the entry. Other requests of the agent (`fs/*`, extensions) are forwarded
    to an attached client, and answered `-32000` when none is attached.
-5. `attach ID` bridges stdio to the socket. A connection becomes a client
+5. `attach ID` bridges stdio to the socket (on the phone, a `keeper.attach` stream: its DATA is the same lines). A connection becomes a client
    with its first valid JSON-RPC line (garbage and a connect-and-close probe
    never count). `session/load` for the session the keeper holds is answered
    by the keeper: the log for that session, then the cached setup as the
@@ -339,20 +349,17 @@ agent failed `initialize`, 78 python3 missing.
    the keeper's `sessionId`. A prompt whose client left is orphaned: its end
    reaches the other clients as `state_update idle`, and the next phone that
    loads when none was attached.
-   **On the wire.** The app attaches with `attach <id> --z`
-   (`keeperAttachCommand(zipped: true)`): the relay cuts what the keeper writes
-   into complete lines, and a batch of at least 512 bytes goes as ONE line
-   `Z<base64 of zlib data>` (all batches are one zlib stream, each ended with a
-   sync flush; `zippedLines` inflates them in order, in the transport's worker
-   isolate: `openExec(command, zipped: true)` wraps the channel in
-   `ZippedExecChannel` where it is opened, so base64 and inflate never run on
-   the UI isolate, and a piece that does not inflate closes the channel, which
-   the session sees as a dropped link and attaches again). The replay is plain JSON
-   and shrinks ~9x (a 600-item chat: 1.5 MB to 171 KB, base64 included); a
-   streamed word stays a plain line, which is cheaper than any frame. Why not
-   SSH compression: dartssh2 does not offer it. Why base64: the exec channel
-   hands the app text lines, and a binary frame would cross the isolate as
-   bytes the line splitter never sees.
+   **On the wire.** The app attaches with `keeper.attach` on its one
+   `herdr-host serve` link (`SshAgentHost.attach`, hostwire/1: see
+   `docs/ARCHITECTURE.md`): DATA both ways is the keeper socket's lines. The
+   stream is opened with `zctx`, so the host compresses what it writes as ONE
+   zlib stream (each batch of at least 512 bytes ended with a sync flush) and
+   the link inflates it in the transport's worker isolate, never on the UI
+   isolate; a piece that does not inflate closes the link, which the session
+   sees as a dropped link and attaches again. The replay is plain JSON and
+   shrinks ~9x (a 600-item chat: 1.5 MB to 171 KB); a streamed word stays a
+   plain frame, which is cheaper than any compression. Why not SSH
+   compression: dartssh2 does not offer it.
    **Asking for less.** The keeper stamps the first line of every turn it
    replays with `params._meta.herdr = {epoch, turn}` (`epoch` names this log:
    a keeper that started over counts from 0 again). The phone's saved copy is
@@ -367,12 +374,12 @@ agent failed `initialize`, 78 python3 missing.
    again because it may have grown, and lines that came live carry no stamp:
    an open costs the size of the newest turn and what came after the copy, not
    of the log (3 KB for a 600-item chat that had not moved, 172 KB before).
-   A running keeper holds the script it started with in memory, so only
-   keepers started after the host got this script stamp turns and take a
+   A running keeper holds the build it started with in memory, so only
+   keepers started after the host got this build stamp turns and take a
    `since`; against an older one the client's request is ignored, no
    `_herdr/replay` comes and the whole log is replayed and merged with
-   `withHeld`, as before (zipping needs no keeper support: every attach is a
-   new process of the installed file). Turns the keeper trimmed after the
+   `withHeld`, as before (compression needs no keeper support: it belongs to
+   the `serve` stream, a new process per connection). Turns the keeper trimmed after the
    copy was made stay as the phone has them, fuller, exactly as `withHeld`
    keeps them.
 6. Every client at once (see "Shared sessions" below): every attached client
@@ -383,7 +390,7 @@ agent failed `initialize`, 78 python3 missing.
    too slow to read (64 MB backlog) is dropped; it re-attaches and replays.
 7. Alerts: when a request enters the pending table (`KEEPER_EVENT=blocked`),
    and when a prompt turn ends with no phone attached (`done`; a terminal
-   `view` client does not count), the keeper
+   `herdr-tui` client does not count), the keeper
    runs the executable named by `HERDR_KEEPER_ON_BLOCKED`, else
    `~/.herdr-mobile/on-blocked` if executable (the ntfy plugin of
    `docs/ALERTS.md`), with `KEEPER_ID KEEPER_AGENT KEEPER_CWD KEEPER_TITLE
@@ -417,18 +424,18 @@ agent failed `initialize`, 78 python3 missing.
 `turn_active` (a `session/prompt` is in flight; the keeper sees every prompt
 and its answer, so this holds while nobody is attached), `unseen_done` (a
 turn ended while no phone was attached; cleared when a phone loads the
-session; a terminal `view` client counts as neither), `clients` (connections
+session; a `herdr-tui` client counts as neither), `clients` (connections
 that have spoken, viewers included) and `pane_id` (the herdr pane of the
-session's `view`) are kept current in the record (`pending`, `turn_active` and
+session's `herdr-tui`) are kept current in the record (`pending`, `turn_active` and
 `unseen_done` at once, the rest at most one second late). The board shows an
 unattached session as blocked when `pending > 0`, else working when
 `turn_active`, else idle. `state` is `starting` from the moment the keeper
 claims its id until the agent has answered `initialize` (the record exists from
 the first instant, so a cold `npx -y` start of a minute or more is listed,
 never swept as an orphan, and `kill` reaches it; `kill` only signals a pid whose
-command line is a keeper script).
+command line is a keeper daemon).
 
-Open: cost of replaying a large log over a slow link (zipped on the wire and
+Open: cost of replaying a large log over a slow link (compressed on the wire and
 asked for from the copy's last turn since "On the wire" above; the soft budget
 keeps a replay near 1.5 MB and the hard 16 MB bound is the ceiling; the measurements below are of the
 plain replay, before that; measured
@@ -498,62 +505,48 @@ coming from its side.
    to. That tab is the person's own, so it is never closed with the session. Anything else gets a
    tab of its own, created unfocused so a phone session never takes over the tab being typed in.
    A herdr that cannot list tabs or read a pane gets the tab of its own as before.
-   The tab runs the keeper's `desk` command, which runs `herdr-tui attach` (docs/TUI.md) and
-   falls back to `view` when it cannot. `desk` runs in the pane, so the person sees what it
-   does and the keeper never waits on it. A `herdr-tui` somebody installed is used as it is if it is at
-   `DESK_MIN` or newer (never touched, never used below it); else the keeper's own copy,
-   `~/.herdr-mobile/bin/herdr-tui`, is fetched the first time from the release tagged `v<DESK_MIN>`,
-   checked against that release's `herdr-tui-SHA256SUMS` and installed by a rename, and replaced
-   when an app update raises `DESK_MIN`. Nothing is looked up while a copy is good, so a pane opens
-   offline. No network, no build for the platform, a wrong checksum: said in the pane, and the
-   python `view` opens. `HERDR_MOBILE_VIEW=python` keeps `view` on purpose.
-   **`DESK_MIN` (in `keeper_script.dart`) is a compatibility pin: raise it in the same release as
-   any change to herdr-tui or to the keeper that the older one cannot follow** (the wire, the record
-   fields, the exit codes). A test fails when it is newer than the app. The other direction,
-   a herdr-tui that needs a newer keeper than the app's, is not checked yet.
-   `view` is a line-oriented client of the
-   keeper: it prints the conversation, takes a typed line as a prompt and a
-   number as the answer to a waiting permission (the card shows the call's
-   command or path whole, from `rawInput`), and reports the session's
-   state to herdr with `pane report-agent` (source `herdr-mobile`, agent
-   `<route label> · phone`, e.g. `omp · phone`: herdr treats the bare `omp`,
-   `codex` and `pi` as its own agents, and its docs ask integrations not to
-   reuse those names; `working` while a turn runs, `blocked` while a request
-   waits, `idle` otherwise; the ACP session id; resume command `python3
-   <script> view <id>`; microsecond `--seq`; `release-agent` on exit). Reports
-   run one at a time and only the latest waiting one is sent, so herdr never
-   slows the view. It only reports from inside a herdr pane
-   (`HERDR_ENV=1`, `HERDR_PANE_ID`, `HERDR_BIN_PATH`). No herdr on the host, or
-   no server running: no pane, nothing else changes. The file
+   The tab runs `herdr-tui attach <id>` (docs/TUI.md), typed into the pane with the
+   path of the `herdr-tui` found in `PATH`, `~/.local/bin` or `~/.herdr-mobile/bin`; it runs in
+   the pane, so the person sees what it does and the keeper never waits on it. Without a
+   `herdr` or without a `herdr-tui` on the machine no tab is opened, and the keeper's log says
+   why (`no herdr pane: …`): there is no other client to put in the pane. The pane is
+   not opened at all with `HERDR_MOBILE_NO_PANE=1` (a terminal client that is itself the pane
+   starts its keeper that way) or while `~/.herdr-mobile/no-panes` exists. The pane the session
+   was put in is recorded as `pane_id`; a tab the keeper made is closed when the session is ended
+   on request (`kill`).
+   **Compatibility between the keeper and `herdr-tui`.** Both link the same
+   `keeper` library (`rust/crates/keeper`), so what `start` prints, the record
+   fields, the exit codes and the wire change in one place and in one build.
+   A `herdr-tui` of another release can still be the one on the host's PATH, so
+   `rust/crates/host/tests/keeper_contract.rs` and
+   `rust/crates/viewer/tests/cli.rs` check the contract on every `cargo test`,
+   and a change to the keeper that an older `herdr-tui` cannot follow is a
+   change to those tests first. There is no version pin between the two:
+   whether a newer `herdr-tui` can attach to an older keeper is not checked.
+   `herdr-tui attach <id>` (docs/TUI.md) is a full-screen client of the keeper:
+   it shows the conversation, takes a typed line as a prompt and answers a
+   waiting permission (the card shows the call's command or path whole, from
+   `rawInput`). From inside a herdr pane (`HERDR_ENV=1`, `HERDR_PANE_ID`,
+   `HERDR_BIN_PATH`) it reports the session's state to herdr with
+   `pane report-agent` (source `herdr-mobile`, agent `<route label> · phone`,
+   e.g. `omp · phone`: herdr treats the bare `omp`, `codex` and `pi` as its own
+   agents, and its docs ask integrations not to reuse those names; `working`
+   while a turn runs, `blocked` while a request waits, `idle` otherwise; the ACP
+   session id; resume command `herdr-tui attach <id>`; a growing `--seq`;
+   `release-agent` when it leaves), from a worker thread so herdr never slows the
+   screen (`rust/crates/viewer/src/herdr.rs`). No herdr on the host, or no
+   server running: no pane, nothing else changes. The file
    `~/.herdr-mobile/no-panes` (or `HERDR_MOBILE_NO_PANE=1`) turns panes off on
    a host (`HERDR_MOBILE_HERDR` names another herdr binary, for tests). The
-   herdr calls are non-blocking subprocesses polled from the keeper's loop
-   (3 s probe, 10 s per call): `workspace list`, then `tab create` in the
+   herdr calls the keeper makes are non-blocking subprocesses polled from its
+   loop (3 s probe, 10 s per call): `workspace list`, then `tab create` in the
    existing workspace or `workspace create` (its root pane hosts the session),
    then `pane run`. Ending the session from a client (`kill`) closes the tab
-   (3 s); an agent that exits on its own leaves it, showing why.
-   On a terminal, `view` writes to the scrollback and never rewrites it:
-   rows wrapped by `view` itself, a tool call as one `✓`/`✗` row when it
-   finishes, and colour from the 16 basic colours (none under `NO_COLOR`).
-   Under the scrollback it keeps a live area: the last row of a message still
-   streaming, a status row (`◐ Working · <running call>`, `▲ Needs you`) and
-   an input row it echoes itself (no echo or line editing from the
-   terminal; Backspace, Ctrl-U, Ctrl-W; bracketed paste keeps newlines in one
-   message; Ctrl-C clears the row, or leaves when it is empty). Why: in the
-   terminal's line mode, streamed output split the line being typed, and a
-   tool call took two lines (`• title`, then `done`). Rows are wrapped by
-   `view` so the live area's height is known exactly; the cost is that
-   copying a wrapped paragraph copies its line breaks. Not a terminal (a
-   pipe, the tests): plain lines, no colour, no live area. Checked in tmux
-   (macOS, python 3.9, 72 and 40 columns, a resize between); unverified in
-   herdr's own terminal.
-   `view` titles its terminal (OSC 0) with the session's title, else the
-   first message, else `<agent> session`, and clears it on exit; it runs in
-   the session's folder once connected to the keeper. Why: herdr names a
-   pane by its terminal title and folder, so every computer showed the row as
-   `python3 '/…/keeper-<version>.py' view <id>` in `keepers`.
+   (3 s); an agent that exits on its own leaves it, showing why. There is one
+   terminal client of the keeper, shared with the desk (docs/TUI.md), so the
+   pane and a person's own terminal show the same thing.
 5. **The phone does not show that pane twice.** The keeper records the pane id
-   `view` announces; `list` carries it (`pane_id`), and the phone leaves that
+   it put the session in; `list` carries it (`pane_id`), and the phone leaves that
    pane out of everything that counts terminal agents (board rows, `Needs
    you`/`Done`, the status line, triage, pane notifications, the Machines count:
    `MachineConnection.agentPanes`). Right after the phone starts a keeper, a
@@ -569,7 +562,7 @@ coming from its side.
    `state_update running`; its end reaches them as `state_update idle` with the
    stop reason. The phone's queue already waits for an idle state.
 7. **"Seen" and alerts count only the phone.** `unseen_done` (the board's
-   review mark) and the `done` alert mean "the phone missed it". A `view`
+   review mark) and the `done` alert mean "the phone missed it". A `herdr-tui`
    client says so at `initialize` (`_meta.herdr.viewer = true`) and does not
    count as having seen a turn end.
 
@@ -578,7 +571,7 @@ as before.
 
 - `initialize` params: `clientInfo.title` (else `name`) is the label others are
   told (`herdr mobile`, `Terminal on <host>`); `_meta.herdr.viewer` (bool);
-  `_meta.herdr.pane` (the herdr pane id of a `view` client).
+  `_meta.herdr.pane` (the herdr pane id of a `herdr-tui` client).
 - `_herdr/resolved {requestId, by, answer}`: the request `requestId` (the
   keeper's `kp<n>` id this client was given) was answered by the client `by`;
   `answer` is the chosen option's name, or the question's action (`accept`,
@@ -594,13 +587,13 @@ as before.
   crash ever loses a conversation the agent did not keep.
 - *A read-only attach.* Every client a person uses should steer; nothing asked
   for watch-only.
-- *Answering questions (forms) in the terminal.* `view` shows a waiting
+- *Answering questions (forms) in the terminal.* `herdr-tui` shows a waiting
   question and says to answer it on the phone; forms are the phone's job.
 - *Moving a session between the phone and the agent's own TUI.* Two processes
   on one session store interleave their writes (Claude says so of `--resume`
   in two terminals); a hand-over must end the keeper first. Not needed while
   the terminal can attach to the keeper.
-- *Keepers started before this.* A running keeper keeps the script it started
+- *Keepers started before this.* A running keeper keeps the build it started
   with: it still evicts, and opens no pane. The phone keeps handling
   `_herdr/evicted` until those are gone.
 
@@ -609,9 +602,8 @@ prompt with `-32003`, the other clients have already seen that prompt's
 message; the log takes it back, their screens do not. Two keepers starting at
 the same instant can each create a `Phone sessions` workspace. Unverified:
 how herdr's TUI sidebar draws the reported agent (`herdr agent list` was
-checked: `omp · phone`, idle, then blocked on a permission, then idle), the
-resume command after a herdr server restart, and
-python 3.6 (only macOS python3 ran it). Checked against a scratch herdr 0.9.3
+checked: `omp · phone`, idle, then blocked on a permission, then idle), and the
+resume command after a herdr server restart. Checked against a scratch herdr 0.9.3
 server: both clients get every update, the first answer wins from either
 side, a number typed in the pane answers, `kill` closes the tab.
 
@@ -621,8 +613,9 @@ side, a number typed in the pane answers, `kill` closes the tab.
 `AcpClient` per keeper while it is attached; `AgentSessionRepository` owns one
 session per keeper of every online machine.
 
-- **Who holds a channel.** Every attach is an exec channel, and sshd's
-  `MaxSessions` (10 by default) is shared with the mux, the events and SFTP,
+- **Who holds a channel.** Every attach is a stream (`keeper.attach`) on the
+  machine's one host link, which holds 64 streams shared with the mux, the events
+  and everything else,
   so sessions are NOT all attached. The board is built from ONE `list` per
   machine (on connect, on resume, on pull to refresh, and every 30 s while the
   board is visible): `pending > 0` is blocked, `turnActive` is working,
@@ -1176,7 +1169,7 @@ Everything is in `AgentSessionState`
   job's completion came as a `Background task <name> complete.` progress update (call still
   `in_progress`), a `wait` call returned the `<task-result>` text. The observed path keeps its own
   `SubagentInfo` roster (a different type, from the log); the ACP runs borrow its vocabulary.
-- **omp subagent transcripts (best effort, SFTP only).** omp's ACP stream has no conversation of a
+- **omp subagent transcripts (best effort, needs a file service).** omp's ACP stream has no conversation of a
   subagent and no file path, but omp keeps a log of each `task` subagent on the host, in the format
   `OmpLogMapper` reads. Layout, verified on omp 18.4.12 (source read at oh-my-pi 18.6.0:
   `session/session-manager.ts` `artifactsDirectoryFor`, `task/executor.ts`, `task/output-manager.ts`,
@@ -1209,7 +1202,7 @@ Everything is in `AgentSessionState`
     `validSubagentName` (`subagent_log_path.dart`): letters, digits, `_`, `-`, inner single dots, at
     most 120 characters; nothing else (separators, `..`, a leading or trailing dot, spaces, an
     extension) gets no read at all, not even a listing; the agent's text never chooses a path;
-  - SFTP only (`RemoteFiles`: `stat`, `list`, `read`, `realpath`), never a shell; reads go through the
+  - the file service only (`RemoteFiles`: `stat`, `list`, `read`, `realpath`: the helper's read-only `fs`, else SFTP), never a shell; reads go through the
     transport isolate and are clamped; a header must say `session` version 3 (`SubagentLogReader.knownVersion`)
     and, when it names a parent, the artifact folder's own file, else the log is not used;
   - caps: the newest 1 MiB of a long log from a line boundary, the newest 4000 lines of that, lines over
@@ -1224,7 +1217,7 @@ Everything is in `AgentSessionState`
   - the transcript is not part of the reducer's state (the client replaces that state on every
     publish); `SubagentOverlay` lays it over the run in `AcpAgentSession.subagentRun(s)` with
     stable identities;
-  - failure is silent: no session file, no log, no SFTP, no permission, an unknown version, another
+  - failure is silent: no session file, no log, no file service, no permission, an unknown version, another
     parent, nothing that maps, a bad name: the run stays the summary and `SubagentLogStatus` is
     `unavailable` (looked for again while the run is active, not-found believed for 5 ticks). Only a connection failure
     is `failed`: the summary gets one line, `Couldn't read the log · Tap to retry`; `Loading…` shows
@@ -1466,7 +1459,7 @@ against a live Codex, Claude Code or pi, only against scripted agents: UNVERIFIE
   run).
 - The list is replaced on each change: compare by identity.
 
-**Known gap, in the keeper (not changed here).** `keeper_script.dart` logs a
+**Known gap, in the keeper (not changed here).** The keeper (`rust/crates/keeper/src/router.rs`) logs a
 `session/prompt` of the phone as a `user_message_chunk` (`begin_turn`) so a
 replay shows it, but `_session/steering` goes through as an ordinary forwarded
 request: a steered message is not in the keeper's log, so after a re-attach
@@ -1575,53 +1568,67 @@ An ACP prompt can carry an image as bytes, but any other phone file has to be
 UPLOADED to the host and handed to the agent as a `resource_link` with its host
 path. Data side only; the attach sheet is another piece (`docs/screens/attach.md`).
 
-- **Where it lands.** `reserveInboxPath(machine, sessionKey:, fileName:)`
-  (`host_inbox.dart`) returns `<home>/.herdr-mobile/inbox/<sha1(sessionKey)[0:12]>/<yyyyMMdd-HHmmss>-<safe name>`,
-  outside every repository. `<home>` is the SFTP login directory (`realPath('.')`).
-  The path is built ONLY from that base and `inboxSafeName(fileName)`: the last
-  path segment, everything that is not a letter (any script, Vietnamese
-  included), digit, `.`, `-` or `_` replaced by `_`, leading dots removed (never
-  a dotfile), at most 100 characters and 200 bytes with the extension kept, never
-  empty (`file`). `../../.ssh/authorized_keys` becomes `authorized_keys` inside the
-  session folder. A taken name gets `-2`, `-3` before the extension (checked on
-  the host, and against names handed out in this run). Folders are created 0700
-  (one `makeDirs` per folder per run, started with the first name check), the
-  file 0600.
-- **How it travels.** `RemoteFiles.upload(localPath:, remotePath:, onProgress:)`
-  returns an `UploadJob` (`done`, `cancel()`). The file is read and sent INSIDE
-  the transport isolate on the machine's one SSH connection and SFTP channel (no
-  new connection; sshd's `MaxSessions` is not spent). Only paths go to the
-  worker and only counters (`uprog`: sent, total) come back, at most every 100
-  ms; bytes never reach the UI isolate. Disk reads go through a ring of 32 KB
-  buffers (nothing allocated per block) into WRITE requests kept in flight (a
-  window, not write-wait-write): the window follows the link's bandwidth delay
-  product (starts at 8, 1.5x the product plus two, at most 32 = 1 MB), so the
-  queue stays short. A buffer is refilled only after its request was answered.
-- **Browsing wins.** Browsing and uploads share the one SFTP channel, and a
-  listing queued behind a window of writes waits for it to drain. So the window
-  drops to 4 while any browse request is in flight, two uploads split it, and
-  the adaptive window never holds more than the link needs.
+- **Where it lands.** The HOST decides: `HerdrTransport.reserveInboxFile(key:,
+  name:)` (`transfer.reserve`; `host_inbox.dart` only decides when to ask)
+  returns `<home>/.herdr-mobile/inbox/<sha1(key)[0:12]>/<yyyyMMdd-HHmmss UTC>-<safe name>`,
+  outside every repository. `<home>` is the host's own, not a login directory
+  the phone had to find. The path is built ONLY from that base and
+  `safe_name(name)` (`rust/crates/host/src/svc/transfer.rs`): the last path
+  segment, everything that is not a letter, mark or digit (any script,
+  Vietnamese included), `.`, `-` or `_` replaced by `_`, leading dots removed
+  (never a dotfile), at most 100 characters and 200 bytes with the extension
+  kept, never empty (`file`). `../../.ssh/authorized_keys` becomes
+  `authorized_keys` inside the session folder. A taken name gets `-2`, `-3`
+  before the extension (checked on the host). Folders are created 0700, the
+  file 0600. The time in the name is UTC (the host's `std` has no timezone
+  database; it was the phone's local time before): names are for people to
+  read and nothing parses them. The naming tests are Rust unit tests; there is
+  no Dart copy, because a second implementation drifts.
+- **How it travels.** `HerdrTransport.uploadFile(localPath:, inboxPath:,
+  onProgress:)` returns an `UploadJob` (`done`, `cancel()`). The file is read,
+  hashed (sha256) and sent INSIDE the transport isolate as a `transfer.put`
+  stream on the machine's one host link (no new connection or channel). Only
+  paths go to the worker and only counters (`uprog`: sent, total) come back,
+  at most every 100 ms; bytes never reach the UI isolate. The host replies
+  with `have`, the bytes it already holds of this exact file, and the phone
+  sends the rest as DATA within the stream's credit (1 MiB), which is also
+  what bounds how far ahead of the host's disk the progress can run.
+- **Resume and verification.** The host keeps `<path>.part` and
+  `<path>.meta` (the size and sha256 asked for). A repeat of the same file to
+  the same path continues at `have` when the meta matches and the `.part` is
+  not longer than the file, else starts at 0. At the end the host checks size
+  and sha256, renames to the final name and answers `{path, size}`; a mismatch
+  deletes the partial and fails `changed`. Hard cap 2 GiB on the host,
+  `too_large`.
+- **Browsing is not starved.** Uploads share the host link with browsing. `put`
+  is a bulk stream: the host's writer sends interactive frames first and lets
+  one bulk frame through after every eight interactive ones, and the flow
+  control is per stream, so a listing does not wait behind a window of writes.
 - **Caps.** 200 MB (`uploadMaxBytes`): a bigger file fails `tooLarge` from one
   local stat, before anything connects. At most 2 uploads run per machine
   (`RemoteFiles.maxUploads`), the rest wait in order; a waiting upload that is
   cancelled never starts and a cancelled or failed one frees its place at once.
 - **Failure.** Every failure is the job's `done` error, a `RemoteFileException`;
   `UploadCancelled` (a subclass, kind `failed`) after `cancel()`. A lost link
-  (or 30 s without an answer) is `network` and nothing resumes; the half-written
-  file is closed and removed in the background (on a dead link that cannot work:
-  the cleanup below collects it). `cancel()` returns at once: no more writes are
-  issued, `done` fails, the partial is removed afterwards.
+  is `network`; the host keeps what arrived, so the same file to the same
+  path continues from there (`have`) on the next try, and the cleanup below
+  collects a `.part` nobody resumed. `cancel()` returns at once: no more data
+  is sent, `done` fails, the stream is reset and the partial stays on the host
+  for a resume. Without the helper on the machine (`unavailable`) there is
+  no upload at all: `Needs the agent helper on this machine.`
 - **Cleanup.** `InboxJanitor` (`host_inbox.dart`, wired in `sshConnectionFactory`)
-  sweeps each machine once per 24 h (last run in prefs) 20 s after it first goes
-  online: regular files older than 14 days directly inside `<inbox>/<12 hex>/`,
-  at most 200 per sweep, SFTP only, never a link, a folder, or anything outside
-  the inbox. Session folders stay (empty folders are a few bytes).
+  asks for `transfer.sweep` once per 24 h per machine (last run in prefs) 20 s
+  after it first goes online. The host removes regular files older than 14
+  days directly inside `<inbox>/<12 hex>/`, at most 200 per sweep, stale
+  `.part` and `.meta` files older than a day, then empty folders; never a
+  link, or anything outside the inbox.
 - **Trust.** The agent receives that path and can read the file, and so can any
   process of the same host user. Do not send secrets this way; 0600 and a folder
   outside the repo only keep it out of `git status` and other users' reach.
-- **Measured.** `benchmark/upload_bench.dart` (modelled link) and
-  `benchmark/upload_real_bench.dart` (a real sshd on loopback, through the
-  production isolate path) print the throughput. Loopback has no latency, but
+- **Measured.** `benchmark/upload_real_bench.dart` (a real sshd on loopback,
+  through the production isolate path and the real helper) prints the
+  throughput and the latency of a listing issued while the upload runs.
+  Loopback has no latency, but
   dartssh2's Dart-side encryption costs CPU as on a phone, only faster: never
   quote it as a phone number.
 
@@ -1728,7 +1735,7 @@ messages shaped like the adapters' own recorded fixtures.
   `session/load` has none.
 - **Boolean options.** The app advertises
   `clientCapabilities.session.configOptions.boolean` in `AcpClientCapabilities`
-  **and in the keeper's own `initialize`** (`keeper_script.dart`; the agent
+  **and in the keeper's own `initialize`** (`rust/crates/keeper/src/router.rs`; the agent
   never sees the app's: the keeper asks once and caches). Claude Code
   (`clientSupportsBooleanConfigOptions`) and Codex (`FastModeConfig.ts`) then
   send `fast` as a boolean, which the session bar draws as a switch. omp is
@@ -1792,7 +1799,7 @@ with the terminal panes; the session rows sit in the same status sections.
   list and offer to resume rather than create per tap.
 - Prompt turns have no timeout. A dead link is noticed by the transport: SSH
   pings every 25 s (10 s timeout) and a missed ping resets the connection, so
-  every exec channel, and with it every session, ends within ~35 s and the
+  every stream on the link, and with it every session, ends within ~35 s and the
   session re-attaches (keeper) with backoff.
 - Large `session/load` replays and 781-entry config options: parse in the
   transport isolate, reduce on the main isolate in small batches (the reducer
@@ -1802,7 +1809,7 @@ with the terminal panes; the session rows sit in the same status sections.
 
 ## Open questions
 
-1. Keeper on every host by default, or opt-in per machine? (python3 only.)
+1. Keeper on every host by default, or opt-in per machine?
 2. Where does the keeper log live, and how long?
 3. omp `/collab` snapshot polling for terminal rows: worth it before keepers?
 4. Is `claude-agent-acp` conformant enough (steering `_meta`, ext methods) or

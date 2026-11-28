@@ -2,10 +2,11 @@
 
 The desk front-end for agents: `herdr-tui` starts an agent (omp, claude, codex, pi) in the
 current folder, or attaches to a running session (`herdr-tui <keeper id>`, what a herdr pane
-runs). Every session is a keeper session, so the phone sees and answers it too. It replaces
-the python `view` (`keeper_script.dart`, `class View`). It speaks the
-keeper's ACP socket as a viewer (`_meta.herdr.viewer`), exactly as `view` does, and the
-keeper does not change. Written in Rust, no async runtime, small on purpose.
+runs). Every session is a keeper session, so the phone sees and answers it too. It is the
+only terminal client of the keeper (the python `view` that used to run in herdr panes is
+gone). It speaks the keeper's ACP socket as a viewer (`_meta.herdr.viewer`), and links the
+same `keeper` library the phone's `herdr-host` does (`rust/crates/keeper`). Written in Rust,
+no async runtime, small on purpose.
 
 Status: v0 (prototype) runs end to end; the code is being rebuilt as the layers below.
 Everything here is the target; what is measured is marked.
@@ -219,18 +220,18 @@ non-zero so the pane shows it, never a blank screen).
 
 ## Parity with the other surfaces
 
-A permission is answered on the phone card, the notification, the python `view` (until
-removed) and here. Properties the person relies on, filled from each surface's code:
+A permission is answered on the phone card, the notification and here. Properties the
+person relies on, filled from each surface's code:
 
-| Property | Phone card/dock | Python `view` | This viewer (target) |
-| --- | --- | --- | --- |
-| Shows the command | whole, `Read all` | whole | whole |
-| Guard against a stale answer | `tapGuard` after arrival | none | 400 ms after arrival |
-| Hold for risky / standing grants | hold | none (typed number) | second deliberate key, labelled |
-| Confirmation | haptic, then next card | note `Answered: …` | note in scrollback |
-| Failure path | honest, Retry | a failed write ends the view (`View.send`) | note, card stays, can retry |
-| Several waiting | walk them | "answer on the phone" | `1 of N`, answer in order |
-| Question (form) | answered in sheet | "answer on the phone" | panel, a field at a time, answers in sight, last `Enter` sends; same 400 ms guard; `Esc` declines; a URL question is left to the phone |
+| Property | Phone card/dock | This viewer (target) |
+| --- | --- | --- |
+| Shows the command | whole, `Read all` | whole |
+| Guard against a stale answer | `tapGuard` after arrival | 400 ms after arrival |
+| Hold for risky / standing grants | hold | second deliberate key, labelled |
+| Confirmation | haptic, then next card | note in scrollback |
+| Failure path | honest, Retry | note, card stays, can retry |
+| Several waiting | walk them | `1 of N`, answer in order |
+| Question (form) | answered in sheet | panel, a field at a time, answers in sight, last `Enter` sends; same 400 ms guard; `Esc` declines; a URL question is left to the phone |
 
 Open cells are findings, not silence: risky-hint rules (`mode_danger.dart`,
 `permission_subject.dart` hold the phone's rules; do not re-derive them, port or share).
@@ -247,16 +248,17 @@ in the field keeps doing so for as long as it runs. Every release therefore keep
 - the URL layout `github.com/tuan3w/herdr-mobile/releases/{latest/download,download/vX.Y.Z}/<file>`;
 - `herdr-tui --version` printing `herdr-tui X.Y.Z`, with no session and no arguments needed.
 
-Four places name the files: `update/release.rs` (the client), `tool/install-tui.sh`, the `herdr-tui`
-job in `.github/workflows/release.yml`, and `desk_asset` in `keeper_script.dart`. A test in
-`release.rs` reads the other three and fails when they disagree. Add a platform in all four in one
+Three places name the files: `update/release.rs` (the client), `tool/install-tui.sh` and the
+`herdr-tui` job in `.github/workflows/release.yml`. A test in
+`release.rs` reads the other two and fails when they disagree. Add a platform in all three in one
 change; renaming a file strands every installed client older than the rename (it says "could not
 download" and keeps running), and `install.sh` is then the only way back.
 
 Who can update itself: before 0.1.30 there is no binary; 0.1.30 to 0.1.37 have no `update` (run
 `install.sh` again); 0.1.38 and later have `herdr-tui update`. A session older than 0.1.38 does not
-notice a replaced file, so reopen it with `herdr-tui attach ID`. The keeper's own copy is replaced
-when an app update raises `DESK_MIN` (docs/AGENT_SESSIONS.md).
+notice a replaced file, so reopen it with `herdr-tui attach ID`. The app does not install or
+replace `herdr-tui` (it installs `herdr-host`, `docs/HOST_PROTOCOL.md`): update the one you
+installed yourself.
 
 ## Plan
 
@@ -269,11 +271,13 @@ when an app update raises `DESK_MIN` (docs/AGENT_SESSIONS.md).
 | Tool rows | One row each | Noise on long turns | Group consecutive calls, cap, count |
 | Tests | Unit tests of model | Nothing proves the screen | vt100 snapshot of each state, worst-case data |
 | Questions | Note only | Dead end | Answer forms in the card |
-| Herdr | Not reported | `view` reports state to herdr | Port `report` |
+| Herdr | Reported from inside a herdr pane (`report-agent`, `viewer/src/herdr.rs`) | The python `view` did this; the viewer had to | Done |
 
 ## Owner decisions
 
 1. **Alternate screen** (decided). Inline scrollback was the other option.
 2. **Replay on open.** The whole replay goes into the byte-bounded store first; delta replay
    (`_meta.herdr.since`) only if opening a long session is slow.
-3. **Distribution** of the binary to hosts: open, decided before the app starts running it.
+3. **Distribution** of the binary to hosts: `install.sh` (a person) and `herdr-tui update`; the
+   app does not install it. A session the phone starts gets its herdr tab only when a
+   `herdr-tui` is on that host (`docs/AGENT_SESSIONS.md` "Shared sessions").

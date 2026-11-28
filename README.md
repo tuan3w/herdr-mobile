@@ -53,8 +53,14 @@ keyboard opened without skipping a single frame.
   end to end, from the phone. Claude Code has run full turns with permission
   requests through the app's client; Codex chats, but its approvals are unverified;
   pi starts but has not completed a turn yet.
-- **Files.** Browse the host over SFTP: source with line numbers, Markdown, JSON,
-  images with pinch to zoom, and a hex view for binaries.
+- **Files.** Browse the host and search below a folder by name or by what changed
+  lately: source with line numbers, Markdown, JSON, images (small previews, so
+  a folder of photos costs little data) with pinch to zoom, and a hex view for
+  binaries. A copy to the phone or a
+  file you send to an agent resumes where it stopped if the connection drops.
+  `Ports` shows what is listening on the machine and opens it as a page, and an
+  app in a chat's `Made` sheet says `Running` or `Stopped` only when the machine
+  confirms it.
 - **Know when it matters.** Optional local notifications when an agent starts waiting
   or finishes. They are off by default. Connections stay up for 90 seconds after you
   leave the app; after that nothing runs in the background unless you turn them on.
@@ -65,18 +71,25 @@ keyboard opened without skipping a single frame.
 ## How it works
 
 ```
-phone ──SSH──▶ machine A ── one multiplexed channel ──▶ herdr socket
+phone ──SSH──▶ machine A ── one channel: herdr-host serve ──▶ herdr socket, agents, files, ports
       ──SSH──▶ machine B ── …
 ```
 
 There is no relay, no public port and no account. The phone talks to each machine over
-SSH (a key, a password or Tailscale SSH) and keeps one persistent, compressed
-channel per machine for every request. That channel runs a tiny script on the host
-(python3). When that script can't run or can't find herdr's socket, the app falls back
-to `herdr remote-api-bridge` (herdr ≥ 0.9), then `socat`, one channel per request,
-and tries the script again later. Each machine connects, backs off and reconnects
+SSH (a key, a password or Tailscale SSH) and keeps **one** SSH channel per machine,
+running `herdr-host`, a small program (about 1.4 MB, no python or other interpreter)
+that the machine downloads from this version's release the first time the app
+connects. Everything goes over that channel as streams with flow control: herdr's
+requests and events, agent sessions, files, uploads, open ports. The channel is
+opened in one go with its first request, so a cold open costs fewer round trips.
+When the helper can't be installed (no build for the machine's CPU, offline,
+GitHub blocked) the app says so where it matters and falls back: herdr requests go
+through `herdr remote-api-bridge` (herdr ≥ 0.9), then `socat`, one channel per
+request; Files are read over SFTP, read-only; there are no agent sessions, uploads
+or ports. Each machine connects, backs off and reconnects
 on its own, so one failing never affects another. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-lists everything the app runs on your machines.
+lists everything the app runs on your machines, and
+[docs/HOST_PROTOCOL.md](docs/HOST_PROTOCOL.md) what the helper can and cannot do.
 
 The app's security rules:
 
@@ -99,8 +112,11 @@ one is available, with what's new, and downloads and checks it for you.
 **On each machine** you need:
 
 - sshd, reachable from the phone (LAN, VPN or tailnet).
-- For agent sessions: python3 3.6+ and the agent itself installed on that machine.
-- herdr running. herdr ≥ 0.9 is best; older versions need `socat` or `python3`, and use
+- For agent sessions: the agent itself installed on that machine. Nothing else:
+  the machine needs no python. The agent helper is downloaded automatically
+  (`curl` or `wget` and access to github.com, Linux or macOS on x86-64 or arm64);
+  without it the board still works through herdr itself, with the limits above.
+- herdr running. herdr ≥ 0.9 is best; older versions need `socat` for the board and use
   the default session unless you set the socket path under *Advanced*.
 
 The [user guide](docs/GUIDE.md) walks through setup, answering agents,
@@ -108,7 +124,7 @@ notifications and what to do when something goes wrong.
 
 ## Known limits
 
-- Windows hosts are not supported (the bridge is a POSIX shell script).
+- Windows hosts are not supported (the helper has no Windows build and the commands are POSIX shell).
 - A terminal pane is read-only text (no cursor or mouse), with herdr's 1,000 rows
   of scrollback at most. herdr can't resize a pane to the phone's width over its API,
   so wide panes are pinch-zoomed or re-flowed by the app's wrap mode.
@@ -126,7 +142,8 @@ notifications and what to do when something goes wrong.
 ## Develop
 
 ```bash
-cd app && flutter pub get && flutter analyze && flutter test
+cd rust && cargo build --release -p host -p testkit   # the helper and the test fakes the Dart tests run
+cd ../app && flutter pub get && flutter analyze && flutter test
 ```
 
 Flutter ≥ 3.47 is required. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers setup

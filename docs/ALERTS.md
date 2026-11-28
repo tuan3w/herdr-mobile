@@ -12,6 +12,13 @@ happens on the phone: no relay, no account, nothing leaves the device.
 - A notification appears when an agent **becomes** blocked on a question (a
   terminal agent or an agent session). **Also when an agent finishes** is a
   second, separate switch.
+  The moment herdr says a terminal agent is blocked, the app takes that as
+  true (it does not wait for the board to be read again), so the notification
+  goes out at event time, and an urgent refresh confirms it. If the refresh
+  says otherwise, the notification is withdrawn like any agent that stopped
+  needing you, and the one-minute flap rule below applies to a real block that
+  follows. Unverified against a live herdr: the event's shape comes from the
+  API schema and the test fake.
 - It is posted only while the app is away. **Opening the app clears every
   notification** (also any left from a previous run of the app), and one is
   cancelled as soon as its agent is seen to stop needing you (you answered
@@ -127,13 +134,25 @@ phone: ntfy app  <-----------------------------------------------------+
 herdr mobile opens that pane
 ```
 
+Two different hooks exist, and only one needs python. This plugin is herdr's own
+plugin (`tool/plugins/herdr-ntfy`, its `notify.py` is what herdr runs), for
+terminal panes. It is not part of the agent helper, and the app never installs
+it. Agent sessions (the keeper) have a hook of their own, in Rust
+(`rust/crates/keeper/src/alerts.rs`): when a request starts waiting, or a turn
+ends that nobody watched, the keeper runs the program named by
+`HERDR_KEEPER_ON_BLOCKED`, else the executable `~/.herdr-mobile/on-blocked`,
+with the session's id, agent, folder, a redacted title and summary and
+`KEEPER_EVENT` (`blocked` or `done`) in its environment, at most four at a
+time and killed after five seconds (`docs/AGENT_SESSIONS.md` "The keeper",
+item 7). That one needs only what your program needs.
+
 ## Install
 
 On the phone: install the ntfy app (Google Play or F-Droid) and subscribe to a
 topic (see [Topic hygiene](#topic-hygiene)).
 
-On every machine that runs herdr (0.7.0 or newer; needs `bash`, `python3` and
-`curl` 7.43 or newer):
+On every machine that runs herdr (0.7.0 or newer; needs `bash`, `python3` (for
+herdr's plugin) and `curl` 7.43 or newer):
 
 **1. Copy the plugin and link it.** This works from any checkout and needs
 nothing published. The plugin runs from the folder you link, so keep it there.
