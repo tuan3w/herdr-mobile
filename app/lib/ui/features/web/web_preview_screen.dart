@@ -65,6 +65,22 @@ final class FilePage extends WebPage {
   String get address => path;
 }
 
+/// A page of the web (`https`), opened by itself: no machine and no bridge, loaded
+/// over the phone's own network in the same screen as a machine's page. Why the
+/// same screen: a link that left for the phone's browser put herdr in the
+/// background, and Android dropped the SSH connections it held.
+final class WebsitePage extends WebPage {
+  const WebsitePage(this.link);
+
+  final Uri link;
+
+  @override
+  String get label => '${link.host}${link.path == '/' ? '' : link.path}';
+
+  @override
+  String get address => link.toString();
+}
+
 /// Shows [page] of [machine] in herdr ([WebPreviewScreen]). The screen goes
 /// up at once and asks the machine inside it.
 Future<void> openWebPreview(BuildContext context, MachineConnection machine, WebPage page) {
@@ -74,6 +90,14 @@ Future<void> openWebPreview(BuildContext context, MachineConnection machine, Web
       builder: (_) => WebPreviewScreen(machine: machine, page: page),
     ),
   );
+}
+
+/// Shows [link] (a page of the web) in herdr, over what is open. The only way a
+/// link to the web opens, but for a sign-in ([needsOwnBrowser]) and the
+/// person's own `Open in browser`.
+Future<void> openWebsite(BuildContext context, Uri link) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => WebPreviewScreen(page: WebsitePage(link))));
 }
 
 /// A page from a machine, shown inside herdr: a dev server on the machine's
@@ -97,9 +121,11 @@ Future<void> openWebPreview(BuildContext context, MachineConnection machine, Web
 /// browser` in ⋯ hands the page to the phone's browser for what needs it (a
 /// Google sign-in refuses embedded views).
 class WebPreviewScreen extends StatefulWidget {
-  const WebPreviewScreen({super.key, required this.machine, required this.page});
+  const WebPreviewScreen({super.key, this.machine, required this.page})
+    : assert((machine == null) == (page is WebsitePage), 'a page of a machine has its machine, a website has none');
 
-  final MachineConnection machine;
+  /// The machine the page comes from; null for a [WebsitePage].
+  final MachineConnection? machine;
   final WebPage page;
 
   @override
@@ -150,6 +176,11 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   var _progress = 0;
   Timer? _titleTimer;
 
+  /// The cover has been up for [Dwell.pageSlow] with nothing shown: it says so
+  /// and offers Try again.
+  Timer? _slowTimer;
+  var _slow = false;
+
   /// How many pages of this screen's own sit behind the one shown in the
   /// view's history. Back goes back while there is one, and leaves when there
   /// is none, without a trip through the entry page the view keeps behind the
@@ -187,22 +218,30 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// would answer with the same download, forever.
   String? _pending;
 
-  WebPreview get _web => widget.machine.web;
+  /// A page of the web has no machine: it is loaded over the phone's own network.
+  bool get _isSite => widget.page is WebsitePage;
+
+  /// The machine of a page of a machine; never asked for a website.
+  MachineConnection get _machine => widget.machine!;
+
+  WebPreview get _web => _machine.web;
 
   @override
   void initState() {
     super.initState();
     _forgetFirst;
     _open++;
-    widget.machine.addListener(_onLink);
+    if (!_isSite) _machine.addListener(_onLink);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // After the first frame: the hold tells the fleet's listeners, which
       // must not rebuild while this route is being built.
-      _release = context.read<FleetRepository>().holdAlive(
-        widget.machine.profile.id,
-        page: '${widget.page.label} on ${widget.machine.profile.label}',
-      );
+      if (!_isSite) {
+        _release = context.read<FleetRepository>().holdAlive(
+          _machine.profile.id,
+          page: '${widget.page.label} on ${_machine.profile.label}',
+        );
+      }
       unawaited(_openPage());
     });
   }
@@ -217,8 +256,9 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
 
   @override
   void dispose() {
-    widget.machine.removeListener(_onLink);
+    if (!_isSite) _machine.removeListener(_onLink);
     _titleTimer?.cancel();
+    _slowTimer?.cancel();
     final release = _release;
     // Not inside the frame that unmounts this route: the hold tells the
     // fleet's listeners, which may rebuild.
@@ -276,28 +316,47 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
 
   // -- opening ---------------------------------------------------------------
 
+  /// Which ask of the machine is the current one: Try again (or Retry) while an
+  /// earlier ask is still out must not let the earlier answer, or failure,
+  /// replace the new one.
+  var _attempt = 0;
+
   /// Asks the machine for the page ([at]: a page of it that failed, else the
   /// one this screen was opened for) and loads it. A page opened again starts
   /// its own history: Back leaves after it.
   Future<void> _openPage({Uri? at}) async {
+    final mine = ++_attempt;
     setState(() {
       _phase = _Phase.opening;
       _failure = null;
       _progress = 0;
+      _slow = false;
+    });
+    _slowTimer?.cancel();
+    _slowTimer = Timer(Dwell.pageSlow, () {
+      if (mounted && _phase != _Phase.shown && _failure == null) setState(() => _slow = true);
     });
     try {
-      if (_forgetFirst) {
-        _forgetFirst = false;
-        await _forget(_view);
-      }
-      final entry = at != null && _web.machinePage(at) != null ? await _web.reopen(at) : await _entryOf(widget.page);
-      if (!mounted) return;
+      // Cleared while the machine is asked, not before it: one wait, not two.
+      final forgetting = _forgetFirst ? _forget(_view) : null;
+      _forgetFirst = false;
+      final entry = _isSite
+          ? at ?? (widget.page as WebsitePage).link
+          : at != null && _web.machinePage(at) != null
+          ? await _web.reopen(at)
+          : await _entryOf(widget.page);
+      await forgetting;
+      if (!mounted || mine != _attempt) return;
       setState(() => _phase = _Phase.loading);
       _carry = 0;
+      // A website has no entry page: its first page is the visit's first.
+      if (_isSite) _afterEntry = true;
       await _view.loadRequest(entry);
     } on WebPreviewException catch (e) {
+      if (mine != _attempt) return;
       _fail('Couldn’t open this page', e.reason, at ?? _url);
     } on RemoteFileException catch (e) {
+      if (mine != _attempt) return;
       _fail(
         'Couldn’t open this page',
         e.kind == RemoteFileErrorKind.notFound
@@ -306,6 +365,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         at,
       );
     } on Object catch (e) {
+      if (mine != _attempt) return;
       debugPrint('herdr: page not opened: $e');
       _fail('Couldn’t open this page', 'Something went wrong on the phone. Retry tries again.', at);
     }
@@ -319,17 +379,21 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       case FilePage(:final stat?):
         return _web.staticUrl(stat);
       case FilePage(:final path, :final cwd):
-        final files = widget.machine.files;
+        final files = _machine.files;
         if (!files.supported) throw const WebPreviewException('Files are not available on this machine.');
         return _web.staticUrl(await files.stat(await files.resolve(path, cwd: cwd)));
+      case WebsitePage(:final link):
+        return link;
     }
   }
 
   void _fail(String title, String message, Uri? url) {
     if (!mounted) return;
+    _slowTimer?.cancel();
     _goingBack = false;
     _stepsLeft = 0;
     setState(() {
+      _slow = false;
       _failure = (title: title, message: message);
       _failedUrl = url;
       if (_phase == _Phase.opening) _phase = _Phase.loading;
@@ -343,13 +407,13 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// network went) cannot work, so the screen says so; back, the page opens
   /// again by itself.
   void _onLink() {
-    if (!mounted) return;
-    final live = widget.machine.isLive;
+    if (!mounted || _isSite) return;
+    final live = _machine.isLive;
     if (!live && !_linkLost && _url != null) {
       setState(() {
         _linkLost = true;
         _failure = (
-          title: 'Lost the connection to ${widget.machine.profile.label}',
+          title: 'Lost the connection to ${_machine.profile.label}',
           message: 'The page comes back by itself when herdr is connected again.',
         );
         _failedUrl = _url;
@@ -368,7 +432,10 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     // Back reached an entry URL, which sends the view on again at once; Back
     // goes past it instead ([_skipEntry]).
     if (_goingBack && _atEntry) return NavigationDecision.prevent;
-    switch (webNavigation(url, ports: _web.ports, mainFrame: request.isMainFrame)) {
+    final decision = _isSite
+        ? siteNavigation(url, mainFrame: request.isMainFrame)
+        : webNavigation(url, ports: _web.ports, mainFrame: request.isMainFrame);
+    switch (decision) {
       case WebNavigation.load:
         if (request.isMainFrame && _pending == request.url) {
           // A file: Android asks for it again instead of showing it.
@@ -387,20 +454,42 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     }
   }
 
-  /// A page of the web the page wanted to go to. A script can ask for that
-  /// without anyone's tap, so nothing opens by itself: the person is told
-  /// where it leads and opens it in the phone's browser with a tap.
+  /// A page of the web the view was asked to go to and does not load itself: a
+  /// plain `http` page (cleartext is refused), a sign-in that needs the phone's
+  /// browser, and, from a machine's page, any other site. A page's script can
+  /// ask for these without anyone's tap, so nothing opens by itself: the person
+  /// is told where it leads and opens it with a tap.
   void _offerWeb(Uri url) {
-    _toaster.show(
-      '${visibleText(url.host)} isn’t from ${widget.machine.profile.label}.',
-      action: ToastAction('Open', () => unawaited(_openWeb(url))),
-    );
+    final host = visibleText(url.host);
+    final String text;
+    if (needsOwnBrowser(url)) {
+      text = '$host is a sign-in. It opens in your browser.';
+    } else if (url.scheme != 'https') {
+      text = '$host isn’t encrypted.';
+    } else {
+      text = '$host isn’t from ${_machine.profile.label}.';
+    }
+    _toaster.show(text, action: ToastAction('Open', () => unawaited(_openWeb(url))));
   }
 
-  /// [url] of the web in the phone's browser: `https` at once, plain `http`
-  /// through the link sheet, which shows the whole address and says it is
-  /// not encrypted.
+  /// [url] of the web, on the person's tap: `https` in herdr, over this page
+  /// (Back returns to it); a sign-in in the phone's browser, the one thing that
+  /// can do it; plain `http` through the link sheet.
   Future<void> _openWeb(Uri url) async {
+    if (needsOwnBrowser(url)) {
+      await _openExternal(url);
+    } else if (url.scheme == 'https') {
+      if (mounted) await openWebsite(context, url);
+    } else if (mounted) {
+      await showLinkSheet(context, url.toString(), machine: _isSite ? null : _machine);
+    }
+  }
+
+  /// [url] in the phone's browser, which the person asked for (`Open in
+  /// browser`) or a sign-in needs: `https` at once, plain `http` through the
+  /// link sheet, which shows the whole address and says it is not encrypted.
+  /// herdr is in the background while it is open.
+  Future<void> _openExternal(Uri url) async {
     if (url.scheme == 'https') {
       if (!await openInBrowser(url.toString())) {
         _toaster.show('Couldn’t open on this phone: no browser could open it.', kind: ToastKind.failed);
@@ -415,7 +504,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// forward `Open page` would open, never on its own.
   void _refused(Uri url) {
     final where = visibleText(url.hasPort ? '${url.host}:${url.port}' : url.host);
-    if (WebPreview.canPreview(url.toString())) {
+    if (!_isSite && WebPreview.canPreview(url.toString())) {
       final service = sensitiveServiceOf(url.hasPort ? url.port : 80);
       if (service != null) {
         _toaster.show('$where is a $service port. Open its link from the terminal if you mean to.');
@@ -475,7 +564,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     try {
       login = await showHttpAuthSheet(
         context,
-        where: widget.machine.profile.label,
+        where: visibleText(_isSite ? (_url ?? (widget.page as WebsitePage).link).host : _machine.profile.label),
         realm: asked.first.realm == null ? null : visibleText(asked.first.realm!),
       );
     } finally {
@@ -509,7 +598,11 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       // expects white, as in any browser.
       // design-lint: allow(raw-color) the web's own default canvas, not a herdr surface
       unawaited(_view.setBackgroundColor(const Color(0xFFFFFFFF)));
-      setState(() => _phase = _Phase.shown);
+      _slowTimer?.cancel();
+      setState(() {
+        _phase = _Phase.shown;
+        _slow = false;
+      });
     }
     _onUrl(url);
     // A jump from the list goes on once the page a step landed on is in, not
@@ -602,7 +695,8 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
 
   /// What a failed load means here, and what Retry does about it.
   String _why(WebResourceError error) {
-    final machine = widget.machine.profile.label;
+    if (_isSite) return _whySite(error);
+    final machine = _machine.profile.label;
     return switch (error.errorType) {
       WebResourceErrorType.connect =>
         'herdr stopped serving it on this phone (after 10 minutes unused, or a new connection). Retry opens it again.',
@@ -615,6 +709,24 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         'The server on $machine closed the connection without an answer. Is it still running? Retry asks again.',
       _ when error.description.contains('CONNECTION_RESET') =>
         'The connection to $machine broke while the page loaded. Retry asks again.',
+      _ => 'It didn’t load. Retry asks again.',
+    };
+  }
+
+  /// What a failed load of a website means. The host named is the one that
+  /// failed: a link may have led to another site.
+  String _whySite(WebResourceError error) {
+    final who = visibleText(Uri.tryParse(error.url ?? '')?.host ?? (_url ?? (widget.page as WebsitePage).link).host);
+    return switch (error.errorType) {
+      WebResourceErrorType.hostLookup => 'Couldn’t find $who. Check the address and your connection. Retry asks again.',
+      WebResourceErrorType.connect => 'Couldn’t connect to $who. Check your connection. Retry asks again.',
+      WebResourceErrorType.timeout => '$who took too long to answer. Retry asks again.',
+      WebResourceErrorType.io => 'The connection to $who broke while the page loaded. Retry asks again.',
+      WebResourceErrorType.failedSslHandshake =>
+        'The security certificate of $who isn’t valid, so the page doesn’t open here.',
+      WebResourceErrorType.redirectLoop => 'The page sends itself round in a loop. Retry asks again.',
+      WebResourceErrorType.webContentProcessTerminated =>
+        'The page stopped: its view ran out of memory or crashed. Retry opens it again.',
       _ => 'It didn’t load. Retry asks again.',
     };
   }
@@ -705,7 +817,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   /// known, over where it is; else where it is alone.
   Widget _visitRow(BuildContext ctx, ({Uri url, String? title}) page, {required int steps}) {
     final ds = ctx.ds;
-    final where = visibleText(_web.machinePage(page.url)?.label ?? '${page.url.host}${page.url.path}');
+    final where = visibleText(_machinePageOf(page.url)?.label ?? '${page.url.host}${page.url.path}');
     final title = page.title;
     final here = steps == 0;
     return ListRow(
@@ -720,11 +832,14 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     );
   }
 
-  MachinePage? get _shownPage => _url == null ? null : _web.machinePage(_url!);
+  MachinePage? _machinePageOf(Uri url) => _isSite ? null : _web.machinePage(url);
+
+  MachinePage? get _shownPage => _url == null ? null : _machinePageOf(_url!);
 
   /// The page shown is not from the machine (a form a page posted to another
-  /// site, which Android does not ask about).
-  bool get _foreign => _url != null && _shownPage == null;
+  /// site, which Android does not ask about). A website is all of the web:
+  /// nothing in it is foreign.
+  bool get _foreign => !_isSite && _url != null && _shownPage == null;
 
   void _showOptions() {
     final page = _shownPage;
@@ -733,7 +848,9 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     final ds = context.ds;
     // The whole link, as Copy link copies it: the bar's line is cut to fit,
     // and the person often wants to see (and check) the full address.
-    final link = foreign ? _url.toString() : page?.address ?? widget.page.address;
+    final link = foreign || _isSite
+        ? (_url ?? Uri.parse(widget.page.address)).toString()
+        : page?.address ?? widget.page.address;
     unawaited(
       showActionSheet(
         context,
@@ -758,14 +875,16 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
           SheetAction(
             label: 'Open in browser',
             icon: LucideIcons.externalLink,
-            onTap: () => unawaited(foreign ? _openWeb(_url!) : _openInBrowser()),
+            onTap: () => unawaited(foreign || _isSite ? _openExternal(Uri.parse(link)) : _openInBrowser()),
           ),
         ],
         footer: [
           Padding(
             padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.xs, Gap.lg, Gap.sm),
             child: Text(
-              'For a page that needs your browser, such as a sign-in. The browser’s copy works only while this screen stays open.',
+              _isSite
+                  ? 'For a page that needs your browser, such as a sign-in. herdr stays in the background while it is open.'
+                  : 'For a page that needs your browser, such as a sign-in. The browser’s copy works only while this screen stays open.',
               style: Type.caption.copyWith(color: ds.textSecondary),
             ),
           ),
@@ -797,17 +916,27 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
     final ds = context.ds;
     final page = _shownPage;
     final foreign = _foreign;
+    // A website shows the page it is on (it follows links), not the one it was opened for.
+    final site = _isSite ? _url ?? (widget.page as WebsitePage).link : null;
     final place =
+        site?.host ??
         page?.place ??
         switch (widget.page) {
           ServerPage(:final link) => MachinePage.server(link).place,
-          FilePage() => widget.page.label,
+          FilePage() || WebsitePage() => widget.page.label,
         };
     // An app the agent started says what it is (`python label_server.py`) where
     // the address `localhost:8790` said nothing; the address stays in `⋯`.
     final appName = !foreign && widget.page is ServerPage ? (widget.page as ServerPage).name : null;
-    final title = visibleText(_title ?? (foreign ? _url!.host : appName ?? page?.label ?? widget.page.label));
-    final address = foreign ? visibleText(_url!.host) : visibleText(appName ?? page?.label ?? place);
+    final siteLabel = site == null ? null : '${site.host}${site.path == '/' ? '' : site.path}';
+    final title = visibleText(
+      _title ?? siteLabel ?? (foreign ? _url!.host : appName ?? page?.label ?? widget.page.label),
+    );
+    final address = site != null
+        ? visibleText(site.host)
+        : foreign
+        ? visibleText(_url!.host)
+        : visibleText(appName ?? page?.label ?? place);
     final failure = _failure;
     final covered = failure != null || _phase != _Phase.shown || _atEntry;
     final loading = failure == null && _phase != _Phase.opening && _progress < 100;
@@ -827,16 +956,23 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
               // it comes from, once (a title that is the address leaves the line
               // the machine's name). A page from another site shows that site's
               // host alone, never the machine's name. The whole link is in `⋯`.
-              glyph: Icon(LucideIcons.globe, size: IconSize.row, color: ds.textSecondary),
+              glyph: Icon(
+                // A lock for a page of the web (https), the globe for a page of a machine.
+                _isSite ? LucideIcons.lock : LucideIcons.globe,
+                size: IconSize.row,
+                color: ds.textSecondary,
+              ),
               title: title,
               // A long command ends in an ellipsis: the machine leads, so it is never the part cut.
-              subtitle: foreign
+              subtitle: site != null
+                  ? (_title == null ? null : address) // an address as the title is the host already
+                  : foreign
                   ? address
                   : address == title
-                  ? widget.machine.profile.label
+                  ? _machine.profile.label
                   : appName != null
-                  ? '${widget.machine.profile.label} · $address'
-                  : '$address · ${widget.machine.profile.label}',
+                  ? '${_machine.profile.label} · $address'
+                  : '$address · ${_machine.profile.label}',
               // ✕ leaves from any depth; the arrow steps back through the
               // pages. Why two controls: Back alone walked every page, so ten
               // links deep was ten presses back to the chat.
@@ -882,9 +1018,18 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
                                     ),
                                   ],
                                 )
-                              : _phase == _Phase.opening
-                              ? const Center(child: BusySpinner())
-                              : null,
+                              : _LoadingCover(
+                                  // The bar names the page: said once.
+                                  stage: _phase == _Phase.opening
+                                      ? (_isSite ? 'Opening' : 'Asking ${_machine.profile.label}')
+                                      : _progress > 0 && _progress < 100
+                                      ? 'Loading · $_progress%'
+                                      : _isSite
+                                      ? 'Waiting for the site'
+                                      : 'Waiting for the page',
+                                  slow: _slow,
+                                  onRetry: _retry,
+                                ),
                         ),
                       ),
                   ],
@@ -950,6 +1095,48 @@ class _LoadBar extends StatelessWidget {
                   child: ColoredBox(color: ds.accent),
                 ),
               ),
+      ),
+    );
+  }
+}
+
+/// What the screen says while nothing of the page is shown yet: the real stage
+/// it is at (the machine is asked, then the page answers, with its progress
+/// once it reports one). The bar already names the page. After [Dwell.pageSlow]
+/// it says it is slow and offers Try again, so a wait is never a blank screen
+/// that reads as frozen.
+class _LoadingCover extends StatelessWidget {
+  const _LoadingCover({required this.stage, required this.slow, required this.onRetry});
+
+  final String stage;
+  final bool slow;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(Gap.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const BusySpinner(size: IconSize.bar),
+            const SizedBox(height: Gap.md),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                slow ? 'Still waiting. The server may be busy or not running.' : stage,
+                textAlign: TextAlign.center,
+                style: Type.secondary.copyWith(color: ds.textSecondary),
+              ),
+            ),
+            if (slow) ...[
+              const SizedBox(height: Gap.md),
+              AppButton(label: 'Try again', kind: AppButtonKind.secondary, compact: true, onPressed: onRetry),
+            ],
+          ],
+        ),
       ),
     );
   }

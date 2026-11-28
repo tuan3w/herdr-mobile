@@ -3,12 +3,15 @@
 //   BENCH_OUT=/tmp/bg.txt flutter test benchmark/background_bench_test.dart
 //
 // The real stack from the fleet down to the SSH layer runs: `FleetRepository`,
-// `MachineConnection`, `HerdrApi`, `SshTransport` (its link watch, mux
-// heartbeat, event channel and reconnects), `MuxClient` (deltas included),
-// `PanePreviews`, `AttentionNotifier`. Only the bottom is replaced: an in-memory
-// SSH client, mux script and herdr (`_Host`), which meter every message that
-// would cross the radio, and a `fakeAsync` clock. No sockets, no wall time: the
-// same run gives the same numbers.
+// `MachineConnection`, `HerdrApi`, `SshTransport` (its link watch, the machine's
+// one `HostLink`, mux heartbeat, event stream and reconnects), `MuxClient`
+// (deltas included), `SshAgentHost` (the session list), `PanePreviews`,
+// `AttentionNotifier`. Only the bottom is replaced: an in-memory SSH client whose
+// one exec channel is the host end of `herdr-host serve` (`_ServeSession`: it
+// decodes the hostwire/1 frames the app writes and answers the way the helper
+// does) over a fake herdr (`_Host`), which meter every message that would cross
+// the radio, and a `fakeAsync` clock. No sockets, no wall time: the same run
+// gives the same numbers.
 //
 // Workload (2 machines, 9 agents, one shell; seeded). Three runs:
 //   foreground  3 min on the board, every working agent redrawing 10x/s
@@ -30,9 +33,15 @@
 // named `fg_` are the board in front, `bg_` the turbulent watch, `steady_` the
 // quiet one.
 //
-// What is metered, per message: payload bytes (the mux's real framing and
-// deflate for requests; the mux script's delta + deflate protocol for
-// answers, ported to Dart in `_Host.serve`) plus packet overhead.
+// What is metered, per message: the SSH channel's data as written, which is
+// every frame at its size on the wire. The app's frames are the real ones (the
+// `HostLink` writes them: 9 header bytes, requests deflated as pieces of the
+// stream's continuous zlib stream); the host's are modelled on the helper's
+// rules: a header of 9 bytes, and on a zctx stream (events and the mux are
+// opened with it) every MSG of 64 bytes or more is the next piece of one
+// sync-flushed zlib stream. Events are cut to the projection the app sent when
+// it opened the stream; the mux's delta + rows protocol is ported to Dart in
+// `_Host.serve`. Plus packet overhead.
 //
 // ASSUMPTIONS, not measurements (a phone's modem is not here; mark any number
 // built on them as modelled):
@@ -42,7 +51,10 @@
 //  * every packet carries [packetOverhead] bytes (TCP/IP + SSH MAC and length);
 //    TCP ACKs and retransmits are not counted;
 //  * a machine's herdr sends the events the app subscribed to and no others;
-//    a status change is one `pane_agent_status_changed`, nothing else.
+//    a status change is one `pane_agent_status_changed`, nothing else;
+//  * the machine's one `serve` channel is opened with the SSH exec (one round
+//    trip) and answers the app's HELLO a round trip later; every answer comes a
+//    round trip after its request, an event as it happens.
 //
 // Results go to $BENCH_OUT as METRIC lines (`flutter test` decorates stdout).
 import 'dart:async';
@@ -56,7 +68,6 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/data/acp/agent_host.dart' show AgentHost, KeeperInfo;
 import 'package:herdr_mobile/data/repositories/agent_session_repository.dart';
 import 'package:herdr_mobile/data/repositories/attention_notifier.dart';
 import 'package:herdr_mobile/data/repositories/attention_set.dart';
@@ -65,12 +76,14 @@ import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
-import 'package:herdr_mobile/data/services/bridge_command.dart' show muxCompressMin, muxDeltaMin, muxReadyLine;
+import 'package:herdr_mobile/data/services/bridge_command.dart' show muxDeltaMin, muxReadyLine;
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrTransportException;
-import 'package:herdr_mobile/data/services/mux_client.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
 import 'package:herdr_mobile/data/services/ssh_transport.dart';
+import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
+import 'package:herdr_mobile/data/services/keeper_command.dart' show hostServeCommand;
+import 'package:herdr_mobile/data/host/wire.dart';
 
 import '../test/support/fake_network.dart';
 import '../test/support/fake_notifier.dart';
@@ -96,9 +109,6 @@ Future<void> _later(Duration d) {
   _base.createTimer(d, c.complete);
   return c.future;
 }
-
-/// The command the rig's mux opener runs to get the transport to connect.
-const _probe = 'sim:connect';
 
 // ----------------------------------------------------------------------------
 // The meter
@@ -268,11 +278,11 @@ class _Host {
     _emit('pane.closed', 'pane_closed', {'pane_id': pane});
   }
 
-  // -- the mux script: delta + deflate, ported from `bridge_command.dart` -----
+  // -- the mux's answers: delta + rows, ported from `rust/crates/host/src/mux.rs` -----
 
-  /// The answer to [q] as the app's `MuxClient` receives it, and what it cost
-  /// on the wire.
-  (String, int) serve(Map<String, dynamic> q) {
+  /// The answer to [q] as the app's `MuxClient` receives it (the text of one
+  /// MSG on the `herdr.mux` stream).
+  String serve(Map<String, dynamic> q) {
     final method = q['method'] as String;
     final id = q['id'];
     final params = (q['params'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -317,12 +327,7 @@ class _Host {
           'result': {'type': 'ok'},
         };
     }
-    final json = jsonEncode(d);
-    final raw = utf8.encode(json);
-    final size = raw.length > muxCompressMin
-        ? 'Z${zlib.encode(raw).length}\n'.length + zlib.encode(raw).length
-        : raw.length + 1;
-    return (json, size);
+    return jsonEncode(d);
   }
 
   /// The last [lines] rows of a pane's screen: row N reads the same on every
@@ -413,8 +418,7 @@ class _Link {
   late final _Client client;
   void Function()? onInbound;
   bool closed = false;
-  final _sessions = <_EventSession>[];
-  final _muxes = <_Mux>[];
+  final _sessions = <_ServeSession>[];
   final done = Completer<void>();
 
   void inbound() => onInbound?.call();
@@ -426,9 +430,6 @@ class _Link {
     if (!done.isCompleted) done.complete();
     for (final s in [..._sessions]) {
       s.finish();
-    }
-    for (final m in [..._muxes]) {
-      m.end();
     }
   }
 }
@@ -463,7 +464,8 @@ class _Client implements SSHClient {
     Map<String, String>? environment,
   }) async {
     if (link.closed) throw StateError('closed');
-    if (command == _probe) throw SSHChannelOpenError(1, 'probe');
+    // The app opens one channel per connection, for the helper's `serve`.
+    if (command != hostServeCommand()) throw StateError('unexpected command: $command');
     link.host.meter
       ..count('channels')
       ..add(120, up: true);
@@ -471,7 +473,7 @@ class _Client implements SSHClient {
     if (link.closed) throw StateError('closed');
     link.host.meter.add(100, up: false);
     link.inbound();
-    return _EventSession(link);
+    return _ServeSession(link);
   }
 
   @override
@@ -481,10 +483,22 @@ class _Client implements SSHClient {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// The events channel: the app writes one subscribe frame, herdr answers with
-/// an ack and then sends what was subscribed to.
-class _EventSession implements SSHSession {
-  _EventSession(this.link) {
+/// The host end of the machine's one `herdr-host serve` channel: it decodes the
+/// frames the app writes and answers as the real helper would (the wire is
+/// `hostwire/1`, see `wire.dart`), so every frame crosses the meter at the size
+/// it has on the wire, compression included.
+///
+///  * `herdr.events` (opened with zctx): the ack, then every event the app
+///    subscribed to, as pieces of one continuous zlib stream;
+///  * `herdr.mux` (zctx): `{"ready":true}`, then one MSG per request, answered
+///    by [_Host.serve];
+///  * `keeper.list`: one MSG and END; no agent session runs, so the answer is
+///    empty and what is measured is the asking.
+///
+/// Every answer reaches the app a round trip after its request, an event as
+/// it happens.
+class _ServeSession implements SSHSession {
+  _ServeSession(this.link) {
     link._sessions.add(this);
     _stdin.stream.listen(_onStdin);
   }
@@ -496,60 +510,78 @@ class _EventSession implements SSHSession {
   final _err = StreamController<Uint8List>(onCancel: () => Future<void>.value());
   final _stdin = StreamController<Uint8List>();
   final _done = Completer<void>();
-  _Sub? _sub;
+  final _decoder = FrameDecoder(expectMagic: false);
+  final _streams = <int, _HostStream>{};
   var _closed = false;
 
   Meter get _meter => link.host.meter;
 
   void _onStdin(Uint8List bytes) {
     _meter.add(bytes.length, up: true);
-    for (final line in utf8.decode(bytes).split('\n')) {
-      if (line.trim().isEmpty) continue;
-      final q = jsonDecode(line) as Map<String, dynamic>;
-      if (q['method'] != 'events.subscribe') continue;
-      _meter.count('subscriptions');
-      final types = ((q['params'] as Map)['subscriptions'] as List).cast<Map<String, dynamic>>();
-      // herdr rejects the whole subscription for one pane it does not have.
-      for (final t in types) {
-        final pane = t['pane_id'];
-        if (pane != null && !link.host.hasPane(pane as String)) {
-          _write(
-            jsonEncode({
-              'id': q['id'],
-              'error': {'code': 'pane_not_found', 'message': 'no pane $pane'},
-            }),
-          );
-          return;
-        }
-      }
-      final sub = _sub = _Sub(types, _write);
-      unawaited(
-        _later(rtt).then((_) {
-          if (_closed) return;
-          _write(
-            jsonEncode({
-              'id': q['id'],
-              'result': {'type': 'subscription_started'},
-            }),
-          );
-          link.host.subs.add(sub);
-        }),
-      );
+    _decoder.add(bytes, _onFrame);
+  }
+
+  void _onFrame(Frame f) {
+    switch (f.kind) {
+      case FrameKind.hello:
+        // The magic and the host's HELLO, a round trip after ours.
+        unawaited(
+          _later(rtt).then((_) {
+            final hello = Frame.json(FrameKind.hello, 0, {
+              'proto': 1,
+              'host': {
+                'version': '9.9.9',
+                'os': 'linux',
+                'arch': 'x86_64',
+                'home': '/home/u',
+                'hostname': 'box',
+                'user': 'u',
+              },
+              'limits': {'max_msg': maxPayload, 'max_data': maxData, 'window': 1 << 20, 'max_streams': 64},
+              'services': {
+                'herdr': {'available': true, 'reason': null},
+                'keeper': {'available': true, 'reason': null},
+              },
+            });
+            _write([...hostMagic, ...encodeFrame(hello)]);
+          }),
+        );
+      case FrameKind.open:
+        final o = (jsonDecode(utf8.decode(f.payload)) as Map).cast<String, dynamic>();
+        final s = _streams[f.stream] = _HostStream(this, f.stream, zctx: o['zctx'] == true);
+        s.open('${o['svc']}.${o['method']}', (o['args'] as Map?)?.cast<String, dynamic>() ?? const {});
+      case FrameKind.msg:
+        _streams[f.stream]?.onMessage(utf8.decode(_plain(f)));
+      case FrameKind.reset:
+        _streams.remove(f.stream)?.close();
+      case FrameKind.data || FrameKind.credit || FrameKind.end:
+        break;
     }
   }
 
-  void _write(String line) {
+  /// What the client's payload on [f]'s stream says, inflated.
+  Uint8List _plain(Frame f) => switch (f.flags) {
+    FrameFlags.none => f.payload,
+    FrameFlags.deflate => Inflater.once(f.payload),
+    FrameFlags.deflateCtx => _streams[f.stream]!.inflater.inflate(f.payload),
+  };
+
+  void _write(List<int> bytes) {
     if (_closed) return;
-    final bytes = utf8.encode('$line\n');
     _meter.add(bytes.length, up: false);
     link.inbound();
     _out.add(Uint8List.fromList(bytes));
   }
 
+  void _send(Frame f) => _write(encodeFrame(f));
+
   void finish() {
     if (_closed) return;
     _closed = true;
-    if (_sub != null) link.host.subs.remove(_sub);
+    for (final s in _streams.values) {
+      s.close();
+    }
+    _streams.clear();
     link._sessions.remove(this);
     unawaited(_out.close());
     unawaited(_err.close());
@@ -574,83 +606,126 @@ class _EventSession implements SSHSession {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _Mux implements MuxChannel {
-  _Mux(this.link) {
-    link._muxes.add(this);
-    _lines.add(muxReadyLine);
+/// One stream of the channel, host side. On a zctx stream every MSG of 64
+/// bytes or more is the next piece of the stream's one zlib stream (the real
+/// helper's rule, `CTX_MIN` in `rust/crates/host/src/session.rs`).
+class _HostStream {
+  _HostStream(this.session, this.id, {required this.zctx});
+
+  final _ServeSession session;
+  final int id;
+  final bool zctx;
+  final inflater = Inflater();
+  final _deflater = RawZLibFilter.deflateFilter(level: 6);
+  _Sub? _sub;
+  var _closed = false;
+
+  _Host get _host => session.link.host;
+
+  void _msg(String text) {
+    if (_closed) return;
+    final plain = Uint8List.fromList(utf8.encode(text));
+    if (!zctx || plain.length < 64) {
+      session._send(Frame(FrameKind.msg, id, plain));
+      return;
+    }
+    _deflater.process(plain, 0, plain.length);
+    final piece = BytesBuilder(copy: false);
+    while (true) {
+      final chunk = _deflater.processed(flush: true);
+      if (chunk == null || chunk.isEmpty) break;
+      piece.add(chunk);
+    }
+    session._send(Frame(FrameKind.msg, id, piece.takeBytes(), flags: FrameFlags.deflateCtx));
   }
 
-  final _Link link;
-  final _lines = StreamController<String>(onCancel: () => Future<void>.value());
-  final _exit = Completer<int?>();
-  final _encoder = MuxRequestEncoder();
-
-  @override
-  Stream<String> get lines => _lines.stream;
-
-  @override
-  void send(String line) {
-    if (_lines.isClosed) throw StateError('channel closed');
-    final meter = link.host.meter;
-    meter.add(_encoder.frame(line).length, up: true);
-    final q = jsonDecode(line) as Map<String, dynamic>;
-    final (json, size) = link.host.serve(q);
-    _base.createTimer(rtt, () {
-      if (_lines.isClosed) return;
-      meter.add(size, up: false);
-      link.inbound();
-      _lines.add(json);
-    });
+  void _end([Object? result]) {
+    if (_closed) return;
+    session._send(Frame.json(FrameKind.end, id, result ?? const {}));
   }
 
-  void end() {
-    if (!_exit.isCompleted) _exit.complete(null);
-    if (!_lines.isClosed) unawaited(_lines.close());
+  void open(String method, Map<String, dynamic> args) {
+    switch (method) {
+      case 'herdr.mux':
+        unawaited(_later(rtt).then((_) => _msg(muxReadyLine)));
+      case 'herdr.events':
+        _subscribe(args);
+      case 'keeper.list':
+        _host.meter.count('keeper_lists');
+        unawaited(
+          _later(rtt).then((_) {
+            _msg('[]');
+            _end();
+          }),
+        );
+      default:
+        _end({
+          'error': {'code': 'unknown_method', 'message': method, 'retryable': false},
+        });
+    }
   }
 
-  @override
-  Future<void> close() async {
-    link._muxes.remove(this);
-    end();
+  void _subscribe(Map<String, dynamic> args) {
+    _host.meter.count('subscriptions');
+    final types = (args['subscriptions'] as List).cast<Map<String, dynamic>>();
+    // herdr rejects the whole subscription for one pane it does not have.
+    for (final t in types) {
+      final pane = t['pane_id'];
+      if (pane != null && !_host.hasPane(pane as String)) {
+        _msg(
+          jsonEncode({
+            'id': 'events',
+            'error': {'code': 'pane_not_found', 'message': 'no pane $pane'},
+          }),
+        );
+        return;
+      }
+    }
+    // Each event is cut down to the fields the app asked for (the stream's
+    // `projection`), as the helper does before it writes.
+    final projection = args['projection'];
+    final sub = _sub = _Sub(types, (line) => _msg(jsonEncode(_prune(jsonDecode(line), projection))));
+    unawaited(
+      _later(rtt).then((_) {
+        if (_closed) return;
+        _msg(
+          jsonEncode({
+            'id': 'events',
+            'result': {'type': 'subscription_started'},
+          }),
+        );
+        _host.subs.add(sub);
+      }),
+    );
   }
 
-  @override
-  Future<int?> get exitCode => _exit.future;
+  /// A request on the mux stream.
+  void onMessage(String text) {
+    final q = jsonDecode(text) as Map<String, dynamic>;
+    final answer = _host.serve(q);
+    unawaited(_later(rtt).then((_) => _msg(answer)));
+  }
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    if (_sub != null) _host.subs.remove(_sub);
+  }
 }
 
-/// The agent sessions' side of a machine: the keeper lists what runs on the
-/// host over a channel of the SSH link of its own (one exec: open, command,
-/// answer, close). No agent session runs, so the answer is empty; what is
-/// measured is the asking.
-class _MeteredHost implements AgentHost {
-  _MeteredHost(this.host);
-
-  final _Host host;
-
-  @override
-  Future<List<KeeperInfo>> list() async {
-    final meter = host.meter;
-    if (host.down || host.link == null || host.link!.closed) {
-      throw StateError('no link');
-    }
-    meter
-      ..count('keeper_lists')
-      ..add(120, up: true); // open the channel
-    await _later(rtt);
-    meter
-      ..add(100, up: false)
-      ..add(180, up: true); // exec the command
-    await _later(rtt);
-    meter
-      ..add(60, up: false) // the answer
-      ..add(40, up: false) // exit status, EOF
-      ..add(30, up: true); // close
-    host.link?.inbound();
-    return const [];
+/// [v] cut down to [spec]: `true` keeps a value whole, a map keeps its keys
+/// (of each element, for a list). The shape `eventProjection` and the mux's
+/// projections have.
+Object? _prune(Object? v, Object? spec) {
+  if (spec == true || spec == null) return v;
+  if (v is List) return [for (final x in v) _prune(x, spec)];
+  if (v is Map && spec is Map) {
+    return {
+      for (final e in spec.entries)
+        if (v.containsKey(e.key)) e.key: _prune(v[e.key], e.value),
+    };
   }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  return v;
 }
 
 /// Records when each notification was posted.
@@ -729,7 +804,7 @@ class _Rig {
       )..load();
       sessions = AgentSessionRepository(
         fleet: fleet,
-        hostFor: (machine) => _MeteredHost(hosts[machine.profile.id]!),
+        hostFor: (machine) => SshAgentHost(machine.api.transport),
         clock: wall,
       );
       attention = AttentionNotifier(
@@ -777,8 +852,7 @@ class _Rig {
 
   SshTransport _transport(MachineProfile profile) {
     final host = hosts[profile.id]!;
-    late final SshTransport transport;
-    return transport = SshTransport(
+    return SshTransport(
       profile: profile,
       secrets: const MachineSecrets(password: 'x'),
       onPinHostKey: (_) {},
@@ -801,25 +875,6 @@ class _Rig {
         }
         link.onInbound = onInbound;
         return link.client;
-      },
-      openMuxChannel: (_) async {
-        // The real mux channel is opened on the SSH client, connecting it
-        // first: do that through the transport, so it knows the client.
-        try {
-          await transport.openExec(_probe);
-        } on HerdrTransportException catch (e) {
-          // The probe is refused by design; what matters is the connection.
-          final up = host.link;
-          if (host.down || up == null || up.closed) throw MuxUnavailable(e.message, linkLost: true);
-        }
-        final link = host.ensureLink();
-        host.meter
-          ..count('channels')
-          ..add(120, up: true);
-        await _later(rtt);
-        host.meter.add(100 + muxReadyLine.length, up: false);
-        link.inbound();
-        return _Mux(link);
       },
       livenessClock: () => async.elapsed,
     );
@@ -1172,12 +1227,47 @@ Future<void> _suspended() async {
   }
 }
 
+/// The first board request on a machine nobody has talked to yet: the SSH
+/// connection, the exec channel, then the helper's HELLO, `herdr.mux`, ready and
+/// the answer. The app writes our HELLO, the mux OPEN and the request together,
+/// so the three answers come one round trip after the channel is open instead
+/// of three. Written as `cold_first_request_ms`: virtual milliseconds from the
+/// call to the answer, on the model's link (`rtt`).
+Future<void> _coldStart() async {
+  final async = FakeAsync(initialTime: DateTime.utc(2026, 1, 1, 12));
+  final r = _Rig.start(async, notifications: false);
+  final transport = r.zone.run(
+    () => r._transport(const MachineProfile(id: 'a', label: 'Alpha', host: 'a.local', username: 'u')),
+  );
+  final start = r.now;
+  Duration? took;
+  Object? failed;
+  r.zone.run(() {
+    transport
+        .request('session.snapshot')
+        .then<void>(
+          (_) => took = r.now - start,
+          onError: (Object e) {
+            failed = e;
+          },
+        );
+  });
+  await r.elapse(const Duration(seconds: 30), step: const Duration(milliseconds: 10));
+  if (took == null) _failures.add('cold start: the first request got no answer in 30 s ($failed)');
+  _metric('cold_first_request_ms', took?.inMilliseconds ?? 30000);
+  _metric('cold_rtt_ms', rtt.inMilliseconds);
+  unawaited(transport.close());
+  async.flushMicrotasks();
+  r.dispose();
+}
+
 void main() {
   test('what watching agents costs the radio and the battery', () async {
     // The score is the turbulent run's; the steady run is its quiet baseline.
     await _watch(prefix: 'bg', watchFor: const Duration(hours: 2), turbulent: true);
     await _watch(prefix: 'steady', watchFor: const Duration(hours: 1), turbulent: false);
     await _suspended();
+    await _coldStart();
 
     final path = Platform.environment['BENCH_OUT'];
     if (path != null) File(path).writeAsStringSync('${_out.join('\n')}\n');

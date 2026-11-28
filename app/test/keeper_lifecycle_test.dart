@@ -6,15 +6,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// Starting, listing, killing and attaching to the REAL keeper script (python3).
+// Starting, listing, killing and attaching to the keeper (the `herdr-host` binary).
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}, bool install = true]) async {
     final h = await KeeperHost.create(env);
     addTearDown(h.dispose);
@@ -22,7 +19,7 @@ void main() {
     return h;
   }
 
-  group('keeper', skip: hasPython ? false : 'python3 is not installed', () {
+  group('keeper', () {
     test('start prints the KeeperInfo, outlives the starter and ignores SIGHUP', () async {
       final h = await newHost();
       final info = await h.start();
@@ -93,7 +90,7 @@ void main() {
         await a.response(a.prompt('plain'));
         expect(h.agentLog(), isNotEmpty);
 
-        await h.run(keeperKillCommand(info.id));
+        await h.kill(info.id);
         await eventually(() async => !await loaded(), what: 'the job to unload');
         expect(await processAlive(info.pid!), isFalse);
       },
@@ -109,17 +106,13 @@ void main() {
       }
     });
 
-    test(
-      'the agent gets no stray file descriptors',
-      skip: Directory('/proc/self/fd').existsSync() ? false : 'needs /proc',
-      () async {
-        final h = await newHost();
-        await h.start();
-        final agentPid = (await h.rawList()).single['agent_pid']! as int;
-        final fds = Directory('/proc/$agentPid/fd').listSync().map((e) => e.uri.pathSegments.last).toSet();
-        expect(fds, {'0', '1', '2'});
-      },
-    );
+    test('the agent gets no stray file descriptors', skip: Platform.isLinux ? false : '/proc is Linux only', () async {
+      final h = await newHost();
+      await h.start();
+      final agentPid = (await h.rawList()).single['agent_pid']! as int;
+      final fds = Directory('/proc/$agentPid/fd').listSync().map((e) => e.uri.pathSegments.last).toSet();
+      expect(fds, {'0', '1', '2'});
+    });
 
     test('a slow start is listed while it initialises and is not swept as an orphan', () async {
       final h = await newHost({'FAKE_ACP_INIT_DELAY': '8', 'HERDR_KEEPER_ORPHAN_SECONDS': '1'});
@@ -157,7 +150,7 @@ void main() {
       expect(rec['state'], 'starting');
       final keeperPid = rec['pid']! as int;
       final agentPid = rec['agent_pid']! as int;
-      final k = await h.run(keeperKillCommand(rec['id']! as String));
+      final k = await h.kill(rec['id']! as String);
       expect(k.code, 0, reason: k.err);
       expect(asJson(jsonDecode(k.out)), {'ok': true});
       await eventually(
@@ -258,7 +251,7 @@ void main() {
 
     test('a failing agent fails the start and leaves nothing behind', () async {
       final h = await newHost({'FAKE_ACP_FAIL_INIT': '1'});
-      final r = await h.run(keeperStartCommand(agent: 'omp', cwd: h.work));
+      final r = await h.runStart();
       expect(r.code, 70);
       expect(r.err, contains('cannot start: no login'));
       expect(r.out.trim(), isEmpty);

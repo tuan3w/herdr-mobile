@@ -4,12 +4,14 @@
 # never in parallel; about 45 s):
 #
 #  * app/benchmark/observed_open_bench_test.dart: the chat of an agent that runs
-#    in a herdr pane (the app reads the agent's session log over SSH: the real
-#    host helper, SshLogSource, ObservedAgentSession, OmpLogMapper and the
-#    reducer; SSH itself is replaced by `sh -c`). `cold`: first open;
-#    `relink`: back to a chat the app already held.
+#    in a herdr pane (the app reads the agent's session log through the host
+#    helper: the real `herdr-host serve` behind one HostLink, SshLogSource,
+#    ObservedAgentSession, OmpLogMapper and the reducer; SSH itself is replaced
+#    by `sh -c`). `cold`: first open; `relink`: back to a chat the app already
+#    held.
 #  * app/benchmark/session_open_wire_bench_test.dart: the chat of an agent the
-#    app started itself (the keeper, `AcpAgentSession`), `zip` variant, `cold`
+#    app started itself (the keeper, `AcpAgentSession`, a `keeper.attach` stream
+#    on the same link), `zip` variant (the stream the way the app opens it), `cold`
 #    (nothing on the phone) and `copy` (the saved transcript is on the phone).
 #
 #   open_score_ms          the modelled time to a live chat, in ms, summed over
@@ -32,8 +34,10 @@
 # The links, the `*_ms` of this machine (JIT, asserts on) and the workload (a
 # generated omp log in the shape of a real one) are assumptions: compare changes
 # with them, never quote them for a phone. The headers of the two benches say
-# what is real and what is modelled. Needs python3 and Flutter >= 3.47
-# (HERDR_FLUTTER_BIN is the SDK's bin directory).
+# what is real and what is modelled. Needs Flutter >= 3.47 (HERDR_FLUTTER_BIN is
+# the SDK's bin directory) and Rust: the benches run the release `herdr-host`
+# and the testkit's scripted agent (built here with `cargo build --release -p
+# host -p testkit`, unless HERDR_HOST_BIN and HERDR_TESTKIT_DIR name them).
 set -euo pipefail
 
 bin="$("$(dirname "$0")/tool/flutter-bin.sh")"
@@ -47,6 +51,10 @@ trap 'rm -rf "$tmp"' EXIT
 if [ ! -f .dart_tool/package_config.json ] || [ pubspec.yaml -nt .dart_tool/package_config.json ]; then
   flutter pub get >/dev/null
   git checkout -- ios/Flutter 2>/dev/null || true
+fi
+
+if [ -z "${HERDR_HOST_BIN:-}" ] || [ -z "${HERDR_TESTKIT_DIR:-}" ]; then
+  (cd ../rust && cargo build --release -p host -p testkit --bins >/dev/null)
 fi
 
 run() { # name, test file

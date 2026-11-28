@@ -146,7 +146,9 @@ enum RemoteFileErrorKind {
   /// A directory operation on a file.
   notADirectory,
 
-  /// The host does not offer SFTP (or the transport cannot do files at all).
+  /// The machine cannot do this: it has neither the agent helper nor SFTP (or
+  /// the transport cannot do files at all), or the operation (an upload) needs
+  /// the helper and there is none.
   unsupported,
 
   /// The server refused or could not do the operation for a reason that fits
@@ -179,12 +181,20 @@ class RemoteFileException implements Exception {
   String toString() => message;
 }
 
+/// The file is no longer the one that was seen: it was written between a
+/// `stat` and a read that asked for the same size and time (`ifMatch`), or
+/// while it was being uploaded. Kind `failed`, retryable: reading it again
+/// from the start is the remedy, and it is the caller's to apply.
+class RemoteFileChanged extends RemoteFileException {
+  RemoteFileChanged(String message, {super.path}) : super(RemoteFileErrorKind.failed, message, fatal: false);
+}
+
 /// Hard cap on one `readFile` call, enforced by the transport whatever the
 /// caller asks for.
 const remoteReadCap = 8 * 1024 * 1024;
 
 /// The biggest phone file the app uploads to a host (200 MB): a bigger one is
-/// refused up front with [RemoteFileErrorKind.tooLarge].
+/// refused up front with [RemoteFileErrorKind.tooLarge] (the host takes 2 GiB).
 const uploadMaxBytes = 200 * 1024 * 1024;
 
 /// An upload stopped by [UploadJob.cancel]: not a failure, nobody is waiting.
@@ -193,17 +203,20 @@ class UploadCancelled extends RemoteFileException {
   UploadCancelled({super.path}) : super(RemoteFileErrorKind.failed, 'Upload cancelled', fatal: true);
 }
 
-/// One upload to the host, running in the transport's worker. Bytes never
-/// reach the UI isolate: only counters do.
+/// One upload to the host's inbox, running in the transport's worker. Bytes
+/// never reach the UI isolate: only counters do.
 abstract interface class UploadJob {
-  /// Completes when every byte is stored on the host. Fails with a
-  /// [RemoteFileException] ([UploadCancelled] after [cancel]); an ignored
-  /// failure never reaches the zone as an unhandled error.
+  /// Completes when the host has the whole file in place, its size and sha256
+  /// checked. Fails with a [RemoteFileException] ([UploadCancelled] after
+  /// [cancel]; [RemoteFileChanged] when what arrived is not the file that was
+  /// announced; `unsupported` on a machine without the agent helper); an
+  /// ignored failure never reaches the zone as an unhandled error.
   Future<void> get done;
 
-  /// Stops at once: no more writes are issued, [done] fails with
-  /// [UploadCancelled], and the partial file is closed and removed in the
-  /// background. Harmless after [done] completed.
+  /// Stops at once: no more bytes are sent and [done] fails with
+  /// [UploadCancelled]. The host keeps what it received, so sending the same
+  /// file to the same inbox path again continues where it stopped. Harmless
+  /// after [done] completed.
   void cancel();
 }
 

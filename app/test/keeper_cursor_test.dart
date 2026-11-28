@@ -1,4 +1,4 @@
-// Every test starts real processes (a keeper, an agent, python): the default 30 s per test is what a busy machine runs out of, not a hang.
+// Every test starts real processes (a keeper binary, a scripted agent): the default 30 s per test is what a busy machine runs out of, not a hang.
 @Timeout(Duration(minutes: 3))
 @TestOn('linux || mac-os')
 library;
@@ -7,17 +7,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// What the REAL keeper script (python3) does for Cursor's flow: `authenticate`
+// What the keeper (the `herdr-host` binary) does for Cursor's flow: `authenticate`
 // before the first session, and its `cursor/*` extension methods, which the
 // keeper turns into the question form and the permission card the phone has.
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}]) async {
     final h = await KeeperHost.create({'FAKE_ACP_AUTH': 'cursor_login', ...env});
     addTearDown(h.dispose);
@@ -55,7 +52,7 @@ void main() {
     },
   };
 
-  group('keeper with Cursor', skip: hasPython ? false : 'python3 is not installed', () {
+  group('keeper with Cursor', () {
     test('authenticates before the first session, and the start reports only after it', () async {
       final h = await newHost();
       await h.start(agent: 'cursor');
@@ -71,7 +68,7 @@ void main() {
 
     test('a sign-in the agent refuses fails the start with its reason and the next step, not its link', () async {
       final h = await newHost({'FAKE_ACP_AUTH_FAIL': '1'});
-      final r = await h.run(keeperStartCommand(agent: 'cursor', cwd: h.work));
+      final r = await h.runStart(agent: 'cursor');
       expect(r.code, 70);
       expect(r.err, contains('Failed to open browser for login'), reason: 'the agent\'s reason, from data.message');
       expect(r.err, isNot(contains('cursor.com')), reason: 'the link dies with the agent');
@@ -82,7 +79,7 @@ void main() {
 
     test('an agent that dies while it signs in is named at the sign-in, not at initialize', () async {
       final h = await newHost({'FAKE_ACP_AUTH_EXIT': '1'});
-      final r = await h.run(keeperStartCommand(agent: 'cursor', cwd: h.work));
+      final r = await h.runStart(agent: 'cursor');
       expect(r.code, 70);
       expect(r.err, contains('authenticate'));
       expect(r.err, isNot(contains('before it answered initialize')));
@@ -371,9 +368,9 @@ void main() {
 
     test('a package run through npx keeps the route\'s arguments', () async {
       final h = await newHost();
-      final fake = File('test/support/fake_acp_agent.py').absolute.path;
+      final fake = testkitBinary('fake-acp-agent').absolute.path.replaceAll("'", "'\\''");
       final stub = File('${h.home.path}/bin/npx')
-        ..writeAsStringSync('#!/bin/sh\nprintf \'%s\\n\' "\$@" > "\$HOME/npx.argv"\nexec python3 \'$fake\'\n');
+        ..writeAsStringSync('#!/bin/sh\nprintf \'%s\\n\' "\$@" > "\$HOME/npx.argv"\nexec \'$fake\'\n');
       await Process.run('chmod', ['755', stub.path]);
       await h.start(agent: 'deepseek');
       final argv = File('${h.home.path}/npx.argv').readAsLinesSync();

@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
+import 'package:herdr_mobile/data/host/host_link.dart' show HostException, HostLinkLost;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
 
 import 'support/fake_exec.dart';
@@ -14,80 +15,98 @@ Matcher _hostError({bool? fatal, Object? message}) => isA<AgentHostException>()
     .having((e) => e.fatal, 'fatal', fatal ?? anything)
     .having((e) => e.message, 'message', message ?? anything);
 
+/// A call or stream the host was asked for.
+typedef _Asked = ({String service, String method, Map<String, Object?> args});
+
 void main() {
   late FakeTransport transport;
-  late List<FakeExecChannel> channels;
   late SshAgentHost host;
+  late List<_Asked> asked;
+  late List<FakeExecChannel> channels;
 
-  /// Every command opens a channel built by [make].
-  void answer(FakeExecChannel Function() make) {
-    transport.onExec = (command) async {
+  /// Every call answers [make]'s result (or error) and is written to [asked].
+  void answerCalls(Future<Object?> Function(String method, Map<String, Object?> args) make) {
+    transport.onHostCall = (service, method, args) {
+      asked.add((service: service, method: method, args: args));
+      return make(method, args);
+    };
+  }
+
+  void replies(Object? answer) => answerCalls((_, _) async => answer);
+  void rejects(Object error) => answerCalls((_, _) => Future<Object?>.error(error));
+
+  /// Every stream opens a channel built by [make] and is written to [asked].
+  void answerStreams(FakeExecChannel Function() make) {
+    transport.onHostStream = (service, method, args) async {
+      asked.add((service: service, method: method, args: args));
       final channel = make();
       channels.add(channel);
       return channel;
     };
   }
 
-  FakeExecChannel Function() prints(List<String> lines) =>
-      () => FakeExecChannel.run(stdout: lines);
-  FakeExecChannel Function() fails(int? code, [String stderr = '']) =>
-      () => FakeExecChannel.run(code: code, stderr: stderr);
-
   setUp(() {
     transport = FakeTransport();
+    asked = [];
     channels = [];
     host = SshAgentHost(
       transport,
       quickTimeout: const Duration(milliseconds: 200),
       startTimeout: const Duration(milliseconds: 400),
-      installTimeout: const Duration(milliseconds: 400),
-      attachCheck: const Duration(milliseconds: 50),
     );
   });
 
   group('available', () {
-    test('reads the routes of the probe line and runs the probe command', () async {
-      answer(prints(['{"routes":["omp","claude"]}']));
+    test('asks keeper.probe and reads the routes of the answer', () async {
+      replies({
+        'routes': ['omp', 'claude'],
+      });
 
       expect(await host.available(), {'omp', 'claude'});
-      expect(transport.execCommands, [keeperProbeCommand()]);
+      expect(transport.hostCalls, ['keeper.probe']);
+      expect(asked.single.args, isEmpty);
     });
 
     test('a host with no agents is an empty set, not an error', () async {
-      answer(prints(['{"routes":[]}']));
+      replies({'routes': <Object?>[]});
 
       expect(await host.available(), isEmpty);
     });
 
-    test('a shell banner before the answer doesn’t break it', () async {
-      answer(prints(['Welcome to the box', '42', '{"routes":["pi"]}']));
-
-      expect(await host.available(), {'pi'});
-    });
-
-    test('a missing python3 is fatal and says so in the host’s words', () async {
-      answer(fails(78, 'herdr-mobile: agent sessions need python3 on this host'));
-
-      await expectLater(host.available(), throwsA(_hostError(fatal: true, message: contains('need python3'))));
-    });
-
     test('an answer of the wrong shape is reported with what came back', () async {
-      answer(prints(['{"agents":["omp"]}']));
+      replies({
+        'agents': ['omp'],
+      });
 
       await expectLater(host.available(), throwsA(_hostError(fatal: false, message: contains('agents'))));
     });
   });
 
   group('list', () {
-    test('parses every keeper, running and exited', () async {
-      answer(
-        prints([
-          '[{"id":"k2","agent":"claude","cwd":"/home/me/b","state":"running","started_at":1700000100000,'
-              '"pid":77,"session_id":"s-1","title":"Fix tests","pending":2,"last_event_at":1700000200000},'
-              '{"id":"k1","agent":"omp","cwd":"/home/me/a","state":"exited","started_at":1700000000000,'
-              '"exit_code":1,"exit_reason":"crashed"}]',
-        ]),
-      );
+    test('asks keeper.list and parses every keeper, running and exited', () async {
+      replies([
+        {
+          'id': 'k2',
+          'agent': 'claude',
+          'cwd': '/home/me/b',
+          'state': 'running',
+          'started_at': 1700000100000,
+          'pid': 77,
+          'session_id': 's-1',
+          'title': 'Fix tests',
+          'pending': 2,
+          'last_event_at': 1700000200000,
+        },
+        {
+          'id': 'k1',
+          'agent': 'omp',
+          'cwd': '/home/me/a',
+          'state': 'exited',
+          'started_at': 1700000000000,
+          'exit_code': 1,
+          'exit_reason': 'crashed',
+        },
+      ]);
 
       final keepers = await host.list();
 
@@ -98,168 +117,113 @@ void main() {
       expect(keepers[0].lastEventAt, DateTime.fromMillisecondsSinceEpoch(1700000200000));
       expect(keepers[1].state, KeeperState.exited);
       expect(keepers[1].exitCode, 1);
-      expect(transport.execCommands, [keeperListCommand()]);
+      expect(transport.hostCalls, ['keeper.list']);
+      expect(asked.single.args, isEmpty);
+    });
+
+    test('a row that is no keeper is left out, never hiding the others', () async {
+      replies([
+        {'agent': 'omp'},
+        'junk',
+        {'id': 'k1', 'agent': 'omp', 'cwd': '/a', 'state': 'running'},
+      ]);
+
+      expect((await host.list()).map((k) => k.id), ['k1']);
     });
 
     test('no keepers is an empty list', () async {
-      answer(prints(['[]']));
+      replies(<Object?>[]);
 
       expect(await host.list(), isEmpty);
     });
 
     test('an object instead of an array is reported', () async {
-      answer(prints(['{"id":"k1"}']));
+      replies({'id': 'k1'});
 
       await expectLater(host.list(), throwsA(_hostError(message: contains('unexpected'))));
     });
   });
 
   group('start', () {
-    test('runs the start command for the agent and folder and returns the keeper', () async {
-      answer(
-        prints([
-          '{"id":"k9","agent":"codex","cwd":"/home/me/it’s a dir","state":"running","started_at":1700000000000}',
-        ]),
-      );
+    test('asks keeper.start with the agent and folder as they are, and returns the keeper', () async {
+      replies({
+        'id': 'k9',
+        'agent': 'codex',
+        'cwd': '/home/me/it’s a dir',
+        'state': 'running',
+        'started_at': 1700000000000,
+      });
 
       final info = await host.start(agent: 'codex', cwd: "/home/me/it’s a dir");
 
       expect(info.id, 'k9');
-      expect(info.cwd, "/home/me/it’s a dir");
-      expect(transport.execCommands, [keeperStartCommand(agent: 'codex', cwd: "/home/me/it’s a dir")]);
+      expect(info.cwd, '/home/me/it’s a dir');
+      expect(transport.hostCalls, ['keeper.start']);
+      expect(asked.single.args, {'agent': 'codex', 'cwd': '/home/me/it’s a dir'});
     });
 
-    test('a folder that is missing is fatal, with the host’s text', () async {
-      answer(fails(66, 'herdr-keeper: /nope isn’t a folder'));
-
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/nope'),
-        throwsA(_hostError(fatal: true, message: 'herdr-keeper: /nope isn’t a folder')),
-      );
-    });
-
-    test('an agent that is not installed is fatal even without stderr', () async {
-      answer(fails(69));
-
-      await expectLater(
-        host.start(agent: 'pi', cwd: '/x'),
-        throwsA(_hostError(fatal: true, message: contains('installed'))),
-      );
-    });
-
-    test('an agent that died while starting can be retried and shows its stderr', () async {
-      answer(fails(70, 'Error: not logged in\nrun `claude login`'));
-
-      await expectLater(
-        host.start(agent: 'claude', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: contains('claude login'))),
-      );
-    });
-
-    test('an unknown exit status is retryable and keeps stderr and the status', () async {
-      answer(fails(1, 'Traceback: boom'));
-
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: 'Traceback: boom')),
-      );
-      answer(fails(5));
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: contains('exit status 5'))),
-      );
-    });
-
-    test('a folder or agent the command builder refuses never reaches the host', () async {
-      answer(prints(['{}']));
+    test('a folder with a control character goes to the host untouched: the host refuses it', () async {
+      rejects(const HostException('bad_request', 'the folder has a control character'));
 
       await expectLater(
         host.start(agent: 'omp', cwd: 'line\nbreak'),
-        throwsA(_hostError(fatal: true, message: contains('folder'))),
+        throwsA(_hostError(fatal: true, message: 'the folder has a control character')),
       );
-      await expectLater(
-        host.start(agent: 'emacs', cwd: '/x'),
-        throwsA(_hostError(fatal: true, message: contains('agent'))),
-      );
-      expect(transport.execCommands, isEmpty);
+      expect(asked.single.args, {'agent': 'omp', 'cwd': 'line\nbreak'});
     });
 
-    test('a long traceback is cut to its end, where the error is', () async {
-      final stderr = '${'frame\n' * 500}ValueError: the actual problem';
-      answer(fails(1, stderr));
+    test('an answer that names no keeper is reported with what came back', () async {
+      replies({'ok': true});
+      await expectLater(host.start(agent: 'omp', cwd: '/x'), throwsA(_hostError(message: contains('unexpected'))));
 
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(message: allOf(endsWith('ValueError: the actual problem'), hasLength(lessThan(500))))),
-      );
-    });
-
-    test('exit 0 with no output is reported, with stderr if there is any', () async {
-      answer(() => FakeExecChannel.run(stderr: 'warning: x'));
-
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: allOf(contains('nothing'), contains('warning: x')))),
-      );
-    });
-
-    test('output that isn’t JSON is reported with an excerpt', () async {
-      answer(prints(['segmentation fault (core dumped)']));
-
+      replies('segmentation fault (core dumped)');
       await expectLater(
         host.start(agent: 'omp', cwd: '/x'),
         throwsA(_hostError(fatal: false, message: contains('segmentation fault'))),
       );
     });
 
-    test('a link that drops mid-command is retryable', () async {
-      answer(fails(null));
+    test('a call that never answers times out', () async {
+      answerCalls((_, _) => Completer<Object?>().future);
 
       await expectLater(
         host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: contains('dropped'))),
+        throwsA(_hostError(fatal: false, message: 'The machine didn’t answer in time (start the agent).')),
       );
-    });
-
-    test('a command that never ends times out, and its channel is closed', () async {
-      answer(FakeExecChannel.new);
-
-      await expectLater(
-        host.start(agent: 'omp', cwd: '/x'),
-        throwsA(_hostError(fatal: false, message: contains('in time'))),
-      );
-      expect(channels.single.closeCalls, 1);
     });
 
     test('the default start timeout outlasts the keeper’s own initialize timeout', () {
-      final script = RegExp(r'INIT_TIMEOUT = (\d+)').firstMatch(keeperScript());
-      final keeperSeconds = int.parse(script!.group(1)!);
+      // The phone runs the Rust keeper (herdr-host); its initialize timeout is
+      // INIT_TIMEOUT in records.rs. The test reads the source so the Dart
+      // constant in ssh_agent_host.dart cannot drift from it.
+      final source = File('${Directory.current.path}/../rust/crates/keeper/src/records.rs').readAsStringSync();
+      final keeperSeconds = int.parse(
+        RegExp(r'INIT_TIMEOUT: Duration = Duration::from_secs\((\d+)\)').firstMatch(source)!.group(1)!,
+      );
 
       expect(
         keeperInitTimeoutSeconds,
         keeperSeconds,
-        reason: 'the constant in ssh_agent_host.dart must follow the script',
+        reason: 'the constant in ssh_agent_host.dart must follow the keeper',
       );
       expect(
         SshAgentHost(transport).startTimeout,
-        greaterThanOrEqualTo(Duration(seconds: keeperSeconds + 30)),
-        reason: 'the keeper\'s stderr must arrive before the app gives up',
+        greaterThanOrEqualTo(Duration(seconds: keeperSeconds + startMarginSeconds)),
+        reason: 'the keeper\'s message must arrive before the app gives up',
       );
     });
 
-    test('start waits longer than the quick commands do', () {
-      // On a fake clock: the command answers 300 ms after it opens, between the
-      // quick timeout (200 ms) and the start one (400 ms), so no real timer races
-      // another on a loaded machine.
+    test('start waits longer than the quick calls do', () {
+      // On a fake clock: the call answers 300 ms after it is made, between the
+      // quick timeout (200 ms) and the start one (400 ms), so no real timer
+      // races another on a loaded machine.
       fakeAsync((async) {
-        answer(() {
-          final channel = FakeExecChannel();
-          Timer(const Duration(milliseconds: 300), () {
-            channel.emit('{"id":"k1","agent":"omp","cwd":"/x","state":"running","started_at":1}');
-            channel.exit(0);
-          });
-          return channel;
-        });
+        answerCalls(
+          (method, _) => Future<Object?>.delayed(
+            const Duration(milliseconds: 300),
+            () => {'id': 'k1', 'agent': 'omp', 'cwd': '/x', 'state': 'running', 'started_at': 1},
+          ),
+        );
 
         String? startedId;
         host.start(agent: 'omp', cwd: '/x').then((info) => startedId = info.id);
@@ -277,330 +241,252 @@ void main() {
   });
 
   group('history', () {
-    test('runs the history command and reads the line, with the capabilities', () async {
-      answer(
-        prints([
-          '{"agent":"omp","list":true,"load":true,"resume":false,"more":true,"sessions":['
-              '{"sessionId":"s2","cwd":"/home/me/a","title":"Fix it","updatedAt":"2026-10-05T10:00:00Z","_meta":{"messageCount":12}},'
-              '{"sessionId":"s1","cwd":"/home/me/a"},'
-              '{"cwd":"/no/id"}]}',
-        ]),
-      );
+    test('asks keeper.history for the agent and folder, and reads the capabilities', () async {
+      replies({
+        'agent': 'omp',
+        'list': true,
+        'load': true,
+        'resume': false,
+        'more': true,
+        'sessions': [
+          {
+            'sessionId': 's2',
+            'cwd': '/home/me/a',
+            'title': 'Fix it',
+            'updatedAt': '2026-10-05T10:00:00Z',
+            '_meta': {'messageCount': 12},
+          },
+          {'sessionId': 's1', 'cwd': '/home/me/a'},
+          {'cwd': '/no/id'},
+        ],
+      });
 
       final past = await host.history(agent: 'omp', cwd: '/home/me/a');
 
-      expect(transport.execCommands, [keeperHistoryCommand(agent: 'omp', cwd: '/home/me/a')]);
+      expect(transport.hostCalls, ['keeper.history']);
+      expect(asked.single.args, {'agent': 'omp', 'cwd': '/home/me/a'});
       expect(past.sessions.map((s) => s.sessionId), ['s2', 's1']);
       expect(past.sessions.first.messageCount, 12);
       expect((past.canList, past.canLoad, past.canResume, past.more), (true, true, false, true));
     });
 
-    test('without a folder the command lists every folder', () async {
-      answer(prints(['{"agent":"codex","list":false,"load":true,"resume":false,"more":false,"sessions":[]}']));
+    test('without a folder the request has no cwd key, so the host lists every folder', () async {
+      replies({'agent': 'codex', 'list': false, 'load': true, 'resume': false, 'more': false, 'sessions': <Object?>[]});
 
       final past = await host.history(agent: 'codex');
 
-      expect(transport.execCommands, [keeperHistoryCommand(agent: 'codex')]);
+      expect(asked.single.args, {'agent': 'codex'});
       expect(past.canList, isFalse);
     });
 
-    test('a folder that is gone and an agent that isn’t installed are fatal', () async {
-      answer(fails(66, 'herdr-mobile: the folder doesn’t exist on this host: /gone'));
-      await expectLater(
-        host.history(agent: 'omp', cwd: '/gone'),
-        throwsA(_hostError(fatal: true, message: contains('doesn’t exist'))),
-      );
-      answer(fails(69));
-      await expectLater(host.history(agent: 'pi'), throwsA(_hostError(fatal: true, message: contains('installed'))));
+    test('an answer that isn’t the object is reported', () async {
+      replies('segmentation fault');
+
+      await expectLater(host.history(agent: 'omp'), throwsA(_hostError(message: contains('segmentation'))));
     });
 
-    test('an agent that fails or doesn’t answer can be tried again, with its words', () async {
-      answer(fails(70, 'herdr-mobile: omp: store unreadable'));
+    test('a call that never answers times out with the history’s own words', () async {
+      answerCalls((_, _) => Completer<Object?>().future);
 
       await expectLater(
         host.history(agent: 'omp'),
-        throwsA(_hostError(fatal: false, message: contains('store unreadable'))),
+        throwsA(_hostError(fatal: false, message: 'The machine didn’t answer in time (read the past sessions).')),
       );
-    });
-
-    test('a folder or agent the command builder refuses never reaches the host', () async {
-      answer(prints(['{}']));
-
-      await expectLater(
-        host.history(agent: 'omp', cwd: 'line\nbreak'),
-        throwsA(_hostError(fatal: true, message: contains('folder'))),
-      );
-      await expectLater(host.history(agent: 'emacs'), throwsA(_hostError(fatal: true, message: contains('agent'))));
-      expect(transport.execCommands, isEmpty);
-    });
-
-    test('a line that isn’t the answer is reported, and a command that hangs times out', () async {
-      answer(prints(['segmentation fault']));
-      await expectLater(host.history(agent: 'omp'), throwsA(_hostError(message: contains('segmentation'))));
-
-      answer(FakeExecChannel.new);
-      await expectLater(host.history(agent: 'omp'), throwsA(_hostError(message: contains('in time'))));
-      expect(channels.last.closeCalls, 1);
-    });
-  });
-
-  group('channels', () {
-    test('every one-shot command leaves its channel closed, whether it worked or not', () async {
-      answer(prints(['{"routes":[]}']));
-      await host.available();
-      answer(fails(1, 'x'));
-      await expectLater(host.list(), throwsA(isA<AgentHostException>()));
-      answer(prints(['not json']));
-      await expectLater(host.list(), throwsA(isA<AgentHostException>()));
-      answer(prints(['{"ok":true}']));
-      await host.kill('kp1');
-
-      expect(channels.map((c) => c.closeCalls), [1, 1, 1, 1]);
-    });
-
-    test('a connection error from the transport keeps its fatal flag', () async {
-      transport.onExec = (_) => Future.error(const HerdrTransportException('Host key changed', fatal: true));
-      await expectLater(host.list(), throwsA(_hostError(fatal: true, message: 'Host key changed')));
-
-      transport.onExec = (_) => Future.error(const HerdrTransportException('Can’t connect'));
-      await expectLater(host.list(), throwsA(_hostError(fatal: false, message: 'Can’t connect')));
-    });
-
-    test('a channel that opens after the timeout is closed, not leaked', () async {
-      final arriving = Completer<ExecChannel>();
-      transport.onExec = (_) => arriving.future;
-
-      await expectLater(host.list(), throwsA(_hostError(message: contains('in time'))));
-      final channel = FakeExecChannel();
-      arriving.complete(channel);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(channel.closeCalls, 1);
     });
   });
 
   group('kill', () {
-    test('runs the kill command and succeeds on exit 0', () async {
-      answer(prints(['{"ok":true}']));
+    test('asks keeper.kill for the keeper, whatever object the host answers', () async {
+      replies({'ok': true});
 
       await host.kill('kp1');
 
-      expect(transport.execCommands, [keeperKillCommand('kp1')]);
+      expect(transport.hostCalls, ['keeper.kill']);
+      expect(asked.single.args, {'id': 'kp1'});
     });
 
-    test('exit 0 without output is still a success', () async {
-      answer(() => FakeExecChannel.run());
+    test('an answer with nothing in it is still a success', () async {
+      replies(null);
 
       await host.kill('kp1');
     });
 
-    test('an unknown keeper is reported', () async {
-      answer(fails(66, 'no such keeper'));
+    test('an unknown keeper is reported in the host’s words', () async {
+      rejects(const HostException('not_found', 'no such keeper'));
 
-      await expectLater(host.kill('gone1'), throwsA(_hostError(message: 'no such keeper')));
+      await expectLater(host.kill('gone1'), throwsA(_hostError(fatal: true, message: 'no such keeper')));
     });
   });
 
-  group('installing the keeper script', () {
-    final installCommand = keeperInstallCommand();
-    late bool there;
-    late FakeExecChannel attachChannel;
-    late int installs;
-    final installers = <FakeExecChannel>[];
+  group('what went wrong, in words', () {
+    /// Every one-shot call, with the words it uses for what it was doing.
+    final calls = <(String, Future<Object?> Function(SshAgentHost))>[
+      ('check the agents', (h) => h.available()),
+      ('list the sessions', (h) => h.list()),
+      ('start the agent', (h) => h.start(agent: 'omp', cwd: '/x')),
+      ('read the past sessions', (h) => h.history(agent: 'omp')),
+      ('end the session', (h) => h.kill('k1')),
+    ];
 
-    /// A host that has the script only after the install command succeeded
-    /// (when [present] is false). [install] builds the answer to the install
-    /// command; the default is a good one.
-    void scripted({bool present = false, FakeExecChannel Function()? install}) {
-      there = present;
-      installs = 0;
-      installers.clear();
-      attachChannel = FakeExecChannel();
-      transport.onExec = (command) async {
-        if (command == installCommand) {
-          installs++;
-          if (install != null) return install();
-          // Like the real installer: reads its input to the end, then answers.
-          final installer = FakeExecChannel();
-          installer.onInputClosed = () {
-            there = true;
-            installer.emit('{"ok":true}');
-            installer.exit(0);
-          };
-          installers.add(installer);
-          return installer;
+    /// [error] as the host answers it, and the [fatal] and [message] the person gets.
+    final failures = <(String, HostException, bool, Object)>[
+      (
+        'a folder that is missing is fatal, with the host’s text',
+        const HostException('not_found', 'herdr-keeper: /nope isn’t a folder'),
+        true,
+        'herdr-keeper: /nope isn’t a folder',
+      ),
+      (
+        'not_found without words says the folder or session doesn’t exist',
+        const HostException('not_found', ''),
+        true,
+        'That folder or session doesn’t exist on the machine.',
+      ),
+      (
+        'an agent that exited is fatal',
+        const HostException('agent_exited', 'keeper k1: agent exited (code 1)'),
+        true,
+        'keeper k1: agent exited (code 1)',
+      ),
+      (
+        'agent_exited without words has its own',
+        const HostException('agent_exited', ''),
+        true,
+        'The agent of this session has exited.',
+      ),
+      (
+        'an agent that is not installed is fatal',
+        const HostException('agent_missing', 'omp is not on the PATH'),
+        true,
+        'omp is not on the PATH',
+      ),
+      (
+        'agent_missing without words says it is not installed',
+        const HostException('agent_missing', ''),
+        true,
+        'That agent isn’t installed on the machine.',
+      ),
+      (
+        'an agent that died while starting can be retried and shows its words',
+        const HostException('failed', 'Error: not logged in\nrun `claude login`'),
+        false,
+        contains('claude login'),
+      ),
+      (
+        'failed without words says the agent exited while starting',
+        const HostException('failed', ''),
+        false,
+        'The agent exited while starting.',
+      ),
+      (
+        'bad_request is fatal: the app asked something the host does not understand',
+        const HostException('bad_request', 'cwd must be a path'),
+        true,
+        'cwd must be a path',
+      ),
+      (
+        'bad_request without words has its own',
+        const HostException('bad_request', ''),
+        true,
+        'The app asked the machine something it didn’t understand.',
+      ),
+      (
+        'any other code can be retried and keeps the words',
+        const HostException('permission', 'Traceback: boom'),
+        false,
+        'Traceback: boom',
+      ),
+      (
+        'a host that is not available is not blamed on anything else, and can be retried',
+        const HostException('unavailable', 'no herdr socket'),
+        false,
+        'The machine couldn’t set up agent sessions.',
+      ),
+      (
+        'a helper that could not be installed keeps the installer’s words',
+        const HostException('install_failed', 'No space left on device'),
+        false,
+        'No space left on device',
+      ),
+      (
+        'a link that was lost can be retried',
+        const HostLinkLost('serve exited'),
+        false,
+        'The connection to the machine dropped.',
+      ),
+      (
+        'a call that was cancelled reads as a dropped connection',
+        const HostException('cancelled', 'cancelled'),
+        false,
+        'The connection to the machine dropped.',
+      ),
+      (
+        'a long traceback is cut to its end, where the error is',
+        HostException('failed', '${'frame\n' * 500}ValueError: the actual problem'),
+        false,
+        allOf(endsWith('ValueError: the actual problem'), hasLength(lessThan(500))),
+      ),
+    ];
+
+    for (final (name, error, fatal, message) in failures) {
+      test('$name (${error.code})', () async {
+        rejects(error);
+
+        for (final (_, run) in calls) {
+          await expectLater(run(host), throwsA(_hostError(fatal: fatal, message: message)));
         }
-        if (!there) {
-          return FakeExecChannel.run(code: 65, stderr: 'herdr-mobile: the keeper is not installed');
-        }
-        if (command == keeperAttachCommand('kp1', zipped: true)) return attachChannel;
-        if (command == keeperListCommand()) return FakeExecChannel.run(stdout: ['[]']);
-        return FakeExecChannel.run(stdout: ['{"routes":["omp"]}']);
-      };
+      });
     }
 
-    test('exit 65 installs the script and repeats the command once', () async {
-      scripted();
+    test('a call that never answers says what was being done', () async {
+      answerCalls((_, _) => Completer<Object?>().future);
 
-      expect(await host.list(), isEmpty);
-
-      expect(transport.execCommands, [keeperListCommand(), installCommand, keeperListCommand()]);
+      for (final (what, run) in calls) {
+        await expectLater(
+          run(host),
+          throwsA(_hostError(fatal: false, message: 'The machine didn’t answer in time ($what).')),
+        );
+      }
     });
 
-    test('the script travels on stdin, whole and in order, and stdin is closed after it', () async {
-      scripted();
+    test('a host that answers timeout says what was being done', () async {
+      rejects(const HostException('timeout', 'the host took too long'));
 
-      await host.list();
-
-      final installer = installers.single;
-      expect(installer.inputClosed, isTrue, reason: 'the installer reads until end of input');
-      expect(installer.sent, hasLength(1));
-      expect('${installer.sent.single}\n', keeperInstallPayload());
-      expect(installCommand.length, lessThan(8000), reason: 'Dropbear caps an exec at 9000 bytes');
+      for (final (what, run) in calls) {
+        await expectLater(
+          run(host),
+          throwsA(_hostError(fatal: false, message: 'The machine didn’t answer in time ($what).')),
+        );
+      }
     });
 
-    test('after an install no command installs again', () async {
-      scripted();
+    test('an unknown code with no words says what was being done and the exit status', () async {
+      rejects(const HostException('mystery', ''));
 
-      await host.list();
-      await host.available();
-      await host.kill('kp1');
-
-      expect(installs, 1);
-      expect(transport.execCommands.where((c) => c == keeperListCommand()), hasLength(2));
+      for (final (what, run) in calls) {
+        await expectLater(run(host), throwsA(_hostError(fatal: false, message: 'Couldn’t $what (exit status 1).')));
+      }
     });
 
-    test('a host that has the script is never asked to install', () async {
-      scripted(present: true);
+    test('a connection error from the transport keeps its words and its fatal flag', () async {
+      rejects(const HerdrTransportException('Host key changed', fatal: true));
+      for (final (_, run) in calls) {
+        await expectLater(run(host), throwsA(_hostError(fatal: true, message: 'Host key changed')));
+      }
 
-      await host.list();
-
-      expect(installs, 0);
-      expect(transport.execCommands, [keeperListCommand()]);
+      rejects(const HerdrTransportException('Can’t connect'));
+      for (final (_, run) in calls) {
+        await expectLater(run(host), throwsA(_hostError(fatal: false, message: 'Can’t connect')));
+      }
     });
 
-    test('history installs the script when the host has none, then asks again', () async {
-      final historyCommand = keeperHistoryCommand(agent: 'omp');
-      scripted();
-      final scripted0 = transport.onExec!;
-      transport.onExec = (command) async => command == historyCommand && there
-          ? FakeExecChannel.run(
-              stdout: ['{"agent":"omp","list":true,"load":true,"resume":true,"more":false,"sessions":[]}'],
-            )
-          : scripted0(command);
+    test('a host that has no helper link (no handler) is the machine that cannot set up sessions', () async {
+      transport.onHostCall = null;
 
-      final past = await host.history(agent: 'omp');
-
-      expect(past.canReopen, isTrue);
-      expect(transport.execCommands, [historyCommand, installCommand, historyCommand]);
-      expect(installs, 1);
-    });
-
-    test('if the script goes missing later, the next 65 installs it again', () async {
-      scripted();
-      await host.list();
-      there = false; // someone cleaned ~/.herdr-mobile
-
-      await host.list();
-
-      expect(installs, 2);
-    });
-
-    test('two commands that both find it missing install once', () async {
-      scripted();
-
-      await Future.wait([host.list(), host.available()]);
-
-      expect(installs, 1);
-    });
-
-    test('a host without python3 fails the install fatally, and the command isn’t repeated', () async {
-      scripted(
-        install: () => FakeExecChannel.run(code: 78, stderr: 'herdr-mobile: agent sessions need python3 on this host'),
+      await expectLater(
+        host.list(),
+        throwsA(_hostError(fatal: false, message: 'The machine couldn’t set up agent sessions.')),
       );
-
-      await expectLater(host.list(), throwsA(_hostError(fatal: true, message: contains('need python3'))));
-
-      expect(transport.execCommands, [keeperListCommand(), installCommand]);
-    });
-
-    test('an install that fails for another reason is retryable and shows its stderr', () async {
-      scripted(install: () => FakeExecChannel.run(code: 1, stderr: 'No space left on device'));
-
-      await expectLater(host.list(), throwsA(_hostError(fatal: false, message: contains('No space left'))));
-    });
-
-    test('an install that doesn’t say ok is a failure', () async {
-      scripted(
-        install: () => FakeExecChannel.run(stdout: ['{"ok":false}'], stderr: 'bad hash'),
-      );
-
-      await expectLater(host.list(), throwsA(_hostError(message: allOf(contains('set up'), contains('bad hash')))));
-    });
-
-    test('an install that never answers times out', () async {
-      scripted(install: FakeExecChannel.new);
-
-      await expectLater(host.list(), throwsA(_hostError(message: contains('in time'))));
-    });
-
-    test('a script that is still missing after the install is reported, not looped on', () async {
-      scripted(install: () => FakeExecChannel.run(stdout: ['{"ok":true}']));
-
-      await expectLater(host.list(), throwsA(_hostError(message: contains('still missing'))));
-
-      expect(transport.execCommands, [keeperListCommand(), installCommand, keeperListCommand()]);
-    });
-
-    test('kill repeats its own command after the install', () async {
-      scripted();
-
-      await host.kill('kp1');
-
-      expect(transport.execCommands, [keeperKillCommand('kp1'), installCommand, keeperKillCommand('kp1')]);
-    });
-
-    test('attach installs before it returns and sends on the second channel', () async {
-      scripted();
-
-      final attached = await host.attach('kp1');
-      attached.send('{"hello":1}');
-
-      expect(transport.execCommands, [
-        keeperAttachCommand('kp1', zipped: true),
-        installCommand,
-        keeperAttachCommand('kp1', zipped: true),
-      ]);
-      expect(attachChannel.sent, ['{"hello":1}']);
-    });
-
-    test('attach fails when the install does, and opens nothing long-lived', () async {
-      scripted(install: () => FakeExecChannel.run(code: 78, stderr: 'need python3'));
-
-      await expectLater(host.attach('kp1'), throwsA(_hostError(fatal: true, message: contains('python3'))));
-
-      expect(transport.execCommands, [keeperAttachCommand('kp1', zipped: true), installCommand]);
-    });
-
-    test('attach on a host not yet known waits only the check, then returns the live channel', () async {
-      scripted(present: true);
-
-      final attached = await host.attach('kp1');
-      attached.send('x');
-
-      expect(installs, 0);
-      expect(attachChannel.sent, ['x']);
-    });
-
-    test('once a command has worked, attach doesn’t wait for any check', () async {
-      final patient = SshAgentHost(transport, attachCheck: const Duration(seconds: 30));
-      scripted(present: true);
-      await patient.list();
-
-      final attached = await patient.attach('kp1').timeout(const Duration(seconds: 2));
-      attached.send('x');
-
-      expect(attachChannel.sent, ['x']);
     });
   });
 
@@ -608,10 +494,10 @@ void main() {
     late FakeExecChannel channel;
     setUp(() {
       channel = FakeExecChannel();
-      transport.onExec = (command) async => channel;
+      answerStreams(() => channel);
     });
 
-    test('opens the attach command and relays both directions', () async {
+    test('opens the keeper.attach stream for the keeper and relays both directions', () async {
       final attached = await host.attach('kp1');
       final got = <String>[];
       attached.lines.listen(got.add);
@@ -621,7 +507,8 @@ void main() {
       channel.emit('{"jsonrpc":"2.0","method":"session/update"}');
       await Future<void>.delayed(Duration.zero);
 
-      expect(transport.execCommands, [keeperAttachCommand('kp1', zipped: true)]);
+      expect(transport.hostCalls, ['keeper.attach']);
+      expect(asked.single.args, {'id': 'kp1'});
       expect(channel.sent, ['{"jsonrpc":"2.0","id":1,"method":"initialize"}']);
       expect(got, ['{"jsonrpc":"2.0","id":1,"result":{}}', '{"jsonrpc":"2.0","method":"session/update"}']);
     });
@@ -636,9 +523,7 @@ void main() {
       await ended.future.timeout(const Duration(seconds: 2));
 
       expect(channel.closeCalls, greaterThan(0), reason: 'the channel behind it is closed');
-      expect(transport.execCommands, [
-        keeperAttachCommand('kp1', zipped: true),
-      ], reason: 'no kill command is ever run by a detach');
+      expect(transport.hostCalls, ['keeper.attach'], reason: 'no kill is ever asked by a detach');
       expect(() => attached.send('x'), throwsStateError);
     });
 
@@ -673,6 +558,22 @@ void main() {
       expect(await attached.endReason, _hostError(fatal: true, message: 'no such keeper nope'));
     });
 
+    test('a stream that ends as unavailable or failed can be tried again', () async {
+      final unavailable = await host.attach('kp1') as KeeperAttachment;
+      unavailable.lines.listen((_) {}, onError: (Object _) {});
+      channel.exit(65);
+      expect(
+        await unavailable.endReason,
+        _hostError(fatal: false, message: 'The machine couldn’t set up agent sessions.'),
+      );
+
+      channel = FakeExecChannel();
+      final failed = await host.attach('kp1') as KeeperAttachment;
+      failed.lines.listen((_) {}, onError: (Object _) {});
+      channel.exit(70, stderr: 'the keeper could not start');
+      expect(await failed.endReason, _hostError(fatal: false, message: 'the keeper could not start'));
+    });
+
     test('a clean end (evicted, agent exited) and a dropped link have no failure', () async {
       final clean = await host.attach('kp1') as KeeperAttachment;
       final errors = <Object>[];
@@ -692,10 +593,117 @@ void main() {
       expect(errors, isEmpty);
     });
 
-    test('a transport that can’t open the channel fails the attach', () async {
-      transport.onExec = (_) => Future.error(const HerdrTransportException('Can’t connect'));
+    test('a stream the host refuses to open fails the attach in its words', () async {
+      transport.onHostStream = (_, _, _) => Future.error(const HostException('not_found', 'no such keeper nope'));
+      await expectLater(host.attach('nope1'), throwsA(_hostError(fatal: true, message: 'no such keeper nope')));
 
-      await expectLater(host.attach('kp1'), throwsA(_hostError(message: 'Can’t connect')));
+      transport.onHostStream = (_, _, _) => Future.error(const HostException('agent_exited', ''));
+      await expectLater(host.attach('k1'), throwsA(_hostError(fatal: true, message: contains('has exited'))));
+
+      transport.onHostStream = (_, _, _) => Future.error(const HostException('unavailable', 'no helper'));
+      await expectLater(host.attach('k1'), throwsA(_hostError(fatal: false, message: contains('set up'))));
+
+      transport.onHostStream = (_, _, _) => Future.error(const HostLinkLost('serve exited'));
+      await expectLater(host.attach('k1'), throwsA(_hostError(fatal: false, message: contains('dropped'))));
+
+      transport.onHostStream = (_, _, _) => Future.error(const HostException('timeout', 'slow'));
+      await expectLater(host.attach('k1'), throwsA(_hostError(fatal: false, message: contains('in time'))));
+    });
+
+    test('a transport that can’t open the stream fails the attach, keeping the fatal flag', () async {
+      transport.onHostStream = (_, _, _) => Future.error(const HerdrTransportException('Can’t connect'));
+      await expectLater(host.attach('kp1'), throwsA(_hostError(fatal: false, message: 'Can’t connect')));
+
+      transport.onHostStream = (_, _, _) =>
+          Future.error(const HerdrTransportException('Host key changed', fatal: true));
+      await expectLater(host.attach('kp1'), throwsA(_hostError(fatal: true, message: 'Host key changed')));
+    });
+
+    test('a stream that opens after the timeout is closed, not leaked', () {
+      fakeAsync((async) {
+        final arriving = Completer<ExecChannel>();
+        transport.onHostStream = (_, _, _) => arriving.future;
+
+        Object? error;
+        host.attach('kp1').then<void>((_) {}, onError: (Object e) => error = e);
+        async.elapse(const Duration(seconds: 29));
+        expect(error, isNull, reason: 'a stream may take its time to open');
+        async.elapse(const Duration(seconds: 1));
+        expect(error, _hostError(fatal: false, message: 'The machine didn’t answer in time (reach the machine).'));
+
+        final arrived = FakeExecChannel();
+        arriving.complete(arrived);
+        async.flushMicrotasks();
+
+        expect(arrived.closeCalls, 1);
+      });
+    });
+  });
+
+  group('follow', () {
+    test('opens keeper.follow for the path alone: no keys for what was not asked', () async {
+      answerStreams(FakeExecChannel.new);
+
+      await host.follow('/home/u/s.jsonl');
+
+      expect(transport.hostCalls, ['keeper.follow']);
+      expect(asked.single.args, {'path': '/home/u/s.jsonl'});
+    });
+
+    test('carries from, to, digest and tail_bytes when asked', () async {
+      answerStreams(FakeExecChannel.new);
+
+      await host.follow('/home/u/s.jsonl', from: 4096, to: 9000, digest: true, tailBytes: 1 << 20);
+      await host.follow('/home/u/s.jsonl', from: 0, digest: false);
+
+      expect(asked.first.args, {
+        'path': '/home/u/s.jsonl',
+        'from': 4096,
+        'to': 9000,
+        'digest': true,
+        'tail_bytes': 1 << 20,
+      });
+      expect(asked.last.args, {'path': '/home/u/s.jsonl', 'from': 0});
+    });
+
+    test('returns the channel the transport opened, running', () async {
+      final channel = FakeExecChannel();
+      answerStreams(() => channel);
+
+      final followed = await host.follow('/home/u/s.jsonl');
+      final got = <String>[];
+      followed.lines.listen(got.add);
+      channel.emit('12\t{"a":1}');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(followed, same(channel));
+      expect(got, ['12\t{"a":1}']);
+    });
+
+    test('a host that refuses the path fails the follow in its words', () async {
+      transport.onHostStream = (_, _, _) =>
+          Future.error(const HostException('bad_request', 'not a log file in your home folder: /x'));
+      await expectLater(
+        host.follow('/x'),
+        throwsA(_hostError(fatal: true, message: 'not a log file in your home folder: /x')),
+      );
+
+      transport.onHostStream = (_, _, _) => Future.error(const HostException('not_found', 'cannot read /x.jsonl'));
+      await expectLater(host.follow('/x.jsonl'), throwsA(_hostError(fatal: true, message: 'cannot read /x.jsonl')));
+    });
+  });
+
+  group('keeperCommandFailure', () {
+    test('words a stream that ended after it ran, by its exit status', () {
+      expect(
+        keeperCommandFailure(null, '', 'follow the session'),
+        _hostError(fatal: false, message: contains('dropped')),
+      );
+      expect(keeperCommandFailure(66, 'gone', 'follow the session'), _hostError(fatal: true, message: 'gone'));
+      expect(
+        keeperCommandFailure(5, '', 'follow the session'),
+        _hostError(fatal: false, message: 'Couldn’t follow the session (exit status 5).'),
+      );
     });
   });
 }

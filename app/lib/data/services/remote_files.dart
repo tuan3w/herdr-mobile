@@ -4,15 +4,27 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../models/remote_file.dart';
+import '../models/remote_search.dart';
 import 'herdr_transport.dart';
 
 export '../models/remote_file.dart' show UploadCancelled, UploadJob, uploadMaxBytes;
 
 /// A flag a caller raises to stop a long read between pieces.
 class ReadCancel {
-  bool cancelled = false;
+  bool _cancelled = false;
+  final _done = Completer<void>();
 
-  void cancel() => cancelled = true;
+  bool get cancelled => _cancelled;
+
+  /// Completes when [cancel] is called, for work that can stop at once instead
+  /// of between pieces (a thumbnail the host is still making).
+  Future<void> get whenCancelled => _done.future;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _done.complete();
+  }
 }
 
 /// A read stopped by its [ReadCancel]: not a failure, nobody is waiting.
@@ -23,13 +35,13 @@ class ReadCancelled implements Exception {
   String toString() => 'The read was cancelled';
 }
 
-/// Reads a machine's files through its transport (SFTP over the machine's SSH
-/// connection). Every failure surfaces as a [RemoteFileException], including a
-/// dropped connection, so screens handle one error type.
+/// Reads a machine's files through its transport (the agent helper's `fs` when
+/// the machine has it, SFTP otherwise) and sends phone files to its inbox
+/// (helper only). Every failure surfaces as a [RemoteFileException], including
+/// a dropped connection, so screens handle one error type.
 class RemoteFiles {
   /// [maxUploads] files go to the host at once; the rest wait their turn in
-  /// the order they were asked for. Uploads share the machine's one SFTP
-  /// channel with browsing, so two is the most that leaves it responsive.
+  /// the order they were asked for.
   ///
   /// [machineId] names the machine in the keys of the disk cache, which
   /// must not mix two machines' files; empty means "do not use the cache".
@@ -69,9 +81,31 @@ class RemoteFiles {
   Future<List<RemoteEntry>> list(String path) => _guard(path, () => _transport.listDirectory(path));
 
   /// Up to [length] bytes from [offset] (the transport caps one call at
-  /// [remoteReadCap]); fewer at end of file.
-  Future<Uint8List> read(String path, {int offset = 0, int length = remoteReadCap}) =>
-      _guard(path, () => _transport.readFile(path, offset: offset, length: length));
+  /// [remoteReadCap]); fewer at end of file. With [ifMatch] (the file as it was
+  /// seen) a machine with the agent helper refuses a file that is no longer
+  /// that one with [RemoteFileChanged]; SFTP cannot check and reads whatever is
+  /// there.
+  Future<Uint8List> read(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) =>
+      _guard(path, () => _transport.readFile(path, offset: offset, length: length, ifMatch: ifMatch));
+
+  /// [path] now (null when nothing is there) and again whenever it changes, for
+  /// as long as the subscription lives: the viewer's "changed on disk". The
+  /// stream errors with a [RemoteFileException] and closes when the machine
+  /// cannot be asked; listen again to start over.
+  Stream<RemoteStat?> watch(String path) {
+    if (!_transport.supportsFiles) {
+      return Stream.error(
+        RemoteFileException(RemoteFileErrorKind.unsupported, 'Files are not available on this machine.', path: path),
+      );
+    }
+    return _transport
+        .watchFile(path)
+        .transform(
+          StreamTransformer.fromHandlers(
+            handleError: (error, stack, sink) => sink.addError(_asFileError(error, path), stack),
+          ),
+        );
+  }
 
   /// All [size] bytes of a file, fetched in pieces of at most [chunk] bytes
   /// (never more than [remoteReadCap]). For files the caller has already
@@ -103,31 +137,75 @@ class RemoteFiles {
     return at == size ? out : Uint8List.sublistView(out, 0, at);
   }
 
-  /// `mkdir -p`: [path] and any missing parents, owner-only (0700). An existing
-  /// folder is left as it is. Throws permission / notADirectory.
-  Future<void> makeDirs(String path) => _guard(path, () => _transport.makeDirs(path));
+  /// A small JPEG of the picture at [path], its longest side [maxPx], made on
+  /// the machine (agent helper only), or null when none can be had: SFTP, an
+  /// older helper, a file that is not a picture the host reads, one too large
+  /// or changed since [expect] (the file as it was listed), a lost connection,
+  /// or [cancel] firing first. Never throws: the caller does what it did
+  /// before thumbnails existed (reads the file itself when it is small).
+  Future<Uint8List?> thumbnail(String path, {int maxPx = 256, RemoteStat? expect, ReadCancel? cancel}) async {
+    if (!_transport.supportsFiles || (cancel?.cancelled ?? false)) return null;
+    try {
+      return await _transport.thumbnailFile(path, maxPx: maxPx, expect: expect, cancelled: cancel?.whenCancelled);
+    } on Object {
+      return null;
+    }
+  }
 
-  /// Deletes the file (or link) at [path]; never a folder. Throws notFound /
-  /// permission.
-  Future<void> remove(String path) => _guard(path, () => _transport.removeFile(path));
+  /// The matches of [spec] below its root as the machine finds them: batches,
+  /// then one [FileSearchDone] (its `truncated` says a limit was hit and more
+  /// may exist). Cancelling the subscription stops the search on the machine.
+  /// Errors with a [RemoteFileException] (`notFound`/`permission`/
+  /// `notADirectory` for the root, `network` for a lost connection).
+  Stream<FileSearchEvent> search(FileSearchSpec spec) {
+    if (!_transport.supportsFiles) {
+      return Stream.error(
+        RemoteFileException(
+          RemoteFileErrorKind.unsupported,
+          'Files are not available on this machine.',
+          path: spec.root,
+        ),
+      );
+    }
+    return _transport
+        .searchFiles(spec)
+        .transform(
+          StreamTransformer.fromHandlers(
+            handleError: (error, stack, sink) => sink.addError(_asFileError(error, spec.root), stack),
+          ),
+        );
+  }
 
-  /// Copies the local file [localPath] to [remotePath] over SFTP (created or
-  /// overwritten, mode 0600), starting within the same event-loop turn when
-  /// fewer than [maxUploads] are running, else when one ends.
+  /// Picks the inbox path on the host for the phone file [name] of the session
+  /// [key] (the host makes the folders and the name safe and unique): see
+  /// [HerdrTransport.reserveInboxFile]. Throws [RemoteFileException]
+  /// (`unsupported` without the agent helper, `permission`, `network`).
+  Future<String> reserveInboxFile({required String key, required String name}) =>
+      _guard('inbox', () => _transport.reserveInboxFile(key: key, name: name));
+
+  /// Removes the old files from the host's inbox; returns how many went.
+  Future<int> sweepInbox() => _guard('inbox', _transport.sweepInbox);
+
+  /// Copies the local file [localPath] to the inbox path [inboxPath] (from
+  /// [reserveInboxFile]) through the agent helper, starting within the same
+  /// event-loop turn when fewer than [maxUploads] are running, else when one
+  /// ends.
   ///
   /// Never throws: every failure arrives as the job's `done` error, a
   /// [RemoteFileException] (`tooLarge` above [uploadMaxBytes], checked before
-  /// anything connects; [UploadCancelled] after [UploadJob.cancel]; `network` when
-  /// the link is lost, with no resume). [onProgress] hears the bytes the host
-  /// has stored, at most every 100 ms, ending with `total`/`total`. The file
-  /// is read and sent inside the transport's isolate; bytes never come here.
-  UploadJob upload({
+  /// anything connects; [UploadCancelled] after [UploadJob.cancel]; `network`
+  /// when the link is lost; `unsupported` without the helper). A lost link or a
+  /// cancel keeps what the host received: the same file to the same
+  /// [inboxPath] continues there. [onProgress] hears the bytes sent, at most
+  /// every 100 ms, ending with `total`/`total`. The file is hashed, read and
+  /// sent inside the transport's isolate; bytes never come here.
+  UploadJob uploadToInbox({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
   }) {
-    final job = _Upload(this, localPath, remotePath, onProgress);
-    final refusal = _refuse(localPath, remotePath);
+    final job = _Upload(this, localPath, inboxPath, onProgress);
+    final refusal = _refuse(localPath, inboxPath);
     if (refusal != null) {
       job.fail(refusal);
     } else if (_uploading < maxUploads) {
@@ -140,12 +218,12 @@ class RemoteFiles {
 
   /// Why [localPath] cannot be sent, found with one local stat (no bytes read,
   /// no connection).
-  RemoteFileException? _refuse(String localPath, String remotePath) {
+  RemoteFileException? _refuse(String localPath, String inboxPath) {
     if (!_transport.supportsFiles) {
       return RemoteFileException(
         RemoteFileErrorKind.unsupported,
         'Files are not available on this machine.',
-        path: remotePath,
+        path: inboxPath,
       );
     }
     final FileStat stat;
@@ -164,7 +242,7 @@ class RemoteFiles {
       return RemoteFileException(
         RemoteFileErrorKind.tooLarge,
         'The file is bigger than ${uploadMaxBytes ~/ (1024 * 1024)} MB',
-        path: remotePath,
+        path: inboxPath,
       );
     }
     return null;
@@ -207,25 +285,34 @@ class RemoteFiles {
     }
     try {
       return await op();
-    } on RemoteFileException {
-      rethrow;
-    } on HerdrTransportException catch (e) {
-      throw RemoteFileException(RemoteFileErrorKind.network, e.message, fatal: e.fatal, path: path);
     } on Object catch (e) {
-      throw RemoteFileException(RemoteFileErrorKind.network, '$e', path: path);
+      throw _asFileError(e, path);
     }
   }
+
+  /// [error] as the one exception screens handle: a connection problem or
+  /// anything unexpected is `network` (retryable unless the transport says not).
+  static RemoteFileException _asFileError(Object error, String path) => switch (error) {
+    RemoteFileException() => error,
+    HerdrTransportException(:final message, :final fatal) => RemoteFileException(
+      RemoteFileErrorKind.network,
+      message,
+      fatal: fatal,
+      path: path,
+    ),
+    _ => RemoteFileException(RemoteFileErrorKind.network, '$error', path: path),
+  };
 }
 
-/// One upload of [RemoteFiles.upload]: waiting for a turn, running, or over.
+/// One upload of [RemoteFiles.uploadToInbox]: waiting for a turn, running, or over.
 class _Upload implements UploadJob {
-  _Upload(this._files, this._localPath, this._remotePath, this._onProgress) {
+  _Upload(this._files, this._localPath, this._inboxPath, this._onProgress) {
     _done.future.then((_) {}, onError: (Object _) {});
   }
 
   final RemoteFiles _files;
   final String _localPath;
-  final String _remotePath;
+  final String _inboxPath;
   final void Function(int sent, int total)? _onProgress;
   final _done = Completer<void>();
   UploadJob? _inner;
@@ -240,7 +327,7 @@ class _Upload implements UploadJob {
     try {
       final inner = _inner = _files._transport.uploadFile(
         localPath: _localPath,
-        remotePath: _remotePath,
+        inboxPath: _inboxPath,
         onProgress: _onProgress,
       );
       inner.done.then((_) => _settle(null), onError: (Object e) => _settle(e));
@@ -267,9 +354,9 @@ class _Upload implements UploadJob {
         RemoteFileErrorKind.network,
         message,
         fatal: fatal,
-        path: _remotePath,
+        path: _inboxPath,
       ),
-      _ => RemoteFileException(RemoteFileErrorKind.network, '$error', path: _remotePath),
+      _ => RemoteFileException(RemoteFileErrorKind.network, '$error', path: _inboxPath),
     });
     _release();
   }
@@ -285,6 +372,6 @@ class _Upload implements UploadJob {
     if (_done.isCompleted) return;
     _files._waiting.remove(this);
     _inner?.cancel();
-    fail(UploadCancelled(path: _remotePath));
+    fail(UploadCancelled(path: _inboxPath));
   }
 }

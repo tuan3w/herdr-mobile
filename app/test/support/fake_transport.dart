@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:herdr_mobile/data/host/host_link.dart' show HostException;
 import 'package:herdr_mobile/data/models/remote_file.dart';
+import 'package:herdr_mobile/data/models/remote_search.dart';
 import 'package:herdr_mobile/data/models/web_bridge.dart';
+import 'package:herdr_mobile/data/services/file_walk_search.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 
 import 'fake_fs.dart';
@@ -130,23 +133,46 @@ class FakeTransport implements HerdrTransport {
   @override
   void setBackground(bool background) => backgroundCalls.add(background);
 
-  /// Commands passed to [openExec], in order, and whether each asked for
-  /// zipped lines.
-  final List<String> execCommands = [];
-  final List<bool> execZipped = [];
+  /// What [hostCall] answers; by default the agent helper cannot be had here.
+  Future<Object?> Function(String service, String method, Map<String, Object?> args)? onHostCall;
 
-  /// What [openExec] answers; by default no command can run here.
-  Future<ExecChannel> Function(String command)? onExec;
+  /// What [openHostStream] answers; by default the agent helper cannot be had here.
+  Future<ExecChannel> Function(String service, String method, Map<String, Object?> args)? onHostStream;
+
+  /// Every host call and stream opened, as `service.method`.
+  final hostCalls = <String>[];
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) {
-    execCommands.add(command);
-    execZipped.add(zipped);
-    final handler = onExec;
+  Future<Object?> hostCall(String service, String method, [Map<String, Object?> args = const {}, Duration? timeout]) {
+    hostCalls.add('$service.$method');
+    final handler = onHostCall;
     if (handler == null) {
-      return Future.error(const HerdrTransportException('No commands can run here'));
+      return Future.error(const HostException('unavailable', 'The agent helper is not available here.'));
     }
-    return handler(command);
+    return handler(service, method, args);
+  }
+
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) {
+    hostCalls.add('$service.$method');
+    final handler = onHostStream;
+    if (handler == null) {
+      return Future.error(const HostException('unavailable', 'The agent helper is not available here.'));
+    }
+    return handler(service, method, args);
+  }
+
+  /// What [openHostMessages] answers; by default the agent helper cannot be had here.
+  Stream<Object?> Function(String service, String method, Map<String, Object?> args)? onHostMessages;
+
+  @override
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) {
+    hostCalls.add('$service.$method');
+    final handler = onHostMessages;
+    if (handler == null) {
+      return Stream.error(const HostException('unavailable', 'The agent helper is not available here.'));
+    }
+    return handler(service, method, args);
   }
 
   /// The remote file system this machine "has". Null (the default) means the
@@ -165,34 +191,128 @@ class FakeTransport implements HerdrTransport {
   Future<List<RemoteEntry>> listDirectory(String path) => _fs.list(path);
 
   @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
-      _fs.read(path, offset, length);
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) =>
+      _fs.read(path, offset, length, ifMatch: ifMatch);
 
   @override
   Future<String> realPath(String path) => _fs.realPath(path);
 
-  @override
-  Future<void> makeDirs(String path) => _fs.makeDirs(path);
+  /// Every thumbnail asked for: `path@maxPx`, in call order.
+  final List<String> thumbnails = [];
+
+  /// What [thumbnailFile] answers; by default null, the way SFTP does.
+  Future<Uint8List?> Function(String path, int maxPx, RemoteStat? expect, Future<void>? cancelled)? onThumbnail;
 
   @override
-  Future<void> removeFile(String path) => _fs.remove(path);
+  Future<Uint8List?> thumbnailFile(String path, {int maxPx = 256, RemoteStat? expect, Future<void>? cancelled}) async {
+    thumbnails.add('$path@$maxPx');
+    return onThumbnail?.call(path, maxPx, expect, cancelled);
+  }
 
-  /// Uploads asked for: `local -> remote`, in call order.
+  /// Every search asked for, in call order.
+  final List<FileSearchSpec> searches = [];
+
+  /// What [searchFiles] answers; by default the walk over [fs] that a machine
+  /// without the agent helper gets.
+  Stream<FileSearchEvent> Function(FileSearchSpec spec)? onSearch;
+
+  @override
+  Stream<FileSearchEvent> searchFiles(FileSearchSpec spec) {
+    searches.add(spec);
+    final handler = onSearch;
+    if (handler != null) return handler(spec);
+    return walkSearch(_fs.list, spec);
+  }
+
+  final _watchers = <String, List<StreamController<RemoteStat?>>>{};
+
+  /// How many [watchFile] subscriptions are listening to [path] right now.
+  int watching(String path) => _watchers[path]?.where((c) => c.hasListener).length ?? 0;
+
+  @override
+  Stream<RemoteStat?> watchFile(String path) {
+    late final StreamController<RemoteStat?> c;
+    c = StreamController<RemoteStat?>(
+      onListen: () {
+        _watchers.putIfAbsent(path, () => []).add(c);
+        try {
+          c.add(_fs.peek(path));
+        } on Object catch (e) {
+          c
+            ..addError(e)
+            ..close();
+        }
+      },
+      onCancel: () => _watchers[path]?.remove(c),
+    );
+    return c.stream;
+  }
+
+  /// Tells every watcher of [path] what it is now (a change on the machine).
+  void touched(String path) {
+    final now = _fs.peek(path);
+    for (final c in [...?_watchers[path]]) {
+      c.add(now);
+    }
+  }
+
+  /// Ends every watcher of [path] with [error], the way a lost link does.
+  void failWatchers(String path, Object error) {
+    for (final c in [...?_watchers.remove(path)]) {
+      c
+        ..addError(error)
+        ..close();
+    }
+  }
+
+  /// Inbox paths handed out: `key -> name`, in call order.
+  final List<String> reserved = [];
+
+  /// Replaces the default reservation (`<home>/.herdr-mobile/inbox/<key>/<name>`).
+  Future<String> Function(String key, String name)? onReserve;
+
+  @override
+  Future<String> reserveInboxFile({required String key, required String name}) async {
+    reserved.add('$key -> $name');
+    final handler = onReserve;
+    if (handler != null) return handler(key, name);
+    final fs = _fs;
+    final dir = '${fs.home}/.herdr-mobile/inbox/$key';
+    fs.mkdirs(dir);
+    return '$dir/$name';
+  }
+
+  /// What [sweepInbox] answers, how often it was asked, and what it throws when set.
+  int sweepRemoved = 0;
+  int sweeps = 0;
+  Object? sweepFailure;
+
+  @override
+  Future<int> sweepInbox() async {
+    if (fs == null) {
+      throw RemoteFileException(RemoteFileErrorKind.unsupported, 'Needs the agent helper on this machine.');
+    }
+    if (sweepFailure != null) throw sweepFailure!;
+    sweeps++;
+    return sweepRemoved;
+  }
+
+  /// Uploads asked for: `local -> inbox path`, in call order.
   final List<String> uploads = [];
 
   /// Replaces the default upload (which copies the local file into [fs]).
-  UploadJob Function(String localPath, String remotePath, void Function(int, int)? onProgress)? onUpload;
+  UploadJob Function(String localPath, String inboxPath, void Function(int, int)? onProgress)? onUpload;
 
   @override
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
   }) {
-    uploads.add('$localPath -> $remotePath');
+    uploads.add('$localPath -> $inboxPath');
     final handler = onUpload;
-    if (handler != null) return handler(localPath, remotePath, onProgress);
-    return CopyUpload(_fs, localPath, remotePath, onProgress);
+    if (handler != null) return handler(localPath, inboxPath, onProgress);
+    return CopyUpload(_fs, localPath, inboxPath, onProgress);
   }
 
   /// Pages asked for through [openWebBridge], in call order.
@@ -240,11 +360,11 @@ Future<void> eventually(
 
 /// The default fake upload: copies the local file into [FakeFs] in one go.
 class CopyUpload implements UploadJob {
-  CopyUpload(FakeFs fs, String localPath, String remotePath, void Function(int, int)? onProgress) {
+  CopyUpload(FakeFs fs, String localPath, String inboxPath, void Function(int, int)? onProgress) {
     () async {
       try {
         final bytes = await File(localPath).readAsBytes();
-        fs.writeFile(remotePath, bytes);
+        fs.writeFile(inboxPath, bytes);
         onProgress?.call(bytes.length, bytes.length);
         _done.complete();
       } on Object catch (e) {

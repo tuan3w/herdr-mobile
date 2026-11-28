@@ -41,11 +41,17 @@ class RemoteFileStaging {
   /// The copy of [stat] on this phone, made now unless the same file (same
   /// machine, path, size and time) was copied whole before.
   ///
-  /// [onProgress] hears the bytes written after every piece. A [cancel] that
-  /// fires stops before the next piece with [ReadCancelled] and removes what was
-  /// written. Throws [RemoteFileException]: whatever the reads say, `failed` when
-  /// the phone is out of space, when the file shrank while it was copied, or
-  /// when its size is not known.
+  /// A copy that was cancelled or cut keeps what it had (the `.part` file of
+  /// that file's folder) and the next copy of the same file continues there:
+  /// it asks the machine for the file again first and goes on only when size
+  /// and time are unchanged (with the agent helper the host also refuses a read
+  /// of a file that changed since), else it starts over.
+  ///
+  /// [onProgress] hears the bytes written after every piece (a continued copy
+  /// starts at what it already has). A [cancel] that fires stops before the
+  /// next piece with [ReadCancelled]. Throws [RemoteFileException]: whatever
+  /// the reads say, `failed` when the phone is out of space, when the file
+  /// shrank while it was copied, or when its size is not known.
   Future<File> fetch(RemoteFiles files, RemoteStat stat, {void Function(int written)? onProgress, ReadCancel? cancel}) {
     final turn = Completer<void>();
     final before = _line;
@@ -86,30 +92,19 @@ class RemoteFileStaging {
       await _clearExcept(root, key);
       await folder.create(recursive: true);
       final part = File('${target.path}.part');
-      final sink = part.openWrite();
-      var at = 0;
-      try {
-        while (at < size) {
-          if (cancel?.cancelled ?? false) throw const ReadCancelled();
-          final Uint8List piece = await files.read(
-            stat.path,
-            offset: at,
-            length: copyChunk < size - at ? copyChunk : size - at,
-          );
-          if (piece.isEmpty) {
-            throw RemoteFileException(
-              RemoteFileErrorKind.failed,
-              '${stat.name} changed while it was being copied.',
-              path: stat.path,
-            );
-          }
-          sink.add(piece);
-          at += piece.length;
-          onProgress?.call(at);
+      var from = await _resumePoint(files, stat, size, part);
+      while (true) {
+        try {
+          await _copy(files, stat, size, part, from, onProgress, cancel);
+          break;
+        } on RemoteFileChanged {
+          // The host says the file is not the one the first part came from:
+          // that part is of no use. Once from the start, and a file that
+          // changes under that is not copyable now.
+          if (from == 0) rethrow;
+          await _remove(part);
+          from = 0;
         }
-        await sink.flush();
-      } finally {
-        await sink.close();
       }
       if (cancel?.cancelled ?? false) throw const ReadCancelled();
       return await part.rename(target.path);
@@ -122,10 +117,72 @@ class RemoteFileStaging {
             : 'The file couldn’t be copied to the phone.',
         path: stat.path,
       );
-    } on Object {
-      // Cancelled, or the host said no: a half copy is of no use to anyone.
-      await _remove(folder);
+    } on Object catch (e) {
+      // A copy that was cancelled or cut by the connection keeps its part: the
+      // next copy of the same file continues there. Anything else (the file is
+      // gone, refused, shrank) leaves nothing worth keeping.
+      final cut =
+          e is ReadCancelled ||
+          (e is RemoteFileException &&
+              e is! RemoteFileChanged &&
+              e is! _Shrank &&
+              (e.kind == RemoteFileErrorKind.network || e.kind == RemoteFileErrorKind.failed));
+      if (!cut) await _remove(folder);
       rethrow;
+    }
+  }
+
+  /// How many bytes of [part] to keep and continue from: all of them when the
+  /// file on the host still has the size and time [stat] had when the copy
+  /// began, else none (the part is removed). A host that cannot be asked
+  /// leaves the part alone and fails the copy, which keeps it.
+  Future<int> _resumePoint(RemoteFiles files, RemoteStat stat, int size, File part) async {
+    if (!await part.exists()) return 0;
+    final have = await part.length();
+    if (have == 0 || have >= size) {
+      await _remove(part);
+      return 0;
+    }
+    final now = await files.stat(stat.path);
+    if (now.size == stat.size && now.modified == stat.modified) return have;
+    await _remove(part);
+    return 0;
+  }
+
+  /// Reads [stat]'s file from byte [from] to its end into [part] (appending
+  /// when [from] is not 0). A continued copy asks the host to refuse a file that
+  /// is not the one [stat] describes.
+  Future<void> _copy(
+    RemoteFiles files,
+    RemoteStat stat,
+    int size,
+    File part,
+    int from,
+    void Function(int written)? onProgress,
+    ReadCancel? cancel,
+  ) async {
+    final sink = part.openWrite(mode: from > 0 ? FileMode.append : FileMode.write);
+    var at = from;
+    try {
+      if (from > 0) onProgress?.call(from);
+      while (at < size) {
+        if (cancel?.cancelled ?? false) throw const ReadCancelled();
+        final Uint8List piece = await files.read(
+          stat.path,
+          offset: at,
+          length: copyChunk < size - at ? copyChunk : size - at,
+          ifMatch: from > 0 ? stat : null,
+        );
+        if (piece.isEmpty) {
+          throw _Shrank('${stat.name} changed while it was being copied.', path: stat.path);
+        }
+        sink.add(piece);
+        at += piece.length;
+        onProgress?.call(at);
+      }
+      await sink.flush();
+    } finally {
+      await sink.close();
     }
   }
 
@@ -151,4 +208,9 @@ class RemoteFileStaging {
     final safe = name.replaceAll(RegExp(r'[\\/\x00-\x1f]'), '_');
     return safe.isEmpty || safe == '.' || safe == '..' ? 'file' : safe;
   }
+}
+
+/// The file got shorter while it was being copied: its part is no use.
+class _Shrank extends RemoteFileException {
+  _Shrank(String message, {super.path}) : super(RemoteFileErrorKind.failed, message);
 }

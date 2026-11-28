@@ -34,6 +34,7 @@ import '../support/memory_snapshot_cache.dart';
 import '../support/memory_stores.dart';
 import '../support/memory_terminal_settings_store.dart';
 import '../support/settings_support.dart';
+import '../support/fake_webview.dart' show FakeWebView;
 import '../support/shot.dart' show loadAppFonts;
 import 'ui_harness.dart';
 
@@ -347,9 +348,10 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('About shows the version and opens the repository in the browser', (tester) async {
+    testWidgets('About shows the version and opens the repository in herdr, not the phone’s browser', (tester) async {
       final launcher = _Launcher();
       UrlLauncherPlatform.instance = launcher;
+      final web = FakeWebView.install();
       await pumpScreen(
         tester,
         app: AppSettings(MemoryAppSettingsStore()),
@@ -358,10 +360,13 @@ void main() {
       );
       await openSettingsGroup(tester, 'About');
       expect(find.text('Version $appVersion'), findsOneWidget);
-      expect(find.textContaining('sends nothing anywhere else'), findsOneWidget);
+      expect(find.textContaining('loads from its own site'), findsOneWidget, reason: 'what it contacts is said');
       await tester.tap(find.text('Source code'));
-      await tester.pump();
-      expect(launcher.opened, [appRepositoryUrl]);
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(launcher.opened, isEmpty, reason: 'herdr stays in front');
+      expect(web.loaded.map((u) => u.toString()), [appRepositoryUrl]);
     });
 
     testWidgets('Licenses opens the licence page', (tester) async {

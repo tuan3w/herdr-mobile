@@ -47,3 +47,36 @@ WebNavigation webNavigation(Uri url, {required Set<int> ports, bool mainFrame = 
   }
   return WebNavigation.refuse;
 }
+
+/// Hosts whose sign-in an embedded view cannot do: Google, Microsoft and Apple
+/// refuse it, and Tailscale wants the phone's own passkeys and password
+/// manager. They open only in the phone's browser, on the person's tap.
+const _ownBrowserHosts = {
+  'accounts.google.com',
+  'login.microsoftonline.com',
+  'login.live.com',
+  'appleid.apple.com',
+  'login.tailscale.com',
+};
+
+/// Whether [url] is a sign-in page that must go to the phone's browser.
+bool needsOwnBrowser(Uri url) => _ownBrowserHosts.contains(normalHost(url.host));
+
+/// Where [url] may be shown, for a website opened by itself (`WebsitePage`: no
+/// machine, no bridge): any `https` page loads, a redirect or a link to
+/// another site included, as in a browser. What it never does: show another
+/// scheme (`intent:`, `file:`, `mailto:`), anything the phone itself would
+/// answer (`localhost`, a loopback address, a `.local` name: the page would
+/// reach the phone's own services), and a sign-in that needs the phone's
+/// browser or a plain `http` page (cleartext is refused): those are
+/// [WebNavigation.web], offered with a tap and never opened by a script.
+WebNavigation siteNavigation(Uri url, {bool mainFrame = true}) {
+  final scheme = url.scheme.toLowerCase();
+  if (scheme == 'about' && (url.path == 'blank' || url.path == 'srcdoc')) return WebNavigation.load;
+  if (scheme == 'data') return mainFrame ? WebNavigation.refuse : WebNavigation.load;
+  if ((scheme != 'http' && scheme != 'https') || url.host.isEmpty || isMachineLocalUrl(url.toString())) {
+    return WebNavigation.refuse;
+  }
+  if (!mainFrame) return scheme == 'https' ? WebNavigation.load : WebNavigation.refuse;
+  return scheme == 'https' && !needsOwnBrowser(url) ? WebNavigation.load : WebNavigation.web;
+}

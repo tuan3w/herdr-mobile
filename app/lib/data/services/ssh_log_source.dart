@@ -4,24 +4,22 @@ import 'dart:typed_data';
 import '../acp/agent_host.dart' show AgentHostException;
 import '../observed/observed_contracts.dart';
 import 'herdr_transport.dart';
-import 'keeper_command.dart';
 import 'ssh_agent_host.dart';
 
 /// Most lines of one [LogBatch]: a burst longer than this is several batches,
 /// so the consumer never gets more than a small slice of work at once.
 const _maxBatchLines = 512;
 
-/// [SessionLogSource] over the machine's SSH connection: one exec channel that
-/// runs the host helper's `follow` (`keeperFollowCommand`, which also says what
-/// the records look like). [SshAgentHost] opens it, so a host that does not
-/// have the helper yet gets it installed and the command repeated.
+/// [SessionLogSource] over the machine's agent helper link: one `keeper.follow`
+/// stream per follow ([SshAgentHost.follow] says what the records look like).
+/// The link installs the helper on a host that does not have it yet.
 ///
 /// Failures reach the stream as errors, then it ends:
-/// - [HerdrTransportException] (retryable): the link dropped or the channel
+/// - [HerdrTransportException] (retryable): the link dropped or the stream
 ///   could not be opened;
-/// - [AgentHostException]: the host cannot do it (no python3, the file is not
-///   readable or not a log inside the home folder, reading failed, the helper
-///   could not be installed); `fatal` says whether trying again can help.
+/// - [AgentHostException]: the host cannot do it (the file is not readable or
+///   not a log inside the home folder, reading failed, the helper could not be
+///   installed); `fatal` says whether trying again can help.
 class SshLogSource implements SessionLogSource {
   SshLogSource(this._host);
 
@@ -35,17 +33,10 @@ class SshLogSource implements SessionLogSource {
       _Follow(_host, path, from, until, digest, tailBytes).stream;
 
   /// The payload the follower dropped from the line at [start] (see
-  /// [keeperBlobCommand]); the host reads the line again.
+  /// [SshAgentHost.blob]); the host reads the line again.
   @override
-  Future<Uint8List> blob(String path, {required int start, required String hash}) async {
-    final String command;
-    try {
-      command = keeperBlobCommand(path, start: start, hash: hash);
-    } on ArgumentError {
-      throw const AgentHostException('That session log has a name the app can’t use.', fatal: true);
-    }
-    return await _host.blob(command);
-  }
+  Future<Uint8List> blob(String path, {required int start, required String hash}) =>
+      _host.blob(path, start: start, hash: hash);
 }
 
 class _Follow {
@@ -72,12 +63,6 @@ class _Follow {
   StreamSubscription<String>? _sub;
   var _stopped = false;
   var _finished = false;
-  var _rechecked = false;
-
-  // A batch (lines, a reset or the caught-up note) has gone to the listener:
-  // the channel works, so the helper is there, and a later caught-up note adds
-  // nothing.
-  var _delivered = false;
 
   // Lines that arrived in this turn of the event loop, not yet handed on.
   var _pending = <String>[];
@@ -87,31 +72,15 @@ class _Follow {
   // Where the tail read begins (`S`), for the next batch that goes out.
   int? _head;
 
-  void _start() {
-    final String command;
-    try {
-      command = keeperFollowCommand(
-        _path,
-        from: _from,
-        until: _until,
-        digest: _digest,
-        tailBytes: _tailBytes,
-        zipped: true,
-      );
-    } on ArgumentError {
-      _fail(const AgentHostException('That session log has a name the app can’t use.', fatal: true));
-      return;
-    }
-    unawaited(_open(command, missing: false));
-  }
+  void _start() => unawaited(_open());
 
-  Future<void> _open(String command, {required bool missing}) async {
+  Future<void> _open() async {
     final ExecChannel channel;
     try {
-      channel = await _host.openKeeperChannel(command, missing: missing, verify: false, zipped: true);
+      channel = await _host.follow(_path, from: _from, to: _until, digest: _digest, tailBytes: _tailBytes);
     } on AgentHostException catch (e) {
-      // A link problem or a half-finished install is worth another try; a host
-      // that cannot do it at all is not.
+      // A link problem is worth another try; a host that cannot do it at all
+      // is not.
       _fail(e.fatal ? e : HerdrTransportException(e.message));
       return;
     } on HerdrTransportException catch (e) {
@@ -128,7 +97,7 @@ class _Follow {
       onError: (Object e) => _fail(
         e is HerdrTransportException ? e : const HerdrTransportException('The connection to the machine dropped.'),
       ),
-      onDone: () => unawaited(_ended(command, channel)),
+      onDone: () => unawaited(_ended(channel)),
     );
     if (_out.isPaused) sub.pause();
   }
@@ -136,7 +105,8 @@ class _Follow {
   void _onLine(String line) {
     if (_finished) return;
     final tab = line.indexOf('\t');
-    if (tab < 1) return; // banner of a login shell, not ours
+    if (tab < 1) return; // not a record
+
     if (tab == 1 && line.codeUnitAt(0) == 0x53) {
       // S: a tail read starts here; the lines that follow are from there on.
       final offset = int.tryParse(line.substring(2));
@@ -151,7 +121,6 @@ class _Follow {
       if (offset == null) return;
       _flush();
       _end = offset;
-      _delivered = true;
       _out.add(LogBatch(const [], offset, reset: true, head: _takeHead()));
       return;
     }
@@ -163,7 +132,6 @@ class _Follow {
       final offset = int.tryParse(line.substring(2));
       if (offset == null) return;
       _flush();
-      _delivered = true;
       _out.add(LogBatch(const [], offset, caughtUp: true, head: _takeHead()));
       return;
     }
@@ -192,7 +160,6 @@ class _Follow {
     if (_pending.isEmpty || _finished) return;
     final lines = _pending;
     _pending = <String>[];
-    _delivered = true;
     _out.add(LogBatch(lines, _end, head: _takeHead()));
   }
 
@@ -202,7 +169,7 @@ class _Follow {
     return head;
   }
 
-  Future<void> _ended(String command, ExecChannel channel) async {
+  Future<void> _ended(ExecChannel channel) async {
     if (_finished || _stopped) return;
     _flush();
     int? code;
@@ -215,12 +182,6 @@ class _Follow {
     _flush();
     if (code == 0) {
       _finish();
-    } else if (code == 65 && !_delivered && !_rechecked) {
-      _rechecked = true;
-      // The helper vanished from the host after it had been seen: install again.
-      _closeChannel(channel);
-      _channel = null;
-      await _open(command, missing: true);
     } else if (code == null) {
       _fail(const HerdrTransportException('The connection to the machine dropped.'));
     } else {

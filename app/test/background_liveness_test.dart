@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
-import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/models/web_bridge.dart';
 import 'package:herdr_mobile/data/services/bridge_command.dart' show muxReadyLine;
 import 'package:herdr_mobile/data/services/herdr_api.dart';
@@ -18,6 +16,7 @@ import 'package:herdr_mobile/data/services/mux_client.dart';
 import 'package:herdr_mobile/data/services/ssh_transport.dart';
 
 import 'support/fake_transport.dart';
+import 'support/no_files.dart';
 
 const _s = Duration(seconds: 1);
 Duration _sec(int n) => Duration(seconds: n);
@@ -115,7 +114,7 @@ class _Rig {
         clients.add(c);
         return c;
       },
-      openMuxChannel: (_) async {
+      openMuxChannel: () async {
         final c = _MuxChannel();
         muxes.add(c);
         return c;
@@ -131,7 +130,7 @@ class _Rig {
 
   /// Opens the SSH connection (a refused channel leaves it up).
   void connectLink() {
-    t.openExec('x').then((_) {}, onError: (Object _) {});
+    t.hostCall('keeper', 'probe').then((_) {}, onError: (Object _) {});
     async.flushMicrotasks();
   }
 
@@ -156,7 +155,7 @@ void _rig(String name, void Function(_Rig r) body) => test(
 );
 
 /// Runs inside the worker isolate; remembers what the app told it.
-class _BgProbe implements HerdrTransport {
+class _BgProbe with NoFiles implements HerdrTransport {
   final backgrounds = <bool>[];
 
   @override
@@ -177,36 +176,16 @@ class _BgProbe implements HerdrTransport {
   void reset() {}
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) => throw UnsupportedError('exec');
+  Future<Object?> hostCall(String service, String method, [Map<String, Object?> args = const {}, Duration? timeout]) =>
+      throw UnsupportedError('host');
 
   @override
-  bool get supportsFiles => false;
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) =>
+      throw UnsupportedError('host');
 
   @override
-  Future<RemoteStat> statFile(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<List<RemoteEntry>> listDirectory(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
-      throw UnsupportedError('files');
-
-  @override
-  Future<String> realPath(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<void> makeDirs(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<void> removeFile(String path) => throw UnsupportedError('files');
-
-  @override
-  UploadJob uploadFile({
-    required String localPath,
-    required String remotePath,
-    void Function(int sent, int total)? onProgress,
-  }) => throw UnsupportedError('files');
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) =>
+      throw UnsupportedError('host');
 
   @override
   Future<WebBridgeInfo> openWebBridge(WebBridgeSpec spec) => throw UnimplementedError();

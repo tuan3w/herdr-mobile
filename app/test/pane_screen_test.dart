@@ -1159,6 +1159,65 @@ void main() {
         await teardown(tester);
       });
 
+      testWidgets('an https page of the web opens in herdr, with Open in browser beside it for what needs it', (
+        tester,
+      ) async {
+        final launcher = _Launcher();
+        UrlLauncherPlatform.instance = launcher;
+        final web = FakeWebView.install();
+        transport.readText = 'curves at https://wandb.ai/me/p/runs/ab12 now';
+        await pumpPane(tester);
+        await tapText(tester, 'curves at', column: 16);
+
+        expect(find.text('Open page'), findsOneWidget);
+        expect(find.text('Open in browser'), findsOneWidget, reason: 'the escape stays, second');
+        await tester.tap(find.text('Open page'));
+        await _settle(tester);
+
+        expect(find.byType(WebPreviewScreen), findsOneWidget);
+        expect(web.loaded.map((u) => u.toString()), ['https://wandb.ai/me/p/runs/ab12']);
+        expect(launcher.opened, isEmpty, reason: 'herdr stays in front: its SSH connections stay up');
+        expect(transport.webBridges, isEmpty, reason: 'a site is not carried over the machine');
+        await teardown(tester);
+      });
+
+      testWidgets('a sign-in can only go to the phone’s browser, and says herdr waits meanwhile', (tester) async {
+        transport.readText = 'log in at https://accounts.google.com/o/oauth2/auth now';
+        await pumpPane(tester);
+        await tapText(tester, 'log in at', column: 16);
+
+        expect(find.text('Open page'), findsNothing);
+        expect(find.text('Open in browser'), findsOneWidget);
+        expect(find.textContaining('This is a sign-in.'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      // The machine of these tests is dialled at `h`.
+      testWidgets('the address an agent gave for the machine itself opens its page through the SSH connection', (
+        tester,
+      ) async {
+        final launcher = _Launcher();
+        UrlLauncherPlatform.instance = launcher;
+        final web = FakeWebView.install();
+        transport.readText = 'dashboard on http://h:8792/runs now';
+        await pumpPane(tester);
+        await tapText(tester, 'dashboard on', column: 16);
+
+        expect(
+          find.textContaining('This address is on box. Open page shows it in herdr, over your SSH connection.'),
+          findsOneWidget,
+        );
+        expect(find.text('Open in browser'), findsNothing, reason: 'a browser would reach it only on the tailnet');
+        await tester.tap(find.text('Open page'));
+        await _settle(tester);
+
+        final spec = transport.webBridges.single as PortForward;
+        expect((spec.host, spec.port), ('localhost', 8792));
+        expect(web.loaded.first.queryParameters['to'], '/runs');
+        expect(launcher.opened, isEmpty);
+        await teardown(tester);
+      });
+
       testWidgets('Open page starts the listener and shows the page in herdr, not the browser', (tester) async {
         final launcher = _Launcher();
         UrlLauncherPlatform.instance = launcher;
@@ -1339,6 +1398,46 @@ void main() {
         final size = tester.getSize(find.byTooltip('Browse files').first);
         expect(size.width, greaterThanOrEqualTo(44));
         expect(size.height, greaterThanOrEqualTo(44));
+        await teardown(tester);
+      });
+    });
+
+    group('Ports in the pane options', () {
+      Future<void> openPorts(WidgetTester tester) async {
+        await tester.tap(find.byTooltip('Pane options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ports'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('is an option of the pane, not a third button in the bar, and opens the machine’s ports', (
+        tester,
+      ) async {
+        filesystem();
+        transport.onHostMessages = (service, method, args) =>
+            (StreamController<Object?>()..add({
+                  'listeners': [
+                    {'family': 4, 'addr': '127.0.0.1', 'port': 3000, 'pid': 4242, 'process': 'node'},
+                  ],
+                }))
+                .stream;
+        await pumpPane(tester);
+        expect(find.byTooltip('Ports'), findsNothing, reason: 'the bar holds Files and the options, no more');
+
+        await openPorts(tester);
+
+        expect(find.text('Ports'), findsOneWidget, reason: 'the sheet’s title; the options sheet is gone');
+        expect(find.text('node'), findsOneWidget);
+        expect(find.text('localhost:3000 · pid 4242'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('is there on a machine without the helper too, and the sheet says what it needs', (tester) async {
+        await pumpPane(tester);
+
+        await openPorts(tester);
+
+        expect(find.text('Needs the agent helper on this machine.'), findsOneWidget);
         await teardown(tester);
       });
     });

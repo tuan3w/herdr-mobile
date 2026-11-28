@@ -109,6 +109,43 @@ void main() {
     expect(web.javaScript, isTrue, reason: 'dev pages need it');
   });
 
+  testWidgets(
+    'while the machine is asked the cover says so; after a while it says it is slow and Try again asks again',
+    (tester) async {
+      final gate = transport.webGate = Completer();
+      await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+      expect(find.text('Asking build-box'), findsOneWidget);
+      expect(find.text('Try again'), findsNothing, reason: 'a wait that just began offers nothing');
+
+      await tester.pump(Dwell.pageSlow);
+      expect(find.textContaining('Still waiting'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      expect(find.text('Try again'), findsNothing, reason: 'asked again: the wait starts over');
+      expect(find.text('Asking build-box'), findsOneWidget);
+
+      gate.complete();
+      await _settle(tester);
+      expect(find.text('Asking build-box'), findsNothing);
+      expect(find.textContaining('Still waiting'), findsNothing);
+      expect(web.current, 'http://localhost:51111/');
+      // The answer to the first ask and the answer to the second are one page, not two.
+      expect(web.loaded, hasLength(2), reason: 'the entry and the page it sends the view on to');
+    },
+  );
+
+  testWidgets('a page that loads shows no cover and no wait words, however long the screen has been up', (
+    tester,
+  ) async {
+    await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+    await tester.pump(Dwell.pageSlow * 2);
+    expect(find.textContaining('Still waiting'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(find.textContaining('Waiting for the page'), findsNothing);
+  });
+
   testWidgets('the phone’s Back goes back in the page first, then leaves, never through the entry page', (
     tester,
   ) async {
@@ -298,24 +335,135 @@ void main() {
     expect(copied, ['/home/dev/site/index.html']);
   });
 
-  testWidgets('a page of the web opens nowhere by itself: the person is told, and Open takes it to the browser', (
-    tester,
-  ) async {
-    await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
-    final before = web.loaded.length;
+  testWidgets(
+    'a sign-in a page asks for opens nowhere by itself: the person is told, and Open takes it to the browser',
+    (tester) async {
+      await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+      final before = web.loaded.length;
 
-    // What a script can do with no tap: `location=`, `window.open`, a refresh.
-    expect(await web.navigate('https://accounts.google.com/o/oauth2/v2/auth?client_id=x'), isFalse);
-    await _settle(tester);
-    expect(launcher.opened, isEmpty, reason: 'a page must never push herdr behind the browser');
-    expect(web.loaded, hasLength(before), reason: 'nothing from the web loads inside herdr');
-    expect(find.text('accounts.google.com isn’t from build-box.'), findsOneWidget);
+      // What a script can do with no tap: `location=`, `window.open`, a refresh.
+      expect(await web.navigate('https://accounts.google.com/o/oauth2/v2/auth?client_id=x'), isFalse);
+      await _settle(tester);
+      expect(launcher.opened, isEmpty, reason: 'a page must never push herdr behind the browser');
+      expect(
+        web.loaded,
+        hasLength(before),
+        reason: 'a sign-in does not run inside herdr: Google refuses embedded views',
+      );
+      expect(find.text('accounts.google.com is a sign-in. It opens in your browser.'), findsOneWidget);
 
-    await tester.tap(find.text('Open'));
-    await _settle(tester);
-    expect(launcher.opened, ['https://accounts.google.com/o/oauth2/v2/auth?client_id=x']);
-    expect(launcher.modes, [PreferredLaunchMode.inAppBrowserView]);
-    expect(web.current, 'http://localhost:51111/');
+      await tester.tap(find.text('Open'));
+      await _settle(tester);
+      expect(launcher.opened, ['https://accounts.google.com/o/oauth2/v2/auth?client_id=x']);
+      expect(launcher.modes, [PreferredLaunchMode.inAppBrowserView]);
+      expect(web.current, 'http://localhost:51111/');
+    },
+  );
+
+  testWidgets(
+    'another site a page links to is offered, and Open shows it in herdr over that page, not in the browser',
+    (tester) async {
+      await pump(tester, ServerPage(Uri.parse('http://localhost:3000/')));
+
+      expect(await web.navigate('https://example.org/docs'), isFalse, reason: 'a page cannot take the view there');
+      await _settle(tester);
+      expect(find.text('example.org isn’t from build-box.'), findsOneWidget);
+      expect(find.byType(WebPreviewScreen, skipOffstage: false), findsOneWidget);
+
+      await tester.tap(find.text('Open'));
+      await _settle(tester);
+      expect(launcher.opened, isEmpty, reason: 'herdr stays in front: the SSH connections it holds stay up');
+      expect(
+        find.byType(WebPreviewScreen, skipOffstage: false),
+        findsNWidgets(2),
+        reason: 'a page over the one that linked',
+      );
+      expect(web.current, 'https://example.org/docs');
+    },
+  );
+
+  group('a website opened by itself', () {
+    Future<void> pumpSite(WidgetTester tester, String url) async {
+      await tester.pumpWidget(
+        withFleet(
+          fleet,
+          MaterialApp(
+            theme: AppTheme.light(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: TextButton(onPressed: () => openWebsite(context, Uri.parse(url)), child: const Text('open')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await _settle(tester);
+    }
+
+    testWidgets('loads over the phone’s own network, with no machine asked, and the bar says where it is', (
+      tester,
+    ) async {
+      await pumpSite(tester, 'https://wandb.ai/me/p/runs/ab12#charts');
+      expect(web.loaded.map((u) => u.toString()), ['https://wandb.ai/me/p/runs/ab12#charts']);
+      expect(find.text('wandb.ai/me/p/runs/ab12'), findsOneWidget, reason: 'no title yet: the address, said once');
+      expect(find.text('build-box'), findsNothing, reason: 'a site is not from a machine');
+      expect(web.javaScript, isTrue);
+
+      web.titles['https://wandb.ai/me/p/runs/ab12#charts'] = 'Run ab12';
+      await web.navigate('https://wandb.ai/me/p/runs/ab12#charts');
+      await _settle(tester);
+      expect(find.text('Run ab12'), findsOneWidget);
+      expect(find.text('wandb.ai'), findsOneWidget, reason: 'under a title, where it leads');
+    });
+
+    testWidgets('a link to another https site loads in the view, as in a browser', (tester) async {
+      await pumpSite(tester, 'https://wandb.ai/me/p');
+      expect(await web.navigate('https://github.com/tuan3w/herdr-mobile'), isTrue);
+      await _settle(tester);
+      expect(web.current, 'https://github.com/tuan3w/herdr-mobile');
+      expect(
+        find.text('github.com/tuan3w/herdr-mobile'),
+        findsOneWidget,
+        reason: 'the page it is on, not the one it began at',
+      );
+      expect(launcher.opened, isEmpty);
+    });
+
+    testWidgets('a sign-in, plain http and the phone itself load nowhere, each said with its reason', (tester) async {
+      await pumpSite(tester, 'https://wandb.ai/me/p');
+      final before = web.loaded.length;
+
+      expect(await web.navigate('https://login.tailscale.com/a/x'), isFalse);
+      await _settle(tester);
+      expect(find.text('login.tailscale.com is a sign-in. It opens in your browser.'), findsOneWidget);
+
+      expect(await web.navigate('http://example.org/a'), isFalse);
+      await _settle(tester);
+      expect(find.text('example.org isn’t encrypted.'), findsOneWidget);
+
+      expect(await web.navigate('http://localhost:3000/'), isFalse);
+      await _settle(tester);
+      expect(find.text('localhost:3000 isn’t open on this phone.'), findsOneWidget);
+
+      expect(web.loaded, hasLength(before));
+      expect(launcher.opened, isEmpty, reason: 'nothing opens by itself');
+    });
+
+    testWidgets('a failure names the site and what to do, and Retry loads the same address again', (tester) async {
+      web.failing.add('https://wandb.ai/me/p');
+      await pumpSite(tester, 'https://wandb.ai/me/p');
+      expect(find.text('Couldn’t load this page'), findsOneWidget);
+      expect(find.text('Couldn’t connect to wandb.ai. Check your connection. Retry asks again.'), findsOneWidget);
+
+      web.failing.clear();
+      await tester.tap(find.text('Retry'));
+      await _settle(tester);
+      expect(find.text('Couldn’t load this page'), findsNothing);
+      expect(web.current, 'https://wandb.ai/me/p');
+    });
   });
 
   testWidgets('plain http of the web goes through the link sheet, which shows the address first', (tester) async {

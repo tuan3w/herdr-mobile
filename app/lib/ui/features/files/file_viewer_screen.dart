@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +21,7 @@ import 'file_format.dart';
 import 'file_kind.dart';
 import 'file_viewer_view_model.dart';
 import 'file_widgets.dart';
+import 'in_front.dart';
 import 'photo_files.dart';
 import 'markdown_view.dart';
 import 'text_document.dart';
@@ -101,7 +101,10 @@ class _ViewerPage extends StatefulWidget {
 
 class _ViewerPageState extends State<_ViewerPage> {
   var _openedPhoto = false;
-  final _disk = _DiskWatch();
+  // Follows the file on the host only while this viewer is the screen in
+  // front and the app is in the foreground (see [FileViewerViewModel.watchDisk]).
+  late final _disk = InFront((front) => _vm?.watchDisk(front));
+  FileViewerViewModel? _vm;
 
   /// A file the name did not call a picture but whose bytes are one: the photo
   /// viewer takes its place (once).
@@ -118,7 +121,8 @@ class _ViewerPageState extends State<_ViewerPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _disk.attach(context, context.read<FileViewerViewModel>());
+    _vm = context.read<FileViewerViewModel>();
+    _disk.attach(context);
   }
 
   @override
@@ -520,65 +524,6 @@ class _TextBody extends StatelessWidget {
           ),
       ],
     );
-  }
-}
-
-/// Notices the file changing on the host while its viewer is the screen in
-/// front: ONE stat (no body is read) when the viewer comes back to the front
-/// or the app resumes, and then every [every] while it stays there. Nothing
-/// runs while another screen covers the viewer, while the app is in the
-/// background, or after the viewer is gone (the timer is cancelled).
-class _DiskWatch {
-  static const every = Dwell.diskWatch;
-
-  Timer? _timer;
-  ValueListenable<TickerModeData>? _front;
-  AppLifecycleListener? _life;
-  FileViewerViewModel? _vm;
-  var _resumed = true;
-  var _started = false;
-
-  void attach(BuildContext context, FileViewerViewModel vm) {
-    _vm = vm;
-    final front = TickerMode.getValuesNotifier(context);
-    if (!identical(front, _front)) {
-      _front?.removeListener(_sync);
-      _front = front..addListener(_sync);
-    }
-    if (_life == null) {
-      final state = WidgetsBinding.instance.lifecycleState;
-      _resumed = state == null || state == AppLifecycleState.resumed;
-      _life = AppLifecycleListener(
-        onStateChange: (s) {
-          _resumed = s == AppLifecycleState.resumed;
-          _sync();
-        },
-      );
-    }
-    _sync();
-  }
-
-  void _sync() {
-    final vm = _vm;
-    final active = vm != null && _resumed && (_front?.value.enabled ?? true);
-    if (!active) {
-      _timer?.cancel();
-      _timer = null;
-      return;
-    }
-    if (_timer != null) return;
-    // Back in front or resumed: look once now (the first start comes right
-    // after the file was read, so there is nothing to look for yet).
-    if (_started) unawaited(vm.checkForChange());
-    _started = true;
-    _timer = Timer.periodic(every, (_) => unawaited(vm.checkForChange()));
-  }
-
-  void dispose() {
-    _timer?.cancel();
-    _timer = null;
-    _front?.removeListener(_sync);
-    _life?.dispose();
   }
 }
 

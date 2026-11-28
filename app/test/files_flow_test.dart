@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrTransportException;
+import 'package:herdr_mobile/data/services/remote_files.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/files/code_view.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
@@ -18,6 +20,7 @@ import 'package:herdr_mobile/ui/features/files/files_navigation.dart';
 import 'package:herdr_mobile/ui/features/files/middle_ellipsis.dart';
 
 import 'support/fake_fs.dart';
+import 'support/fake_transport.dart';
 import 'support/files_support.dart';
 import 'support/shot.dart' show loadAppFonts;
 
@@ -811,17 +814,49 @@ void main() {
       modified: _now,
     );
 
-    test('only small raster images are eligible', () {
+    test('raster images are eligible up to what the machine can thumbnail; a photo is not READ for 32 px', () {
       expect(ThumbLoader.eligible(png('a.png')), isTrue);
       expect(ThumbLoader.eligible(png('a.JPG')), isTrue);
       expect(
         ThumbLoader.eligible(png('a.png', size: thumbMaxBytes + 1)),
-        isFalse,
-        reason: 'a photo is not read for 32 px',
+        isTrue,
+        reason: 'a machine with the helper makes its thumbnail; without it the row stays a glyph (see below)',
       );
+      expect(ThumbLoader.eligible(png('a.png', size: thumbHostMaxBytes + 1)), isFalse);
       expect(ThumbLoader.eligible(png('a.svg')), isFalse);
       expect(ThumbLoader.eligible(png('a.txt')), isFalse);
       expect(ThumbLoader.eligible(png('a.png', size: 0)), isFalse);
+    });
+
+    test('a big picture on a machine that cannot thumbnail is never read, and not asked about twice', () async {
+      final fs = FakeFs()..addFile('$_home/p/big.jpg', Uint8List(thumbMaxBytes + 10));
+      final transport = FakeTransport()..fs = fs;
+      final files = RemoteFiles(transport, machineId: 'm1');
+      final loader = ThumbLoader();
+      final big = png('big.jpg', size: thumbMaxBytes + 10);
+
+      expect(await loader.load(files, big, cancelled: () => false), isNull);
+      expect(await loader.load(files, big, cancelled: () => false), isNull);
+
+      expect(fs.calls.where((c) => c.startsWith('read')), isEmpty, reason: 'SFTP would carry the whole photo');
+      expect(transport.thumbnails, ['$_home/p/big.jpg@256'], reason: 'asked once, then remembered');
+    });
+
+    test('a machine that makes thumbnails gives a big picture a small one, and nothing is read', () async {
+      final fs = FakeFs()..addFile('$_home/p/big.jpg', Uint8List(3 * 1024 * 1024));
+      final jpeg = Uint8List.fromList(List.filled(9000, 7));
+      final transport = FakeTransport()
+        ..fs = fs
+        ..onThumbnail = (path, maxPx, expect, cancelled) async => jpeg;
+      final files = RemoteFiles(transport, machineId: 'm1');
+      final loader = ThumbLoader();
+      final big = png('big.jpg', size: 3 * 1024 * 1024);
+
+      final got = await loader.load(files, big, cancelled: () => false);
+
+      expect(got, jpeg);
+      expect(fs.calls.where((c) => c.startsWith('read')), isEmpty);
+      expect(transport.thumbnails, ['$_home/p/big.jpg@256']);
     });
 
     test('at most three reads at a time; a row that scrolled away before its turn is never read', () async {
@@ -886,11 +921,14 @@ void main() {
   group('the viewer notices the file changing', () {
     const path = '$_root/build.log';
     final stamp = DateTime.utc(2026, 5, 20, 9, 30);
+    late FakeTransport transport;
+
+    setUp(() => transport = FakeTransport());
 
     FakeFs logFs() => projectFs()..addFile(path, List.generate(300, (i) => 'line $i ok').join('\n'), modified: stamp);
 
     FileViewerScreen viewer(FakeFs fs) => FileViewerScreen(
-      machine: machineWithFiles(fs),
+      machine: machineWithFiles(fs, transport: transport),
       stat: RemoteStat(
         path: path,
         kind: RemoteEntryKind.file,
@@ -899,10 +937,12 @@ void main() {
       ),
     );
 
-    int stats(FakeFs fs) => fs.calls.where((c) => c == 'stat $path').length;
+    int listening() => transport.watching(path);
 
-    void touch(FakeFs fs, String content, {Duration later = const Duration(minutes: 5)}) =>
-        fs.addFile(path, content, modified: stamp.add(later));
+    void touch(FakeFs fs, String content, {Duration later = const Duration(minutes: 5)}) {
+      fs.addFile(path, content, modified: stamp.add(later));
+      transport.touched(path);
+    }
 
     Future<void> after(WidgetTester tester, Duration d) async {
       await tester.pump(d);
@@ -910,29 +950,25 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('a re-stat that finds a newer time shows the pill after 15 s; nothing is read to find out', (
-      tester,
-    ) async {
+    testWidgets('a change the machine reports shows the pill at once; nothing is read to find out', (tester) async {
       final fs = logFs();
       await _pump(tester, viewer(fs));
       await _settle(tester);
       expect(find.text('Changed on disk'), findsNothing);
-      expect(stats(fs), 0, reason: 'the first look is the read itself');
+      expect(listening(), 1, reason: 'one subscription, no timer');
       final reads = fs.calls.where((c) => c.startsWith('read ')).length;
 
-      await after(tester, const Duration(seconds: 14));
-      expect(stats(fs), 0, reason: 'not before 15 s');
-      await after(tester, const Duration(seconds: 2));
-      expect(stats(fs), 1);
-      expect(find.text('Changed on disk'), findsNothing, reason: 'same time on disk');
+      transport.touched(path);
+      await after(tester, const Duration(minutes: 2));
+      expect(find.text('Changed on disk'), findsNothing, reason: 'same time on disk, however long it is looked at');
 
       touch(fs, List.generate(300, (i) => 'new line $i').join('\n'));
-      await after(tester, const Duration(seconds: 15));
+      await after(tester, const Duration(milliseconds: 10));
       await _settle(tester);
 
       expect(find.text('Changed on disk'), findsOneWidget);
       expect(find.text('Reload'), findsOneWidget);
-      expect(fs.calls.where((c) => c.startsWith('read ')).length, reads, reason: 'a stat, never the body');
+      expect(fs.calls.where((c) => c.startsWith('read ')).length, reads, reason: 'told, never read the body');
     });
 
     testWidgets('a tap reloads the text where the reader is, and the pill goes', (tester) async {
@@ -949,7 +985,7 @@ void main() {
       final before = scroll.position.pixels;
 
       touch(fs, '${List.generate(300, (i) => 'rewritten $i').join('\n')}\n');
-      await after(tester, const Duration(seconds: 16));
+      await after(tester, const Duration(milliseconds: 10));
       await tester.tap(find.text('Reload'));
       await _settle(tester);
       await _settle(tester);
@@ -961,11 +997,14 @@ void main() {
       expect(scroll.position.pixels, before, reason: 'the reader stayed on the same line');
     });
 
-    testWidgets('it looks nowhere while another screen covers the viewer, and once when it is back', (tester) async {
+    testWidgets('it listens to nothing while another screen covers the viewer, and again when it is back', (
+      tester,
+    ) async {
       final fs = logFs();
       await _pump(tester, viewer(fs));
       await _settle(tester);
       final context = tester.element(find.byType(CodeView));
+      expect(listening(), 1);
 
       unawaited(
         Navigator.of(context)
@@ -973,49 +1012,63 @@ void main() {
       );
       await _settle(tester);
       expect(find.text('covering page'), findsOneWidget);
-      for (var i = 0; i < 8; i++) {
-        await after(tester, const Duration(seconds: 15));
-      }
-      expect(stats(fs), 0, reason: 'two minutes behind another screen: no timer, no stat');
+      expect(listening(), 0, reason: 'behind another screen: no subscription');
 
       touch(fs, 'changed while you were away');
       Navigator.of(tester.element(find.text('covering page'))).pop();
       await _settle(tester);
-      expect(stats(fs), 1, reason: 'once, as it comes back');
-      expect(find.text('Changed on disk'), findsOneWidget);
+      expect(listening(), 1);
+      expect(find.text('Changed on disk'), findsOneWidget, reason: 'it noticed what happened while away');
     });
 
-    testWidgets('it looks nowhere in the background, and once on resume', (tester) async {
+    testWidgets('it listens to nothing in the background, and again on resume', (tester) async {
       final fs = logFs();
       await _pump(tester, viewer(fs));
       await _settle(tester);
+      expect(listening(), 1);
 
       for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
         tester.binding.handleAppLifecycleStateChanged(s);
       }
       await tester.pump();
-      for (var i = 0; i < 4; i++) {
-        await after(tester, const Duration(seconds: 15));
-      }
-      expect(stats(fs), 0);
+      expect(listening(), 0);
+      touch(fs, 'changed while the app was away');
 
       for (final s in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
         tester.binding.handleAppLifecycleStateChanged(s);
       }
       await after(tester, const Duration(milliseconds: 10));
-      expect(stats(fs), 1);
+      expect(listening(), 1);
+      expect(find.text('Changed on disk'), findsOneWidget);
     });
 
-    testWidgets('leaving the viewer leaves no timer behind', (tester) async {
+    testWidgets('leaving the viewer ends the subscription', (tester) async {
       final fs = logFs();
       await _pump(tester, viewer(fs));
       await _settle(tester);
+      expect(listening(), 1);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(minutes: 1));
 
-      expect(stats(fs), 0);
+      expect(listening(), 0);
       // The test framework fails a test that leaves a timer pending.
+    });
+
+    testWidgets('a watch that ends is taken up again after 15 s, and nothing is claimed meanwhile', (tester) async {
+      final fs = logFs();
+      await _pump(tester, viewer(fs));
+      await _settle(tester);
+      expect(listening(), 1);
+
+      transport.failWatchers(path, const HerdrTransportException('link dropped'));
+      await after(tester, const Duration(seconds: 14));
+      expect(listening(), 0, reason: 'not before the retry');
+      expect(find.text('Changed on disk'), findsNothing, reason: 'a lost link is not a change');
+      touch(fs, 'changed while the link was down');
+      await after(tester, const Duration(seconds: 2));
+      expect(listening(), 1);
+      expect(find.text('Changed on disk'), findsOneWidget, reason: 'the new watch starts with the file as it is');
     });
 
     testWidgets('pulling down reads the file again; a failed read keeps the old text and offers Retry', (tester) async {
@@ -1047,7 +1100,7 @@ void main() {
       await _pump(tester, viewer(fs), size: const Size(320, 640));
       await _settle(tester);
       touch(fs, 'x');
-      await after(tester, const Duration(seconds: 16));
+      await after(tester, const Duration(milliseconds: 10));
       await _settle(tester);
 
       expect(find.text('Changed on disk'), findsOneWidget);
@@ -1057,23 +1110,26 @@ void main() {
       expect(box.height, greaterThanOrEqualTo(kMinTap));
     });
 
-    test('view model: checkForChange is one stat; refresh keeps the old content when it fails', () async {
+    test('view model: watchDisk follows the machine; refresh keeps the old content when it fails', () async {
       final fs = logFs();
       final stat = await fs.stat(path);
-      fs.calls.clear();
-      final vm = FileViewerViewModel(files: machineWithFiles(fs).files, stat: stat);
+      final vm = FileViewerViewModel(
+        files: machineWithFiles(fs, transport: transport).files,
+        stat: stat,
+      );
       addTearDown(vm.dispose);
       await vm.load();
-      fs.calls.clear();
 
-      await vm.checkForChange();
-      expect(fs.calls, ['stat $path']);
-      expect(vm.changedOnDisk, isFalse);
+      expect(transport.watching(path), 0, reason: 'nobody asked to watch');
+      vm.watchDisk(true);
+      vm.watchDisk(true); // idempotent: one subscription
+      await pumpEventQueue();
+      expect(transport.watching(path), 1);
+      expect(vm.changedOnDisk, isFalse, reason: 'the first answer is the file as it was read');
 
       touch(fs, 'v2');
-      await vm.checkForChange();
+      await pumpEventQueue();
       expect(vm.changedOnDisk, isTrue);
-      expect(fs.calls, ['stat $path', 'stat $path']);
 
       fs.fail = RemoteFileException(RemoteFileErrorKind.network, 'down');
       await vm.refresh();
@@ -1088,8 +1144,15 @@ void main() {
       expect(vm.document!.text, 'v2');
       expect(vm.changedOnDisk, isFalse);
       expect(vm.stat.modified, stamp.add(const Duration(minutes: 5)));
-      await vm.checkForChange();
+      transport.touched(path);
+      await pumpEventQueue();
       expect(vm.changedOnDisk, isFalse, reason: 'it now matches the disk');
+
+      vm.watchDisk(false);
+      expect(transport.watching(path), 0);
+      touch(fs, 'v3', later: const Duration(minutes: 9));
+      await pumpEventQueue();
+      expect(vm.changedOnDisk, isFalse, reason: 'not listening, not told');
     });
   });
 

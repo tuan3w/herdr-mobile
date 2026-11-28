@@ -49,6 +49,7 @@ class FileViewerViewModel extends ChangeNotifier {
     this._formatJson = formatJson,
     this.firstChunk = viewerFirstChunk,
     this.textLimit = viewerTextLimit,
+    this.watchRetry = const Duration(seconds: 15),
     this._forceText = false,
   });
 
@@ -62,6 +63,10 @@ class FileViewerViewModel extends ChangeNotifier {
   final JsonFormatter _formatJson;
   final int firstChunk;
   final int textLimit;
+
+  /// How long after a watch that ended (the machine could not be asked) the
+  /// viewer listens again.
+  final Duration watchRetry;
 
   ViewerPhase _phase = ViewerPhase.loading;
   RemoteFileException? _error;
@@ -79,7 +84,9 @@ class FileViewerViewModel extends ChangeNotifier {
   var _epoch = 0;
   var _disposed = false;
   var _changed = false;
-  var _checking = false;
+  StreamSubscription<RemoteStat?>? _watch;
+  Timer? _rewatch;
+  RemoteStat? _onDisk;
   var _refreshing = false;
   RemoteFileException? _refreshError;
 
@@ -89,7 +96,7 @@ class FileViewerViewModel extends ChangeNotifier {
   FileKind get kind => _type.kind;
   String get name => stat.name;
 
-  /// A re-stat found the file newer than what is shown ([checkForChange]).
+  /// The machine says the file is newer than what is shown ([watchDisk]).
   bool get changedOnDisk => _changed;
 
   /// A refresh is reading the file again; the old content stays on screen.
@@ -184,6 +191,7 @@ class FileViewerViewModel extends ChangeNotifier {
           _head = Uint8List.sublistView(head, 0, head.length < viewerHexBytes ? head.length : viewerHexBytes);
       }
       _phase = ViewerPhase.ready;
+      _judge();
     } on RemoteFileException catch (e) {
       if (!_current(epoch)) return;
       _error = e;
@@ -211,25 +219,62 @@ class FileViewerViewModel extends ChangeNotifier {
 
   Future<void> retry() => load();
 
-  /// One stat, no body: whether the file on the host is newer than what is
-  /// shown. Sets [changedOnDisk]; a failed stat says nothing (a blip is not a
-  /// change) and leaves it as it was.
-  Future<void> checkForChange() async {
-    if (_disposed || _phase != ViewerPhase.ready || _checking || _refreshing) return;
-    _checking = true;
-    final epoch = _epoch;
-    try {
-      final fresh = await _files.stat(_stat.path);
-      if (!_current(epoch) || _refreshing) return;
-      final changed = _newerThanShown(fresh);
-      if (changed != _changed) {
-        _changed = changed;
-        notifyListeners();
-      }
-    } on RemoteFileException {
-      // Nothing learned.
-    } finally {
-      _checking = false;
+  /// Whether the screen is in front and the app is up: while true, the machine
+  /// is asked to tell when the file changes ([RemoteFiles.watch]: the agent
+  /// helper pushes changes, SFTP is polled every 15 s) and [changedOnDisk] follows.
+  /// Turning it off ends the subscription: nothing runs while another screen
+  /// covers the viewer or the app is in the background. Idempotent. Turning it
+  /// on starts with the file as it is now, so coming back to the front notices
+  /// what changed meanwhile at once.
+  void watchDisk(bool on) {
+    if (_disposed) return;
+    if (!on) {
+      _stopWatching();
+      return;
+    }
+    if (_watch != null) return;
+    _rewatch?.cancel();
+    _listen();
+  }
+
+  void _listen() {
+    _rewatch = null;
+    _onDisk = null;
+    _watch = _files
+        .watch(_stat.path)
+        .listen(
+          (now) {
+            _onDisk = now;
+            _judge();
+          },
+          // A machine that cannot be asked says nothing about the file (a blip
+          // is not a change): listen again later.
+          onError: (Object _) => _lost(),
+          onDone: _lost,
+        );
+  }
+
+  void _lost() {
+    unawaited(_watch?.cancel());
+    _watch = null;
+    if (!_disposed) _rewatch = Timer(watchRetry, _listen);
+  }
+
+  void _stopWatching() {
+    unawaited(_watch?.cancel());
+    _watch = null;
+    _rewatch?.cancel();
+    _rewatch = null;
+  }
+
+  /// Sets [changedOnDisk] from the last thing the machine said about the file.
+  void _judge() {
+    final now = _onDisk;
+    if (_disposed || now == null || _phase != ViewerPhase.ready || _refreshing) return;
+    final changed = _newerThanShown(now);
+    if (changed != _changed) {
+      _changed = changed;
+      notifyListeners();
     }
   }
 
@@ -296,6 +341,7 @@ class FileViewerViewModel extends ChangeNotifier {
       _refreshError = e;
     }
     _refreshing = false;
+    _judge();
     notifyListeners();
   }
 
@@ -422,6 +468,7 @@ class FileViewerViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _stopWatching();
     _doc = null;
     _prettyDoc = null;
     super.dispose();

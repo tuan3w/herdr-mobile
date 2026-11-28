@@ -191,6 +191,17 @@ abstract final class Dwell {
   /// behind.
   static const titleSettle = Duration(milliseconds: 400);
 
+  /// A page that has shown nothing after this long says so and offers
+  /// `Try again`: a wait with no word reads as a frozen screen.
+  static const pageSlow = Duration(seconds: 8);
+
+  /// A photo that is already on screen as a stand-in (the preview the chat or
+  /// the folder grid made) shows no loading badge until the wait passes this:
+  /// the picture is there, and a badge over it for the moment its full size
+  /// takes to come from the cache read as a flash. Without a stand-in the
+  /// badge waits only [spinnerDelay].
+  static const standInWait = Duration(milliseconds: 800);
+
   /// A toast stays: short words, longer words, and one with an action.
   static const toastShort = Duration(milliseconds: 1500);
   static const toastLong = Duration(milliseconds: 2750);
@@ -259,9 +270,6 @@ abstract final class Dwell {
 
   /// Waits one frame or so past an animation, so a measurement sees its end state.
   static const afterSettle = Duration(milliseconds: 30);
-
-  /// An open file viewer stats its file this often to notice a change on disk.
-  static const diskWatch = Duration(seconds: 15);
 
   /// A photo zoomed back out to fit keeps its sharp decode this long: zooming in again does not decode twice.
   static const photoSharp = Duration(seconds: 2);

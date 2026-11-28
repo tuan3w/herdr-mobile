@@ -1,4 +1,4 @@
-// Every test starts real processes (a keeper, an agent, python): the default 30 s per test is what a busy machine runs out of, not a hang.
+// Every test starts real processes (a keeper binary, a scripted agent): the default 30 s per test is what a busy machine runs out of, not a hang.
 @Timeout(Duration(minutes: 3))
 @TestOn('linux || mac-os')
 library;
@@ -8,15 +8,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// What the REAL keeper script (python3) replays to a client that attaches later.
+// What the keeper (the `herdr-host` binary) replays to a client that attaches later.
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}, bool install = true]) async {
     final h = await KeeperHost.create(env);
     addTearDown(h.dispose);
@@ -24,7 +21,7 @@ void main() {
     return h;
   }
 
-  group('keeper', skip: hasPython ? false : 'python3 is not installed', () {
+  group('keeper', () {
     test('a prompt nothing has answered yet is in the replay of a client that attached meanwhile', () async {
       final h = await newHost();
       final info = await h.start();
@@ -138,8 +135,7 @@ void main() {
       await a.initialize();
 
       final g = await h.attach(info.id);
-      g.process.stdin.write('garbage\n{"x":1}\n[1,2]\n\n{"jsonrpc":"2.0","id":1,"meth');
-      await g.process.stdin.flush();
+      g.writeRaw('garbage\n{"x":1}\n[1,2]\n\n{"jsonrpc":"2.0","id":1,"meth');
       await g.close();
       await h.list(); // connects to the socket and hangs up
       await h.list();
@@ -253,12 +249,12 @@ void main() {
       expect(log, contains('cancelled'));
       expect(log, contains('boom'));
 
-      final again = await h.run(keeperAttachCommand(info.id));
+      final again = await h.attachAndLeave(info.id);
       expect(again.code, 67);
       expect(again.err, contains('code 3'));
 
       // Kill dismisses the record.
-      final k = await h.run(keeperKillCommand(info.id));
+      final k = await h.kill(info.id);
       expect(k.out.trim(), '{"ok":true}');
       expect(await h.list(), isEmpty);
     });
@@ -282,7 +278,7 @@ void main() {
       final agentPid = (await h.rawList()).single['agent_pid']! as int;
       final a = await h.attach(info.id);
       await a.initialize();
-      final k = await h.run(keeperKillCommand(info.id));
+      final k = await h.kill(info.id);
       expect(k.code, 0, reason: k.err);
       expect(asJson(jsonDecode(k.out)), {'ok': true});
       expect(await h.list(), isEmpty);
@@ -297,7 +293,7 @@ void main() {
       final info = await h.start();
       final agentPid = (await h.rawList()).single['agent_pid']! as int;
       final watch = Stopwatch()..start();
-      final k = await h.run(keeperKillCommand(info.id));
+      final k = await h.kill(info.id);
       expect(k.code, 0, reason: k.err);
       expect(watch.elapsed, greaterThan(const Duration(seconds: 2))); // SIGTERM ignored, so it waits out the 3 s ladder
       // That the kill command finishes at all is checked by `h.run` (it fails after 60 s); a busy machine only makes it slower, so no upper bound here.

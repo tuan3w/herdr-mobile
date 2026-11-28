@@ -8,6 +8,7 @@ import '../../../data/services/image_decode.dart';
 import '../../../data/services/image_sniff.dart';
 import '../../../data/services/disk_cache.dart';
 import '../../../data/services/remote_files.dart';
+import 'file_thumb.dart' show thumbHostMaxBytes, thumbRequestPx;
 
 /// Where one thumbnail is.
 enum ThumbPhase {
@@ -89,11 +90,14 @@ class _Load {
 
 /// Thumbnails of the photos in a folder grid.
 ///
-/// Reads go through [RemoteFiles] (SFTP), at most [maxConcurrent] at a time,
-/// smallest file first, and only for files up to [autoLimit] bytes. A tile asks
+/// Reads go through [RemoteFiles]: the machine's own thumbnail first (agent
+/// helper: a few tens of KB, any picture up to [thumbHostMaxBytes]), else the
+/// file itself over SFTP when it is up to [autoLimit] bytes. At most
+/// [maxConcurrent] at a time, smallest file first. A tile asks
 /// for its thumbnail when it is built ([acquire]) and lets go when it leaves
 /// the screen ([release]): a load nobody is waiting for any more is dropped from
-/// the queue, or cancelled and its slot given back at once. Decoded pictures
+/// the queue, or cancelled (the host stops making it) and its slot given back
+/// at once. Decoded pictures
 /// (shrunk to [side] pixels while they decode) are kept for the last
 /// [capacity] entries nobody holds, so scrolling back is instant, and disposed
 /// when pushed out.
@@ -137,6 +141,10 @@ class PhotoThumbs {
   /// By path, least recently used first.
   final _entries = <String, ThumbEntry>{};
   final _queue = <ThumbEntry>[];
+
+  /// Pictures over [autoLimit] the machine could not make a thumbnail of
+  /// (oldest first).
+  final _noThumb = <String>{};
   var _running = 0;
   var _pumpScheduled = false;
   var _disposed = false;
@@ -180,12 +188,14 @@ class PhotoThumbs {
     return e;
   }
 
-  /// What the listing's [size] already says: empty files have no picture, big
-  /// ones are not fetched. An unknown size has to be tried.
+  /// What the listing's [size] already says: empty files have no picture, ones
+  /// over [thumbHostMaxBytes] are never asked for, and one over [autoLimit] is
+  /// only ever fetched as the machine's own thumbnail. An unknown size has to
+  /// be tried.
   ThumbPhase _firstPhase(int? size) {
     if (size == null) return ThumbPhase.queued;
     if (size <= 0) return ThumbPhase.failed;
-    return size > autoLimit ? ThumbPhase.tooBig : ThumbPhase.queued;
+    return size > thumbHostMaxBytes ? ThumbPhase.tooBig : ThumbPhase.queued;
   }
 
   /// Lets go of what [acquire] returned. The last holder leaving dequeues the
@@ -297,11 +307,14 @@ class PhotoThumbs {
         return;
       }
       Uint8List? original;
+      Uint8List? hostThumb;
       if (stored != null) {
         image = stored.image;
         phase = ThumbPhase.ready;
       } else {
-        final bytes = await _fetch(e, load);
+        hostThumb = await _hostThumbnail(e, load);
+        if (load.dead) return;
+        final bytes = hostThumb ?? await _fetch(e, load);
         if (load.dead) return;
         if (bytes == null) {
           phase = ThumbPhase.tooBig;
@@ -319,7 +332,12 @@ class PhotoThumbs {
           }
         }
       }
-      if (key != null && original != null && image != null) _keep(key, image, original);
+      if (key != null && hostThumb != null && image != null) {
+        // Already a thumbnail: kept as it came, nothing to encode.
+        unawaited(_store.put(key, hostThumb));
+      } else if (key != null && original != null && image != null) {
+        _keep(key, image, original);
+      }
     } on Object {
       phase = ThumbPhase.failed;
     }
@@ -372,16 +390,41 @@ class PhotoThumbs {
   }
 
   /// The file's bytes, or null when it turned out to be over [autoLimit]
-  /// (only possible when the listing gave no size).
+  /// (only possible when the listing gave no size), or is over it and so is
+  /// left to the machine's own thumbnail.
   Future<Uint8List?> _fetch(ThumbEntry e, _Load load) async {
     final size = e.size;
     if (size == null) {
       final bytes = await e._files.read(e.path, length: autoLimit + 1);
       return bytes.length > autoLimit ? null : bytes;
     }
+    if (size > autoLimit) return null;
     // One call: the file is at most autoLimit bytes. readAll checks the cancel
     // flag around it.
     return e._files.readAll(e.path, size: size, chunk: size, cancel: load.cancel);
+  }
+
+  /// The machine's own thumbnail of [e] (agent helper), or null: SFTP, an older
+  /// helper, a picture it cannot read, a changed file, or the tile gone. A
+  /// picture too big to read here that the machine could not do is remembered,
+  /// so a tile that scrolls back does not ask again.
+  Future<Uint8List?> _hostThumbnail(ThumbEntry e, _Load load) async {
+    final size = e.size, modified = e.modified;
+    final big = size != null && size > autoLimit;
+    if (big && _noThumb.contains(e.path)) return null;
+    final bytes = await e._files.thumbnail(
+      e.path,
+      maxPx: thumbRequestPx,
+      expect: size == null || modified == null
+          ? null
+          : RemoteStat(path: e.path, kind: RemoteEntryKind.file, size: size, modified: modified),
+      cancel: load.cancel,
+    );
+    if (bytes == null && big && !load.dead) {
+      if (_noThumb.length >= 512) _noThumb.remove(_noThumb.first);
+      _noThumb.add(e.path);
+    }
+    return bytes;
   }
 
   /// Keeps at most [capacity] entries nobody holds, dropping the least

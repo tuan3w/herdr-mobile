@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,6 +21,7 @@ import 'data/repositories/slash_usage.dart';
 import 'data/repositories/quick_phrases.dart';
 import 'data/repositories/sent_phrases.dart';
 import 'data/services/dictation.dart';
+import 'data/services/disk_cache.dart';
 import 'data/repositories/terminal_settings.dart';
 import 'data/repositories/observed_sessions.dart';
 import 'data/repositories/pane_answerer.dart';
@@ -177,6 +180,11 @@ Future<HerdrMobileApp> bootApp({
   // Settings switch and the first lifecycle change already depend on it.
   final notificationSettings = NotificationSettings(PrefsNotificationStore());
   await notificationSettings.load();
+  // Which pictures the phone already holds, before a chat asks: the index is one
+  // directory listing, and until it is loaded a held picture cannot be told
+  // from one to fetch (the chat showed `Tap to load`, then the picture).
+  // Not awaited: the first frame does not wait for it.
+  unawaited(DiskCache.shared.ready);
   // Fast, and never throws: a platform without notifications gets a no-op.
   final notify = notifier ?? await LocalNotifier.start(accent: Ds.paper.accent);
   final monitor = network ?? ConnectivityNetworkMonitor();

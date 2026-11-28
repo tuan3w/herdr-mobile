@@ -4,83 +4,30 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/acp/agent_host.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
-import 'package:herdr_mobile/data/acp/zipped_lines.dart';
+import 'package:herdr_mobile/data/app_info.dart';
+import 'package:herdr_mobile/data/host/host_channels.dart';
+import 'package:herdr_mobile/data/host/host_link.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
+import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
 
+import 'support/keeper_harness.dart';
+import 'support/process_host.dart';
 import 'support/transcript_fingerprint.dart';
 
-// Runs the real keeper script (python3) `follow` against files in a temp HOME,
-// the way an SSH server would run it (`sh -c`).
+// Runs the real `herdr-host` binary's `keeper.follow`/`keeper.blob` against files in a temp HOME the way the
+// app does: `herdr-host serve` under the app's command (`sh -c`), a `HostLink` on it and the real `SshAgentHost`
+// (options the app does not use, `poll_ms` and `idle_exit`, open the stream directly). The follower's own
+// timing (poll, back-off) is the Rust suite's: it runs on the real clock, which a test here must not wait on.
 
 const _tail = 192 * 1024;
-
-// Loads the script without running `main` (its `__main__` guard), then runs a `Follower` whose clock
-// is a number the (replaced) `wait` advances, so minutes of back-off take no
-// time. Modes: backoff (quiet 1100 waits, a line appended during wait 800),
-// idle (--idle-exit 300, quiet), idle-grow (the same, a line during wait 100).
-// The `cli` modes run the script's own `main` (`follow PATH` plus the flags, so
-// the flags are parsed for real) on the same clock: cli-default (no flags,
-// quiet, ends after 8 waits), cli-once (no flags, ends at the first wait),
-// cli-poll (`--poll-ms 2000`, ends after 3 waits), cli-idle (`--idle-exit 2`,
-// quiet) and cli-idle-grow (the same, a line appended during wait 6).
-// The summary also says how many bytes were read from the file.
-const _harness = r'''
-import json, os, sys
-script, log, mode = sys.argv[1:4]
-src = open(script).read()
-g = {"__name__": "keeper_under_test"}
-exec(compile(src, script, "exec"), g)
-now = [0.0]
-waits = []
-reads = []
-count = [0]
-read_bytes = [0]
-real_pread = os.pread
-def pread(*a):
-    count[0] += 1
-    data = real_pread(*a)
-    read_bytes[0] += len(data)
-    return data
-os.pread = pread
-append_at = {"backoff": 800, "idle-grow": 100, "cli-idle-grow": 6}.get(mode)
-cli = {"cli-default": [], "cli-once": [], "cli-poll": ["--poll-ms", "2000"], "cli-idle": ["--idle-exit", "2"], "cli-idle-grow": ["--idle-exit", "2"]}.get(mode)
-# A follower that never ends by itself stops here, like a closed stdin would,
-# so a broken one fails the test instead of spinning.
-max_waits = {"backoff": 1100, "cli-default": 8, "cli-once": 1, "cli-poll": 3}.get(mode, 5000)
-class F(g["Follower"]):
-    def wait(self, seconds):
-        waits.append(seconds)
-        now[0] += seconds
-        n = len(waits)
-        if mode == "backoff" and n in (1, 799, 1100):
-            reads.append(count[0])
-        if n == append_at:
-            with open(log, "ab") as f:
-                f.write(b'{"n":99}\n')
-        return n < max_waits
-if cli is None:
-    F(log, None, 0.25, 300 if mode.startswith("idle") else 0, lambda: now[0]).run()
-else:
-    # `main` builds the Follower itself, with the real clock unless it is given this one.
-    class CF(F):
-        def __init__(self, path, frm, poll, idle_exit, tail=None, zipped=False, until=None, brief=False):
-            F.__init__(self, path, frm, poll, idle_exit, lambda: now[0], tail, zipped, until, brief)
-    g["Follower"] = CF
-    g["main"](["follow", log] + cli)
-print(json.dumps({"waits": waits, "reads": reads, "total": sum(waits), "bytes": read_bytes[0]}))
-''';
-
-String? _pythonDir() {
-  for (final d in ['/usr/bin', '/bin', '/usr/local/bin', '/opt/homebrew/bin']) {
-    if (File('$d/python3').existsSync()) return d;
-  }
-  return null;
-}
 
 /// One output record of `follow`.
 class _Rec {
@@ -106,32 +53,29 @@ class _Rec {
 }
 
 class _Follow {
-  _Follow(this.process) {
-    process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(
-          (l) {
-            final r = _Rec(l);
-            // The caught-up and head records are notes about the stream, not
-            // records of the log.
-            (r.isCaughtUp
-                    ? caughtUp
-                    : r.isHead
-                    ? heads
-                    : _records)
-                .add(r);
-            _wake();
-          },
-          onDone: () {
-            _done = true;
-            _wake();
-          },
-        );
-    process.stderr.transform(utf8.decoder).listen(_err.write);
+  _Follow(this.channel) {
+    channel.lines.listen(
+      (l) {
+        final r = _Rec(l);
+        // The caught-up and head records are notes about the stream, not
+        // records of the log.
+        (r.isCaughtUp
+                ? caughtUp
+                : r.isHead
+                ? heads
+                : _records)
+            .add(r);
+        _wake();
+      },
+      onError: (Object _) {},
+      onDone: () {
+        _done = true;
+        _wake();
+      },
+    );
   }
 
-  final Process process;
+  final ExecChannel channel;
   final _records = <_Rec>[];
 
   /// The `C` records, in order (the follower sends one, after its first read to the end).
@@ -139,12 +83,12 @@ class _Follow {
 
   /// The `S` records, in order: where each tail read starts.
   final heads = <_Rec>[];
-  final _err = StringBuffer();
   var _done = false;
   Completer<void>? _waiting;
   var _taken = 0;
 
-  String get stderr => _err.toString();
+  /// The host's message of the error that ended the stream (empty for a clean end).
+  String get stderr => channel.stderrTail;
 
   void _wake() {
     final w = _waiting;
@@ -201,14 +145,20 @@ class _Follow {
     expect(_records.length, _taken, reason: 'unexpected output: ${_records.sublist(_taken)}');
   }
 
-  /// Closes stdin (what the SSH channel closing does) and returns the exit code.
-  Future<int> stop() async {
-    await process.stdin.close();
-    return process.exitCode.timeout(const Duration(seconds: 10));
+  /// Ends the input (what the app's closing of the channel does) and returns
+  /// the exit status: 0 for a follow that ended quietly.
+  Future<int?> stop() async {
+    await channel.closeInput();
+    return channel.exitCode.timeout(const Duration(seconds: 10));
   }
 
-  Future<int> get exitCode => process.exitCode;
+  Future<int?> get exitCode => channel.exitCode;
 }
+
+/// What a stream that ends by itself said: its status (0 ok, the keeper's 64
+/// bad request / 66 not found / 70 failed, null when the link dropped), its
+/// lines, and the host's message of the error that ended it.
+typedef _Ended = ({int? code, List<String> lines, String err});
 
 class _Host {
   _Host(this.home, this._env);
@@ -216,70 +166,99 @@ class _Host {
   final Directory home;
   final Map<String, String> _env;
   var _n = 0;
-  final _started = <Process>[];
+  final _channels = <ExecChannel>[];
+  final _serves = <ProcessHostProcess>[];
+  final _links = <HostLink>[];
+  HostLink? _shared;
+  Future<HostLink>? _linking;
 
   static Future<_Host> create() async {
     final home = Directory.systemTemp.createTempSync('follow_test_');
-    final host = _Host(home, {'HOME': home.path, 'PATH': '${_pythonDir()}:/usr/bin:/bin'});
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', keeperInstallCommand()],
-      environment: host._env,
-      includeParentEnvironment: false,
-    );
-    p.stdin.write(keeperInstallPayload());
-    await p.stdin.close();
-    final out = await utf8.decodeStream(p.stdout);
-    expect(await p.exitCode, 0);
-    expect(out.trim(), '{"ok":true}');
+    final host = _Host(home, {'HOME': home.path, 'PATH': '/usr/bin:/bin'});
+    // The binary keeper: what `follow`/`blob` reach through the link, the
+    // way the phone does.
+    await installHostBinary(home);
     return host;
   }
 
   /// A new path for a log file in the home folder.
   String path([String name = 'log']) => '${home.path}/${name}_${_n++}.jsonl';
 
-  Future<_Follow> follow(String path, {int? from, int? pollMs = 40, int? idleExit, int? tailBytes}) =>
-      startCommand(keeperFollowCommand(path, from: from, pollMs: pollMs, idleExit: idleExit, tailBytes: tailBytes));
-
-  /// A command that runs the installed script's `Follower` on [log] in a
-  /// harness whose clock and sleep are fake (see [_harness]), and prints a
-  /// JSON summary on its last line.
-  String harness(String log, String mode) {
-    final file = File('${home.path}/harness.py')..writeAsStringSync(_harness);
-    final script = '${home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py';
-    return "python3 '${file.path}' '$script' '$log' $mode";
-  }
-
-  Future<_Follow> startCommand(String command, {Map<String, String> env = const {}}) async {
-    final p = await Process.start(
+  /// A new `herdr-host serve` as an SSH server would run the app's command,
+  /// with a link on it (its own channel, like another phone).
+  Future<HostLink> openLink() async {
+    final serve = await ProcessHostProcess.start(
       '/bin/sh',
-      ['-c', command],
-      environment: {..._env, ...env},
-      includeParentEnvironment: false,
-      workingDirectory: home.path,
-    );
-    _started.add(p);
-    return _Follow(p);
-  }
-
-  /// Runs a follow that is expected to end by itself.
-  Future<({int code, String out, String err})> runToEnd(String command) async {
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', command],
+      ['-c', hostServeCommand()],
       environment: _env,
-      includeParentEnvironment: false,
       workingDirectory: home.path,
     );
-    await p.stdin.close();
-    final out = utf8.decodeStream(p.stdout);
-    final err = utf8.decodeStream(p.stderr);
-    final code = await p.exitCode.timeout(const Duration(seconds: 20));
-    return (code: code, out: await out, err: await err);
+    _serves.add(serve);
+    final link = await HostLink.connect(serve, version: appVersion, helloTimeout: const Duration(seconds: 30));
+    _links.add(link);
+    return link;
   }
 
-  void dispose() {
-    for (final p in _started) {
+  /// The shared link, opened on first use and again after it died.
+  Future<HostLink> link() {
+    final live = _shared;
+    if (live != null && live.isOpen) return Future.value(live);
+    return _linking ??= openLink().then((l) => _shared = l).whenComplete(() => _linking = null);
+  }
+
+  /// What the app has of this machine: the real [SshAgentHost] over [link].
+  late final LinkTransport transport = LinkTransport(link);
+  late final SshAgentHost agentHost = SshAgentHost(transport, quickTimeout: const Duration(seconds: 30));
+
+  /// `keeper.[method]` opened as a stream on the shared link (or [on]) with
+  /// exactly [args]: for what the app does not send.
+  Future<ExecChannel> open(String method, Map<String, Object?> args, {HostLink? on}) async {
+    final channel = HostLineChannel((on ?? await link()).open('keeper', method, args, true));
+    _channels.add(channel);
+    return channel;
+  }
+
+  /// A follow of [path]. Through the app's `SshAgentHost.follow` unless a
+  /// [pollMs] or [idleExit] is given (the app uses neither): then the stream
+  /// is opened with those arguments.
+  Future<_Follow> follow(String path, {int? from, int? pollMs, int? idleExit, int? tailBytes}) async {
+    final channel = pollMs == null && idleExit == null
+        ? await agentHost.follow(path, from: from, tailBytes: tailBytes)
+        : await open('follow', {
+            'path': path,
+            'from': ?from,
+            'poll_ms': ?pollMs,
+            'idle_exit': ?idleExit,
+            'tail_bytes': ?tailBytes,
+          });
+    _channels.add(channel);
+    return _Follow(channel);
+  }
+
+  /// Reads a stream that is expected to end by itself (a bounded follow, a
+  /// blob, a refusal) to its end.
+  Future<_Ended> collect(ExecChannel channel) async {
+    _channels.add(channel);
+    final lines = <String>[];
+    final ended = Completer<void>();
+    channel.lines.listen(lines.add, onError: (Object _) {}, onDone: ended.complete);
+    final code = await channel.exitCode.timeout(const Duration(seconds: 20));
+    await ended.future.timeout(const Duration(seconds: 20));
+    return (code: code, lines: lines, err: channel.stderrTail);
+  }
+
+  Future<void> dispose() async {
+    for (final c in _channels) {
+      unawaited(c.close());
+    }
+    for (final l in _links) {
+      try {
+        await l.close();
+      } on Object {
+        // already gone
+      }
+    }
+    for (final p in _serves) {
       p.kill();
     }
     home.deleteSync(recursive: true);
@@ -304,23 +283,20 @@ List<int> _write(File f, List<String> lines, {FileMode mode = FileMode.write}) {
 String _json(int i, {String pad = ''}) => jsonEncode({'n': i, 'pad': pad});
 
 void main() {
-  final hasPython = _pythonDir() != null;
   late _Host host;
   late Directory outside;
 
   setUpAll(() async {
-    if (!hasPython) return;
     host = await _Host.create();
     outside = Directory.systemTemp.createTempSync('follow_outside_');
   });
 
-  tearDownAll(() {
-    if (!hasPython) return;
-    host.dispose();
+  tearDownAll(() async {
+    await host.dispose();
     outside.deleteSync(recursive: true);
   });
 
-  group('follow', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow', () {
     test('a small file comes whole, with the byte offset after every line', () async {
       final f = File(host.path());
       final lines = [_json(1), '{"text":"héllo 日本語 🚀"}', _json(3)];
@@ -408,7 +384,7 @@ void main() {
       expect(await tailOf(0, tailBytes: 65536), hasLength(1024));
     });
 
-    test('--tail-bytes is clamped to 16 KB..64 MB', () async {
+    test('tail_bytes is clamped to 16 KB..64 MB', () async {
       Future<int> lineCount(int tailBytes) async {
         final f = File(host.path());
         _write(f, [for (var i = 0; i < 10000; i++) _json(i, pad: 'y' * (48 - '$i'.length))]);
@@ -419,11 +395,12 @@ void main() {
       }
 
       expect(await lineCount(1), 256, reason: 'never below 16 KB');
+      expect(await lineCount(0), 256, reason: 'a size of 0 is the least too');
       expect(await lineCount(16384), 256);
       expect(await lineCount(1 << 40), 10000, reason: 'never above 64 MB: the 640 KB file comes whole');
     });
 
-    test('--from wins over --tail-bytes, and a reset uses the tail size too', () async {
+    test('from wins over tail_bytes, and a reset uses the tail size too', () async {
       final f = File(host.path());
       final offsets = _write(f, [for (var i = 0; i < 10000; i++) _json(i, pad: 'y' * (48 - '$i'.length))]);
       final resumed = await host.follow(f.path, from: offsets[9996], tailBytes: 16384);
@@ -457,12 +434,7 @@ void main() {
         written += chunk.length;
       }
       sink.closeSync();
-      // Starting fast is reading only the tail: the bytes the follower reads
-      // (counted in the harness) are the window plus the byte before it, not 30 MB.
-      final r = await host.runToEnd(host.harness(f.path, 'cli-once'));
-      expect(r.code, 0, reason: r.err);
-      expect((jsonDecode(r.out.trim().split('\n').last) as Map)['bytes'], lessThanOrEqualTo(_tail + 1));
-
+      // Starting fast is reading only the tail: what comes over is the window, not 30 MB.
       final run = await host.follow(f.path);
       final firstRecord = await run.next();
       final rest = await run.firstRead();
@@ -487,21 +459,10 @@ void main() {
       await run.stop();
     });
 
-    test('at the default polling rate a new line arrives within 250 ms plus the work', () async {
-      // The poll rate is what the follower waits between two looks, read off
-      // its fake clock (no --poll-ms given): a bound on the latency of a real
-      // process would measure the machine's load, not the rate.
-      final log = File(host.path());
-      _write(log, [_json(1)]);
-      final r = await host.runToEnd(host.harness(log.path, 'cli-default'));
-      expect(r.code, 0, reason: r.err);
-      final waits = ((jsonDecode(r.out.trim().split('\n').last) as Map)['waits'] as List).cast<num>();
-      expect(waits, List.filled(8, 0.25));
-
-      // A real process started without the flag still delivers every append, in order.
+    test('a follow started the way the app starts it delivers every append, in order', () async {
       final f = File(host.path());
       _write(f, [_json(1)]);
-      final run = await host.follow(f.path, pollMs: null);
+      final run = await host.follow(f.path);
       await run.next();
       for (var i = 0; i < 4; i++) {
         _write(f, [_json(2 + i)], mode: FileMode.append);
@@ -511,17 +472,7 @@ void main() {
     });
 
     test('a poll interval can be given', () async {
-      // What the follower waits between two looks, read off the harness clock
-      // (`--poll-ms 2000`, parsed by the real `main`): the gap between two lines
-      // of a real process is a measure of the machine's load as much as of the rate.
-      final log = File(host.path());
-      _write(log, [_json(1)]);
-      final r = await host.runToEnd(host.harness(log.path, 'cli-poll'));
-      expect(r.code, 0, reason: r.err);
-      final waits = ((jsonDecode(r.out.trim().split('\n').last) as Map)['waits'] as List).cast<num>();
-      expect(waits, List.filled(3, 2.0));
-
-      // A real process given it still delivers a line appended after its first read.
+      // A real process given it delivers a line appended after its first read.
       final f = File(host.path());
       _write(f, [_json(1)]);
       final run = await host.follow(f.path, pollMs: 2000);
@@ -531,25 +482,7 @@ void main() {
       await run.stop();
     });
 
-    test('--idle-exit ends the follower by itself after that long without growth; growth postpones it', () async {
-      // On the harness's fake clock (the real `main` parses `--idle-exit 2`), so
-      // the seconds are counted, not waited for: a busy machine cannot stretch them.
-      Future<Map> ran(String mode) async {
-        final f = File(host.path());
-        _write(f, [_json(1)]);
-        final r = await host.runToEnd(host.harness(f.path, mode));
-        expect(r.code, 0, reason: r.err);
-        expect(r.err, isEmpty);
-        return jsonDecode(r.out.trim().split('\n').last) as Map;
-      }
-
-      // Quiet: ends by itself, 2 s after the start (8 waits of 0.25 s).
-      expect((await ran('cli-idle'))['total'], 2.0);
-      // A line during the 6th wait (at 1.5 s) restarts the 2 s: it ends at 3.5 s.
-      expect((await ran('cli-idle-grow'))['total'], 3.5);
-    });
-
-    test('without --idle-exit a quiet file keeps it running', () async {
+    test('without idle_exit a quiet file keeps it running', () async {
       final f = File(host.path());
       _write(f, [_json(1)]);
       final run = await host.follow(f.path);
@@ -561,36 +494,23 @@ void main() {
       await run.stop();
     });
 
-    test(
-      'the poll backs off to 1 s after 60 s and 2 s after 10 min without growth, and any growth resets it',
-      () async {
-        final f = File(host.path());
-        _write(f, [_json(1)]);
-        final r = await host.runToEnd(host.harness(f.path, 'backoff'));
-        expect(r.code, 0, reason: r.err);
-        final result = jsonDecode(r.out.trim().split('\n').last) as Map;
-        final waits = (result['waits'] as List).cast<num>();
-        expect(waits.take(240).toSet(), {0.25});
-        expect(waits.skip(240).take(540).toSet(), {1.0});
-        expect(waits[780], 2.0);
-        expect(waits.skip(780).take(20).toSet(), {2.0}); // up to the append after wait 800
-        expect(waits.skip(800).take(240).toSet(), {0.25}, reason: 'growth resets to the base interval');
-        expect(waits[1040], 1.0);
-        // A quiet file is one stat per wait, no read.
-        final reads = (result['reads'] as List).cast<int>();
-        expect(reads[1] - reads[0], 0, reason: 'no read between the first and the 799th quiet wait');
-        expect(reads[2], greaterThan(reads[1]), reason: 'the append was read');
-      },
-    );
-
-    test('--idle-exit counts quiet time on the same clock, from the last growth', () async {
+    test('idle_exit ends the follow by itself after that long without growth', () async {
       final f = File(host.path());
       _write(f, [_json(1)]);
-      final quiet = jsonDecode((await host.runToEnd(host.harness(f.path, 'idle'))).out.trim().split('\n').last) as Map;
-      expect(quiet['total'], 300.0);
-      final grew =
-          jsonDecode((await host.runToEnd(host.harness(f.path, 'idle-grow'))).out.trim().split('\n').last) as Map;
-      expect(grew['total'], 325.0);
+      final run = await host.follow(f.path, idleExit: 1, pollMs: 20);
+      await run.next();
+      expect(await run.exitCode.timeout(const Duration(seconds: 20)), 0);
+      expect(run.stderr, isEmpty);
+    });
+
+    test('a poll interval of 0 is the shortest one, not an error', () async {
+      final f = File(host.path());
+      _write(f, [_json(1)]);
+      final run = await host.follow(f.path, pollMs: 0);
+      expect((await run.next()).json['n'], 1);
+      _write(f, [_json(2)], mode: FileMode.append);
+      expect((await run.next()).json['n'], 2);
+      expect(await run.stop(), 0);
     });
 
     test('a partial last line is held until its newline arrives', () async {
@@ -686,7 +606,7 @@ void main() {
     });
   });
 
-  group('follow --from', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow from', () {
     test('resumes strictly after the offset', () async {
       final f = File(host.path());
       final offsets = _write(f, [for (var i = 0; i < 6; i++) _json(i)]);
@@ -738,19 +658,19 @@ void main() {
     });
   });
 
-  group('follow --to and --digest', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow to and digest', () {
     /// The records of one run that ends by itself: `<offset>\t<json>` lines as
     /// (offset, json), and the other records (`R`, `C`) as text.
-    Future<({List<(int, Map<String, dynamic>)> lines, List<String> notes, int code})> bounded(
+    Future<({List<(int, Map<String, dynamic>)> lines, List<String> notes, int? code})> bounded(
       File f, {
       int? from,
       required int until,
       bool digest = false,
     }) async {
-      final r = await host.runToEnd(keeperFollowCommand(f.path, from: from, until: until, digest: digest, pollMs: 40));
+      final r = await host.collect(await host.agentHost.follow(f.path, from: from, to: until, digest: digest));
       final lines = <(int, Map<String, dynamic>)>[];
       final notes = <String>[];
-      for (final l in const LineSplitter().convert(r.out)) {
+      for (final l in r.lines) {
         final tab = l.indexOf('\t');
         final offset = int.tryParse(l.substring(0, tab));
         if (offset == null) {
@@ -852,12 +772,15 @@ void main() {
     });
   });
 
-  group('follow refuses', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow refuses', () {
+    Future<_Ended> asked(String path) async => host.collect(await host.agentHost.follow(path));
+
     Future<void> refused(String path, {String? why}) async {
-      final r = await host.runToEnd(keeperFollowCommand(path));
+      final r = await asked(path);
       expect(r.code, 66, reason: '$path: ${r.err}');
-      expect(r.out, isEmpty, reason: path);
-      expect(r.err, startsWith('herdr-mobile: '), reason: path);
+      expect(r.lines, isEmpty, reason: path);
+      expect(r.err, isNotEmpty, reason: path);
+      expect(r.err, isNot(startsWith('herdr-mobile')), reason: path);
       if (why != null) expect(r.err, contains(why), reason: path);
     }
 
@@ -935,26 +858,31 @@ void main() {
       expect(File(marker).existsSync(), isFalse);
     });
 
-    test('the command is short and rejects what cannot be a path', () {
-      expect(
-        keeperFollowCommand('/home/u/.omp/agent/sessions/${'x' * 200}/a.jsonl', from: 123456789).length,
-        lessThan(1024),
-      );
+    test('what cannot be a path, and arguments of the wrong kind, are bad requests', () async {
       for (final bad in ['', 'a\nb.jsonl', 'a\u0000b.jsonl', 'a\rb.jsonl', 'x' * 5000, 'a\u007fb']) {
-        expect(() => keeperFollowCommand(bad), throwsArgumentError, reason: bad.length > 50 ? 'long' : bad);
+        final r = await asked(bad);
+        expect(r.code, 64, reason: bad.length > 50 ? 'long' : bad);
+        expect(r.lines, isEmpty);
+        expect(r.err, contains('path'));
       }
-      expect(() => keeperFollowCommand('/a.jsonl', from: -1), throwsArgumentError);
-      for (final bad in [0, -5]) {
-        expect(() => keeperFollowCommand('/a.jsonl', tailBytes: bad), throwsArgumentError);
+      // A negative offset is not an offset; a call without its path is not a call.
+      for (final args in <Map<String, Object?>>[
+        {'path': '/a.jsonl', 'from': -1},
+        {'path': '/a.jsonl', 'to': 'x'},
+        {'path': '/a.jsonl', 'tail_bytes': -5},
+        {'path': '/a.jsonl', 'poll_ms': 1.5},
+        {'path': '/a.jsonl', 'idle_exit': -1},
+        {'from': 0},
+        {'path': 42},
+      ]) {
+        final r = await host.collect(await host.open('follow', args));
+        expect(r.code, 64, reason: '$args: ${r.err}');
+        expect(r.lines, isEmpty, reason: '$args');
       }
-      expect(() => keeperFollowCommand('/a.jsonl', pollMs: 0), throwsArgumentError);
-      expect(() => keeperFollowCommand('/a.jsonl', idleExit: -1), throwsArgumentError);
-      expect(keeperFollowCommand('/a.jsonl', tailBytes: 4096), isNot(equals(keeperFollowCommand('/a.jsonl'))));
-      expect(keeperFollowCommand('/a.jsonl', from: 0), isNot(equals(keeperFollowCommand('/a.jsonl'))));
     });
   });
 
-  group('blob', skip: hasPython ? false : 'python3 is not installed', () {
+  group('blob', () {
     final bytes = List.generate(150000, (i) => (i * 7) % 251);
     final b64 = base64.encode(bytes);
 
@@ -973,9 +901,9 @@ void main() {
     }
 
     Future<List<int>> fetched(String path, int start, String hash) async {
-      final r = await host.runToEnd(keeperBlobCommand(path, start: start, hash: hash));
+      final r = await host.collect(await host.open('blob', {'path': path, 'start': start, 'hash': hash}));
       expect(r.code, 0, reason: r.err);
-      final records = const LineSplitter().convert(r.out);
+      final records = r.lines;
       expect(records.last, startsWith('D\t'));
       final text = [for (final l in records.where((l) => l.startsWith('B\t'))) l.substring(2)].join();
       expect(int.parse(records.last.substring(2)), text.length);
@@ -1020,6 +948,9 @@ void main() {
         for (final r in found) {
           expect(await fetched(f.path, r.start, r.hash), bytes);
         }
+        // ...and the app's own call gives the same bytes.
+        final first = found.first;
+        expect(await host.agentHost.blob(f.path, start: first.start, hash: first.hash), bytes);
       },
     );
 
@@ -1051,10 +982,10 @@ void main() {
     });
 
     Future<void> gone(String path, int start, String hash, {String? why}) async {
-      final r = await host.runToEnd(keeperBlobCommand(path, start: start, hash: hash));
+      final r = await host.collect(await host.open('blob', {'path': path, 'start': start, 'hash': hash}));
       expect(r.code, 66, reason: r.err);
-      expect(r.out, isEmpty);
-      expect(r.err, startsWith('herdr-mobile: '));
+      expect(r.lines, isEmpty);
+      expect(r.err, isNot(startsWith('herdr-mobile')));
       if (why != null) expect(r.err, contains(why));
     }
 
@@ -1096,16 +1027,34 @@ void main() {
         jsonEncode({'type': 'image', 'data': b64}),
       ])).single;
       f.deleteSync();
-      final r = await host.runToEnd(keeperBlobCommand(f.path, start: ref.start, hash: ref.hash));
+      final r = await host.collect(await host.open('blob', {'path': f.path, 'start': ref.start, 'hash': ref.hash}));
       expect(r.code, 66);
       expect(r.err, isNot(contains(host.home.path)));
+      // ...and in the app's words.
+      await expectLater(
+        host.agentHost.blob(f.path, start: ref.start, hash: ref.hash),
+        throwsA(
+          isA<AgentHostException>()
+              .having((e) => e.fatal, 'fatal', isTrue)
+              .having((e) => e.message, 'message', allOf(contains('not in the log'), isNot(contains(host.home.path)))),
+        ),
+      );
     });
 
-    test('a number that only looks like one is a usage error, not a crash', () async {
-      final script = '${host.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py';
-      final r = await host.runToEnd("python3 '$script' blob '/x.jsonl' '\u00b2' 0123456789abcdef");
-      expect(r.code, 64);
-      expect(r.err, isNot(contains('Traceback')));
+    test('a start or hash that is not what it should be is a bad request, not a crash', () async {
+      for (final args in <Map<String, Object?>>[
+        {'path': '/x.jsonl', 'start': '\u00b2', 'hash': '0123456789abcdef'},
+        {'path': '/x.jsonl', 'start': -1, 'hash': '0123456789abcdef'},
+        {'path': '/x.jsonl', 'start': 0, 'hash': 'not hex at all!!'},
+        {'path': '/x.jsonl', 'start': 0, 'hash': '0123456789abcde'},
+        {'path': 'a\nb.jsonl', 'start': 0, 'hash': '0123456789abcdef'},
+        {'path': '/x.jsonl'},
+      ]) {
+        final r = await host.collect(await host.open('blob', args));
+        expect(r.code, 64, reason: '$args: ${r.err}');
+        expect(r.err, isNot(contains('Traceback')));
+        expect(r.lines, isEmpty, reason: '$args');
+      }
     });
 
     test('a picture in a line longer than follow sends has no ref at all, so none is fetched', () async {
@@ -1165,7 +1114,7 @@ void main() {
     });
   });
 
-  group('follow cuts heavy fields on the host', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow cuts heavy fields on the host', () {
     Future<List<_Rec>> follow(List<String> lines) async {
       final f = File(host.path());
       _write(f, lines);
@@ -1382,11 +1331,11 @@ void main() {
     });
   });
 
-  group('follow ends', skip: hasPython ? false : 'python3 is not installed', () {
-    test('quietly when stdin closes, even if the file never changes', () async {
+  group('follow ends', () {
+    test('quietly when the input ends, even if the file never changes', () async {
       final f = File(host.path());
       _write(f, [_json(1)]);
-      // A poll of a minute: a follower that only noticed the closed stdin at its
+      // A poll of a minute: a follower that only noticed the closed input at its
       // next look would not end within the 10 s `stop` allows.
       final run = await host.follow(f.path, pollMs: 60000);
       await run.next();
@@ -1394,31 +1343,60 @@ void main() {
       expect(run.stderr, isEmpty);
     });
 
-    test('quietly when the reader of stdout goes away', () async {
+    test('an ended input ends a running follow with status 0, a reset leaves no status', () async {
       final f = File(host.path());
-      // More than a pipe holds, so the write after `head` has gone fails.
       _write(f, [for (var i = 0; i < 6000; i++) _json(i, pad: 'e' * 80)]);
-      // stdin stays open (an endless /dev/zero), so only the broken pipe can end it.
-      final r = await host.runToEnd('${keeperFollowCommand(f.path)} < /dev/zero 2>err.txt | head -n 2');
-      expect(r.code, 0);
-      // The first line says where the tail starts; the second is a record.
-      expect(r.out.trim().split('\n').last, contains('\t{'));
-      expect(File('${host.home.path}/err.txt').readAsStringSync(), isEmpty);
+      final ended = await host.follow(f.path);
+      await ended.firstRead();
+      await ended.channel.closeInput();
+      expect(await ended.exitCode.timeout(const Duration(seconds: 10)), 0);
+
+      final reset = await host.follow(f.path);
+      await reset.next();
+      await reset.channel.close();
+      expect(await reset.exitCode.timeout(const Duration(seconds: 10)), isNull);
     });
 
-    test('with an exit status of 64 for arguments it was not given', () async {
-      final r = await host.runToEnd(
-        'python3 ${host.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py follow',
-      );
-      expect(r.code, 64);
-      final bad = await host.runToEnd(
-        'python3 ${host.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py follow /x.jsonl --from x',
-      );
-      expect(bad.code, 64);
+    test('a reset frees the place of a follow that waits on a reader that never reads', () async {
+      final rnd = Random(7);
+      final big = File(host.path());
+      // Lines that do not compress: 2 MB, more than the host sends before the reader has read any of it.
+      _write(big, [
+        for (var i = 0; i < 2000; i++) _json(i, pad: base64.encode(List.generate(768, (_) => rnd.nextInt(256)))),
+      ]);
+      final small = File(host.path());
+      _write(small, [_json(1)]);
+      final link = await host.openLink();
+      final places = link.hello.limits.maxStreams;
+      HostLineChannel follow(File f, Map<String, Object?> more) =>
+          HostLineChannel(link.open('keeper', 'follow', {'path': f.path, ...more}, true));
+      final held = <HostLineChannel>[];
+      try {
+        // Every place but one taken by quiet follows; the last one by a follow nobody reads.
+        for (var i = 0; i < places - 1; i++) {
+          held.add(follow(small, const {}));
+        }
+        final blocked = follow(big, const {'from': 0});
+        held.add(blocked);
+        final full = await host.collect(follow(small, const {}));
+        expect(full.code, isNot(0), reason: 'the host has no place left');
+        expect(full.err, contains('too many'));
+
+        await blocked.close();
+        await eventually(
+          () async => (await host.collect(follow(small, const {'to': 1}))).code == 0,
+          what: 'a place for a new follow after the reset',
+        );
+      } finally {
+        for (final c in held) {
+          unawaited(c.close());
+        }
+        await link.close();
+      }
     });
   });
 
-  group('follow says it is up to date', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow says it is up to date', () {
     test('once, with the offset it has reached: an empty file, a tail, and a resume at the end', () async {
       final empty = File(host.path())..writeAsStringSync('');
       final a = await host.follow(empty.path);
@@ -1451,56 +1429,43 @@ void main() {
     });
   });
 
-  group('follow --z', skip: hasPython ? false : 'python3 is not installed', () {
-    /// The lines `follow` prints for [f] until it has been quiet for a second, as the phone reads them.
-    Future<({List<String> raw, List<String> read})> output(File f, {required bool zipped}) async {
-      final r = await host.runToEnd(keeperFollowCommand(f.path, pollMs: 40, idleExit: 1, zipped: zipped));
-      expect(r.code, 0, reason: r.err);
-      final raw = const LineSplitter().convert(r.out);
-      return (raw: raw, read: await zippedLines(Stream.fromIterable(raw)).toList());
-    }
+  group('a long transcript through the link', () {
+    String row(int i) => jsonEncode({'n': i, 'text': 'line $i of the log, with words that repeat ${i % 7}'});
 
-    test('a big tail travels as Z lines that read back to exactly the plain records', () async {
+    test('a big tail comes whole as plain text records, the same as a bounded read of it', () async {
       final f = File(host.path());
-      _write(f, [
-        for (var i = 0; i < 3000; i++)
-          jsonEncode({'n': i, 'text': 'line $i of the log, with words that repeat ${i % 7}'}),
-      ]);
-      final plain = await output(f, zipped: false);
-      final zipped = await output(f, zipped: true);
+      final offsets = _write(f, [for (var i = 0; i < 3000; i++) row(i)]);
+      final run = await host.follow(f.path, from: 0);
+      final got = await run.firstRead();
+      await run.stop();
+      expect(got, hasLength(3000));
+      expect([for (final r in got) r.offset], offsets);
+      for (var i = 0; i < got.length; i++) {
+        expect(got[i].json, jsonDecode(row(i)), reason: 'record $i');
+        expect(got[i].text, matches(RegExp(r'^\d+\t\{')), reason: 'plain text, not an encoded line');
+      }
 
-      expect(zipped.read, plain.read);
-      expect(zipped.raw.any((l) => l.startsWith('Z')), isTrue);
-      final wire = zipped.raw.join('\n').length;
-      expect(wire, lessThan(plain.raw.join('\n').length ~/ 3), reason: 'the wire shrinks');
+      final bounded = await host.collect(await host.agentHost.follow(f.path, from: 0, to: offsets.last));
+      expect(bounded.code, 0, reason: bounded.err);
+      expect(bounded.lines.where((l) => !l.startsWith('C\t')), [for (final r in got) r.text]);
     });
 
-    test('a later batch continues the same zlib stream, and the phone reads both', () async {
+    test('later batches arrive in order after the first read', () async {
       final f = File(host.path());
-      String row(int i) => jsonEncode({'n': i, 'text': 'line $i with words that repeat ${i % 5}'});
       _write(f, [for (var i = 0; i < 300; i++) row(i)]);
-      final run = await host.startCommand(keeperFollowCommand(f.path, pollMs: 40, zipped: true));
-      final first = await run.firstRead();
-      _write(f, [for (var i = 300; i < 340; i++) row(i)], mode: FileMode.append);
-      // One write is one batch: one Z line (any row it left out fails the comparison below).
-      final later = [await run.next()];
-
-      expect(first.single.text, startsWith('Z'));
-      expect(later.single.text, startsWith('Z'), reason: 'its own line, not part of the first');
-      final read = await zippedLines(
-        Stream.fromIterable([
-          for (final r in [...first, ...later]) r.text,
-        ]),
-      ).toList();
-      expect(
-        [for (final l in read) jsonDecode(l.substring(l.indexOf('\t') + 1))['n']],
-        [for (var i = 0; i < 340; i++) i],
-      );
-      await run.stop();
+      final run = await host.follow(f.path);
+      expect(await run.firstRead(), hasLength(300));
+      for (var batch = 0; batch < 3; batch++) {
+        final from = 300 + batch * 40;
+        _write(f, [for (var i = from; i < from + 40; i++) row(i)], mode: FileMode.append);
+        final got = await run.take(40);
+        expect([for (final r in got) r.json['n']], [for (var i = from; i < from + 40; i++) i]);
+      }
+      expect(await run.stop(), 0);
     });
   });
 
-  group('follow leaves out what omp keeps for itself', skip: hasPython ? false : 'python3 is not installed', () {
+  group('follow leaves out what omp keeps for itself', () {
     test('token accounting, the envelope, signatures and the copy of a file read are not sent; a credential_pin is skipped', () async {
       final f = File(host.path());
       final assistant = {
@@ -1574,12 +1539,10 @@ void main() {
         final name = fixture.uri.pathSegments.last;
         final raw = fixture.readAsLinesSync().where((l) => l.isNotEmpty).toList();
         final f = File(host.path())..writeAsStringSync('${raw.join('\n')}\n');
-        final r = await host.runToEnd(keeperFollowCommand(f.path, pollMs: 40, idleExit: 1, tailBytes: 8 * 1024 * 1024));
-        expect(r.code, 0, reason: '$name: ${r.err}');
-        final sent = [
-          for (final l in const LineSplitter().convert(r.out))
-            if (!l.startsWith('C\t')) l.substring(l.indexOf('\t') + 1),
-        ];
+        final run = await host.follow(f.path, tailBytes: 8 * 1024 * 1024);
+        final got = await run.firstRead();
+        await run.stop();
+        final sent = [for (final r in got) r.body];
 
         String read(List<String> lines) {
           final mapper = OmpLogMapper();

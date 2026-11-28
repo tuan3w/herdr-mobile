@@ -1,21 +1,19 @@
-// The heavy tests drive 12 to 200 real turns through python: the default 30 s per test is what a busy machine runs out of, not a hang.
+// The heavy tests drive 12 to 200 real turns through the keeper (the `herdr-host` binary); the
+// default 30 s per test is what a busy machine runs out of, not a hang.
 @Timeout(Duration(minutes: 5))
 @TestOn('linux || mac-os')
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// The bounded replay log of the REAL keeper script (python3).
+// The bounded replay log of the keeper (the `herdr-host` binary) as a client
+// that attaches later sees it. The log's own rules are the Rust suite's.
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}, bool install = true]) async {
     final h = await KeeperHost.create(env);
     addTearDown(h.dispose);
@@ -25,7 +23,7 @@ void main() {
 
   // A long, tool-heavy chat used to lose its first turns: the log kept the
   // newest 4000 entries / 4 MB and dropped the oldest whole entries first.
-  group('history', skip: hasPython ? false : 'python3 is not installed', () {
+  group('history', () {
     Future<KeeperAttach> detached(KeeperHost h, String id, int turns, String spec) async {
       final a = await h.attach(id);
       await a.initialize();
@@ -46,34 +44,32 @@ void main() {
       return (load: load, updates: updatesOf(updates), bytes: updates.fold(0, (n, m) => n + jsonEncode(m).length));
     }
 
-    test('a zipped attach replays the same messages in a fraction of the bytes, and leaves small ones alone', () async {
+    test('a long transcript replays whole through the link, and a short request answers after it', () async {
       final h = await newHost();
       final info = await h.start();
       await detached(h, info.id, 3, '28:20:100');
 
-      Future<(KeeperAttach, Json)> open({required bool zipped}) async {
-        final c = await h.attach(info.id, zipped: zipped);
+      Future<(KeeperAttach, Json)> open() async {
+        final c = await h.attach(info.id);
         await c.initialize();
         final load = await c.load(h);
         return (c, load);
       }
 
-      final (plain, plainLoad) = await open(zipped: false);
-      await plain.close();
-      final (zipped, zippedLoad) = await open(zipped: true);
-      addTearDown(zipped.close);
+      final (first, firstLoad) = await open();
+      await first.close();
+      final (second, secondLoad) = await open();
+      addTearDown(second.close);
 
-      expect(zipped.seen, plain.seen, reason: 'what the app reads is what it always read');
-      expect(zippedLoad, plainLoad);
-      expect(plain.wire, greaterThan(200 * 1024), reason: 'a replay worth zipping');
-      expect(zipped.wire, lessThan(plain.wire ~/ 4), reason: 'plain JSON text deflates well');
+      expect(second.seen, first.seen, reason: 'every client reads the same replay');
+      expect(secondLoad, firstLoad);
+      expect(jsonEncode(first.seen).length, greaterThan(200 * 1024), reason: 'a replay worth streaming');
+      final turns = turnsOf(updatesOf(first.seen.where(isMethod('session/update'))));
+      expect(turns.map((t) => t.user), [for (var i = 0; i < 3; i++) 'heavy:28:20:100:$i']);
 
-      // A message that is not worth it travels as it is, a line of its own, and
-      // the stream keeps working after it.
-      final before = zipped.wire;
-      final answer = await zipped.request('session/list');
+      // The stream keeps working after the long replay.
+      final answer = await second.request('session/list');
       expect(asJson(answer['result']), isNotNull);
-      expect(zipped.wire - before, lessThan(1024));
     });
 
     test('twelve heavy turns: every question and answer comes back, the replay stays small', () async {
@@ -271,89 +267,5 @@ void main() {
         expect(turns.last.tools, isNotEmpty);
       },
     );
-
-    test('taking a refused prompt back keeps the turns and counters consistent', () async {
-      final dir = Directory.systemTemp.createTempSync('keeper_log_');
-      addTearDown(() => dir.deleteSync(recursive: true));
-      final script = File('${dir.path}/keeper.py')..writeAsStringSync(keeperScript());
-      final probe = File('${dir.path}/probe.py')..writeAsStringSync(removeProbe);
-      final r = await Process.run('python3', [probe.path, script.path]);
-      expect(r.exitCode, 0, reason: '${r.stderr}');
-      final out = asJson(jsonDecode(r.stdout as String));
-      List<Object?> sound(Json t) => [t['bytesOk'], t['countOk'], t['lastOk']];
-
-      final refused = asJson(out['refused']);
-      expect(refused['turns'], 1, reason: 'what the agent streamed meanwhile joins the turn before');
-      expect(refused['texts'], ['first', 'answer', 'own 0', 'own 1', 'own 2']);
-      expect(sound(refused), [true, true, true]);
-
-      final alone = asJson(out['alone']);
-      expect(alone['turns'], 0);
-      expect(sound(alone), [true, true, true]);
-      final again = asJson(out['aloneThenAdd']);
-      expect(again['texts'], ['after']);
-      expect(sound(again), [true, true, true]);
-
-      expect(out['sameEntry'], isTrue);
-      final two = asJson(out['twoBlocks']);
-      expect(two['texts'], ['before', 'reply']);
-      expect(sound(two), [true, true, true]);
-
-      expect(out['ghost'], [false, true]);
-
-      final bounded = asJson(out['bounded']);
-      expect(sound(bounded), [true, true, true]);
-      expect(out['boundedDropped'], 0, reason: 'forty refused attempts took no room from the four real turns');
-      expect((bounded['texts'] as List).where((t) => (t as String).startsWith('q')), hasLength(4));
-    });
-
-    test('the log is plain python that can be loaded: pinned turns, state carry, and the hot path', () async {
-      final dir = Directory.systemTemp.createTempSync('keeper_log_');
-      addTearDown(() => dir.deleteSync(recursive: true));
-      final script = File('${dir.path}/keeper.py')..writeAsStringSync(keeperScript());
-      final probe = File('${dir.path}/probe.py')..writeAsStringSync(logProbe);
-      final r = await Process.run('python3', [probe.path, script.path]);
-      expect(r.exitCode, 0, reason: '${r.stderr}');
-      final out = asJson(jsonDecode(r.stdout as String));
-
-      // A request waits on a tool call of the OLDEST turn: that turn stays,
-      // whole, while the others make room.
-      final pinned = asJson(out['pinned']);
-      expect(pinned['oldHasRaw'], isTrue);
-      expect(pinned['oldKept'], isTrue);
-      expect(pinned['otherDropped'], greaterThan(0));
-      expect(pinned['newestKept'], isTrue);
-      expect(pinned["bytes"], lessThanOrEqualTo(30000));
-      // The last mode and command list of the dropped turns still reach a replay.
-      for (final key in ['carryWhole', 'carryCut']) {
-        final c = asJson(out[key]);
-        expect(c['carry'], ['available_commands_update', 'current_mode_update'], reason: key);
-        expect(c['mode'], ['plan'], reason: key);
-        expect(
-          ['available_commands_update', 'current_mode_update'],
-          contains(c['first']),
-          reason: '$key: state replays before the turns',
-        );
-      }
-      expect(asJson(out['carryWhole'])['dropped'], greaterThan(0));
-      // Heavy turns: every question stays; the newest turn keeps all its output.
-      final fat = asJson(out['fat']);
-      expect(fat['users'], 12);
-      expect(fat['dropped'], 0);
-      expect(fat['newestRaw'], 28);
-      expect(fat['bytes'], lessThanOrEqualTo(2500 * 1024), reason: 'one whole turn and skeletons');
-      // 600 heavy turns under the soft budget: all there, one whole, none dropped.
-      final soft = asJson(out['soft']);
-      expect(soft['turns'], 600);
-      expect(soft['dropped'], 0);
-      expect(soft['trimmed'], 599);
-      expect(soft['bytes'] as int, lessThanOrEqualTo((soft['newestBytes'] as int) + 600 * 12 * 1024));
-      // Python calls per update, not seconds: they do not move with the load. A pass over the turns per update would cost 1300+ (idle: ~190).
-      expect(soft['callsPerUpdate'] as num, lessThan(400));
-      // Nothing re-scans the log per update: 60000 updates, bounded at 20000 entries (a scan of them is 20000 calls per update; idle: ~176).
-      expect(out['callsPerUpdate'] as num, lessThan(400));
-      expect(out['count'], lessThanOrEqualTo(20000));
-      expect(out['hotDropped'], greaterThan(0));
-    });
   });
 }

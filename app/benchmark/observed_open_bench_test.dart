@@ -1,42 +1,47 @@
 // What opening the chat of an agent that runs in a herdr pane (an "observed"
-// session: the app reads the agent's own session log over SSH) costs the
-// phone: bytes on the wire, how long the open waits before the first line can
-// be read, and how long the phone then spends parsing. Deterministic, no phone,
-// no network.
+// session: the app reads the agent's own session log through the host helper)
+// costs the phone: bytes on the wire, how long the open waits before the first
+// line can be read, and how long the phone then spends parsing. Deterministic,
+// no phone, no network.
 //
 //   BENCH_OUT=/tmp/obs.txt flutter test benchmark/observed_open_bench_test.dart
 //
-// What is REAL: the host helper (`keeper follow`, python3, in a temp HOME,
-// installed the way the app installs it) reads an omp session log built from
-// the recorded traces (`support/omp_log_workload.dart`, fixed seed, the shape
-// of a real omp log); `SshLogSource` over `SshAgentHost` (built the way
-// `boot.dart` builds it: a new host object per session) opens the follow;
-// `ObservedAgentSession` with `OmpLogMapper` and the chat reducer turns the
-// lines into the transcript. What is replaced: SSH. The command runs through
-// `sh -c` here, and every byte it writes to stdout is counted before anything
-// reads it (`wire_kb`; SSH framing is not counted). A transport that reads
-// `zipped` lines back (`openExec(zipped: true)`) is mimicked with
-// `ZippedExecChannel`, as the app's transport isolate does.
+// What is REAL: the host helper (`herdr-host serve` and its `keeper.follow`, in
+// a temp HOME, installed the way the app installs it) reads an omp session log
+// built from the recorded traces (`support/omp_log_workload.dart`, fixed seed,
+// the shape of a real omp log); `SshLogSource` over `SshAgentHost` (built the
+// way `boot.dart` builds it: a new host object per session) opens the follow as
+// a stream on the one `HostLink` the machine keeps (opened with zctx, as the app
+// does); `ObservedAgentSession` with `OmpLogMapper` and the chat reducer turns
+// the lines into the transcript. What is replaced: SSH. `serve` runs through
+// `sh -c` here, and every byte it writes on the follow's stream is counted
+// before anything reads it (`wire_kb`: frames with their headers, deflated as
+// the stream's one zlib stream; SSH framing is not counted).
 //
 // Two scenarios per run:
 //  * cold: a new session object, nothing on the phone (the first open of a
-//    chat after the app started, or after the session was dropped);
+//    chat after the app started, or after the session was dropped), on a link
+//    that is already up;
 //  * relink: the chat was in front, the person left, the follow was dropped,
 //    and they come back to the same session object (the log did not grow).
 //
 // The time of an open on a link is modelled from what was measured:
 //
-//     open_ms = EXEC_RTTS * RTT + max(gate_ms, first_byte_ms + wire_bytes * 8 / rate) + post_ms
+//     open_ms = STREAM_RTTS * RTT + max(gate_ms, first_byte_ms + wire_bytes * 8 / rate) + post_ms
 //
-// `first_byte_ms` is the time on this machine (measured) from the command
-// starting to its first byte of output (python start and reading the log), and
-// the transfer cannot begin before it. `gate_ms` is how long the channel was
-// held back from the session (the check `SshAgentHost` used to make before
-// handing a channel over: the output buffers meanwhile, so it overlaps the
-// transfer); `post_ms` is the time from the first batch reaching the session to
-// a live link with the whole tail applied (the mapper and the reducer on the
-// main isolate, the slices and the yields between them). `pre_ms`, from
-// `acquire()` to that first batch, is reported as a diagnostic only.
+// `STREAM_RTTS` is one round trip: the OPEN frame reaches the host (half) and
+// the first record comes back (half); the link is already up, so there is no
+// channel to open (the old model paid 2 for an SSH exec channel; a first use on
+// a new connection pays about 3, once, and is not in these numbers).
+// `first_byte_ms` is the time on this machine (measured) from the OPEN to the
+// first frame of the stream (the host opening and reading the log), and the
+// transfer cannot begin before it. `gate_ms` is how long the stream was held
+// back from the session (from the OPEN to the first listener); the output
+// buffers meanwhile, so it overlaps the transfer. `post_ms` is the time from
+// the first batch reaching the session to a live link with the whole tail
+// applied (the mapper and the reducer on the main isolate, the slices and the
+// yields between them). `pre_ms`, from `acquire()` to that first batch, is
+// reported as a diagnostic only.
 // ASSUMPTIONS, not measurements: the links (`_links`), no loss, no slow
 // start, and the `*_ms` above, which are wall time of THIS machine (JIT,
 // asserts on: a phone is slower, and what it costs there is unverified).
@@ -48,20 +53,19 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/acp/json_rpc.dart' show splitLines;
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/observed/observed_contracts.dart';
 import 'package:herdr_mobile/data/observed/omp_kind.dart';
 import 'package:herdr_mobile/data/observed/omp_log_mapper.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/observed_session.dart';
+import 'package:herdr_mobile/data/host/host_channels.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
 import 'package:herdr_mobile/data/services/ssh_log_source.dart';
-import 'package:herdr_mobile/data/services/zipped_exec_channel.dart';
 
 import '../test/support/fake_log_source.dart';
-import '../test/support/fake_transport.dart';
+import '../test/support/process_host.dart';
 import 'support/cpu_clock.dart';
 import 'support/local_keeper.dart';
 import 'support/omp_log_workload.dart';
@@ -71,9 +75,9 @@ final _env = Platform.environment;
 final _runs = int.parse(_env['OBS_RUNS'] ?? '5');
 final _logKb = int.parse(_env['OBS_LOG_KB'] ?? '800');
 
-/// Round trips of an SSH exec channel before the command runs: the channel
-/// open, then the exec request.
-const execRtts = 2;
+/// Round trips before the first record of a stream on a link that is up: the
+/// OPEN frame there and the first frame back.
+const streamRtts = 1;
 
 /// (name, round trip ms, megabits a second towards the phone)
 const _links = [('fast', 40.0, 30.0), ('mid', 120.0, 10.0), ('slow', 300.0, 2.0)];
@@ -87,110 +91,87 @@ double _median(Iterable<double> v) {
   return s.length.isOdd ? s[s.length ~/ 2] : (s[s.length ~/ 2 - 1] + s[s.length ~/ 2]) / 2;
 }
 
-/// One run's clock: every stamp is milliseconds since [start] was called.
+/// One run's clock: every stamp is milliseconds since [start] was called, on
+/// the meter's own clock (the frames' times are on it).
 class _Clock {
-  final _sw = Stopwatch();
-  void start() => _sw
-    ..reset()
-    ..start();
-  double get now => _sw.elapsedMicroseconds / 1000;
+  _Clock(this._meter);
+
+  final WireMeter _meter;
+  var _base = 0;
+
+  void start() => _base = _meter.clock.elapsedMicroseconds;
+  double get now => at(_meter.clock.elapsedMicroseconds);
+  double at(int us) => (us - _base) / 1000;
 }
 
-/// What one exec channel did.
+/// What one follow stream did: the meter has its frames.
 class _Probe {
-  var bytes = 0;
+  int? streamId;
   double? startedAt;
-  double? firstByteAt;
-  double? lastByteAt;
   double? listenedAt;
-  var zipped = false;
-  var commands = 0;
 }
 
-/// The channel of a command running on this machine, as the transport hands
-/// it over: it reads from the first byte on and buffers until listened to.
-class _LocalChannel implements ExecChannel {
-  _LocalChannel(this._process, this.probe, this._clock) {
-    final counted = _process.stdout.map((chunk) {
-      probe.bytes += chunk.length;
-      probe.firstByteAt ??= _clock.now;
-      probe.lastByteAt = _clock.now;
-      return chunk;
-    });
-    _lines = StreamController<String>(onListen: () => probe.listenedAt ??= _clock.now);
-    splitLines(counted).listen(_lines.add, onError: _lines.addError, onDone: _lines.close);
-    _stderr = utf8
-        .decodeStream(_process.stderr)
-        .then((s) => _tail = s.length > 2048 ? s.substring(s.length - 2048) : s);
-  }
+/// The stream as the transport hands it over, noting when it was first
+/// listened to. It reads only while listened to (the link's own credit does the
+/// rest), as the app's channel does.
+class _TimedChannel implements ExecChannel {
+  _TimedChannel(this._inner, this._probe, this._clock);
 
-  final Process _process;
-  final _Probe probe;
+  final ExecChannel _inner;
+  final _Probe _probe;
   final _Clock _clock;
-  late final StreamController<String> _lines;
-  late final Future<void> _stderr;
-  var _tail = '';
+  StreamSubscription<String>? _sub;
 
   @override
-  Stream<String> get lines => _lines.stream;
+  late final Stream<String> lines = (() {
+    late final StreamController<String> c;
+    c = StreamController<String>(
+      onListen: () {
+        _probe.listenedAt ??= _clock.now;
+        _sub = _inner.lines.listen(c.add, onError: c.addError, onDone: c.close);
+      },
+      onPause: () => _sub?.pause(),
+      onResume: () => _sub?.resume(),
+      onCancel: () => _sub?.cancel(),
+    );
+    return c.stream;
+  })();
 
   @override
-  void send(String line) => _process.stdin.add(utf8.encode('$line\n'));
+  void send(String line) => _inner.send(line);
 
   @override
-  Future<void> closeInput() async {
-    try {
-      await _process.stdin.close();
-    } on Object {
-      // gone already
-    }
-  }
+  Future<void> closeInput() => _inner.closeInput();
 
   @override
-  Future<int?> get exitCode async {
-    final code = await _process.exitCode;
-    await _stderr;
-    return code;
-  }
+  Future<int?> get exitCode => _inner.exitCode;
 
   @override
-  String get stderrTail => _tail;
+  String get stderrTail => _inner.stderrTail;
 
   @override
-  Future<void> close() async {
-    await closeInput();
-    try {
-      await _process.exitCode.timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      _process.kill();
-    }
-  }
+  Future<void> close() => _inner.close();
 }
 
-/// The machine's transport: `openExec` runs the command here.
-class _LocalTransport extends FakeTransport {
-  _LocalTransport(this.host, this.clock, this.probes);
+/// The machine's transport: the host link's streams, timed.
+class _TimedTransport extends LinkTransport {
+  _TimedTransport(this.host, this.clock, this.probes) : super(host.link);
 
   final LocalKeeperHost host;
   final _Clock clock;
   final List<_Probe> probes;
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) async {
-    final probe = _Probe()
-      ..zipped = zipped
-      ..commands = 1;
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) async {
+    final probe = _Probe();
     probes.add(probe);
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', command],
-      environment: host.env,
-      includeParentEnvironment: false,
-      workingDirectory: host.home.path,
-    );
-    probe.startedAt = clock.now;
-    final channel = _LocalChannel(p, probe, clock);
-    return zipped ? ZippedExecChannel(channel) : channel;
+    final link = await host.link();
+    // zctx, as the app's transport opens every stream.
+    final stream = link.open(service, method, args, true);
+    probe
+      ..streamId = stream.id
+      ..startedAt = clock.now;
+    return _TimedChannel(HostLineChannel(stream), probe, clock);
   }
 }
 
@@ -246,14 +227,15 @@ class _Open {
   final int batches;
 
   double modelledMs(double rttMs, double mbit) =>
-      execRtts * rttMs + math.max(gateMs, firstByteMs + wireBytes * 8 / (mbit * 1000)) + postMs;
+      streamRtts * rttMs + math.max(gateMs, firstByteMs + wireBytes * 8 / (mbit * 1000)) + postMs;
 }
 
 /// The session as the app makes it: a new `SshLogSource` over a new
 /// `SshAgentHost` (what `boot.dart` does per session) and the omp mapper.
 class _Held {
   _Held(this.rig, this.host, this.path) {
-    transport = _LocalTransport(host, clock, probes);
+    clock = _Clock(host.meter);
+    transport = _TimedTransport(host, clock, probes);
     source = _Timed(SshLogSource(SshAgentHost(transport)), clock);
     session = ObservedAgentSession(
       machine: rig.machine,
@@ -269,9 +251,9 @@ class _Held {
   final ObservedRig rig;
   final LocalKeeperHost host;
   final String path;
-  final clock = _Clock();
+  late final _Clock clock;
   final probes = <_Probe>[];
-  late final _LocalTransport transport;
+  late final _TimedTransport transport;
   late final _Timed source;
   late final ObservedAgentSession session;
 
@@ -301,14 +283,18 @@ class _Held {
     final mine = probes.sublist(math.max(probeBase, fromProbe));
     final first = source.firstBatchAt;
     final probe = mine.isEmpty ? null : mine.first;
+    final tally = probe?.streamId == null ? null : host.meter.stream(probe!.streamId!);
+    final firstUs = tally?.firstUs;
+    final lastUs = tally?.lastUs;
+    final started = probe?.startedAt ?? 0;
     return _Open(
-      wireBytes: mine.fold(0, (a, p) => a + p.bytes),
+      wireBytes: mine.fold(0, (a, p) => a + (p.streamId == null ? 0 : host.meter.stream(p.streamId!).bytes)),
       preMs: first ?? liveAt,
       postMs: first == null ? 0 : liveAt - first,
       cpuMs: cpuMs,
-      gateMs: probe == null ? 0 : (probe.listenedAt ?? liveAt) - (probe.startedAt ?? 0),
-      firstByteMs: probe?.firstByteAt == null ? 0 : probe!.firstByteAt! - (probe.startedAt ?? 0),
-      hostMs: probe?.lastByteAt == null ? 0 : probe!.lastByteAt! - (probe.startedAt ?? 0),
+      gateMs: probe == null ? 0 : (probe.listenedAt ?? liveAt) - started,
+      firstByteMs: firstUs == null ? 0 : clock.at(firstUs) - started,
+      hostMs: lastUs == null ? 0 : clock.at(lastUs) - started,
       items: session.state.items.length,
       batches: source.batches,
     );

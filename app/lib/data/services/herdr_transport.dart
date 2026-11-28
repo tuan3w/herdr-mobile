@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/remote_file.dart';
+import '../models/remote_search.dart';
 import '../models/web_bridge.dart';
 
 /// Connection-level failure: unreachable host, auth failure, dropped channel,
@@ -31,8 +32,9 @@ class HerdrApiException implements Exception {
   String toString() => '$code: $message';
 }
 
-/// A command running on the host, reached through the machine's SSH
-/// connection: its stdout as lines, its stdin as [send].
+/// A stream of the agent helper on the host (`HerdrTransport.openHostStream`),
+/// reached through the machine's SSH connection: its data as lines, [send] to
+/// write to it.
 ///
 /// Ends (see [lines], [exitCode]) when the command exits or the connection
 /// drops; it never reconnects or retries by itself.
@@ -106,25 +108,42 @@ abstract interface class HerdrTransport {
   /// retryable [HerdrTransportException]; the next call reconnects.
   void reset();
 
-  /// Runs [command] on the host over this machine's existing SSH connection
-  /// (a new channel on it, never a new connection) and returns once the
-  /// command has started. Throws [HerdrTransportException] when the
-  /// connection or the channel cannot be opened.
+  /// Runs [method] of [service] on the agent helper of this machine
+  /// (`herdr-host serve`, hostwire/1) and returns its JSON result: the one
+  /// message the call answers with, decoded (null when there was none). The
+  /// helper is installed on first use when the host does not have it.
   ///
-  /// With [zipped] the command is `keeper attach --z` (`keeperAttachCommand`):
-  /// what it writes is plain lines and `Z<base64>` lines of one zlib stream.
-  /// The transport reads that back where it decodes the network, so the
-  /// channel's [ExecChannel.lines] are plain lines either way and the caller
-  /// never inflates anything on the UI isolate.
-  Future<ExecChannel> openExec(String command, {bool zipped = false});
+  /// Throws [HostException] for what the host answered (`not_found`,
+  /// `permission`, …) or when the helper cannot be had on this machine
+  /// (`unavailable`); [HostLinkLost] (retryable) when the connection drops; and
+  /// [HerdrTransportException] when no channel can be opened.
+  Future<Object?> hostCall(String service, String method, [Map<String, Object?> args = const {}, Duration? timeout]);
+
+  /// Opens the stream [service].[method] with [args] on the agent helper and
+  /// returns it as a line channel: the lines the stream's data holds (a keeper
+  /// attach, a log follow). [ExecChannel.exitCode] is how the stream ended in the
+  /// keeper's exit codes (0 done, 66 not found, 67 agent exited, … 65 the helper
+  /// is not available, null the link dropped) and [ExecChannel.stderrTail] the
+  /// host's words for a failure. Errors as [hostCall].
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]);
+
+  /// Opens the stream [service].[method] with [args] on the agent helper and
+  /// returns what it sends as decoded JSON messages, in order (a watch: file
+  /// changes, listening ports). The host stream opens when the returned stream is
+  /// listened to and ends when the subscription is cancelled (the host stops
+  /// watching). It errors with [HostException] when the host ends it in failure
+  /// (`unavailable` when the helper cannot be had, `bad_request`, …) or with
+  /// [HostLinkLost] when the connection drops, then closes.
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]);
 
   /// Whether [statFile] and friends can work on this transport at all. False
   /// for transports without a file channel (they throw
   /// [RemoteFileErrorKind.unsupported]).
   bool get supportsFiles;
 
-  /// File operations over SFTP (no remote shell, so nothing to inject into).
-  /// Each throws [RemoteFileException] for a file-level problem and
+  /// File operations: through the agent helper's `fs` service when the machine
+  /// has it, over SFTP (read-only, no remote shell) when it has not. Each throws
+  /// [RemoteFileException] for a file-level problem and
   /// [HerdrTransportException] when the connection itself fails.
   ///
   /// Follows links. Throws notFound / permission.
@@ -137,33 +156,68 @@ abstract interface class HerdrTransport {
   /// Up to [length] bytes from [offset]; fewer at end of file. [length] is
   /// clamped to [remoteReadCap] here whatever the caller asks for. Throws
   /// notFound / permission / notAFile.
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap});
+  ///
+  /// With [ifMatch] (the file as it was seen) the read only happens when the
+  /// file still has that size and modification time, else it throws
+  /// [RemoteFileChanged]: only the agent helper can check that, SFTP reads
+  /// whatever is there.
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch});
 
   /// Canonical absolute form of [path] (links resolved when it exists). The
-  /// SFTP default directory is the login home, so `realPath('.')` is home.
+  /// login directory is where `.` and relative paths start, so `realPath('.')`
+  /// is home.
   Future<String> realPath(String path);
 
-  /// `mkdir -p` over SFTP: creates [path] and any missing parents with mode
-  /// 0700; an existing folder is left as it is. Throws permission /
-  /// notADirectory.
-  Future<void> makeDirs(String path);
+  /// [path] now (null when nothing is there) and again whenever it changes, until
+  /// the subscription is cancelled: the helper looks every couple of seconds
+  /// and tells only changes, SFTP is asked every 15 s. A failure ends the stream
+  /// with it (a [RemoteFileException] or [HerdrTransportException]); listening
+  /// again starts over.
+  Stream<RemoteStat?> watchFile(String path);
 
-  /// Deletes the regular file (or link) at [path]; never a folder. Throws
-  /// notFound / permission.
-  Future<void> removeFile(String path);
+  /// A small JPEG of the picture at [path] (longest side [maxPx]) made on the
+  /// machine, or null when this machine cannot make one (no agent helper, an
+  /// older one, a file it cannot read, too large, changed since [expect]) or
+  /// [cancelled] completed first. Never throws for a file-level reason: the
+  /// caller does what it did before thumbnails existed. See
+  /// [RemoteFileBackend.thumbnail].
+  Future<Uint8List?> thumbnailFile(String path, {int maxPx = 256, RemoteStat? expect, Future<void>? cancelled});
 
-  /// Copies the local file [localPath] to [remotePath] (created or
-  /// overwritten, mode 0600) over the machine's one SFTP channel. The file is
-  /// read and sent where the connection lives (the worker isolate): no bytes
-  /// reach the caller. [onProgress] hears the bytes the host has acknowledged
-  /// (monotonic, at most every 100 ms, the last call is `total`/`total`). The
-  /// job's `done` fails with [RemoteFileException]; a half-written file is
-  /// removed. Not resumed after a lost connection.
+  /// The matches of [spec] below its root, in batches as they are found, then
+  /// one [FileSearchDone]; cancelling the subscription stops the search. Fails
+  /// like [listDirectory] for the root. See [RemoteFileBackend.search].
+  Stream<FileSearchEvent> searchFiles(FileSearchSpec spec);
+
+  /// Picks the host's inbox path for the phone file [name] of the session
+  /// [key]: `<home>/.herdr-mobile/inbox/<12 hex of sha1(key)>/<UTC time>-<name>`
+  /// with the folders made (0700). The host owns the naming (safe name, unique);
+  /// the same arguments give a new path each time.
+  ///
+  /// Throws [RemoteFileException] with kind `unsupported` and the reason
+  /// "Needs the agent helper on this machine." on a machine without the helper:
+  /// nothing is written to a host any other way.
+  Future<String> reserveInboxFile({required String key, required String name});
+
+  /// Copies the local file [localPath] to [inboxPath] (a path [reserveInboxFile]
+  /// gave) through the agent helper. The file is hashed, read and sent where the
+  /// connection lives (the worker isolate): no bytes reach the caller.
+  /// [onProgress] hears the bytes sent (monotonic, at most every 100 ms, the
+  /// last call is `total`/`total` once the host stored the file, mode 0600).
+  /// The job's `done` fails with [RemoteFileException] (see [UploadJob]).
+  ///
+  /// A lost connection or [UploadJob.cancel] keeps what the host received:
+  /// calling this again with the same file and [inboxPath] continues there.
+  /// Without the helper the job fails with kind `unsupported`.
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
   });
+
+  /// Removes the old files from the host's inbox (the host decides which: 14
+  /// days, at most 200 a call) and returns how many went. Throws like
+  /// [reserveInboxFile].
+  Future<int> sweepInbox();
 
   /// Starts (or finds) the loopback listener for [spec] on the phone and
   /// returns its port and token. Idempotent per [WebBridgeSpec.key]: the same

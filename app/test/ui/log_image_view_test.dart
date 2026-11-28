@@ -209,6 +209,22 @@ void main() {
     expect(find.text('Tap to load'), findsNothing);
   });
 
+  testWidgets('a picture the phone holds paints no grey box while it comes back, only a quiet frame if it is slow', (
+    tester,
+  ) async {
+    await tester.runAsync(() => store.put(_ref.key, Uint8List.fromList([1, 2, 3])));
+    session.logPictureGate = Completer<void>();
+    await pump(tester);
+    expect(find.byIcon(HerdrIcons.picture), findsNothing, reason: 'the first frames paint nothing: back in a moment');
+    await tester.pump(Dwell.spinnerDelay ~/ 2);
+    expect(find.byIcon(HerdrIcons.picture), findsNothing);
+    await tester.pump(Dwell.spinnerDelay);
+    expect(find.byIcon(HerdrIcons.picture), findsOneWidget, reason: 'a slow one shows its frame');
+    session.logPictureGate!.complete();
+    await settle(tester, () => find.byType(RawImage).evaluate().isNotEmpty);
+    expect(find.byIcon(HerdrIcons.picture), findsNothing);
+  });
+
   testWidgets('without a conversation to ask the line says so and does nothing', (tester) async {
     await pump(tester, withSession: false);
     expect(find.text('Not available here'), findsOneWidget);

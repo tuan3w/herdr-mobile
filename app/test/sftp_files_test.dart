@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -52,15 +53,6 @@ class _FakeSftp implements SftpApi {
     await _enter('list', path);
     return dirs[path] ?? (throw _status(2, 'No such file'));
   }
-
-  @override
-  Future<SftpUploadFile> openForWrite(String path) => throw UnimplementedError();
-
-  @override
-  Future<void> mkdir(String path) => throw UnimplementedError();
-
-  @override
-  Future<void> remove(String path) => throw UnimplementedError();
 
   @override
   Future<String> absolute(String path) async {
@@ -299,6 +291,52 @@ void main() {
       await files.stat('/f');
       expect(opened, 2);
     });
+
+    test('watch says what the file is now, then only what changes, every 15 s, and stops when cancelled', () {
+      fakeAsync((async) {
+        sftp.stats['/f'] = SftpFileAttrs(size: 1, mode: const SftpFileMode.value(_file), modifyTime: 100);
+        final seen = <RemoteStat?>[];
+        final sub = files.watch('/f').listen(seen.add);
+        async.flushMicrotasks();
+        expect(seen.map((s) => s?.size), [1], reason: 'the first event is the file as it is now');
+
+        async.elapse(const Duration(seconds: 15));
+        expect(seen, hasLength(1), reason: 'nothing changed, nothing is said');
+        expect(sftp.calls.where((c) => c == 'stat /f'), hasLength(2));
+
+        sftp.stats['/f'] = SftpFileAttrs(size: 5, mode: const SftpFileMode.value(_file), modifyTime: 160);
+        async.elapse(const Duration(seconds: 14));
+        expect(seen, hasLength(1), reason: 'not before the next look');
+        async.elapse(const Duration(seconds: 1));
+        expect(seen.map((s) => s?.size), [1, 5]);
+
+        sftp.stats.remove('/f');
+        async.elapse(const Duration(seconds: 15));
+        expect(seen.last, isNull, reason: 'a file that is gone is null, not an error');
+
+        unawaited(sub.cancel());
+        final asked = sftp.calls.length;
+        async.elapse(const Duration(minutes: 5));
+        expect(sftp.calls, hasLength(asked), reason: 'nobody listens: nobody asks');
+      });
+    });
+
+    test('watch ends with the error when the machine cannot be asked', () {
+      fakeAsync((async) {
+        sftp.stats['/f'] = SftpFileAttrs(size: 1, mode: const SftpFileMode.value(_file), modifyTime: 100);
+        final errors = <Object>[];
+        var done = false;
+        files.watch('/f').listen((_) {}, onError: errors.add, onDone: () => done = true);
+        async.flushMicrotasks();
+        sftp.failures['stat /f'] = _status(7, 'Connection lost');
+        async.elapse(const Duration(seconds: 15));
+        expect(errors.single, isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.network));
+        expect(done, isTrue);
+        final asked = sftp.calls.length;
+        async.elapse(const Duration(minutes: 1));
+        expect(sftp.calls, hasLength(asked), reason: 'a closed watch does not keep asking');
+      });
+    });
   });
 
   group('RemoteFiles', () {
@@ -389,7 +427,7 @@ class _NoFs extends FakeFs {
   Future<List<RemoteEntry>> list(String path) async => error != null ? throw error! : const [];
 
   @override
-  Future<Uint8List> read(String path, int offset, int length) async {
+  Future<Uint8List> read(String path, int offset, int length, {RemoteStat? ifMatch}) async {
     final c = content ?? Uint8List(0);
     if (offset >= c.length) return Uint8List(0);
     return Uint8List.sublistView(c, offset, (offset + length.clamp(0, remoteReadCap)).clamp(0, c.length));
@@ -427,16 +465,6 @@ class _Spy implements SftpApi {
 
   @override
   Future<String> readlink(String path) => _inner.readlink(path);
-
-  @override
-  Future<SftpUploadFile> openForWrite(String path) => _inner.openForWrite(path);
-
-  @override
-  Future<void> mkdir(String path) => _inner.mkdir(path);
-
-  @override
-  Future<void> remove(String path) => _inner.remove(path);
-
   @override
   Future<void> close() => _inner.close();
 }

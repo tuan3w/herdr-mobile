@@ -17,6 +17,7 @@ class SearchField extends StatefulWidget {
     required this.hint,
     this.focusNode,
     this.onChanged,
+    this.onSubmitted,
     this.onPointerDown,
   });
 
@@ -28,6 +29,10 @@ class SearchField extends StatefulWidget {
 
   /// Every edit, and `''` when the clear button empties the field.
   final ValueChanged<String>? onChanged;
+
+  /// The keyboard's search key: the text as it is, for a search that runs on
+  /// demand instead of (or sooner than) on every edit.
+  final ValueChanged<String>? onSubmitted;
 
   /// A finger landed on the field (before focus): a sheet that grows to give
   /// the keyboard room.
@@ -66,6 +71,7 @@ class _SearchFieldState extends State<SearchField> {
         enableSuggestions: false,
         textInputAction: TextInputAction.search,
         onChanged: widget.onChanged,
+        onSubmitted: widget.onSubmitted,
         onTapOutside: (_) => (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus(),
         style: Type.input.copyWith(color: ds.text),
         cursorColor: ds.accent,

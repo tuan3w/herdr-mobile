@@ -31,9 +31,11 @@ import 'turns/turns.dart' show pathOfCall;
 ///   command printed (`Local: http://localhost:5173/`).
 ///
 /// A video and a picture share one tab (`Media`), and so do the pictures a tool
-/// returned inline (a browser screenshot has no file and no name); a link is a
-/// pull request, release, issue or CI run the agent opened or watched on GitHub
-/// (any other link is something the agent MENTIONED, not made: see `_say`).
+/// returned inline (a browser screenshot has no file and no name); a link is
+/// any address the agent wrote in its own words outside a code block, newest
+/// first (`_sayLinks`): a pull request it opened and a dashboard it announced
+/// are as much a link as the paper it cited. A link is SAID, not made, so it is
+/// not counted by [madeCountOf].
 enum MadeKind { server, page, picture, doc, video, link }
 
 /// A server's state as far as the phone can tell. [seen] is the honest default:
@@ -166,7 +168,7 @@ const madeServerPathsCap = 5;
 
 /// Bumped whenever the scanning rules change what a log makes: a [MadeHistory]
 /// kept under an older one was read with other rules and is read again.
-const madeScanVersion = 3;
+const madeScanVersion = 4;
 
 /// Whether [a] and [b] show the same rows. A tool call that streams replaces
 /// the transcript list on every chunk and with it the list this returns; the
@@ -256,19 +258,21 @@ Iterable<BackgroundTask> _tasksOfPort(int port, Iterable<BackgroundTask> tasks) 
   return tasks.where((t) => pattern.hasMatch(t.title) || (t.detail != null && pattern.hasMatch(t.detail!)));
 }
 
-/// A server's state against the session's background tasks: running while a
-/// task that names its port is running, stopped when only ended ones do, else
-/// just seen. [live] is false for a saved copy or a link that is not up: then
-/// nothing here is known to run.
-ServerState serverStateOf(MadeAsset server, Iterable<BackgroundTask> tasks, {bool live = true}) {
+/// A server's state as far as the phone can tell: what the machine itself says
+/// about its port ([listening], by port: true while something listens on it NOW,
+/// false when the machine looked and nothing does). A port the machine gave no
+/// answer for (it is unreachable, has no agent helper or no way to list ports,
+/// or the question is still on its way) is [ServerState.seen], whatever the
+/// transcript or the background tasks say: a link in the output, or a task that
+/// names the port, says the server existed or was started, not that it listens.
+ServerState serverStateOf(MadeAsset server, Map<int, bool> listening) {
   final port = server.port;
-  if (port == null || !live) return ServerState.seen;
-  var named = false;
-  for (final t in _tasksOfPort(port, tasks)) {
-    if (t.status == BackgroundStatus.running) return ServerState.running;
-    named = true;
-  }
-  return named ? ServerState.stopped : ServerState.seen;
+  final up = port == null ? null : listening[port];
+  return switch (up) {
+    true => ServerState.running,
+    false => ServerState.stopped,
+    null => ServerState.seen,
+  };
 }
 
 /// What to call a server's app: the command of the background task that names
@@ -335,14 +339,15 @@ List<MadeApp> madeAppsOf(Iterable<MadeAsset> servers) {
 }
 
 /// How many things [assets] are as the sheet counts them: an app once however
-/// many of its pages were named, and every other row.
+/// many of its pages were named, and every other row but a link. A link is
+/// said, not made: "12 items made" would claim what the agent only mentioned.
 int madeCountOf(Iterable<MadeAsset> assets) {
   final ports = <int>{};
   var others = 0;
   for (final a in assets) {
     if (a.kind == MadeKind.server) {
       ports.add(a.port!);
-    } else {
+    } else if (a.kind != MadeKind.link) {
       others++;
     }
   }
@@ -784,14 +789,6 @@ void _say(String text, DateTime? at, List<_Mention> out) {
     final s = _serverUri(m.group(0)!, text.substring(0, m.start), keepPath: true);
     if (s != null) out.add(_Mention.server(s, at));
   }
-  // Links the agent opened or shipped on GitHub ("Opened PR: https://.../pull/93"):
-  // a verb of doing right before it, on its own line. A link it only mentions
-  // ("see https://.../issues/85") is not a row.
-  for (final m in _ghUrl.allMatches(text)) {
-    final link = _ghLink(m, null);
-    if (link == null || !_linkVerbBefore(text, m.start)) continue;
-    out.add(_Mention.link(link.$1, link.$2, link.$3, at));
-  }
   for (final m in _bareLocalhost.allMatches(text)) {
     final port = int.parse(m.group(1)!);
     if (port >= 1 && port <= 65535) {
@@ -819,6 +816,60 @@ void _say(String text, DateTime? at, List<_Mention> out) {
     }
     out.add(_Mention.file(p, null, null, at));
   }
+  _sayLinks(text, at, out);
+}
+
+/// The machine itself, spelled any way: [isPreviewHost]'s names, `*.localhost` and all of `127.0.0.0/8`.
+bool _isLoopback(String host) => isPreviewHost(host) || host.endsWith('.localhost') || host.startsWith('127.');
+
+// An address the agent wrote: "[the PR](https://...)" is called by its label.
+final _linkLabel = RegExp(r'\[([^\]\n]{1,100})\]\($');
+// Hosts that are placeholders, not places (`https://example.com/api`, the SVG namespace).
+final _placeholderHost = RegExp(r'(?:^|\.)(?:example\.(?:com|org|net)|w3\.org)$|\.(?:example|invalid|test)$');
+// A template, not an address: `https://api.x.dev/{id}/$name`.
+final _templated = RegExp(r'[{}$]|%7B', caseSensitive: false);
+
+/// Every address in the agent's prose. A code block is not read: it shows what a
+/// command or a file CONTAINS (`curl https://...`, `<script src="https://...">`),
+/// the same reason pages are not read from one.
+void _sayLinks(String text, DateTime? at, List<_Mention> out) {
+  final prose = text.replaceAll(_fence, ' ');
+  for (final m in _url.allMatches(prose)) {
+    final link = _saidLink(m.group(0)!, prose.substring(m.start < 120 ? 0 : m.start - 120, m.start));
+    if (link != null) out.add(_Mention.link(link.$1, link.$2, link.$3, at));
+  }
+}
+
+/// The address, what to call it and where it is; null for what is not a link to
+/// look at: loopback (a server, read above), a name that cannot be on the
+/// internet, a placeholder or template. A GitHub pull request, issue, release or
+/// run is named by what it is. Credentials and the fragment are dropped; [before]
+/// is the text just before the address.
+(Uri, String, String)? _saidLink(String raw, String before) {
+  final trimmed = _trimLink(raw, before);
+  if (trimmed.length > 2000 || _templated.hasMatch(trimmed)) return null;
+  final parsed = Uri.tryParse(trimmed);
+  if (parsed == null) return null;
+  final host = parsed.host.toLowerCase();
+  // Loopback is the machine's own, and the phone's browser would open ITS own: a dead end, not a link.
+  if (host.isEmpty || _isLoopback(host) || !(host.contains('.') || host.contains(':'))) return null;
+  if (_placeholderHost.hasMatch(host)) return null;
+  final gh = _ghUrl.firstMatch(trimmed);
+  final github = gh == null || gh.start != 0 ? null : _ghLink(gh, null);
+  if (github != null) return github;
+  final uri = parsed.removeFragment().replace(userInfo: '', path: parsed.path.isEmpty ? '/' : null);
+  final label = _linkLabel.firstMatch(before)?.group(1)?.trim();
+  final path = uri.path == '/' ? '' : uri.path;
+  // The port is part of the name: two dashboards of one machine differ by it.
+  final name = '${uri.host}${uri.hasPort ? ':${uri.port}' : ''}$path${uri.hasQuery ? '?${uri.query}' : ''}';
+  final labelled = label != null && label.isNotEmpty;
+  final named = labelled ? label : name;
+  return (
+    uri,
+    named.length > 120 ? '${named.substring(0, 119)}…' : named,
+    // A label does not say where it leads; an address already does.
+    labelled ? (host.startsWith('www.') ? host.substring(4) : host) : '',
+  );
 }
 
 // ----- links and pictures a tool returned -----
@@ -830,12 +881,6 @@ final _ghUrl = RegExp(
   caseSensitive: false,
 );
 final _digits = RegExp(r'^\d+$');
-// A verb of the agent DOING it right before the address. A bare "PR" or
-// "release" is not one: "see the release notes https://..." is a mention.
-final _linkVerb = RegExp(
-  r'\b(?:opened|created|filed|published|released|merged|pushed|shipped|raised|submitted|tạo)\b',
-  caseSensitive: false,
-);
 
 /// The address of [m], what to call it (`PR #93 <title>`, `Release v0.1.51`) and
 /// its repository; null when the id is not one.
@@ -854,12 +899,6 @@ final _linkVerb = RegExp(
   };
   final full = title == null || title.trim().isEmpty ? name : '$name ${title.trim()}';
   return (uri, full.length > 120 ? '${full.substring(0, 119)}…' : full, '$owner/$repo');
-}
-
-bool _linkVerbBefore(String text, int start) {
-  final line = text.substring(start - 80 < 0 ? 0 : start - 80, start).split('\n').last;
-  final words = line.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-  return _linkVerb.hasMatch(words.skip(words.length > 6 ? words.length - 6 : 0).join(' '));
 }
 
 /// What the `gh` subcommands that make something print: its own address.
@@ -1195,9 +1234,8 @@ void _saved(String printed, String? cwd, DateTime? at, List<_Mention> out) {
 
 // ----- servers -----
 
-/// [before] is the text just before the link.
-Uri? _serverUri(String raw, String before, {required bool keepPath}) {
-  // What closes the sentence or the markdown around the link is not the link:
+/// [raw] without what closes the sentence or the markdown around the link.
+String _trimLink(String raw, String before) {
   // `**http://127.0.0.1:8766/**` was read as the path `/**`, a row named
   // `localhost:8766/**` that asked the server for a page that is not there.
   // A run of `*`, `_` or `~` is a mark only when the same run opens the link
@@ -1207,6 +1245,12 @@ Uri? _serverUri(String raw, String before, {required bool keepPath}) {
   if (opening != null && trimmed.endsWith(opening)) {
     trimmed = trimmed.substring(0, trimmed.length - opening.length).replaceFirst(_closingPunct, '');
   }
+  return trimmed;
+}
+
+/// [before] is the text just before the link.
+Uri? _serverUri(String raw, String before, {required bool keepPath}) {
+  final trimmed = _trimLink(raw, before);
   final uri = Uri.tryParse(trimmed);
   if (uri == null || uri.scheme.toLowerCase() != 'http' || !isPreviewHost(uri.host)) return null;
   // `:0` parses as no port at all, so the digits are read from the text.

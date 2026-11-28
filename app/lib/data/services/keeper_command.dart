@@ -1,109 +1,26 @@
 import 'dart:convert';
-import 'dart:io' show ZLibCodec;
-import 'dart:math' as math;
 
-import '../acp/agent_host.dart';
-import 'keeper_script.dart';
+import '../app_info.dart';
 
-// Shell commands for the host-side keeper (`docs/AGENT_SESSIONS.md`, "The
-// keeper"). The script (~22 KB deflated) is installed once per host and per
-// script version by [keeperInstallCommand] as `~/.herdr-mobile/keeper-<id>.py`;
-// every other command is a few hundred bytes that runs that file. Needs only
-// `python3` on the host.
+// Shell commands for the host-side helper (`docs/AGENT_SESSIONS.md`, "The
+// keeper"). The helper is the `herdr-host` binary (rust/crates/host): one
+// self-contained file per platform, shipped in the git release with
+// `herdr-tui` and installed once per host by [keeperInstallCommand] to
+// `~/.herdr-mobile/bin/herdr-host-<appVersion>`: the app runs exactly the build
+// it was released with, and two apps of different versions on one host each find
+// their own.
 //
-// Exit codes of the commands, for the callers:
+// Only two commands remain, because everything else is a stream on the one
+// `herdr-host serve` channel (`lib/data/host/host_link.dart`): [hostServeCommand]
+// starts it, [keeperInstallCommand] puts the binary there. Their exit codes:
 //
-//   0   done (stdout carries the answer)
-//   64  bad arguments (a bug)
-//   65  the script of this app version is not installed on the host: run
+//   0   done
+//   65  serve: the binary is not installed on the host: run
 //       [keeperInstallCommand], then the command again
-//   66  start, history: the folder is not there. attach/kill: no such keeper.
-//       follow, blob: the file is not an absolute `.jsonl` path under the home
-//       folder, or cannot be read; stderr says why. blob: also the log is
-//       not what it was (the line is not at that offset, holds no such
-//       payload) or the payload is not base64 text
-//   67  attach: the keeper's agent has exited; stderr says why
-//   69  start, history: the agent is not installed on the host
-//   70  start, history: the agent failed to start or to answer `initialize`
-//       (history: or `session/list`); stderr has its last words
-//   78  python3 is missing
 
-/// The ids the script generates (`[a-z0-9]`, six characters today).
-final _keeperId = RegExp(r'^[a-z0-9]{3,32}$');
-
-/// Longest path accepted (a folder or a log file): far above PATH_MAX, far below
-/// the command limit.
-const _maxPath = 4096;
-
-String _shQuote(String v) => "'${v.replaceAll("'", r"'\''")}'";
-
-/// Not empty, not absurdly long, no control character (a newline would end the
-/// word in the remote shell's eyes): what every path that reaches a command
-/// must be, before it is quoted.
-bool _validPath(String path) =>
-    path.isNotEmpty && path.length <= _maxPath && !path.runes.any((c) => c < 0x20 || c == 0x7f);
-
-/// The python source with the route table filled in, as it runs on the host.
-String keeperScript() => keeperPython.replaceFirst(
-  keeperRoutesSlot,
-  jsonEncode([
-    for (final r in agentRoutes)
-      {
-        'id': r.id,
-        'label': r.label,
-        'binary': r.binary,
-        'args': r.args,
-        if (r.npxPackage != null) 'npx': r.npxPackage,
-        if (r.authMethod != null) 'auth': r.authMethod,
-        if (r.airCapabilities.isNotEmpty) 'air': r.airCapabilities,
-      },
-  ]),
-);
-
-/// 12 hex characters naming a script version: FNV-1a 64 over the UTF-8 text
-/// (the first 12 of its 16 hex digits). A changed script is a new file name, so
-/// versions never collide on a host.
-String keeperScriptVersion(String script) {
-  var h = 0xcbf29ce484222325;
-  for (final b in utf8.encode(script)) {
-    h = (h ^ b) * 0x100000001b3; // wraps at 64 bits
-  }
-  String half(int v) => (v & 0xffffffff).toRadixString(16).padLeft(8, '0');
-  return (half(h >>> 32) + half(h)).substring(0, 12);
-}
-
-final String _version = keeperScriptVersion(keeperScript());
-
-/// Writes the script into `~/.herdr-mobile/keeper-<version>.py` (temp file in
-/// the same directory, then rename, so a reader never sees half a file), then
-/// removes the files of other versions and stale temp files. A keeper that is
-/// running holds its own copy of the script in memory, so removing the file it
-/// started from is safe. Argument: the version. The deflated script arrives as
-/// base64 on stdin.
-const _installer = r'''
-import base64,os,sys,time,zlib
-d=os.path.join(os.path.expanduser("~"),".herdr-mobile")
-os.makedirs(d,0o700,exist_ok=True)
-os.chmod(d,0o700)
-n="keeper-"+sys.argv[1]+".py"
-data=zlib.decompress(base64.b64decode(sys.stdin.read()))
-t=os.path.join(d,"."+n+".tmp%d"%os.getpid())
-f=os.fdopen(os.open(t,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o700),"wb")
-f.write(data)
-f.close()
-os.chmod(t,0o700)
-os.replace(t,os.path.join(d,n))
-for o in os.listdir(d):
-  p=os.path.join(d,o)
-  try:
-    if o.startswith("keeper-") and o.endswith(".py") and o!=n:
-      os.unlink(p)
-    elif o.startswith(".keeper-") and ".tmp" in o and time.time()-os.path.getmtime(p)>60:
-      os.unlink(p)
-  except OSError:
-    pass
-print('{"ok":true}')
-''';
+/// Where the helper lives on the host, as the commands find it: one file per app
+/// version.
+const _bin = '\$HOME/.herdr-mobile/bin/herdr-host-$appVersion';
 
 /// `sh -c '<decode and eval>'` over base64 text. The login shell (fish, csh and
 /// tcsh included) sees ONE single-quoted word and nothing else: no `$( )`, no
@@ -116,231 +33,132 @@ String _wrap(String script) {
   return "sh -c 'eval \"\$(echo $b64 | { base64 -d 2>/dev/null || base64 -D; })\"'";
 }
 
-const _needPython = '''
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "herdr-mobile: agent sessions need python3 on this host" >&2
-  exit 78
-fi
-''';
-
-/// A short command that runs the installed script with [args].
-String _command(List<String> args) => _wrap('''
-${_needPython}f="\$HOME/.herdr-mobile/keeper-$_version.py"
-if [ ! -f "\$f" ]; then
+/// The command that starts `herdr-host serve`: the one process every feature of
+/// a machine talks to over hostwire/1 (`lib/data/host/host_link.dart`). stdin
+/// and stdout are the wire, so the command prints nothing of its own; when the
+/// helper is not installed it says so on stderr and exits 65, and the caller
+/// installs it ([keeperInstallCommand]) and tries once more.
+String hostServeCommand() => _wrap('''
+b="$_bin"
+if [ ! -x "\$b" ]; then
   echo "herdr-mobile: the keeper is not installed on this host" >&2
   exit 65
 fi
-exec python3 "\$f" ${args.map(_shQuote).join(' ')}
+exec "\$b" serve
 ''');
 
-void _checkKeeperId(String id) {
-  if (!_keeperId.hasMatch(id)) {
-    throw ArgumentError.value(id, 'keeperId', 'invalid keeper id');
+/// The host install: fetch `herdr-host` for the host's platform from the git
+/// release of this app's version (`VERSION=v<appVersion>`), check it against
+/// `herdr-host-SHA256SUMS`, and put it in place at
+/// `~/.herdr-mobile/bin/herdr-host-<version>` (0700) by a rename, so a keeper
+/// that is running keeps running. Pure shell — no Rust, no
+/// checkout: the bootstrap must not need the thing it is replacing. It is the
+/// same shape as `tool/install-tui.sh` (which installs `herdr-tui`); the two
+/// share the release and the asset naming. A test keeps this text and
+/// `tool/install-host.sh` in step (the file is the source of truth).
+///
+/// Idempotent: a host that has the binary runs it as it is and fetches again
+/// only after [keeperInstallCommand] (run once per host, when another command
+/// exits 65). On success it prints `{"ok":true}` as its last stdout line;
+/// progress goes to stderr. It is small (a few KB), far under the 9000-byte
+/// Dropbear exec cap, so nothing travels on the channel's stdin.
+const _installScript = r'''
+#!/bin/sh
+# Installs herdr-host, the host-side helper the phone runs over SSH, from a
+# GitHub release. No Rust, no checkout, no interpreter: the binary is self-contained.
+#
+#   curl -fsSL https://github.com/tuan3w/herdr-mobile/releases/latest/download/install-host.sh | sh
+#   VERSION=v0.1.70 sh install-host.sh              # a specific release
+#
+# The download is checked against the release's herdr-host-SHA256SUMS before it is
+# installed, and put in place by a rename, so a herdr-host that is running keeps
+# running. It is installed to ~/.herdr-mobile/bin/herdr-host-<version> (private,
+# 0700, not on the PATH: the phone execs it by absolute path, a person never runs
+# it). <version> is what the binary says with --version, so the app finds exactly
+# the build it was released with; `herdr-host serve` removes old ones.
+# HERDR_HOST_BASE_URL overrides where the files come from (a mirror, or a folder
+# for tests). On success it prints {"ok":true} as its last stdout line; progress
+# goes to stderr. This exact text is embedded in the phone by
+# keeper_command.dart's keeperInstallCommand (a test keeps the two in step).
+set -eu
+
+repo="tuan3w/herdr-mobile"
+bin_dir="$HOME/.herdr-mobile/bin"
+if [ -n "${HERDR_HOST_BASE_URL:-}" ]; then
+  base="$HERDR_HOST_BASE_URL"
+elif [ -n "${VERSION:-}" ]; then
+  base="https://github.com/$repo/releases/download/$VERSION"
+else
+  base="https://github.com/$repo/releases/latest/download"
+fi
+
+say() { printf 'herdr-host: %s\n' "$*" >&2; }
+fail() { printf 'herdr-host: %s\n' "$*" >&2; exit 1; }
+
+os=$(uname -s)
+arch=$(uname -m)
+case "$os/$arch" in
+  Linux/x86_64) asset=herdr-host-linux-x86_64 ;;
+  Linux/aarch64 | Linux/arm64) asset=herdr-host-linux-aarch64 ;;
+  Darwin/arm64) asset=herdr-host-macos-arm64 ;;
+  Darwin/x86_64) asset=herdr-host-macos-x86_64 ;;
+  *) fail "no build for $os $arch" ;;
+esac
+
+if command -v curl >/dev/null 2>&1; then
+  get() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+  get() { wget -q "$1" -O "$2"; }
+else
+  fail "needs curl or wget"
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  sum() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sum() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  fail "needs sha256sum or shasum to check the download"
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+say "downloading $asset"
+get "$base/$asset" "$tmp/$asset" || fail "could not download $base/$asset (does that release include herdr-host?)"
+get "$base/herdr-host-SHA256SUMS" "$tmp/sums" || fail "could not download the checksums from $base"
+
+want=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
+[ -n "$want" ] || fail "the checksums do not list $asset"
+have=$(sum "$tmp/$asset")
+[ "$want" = "$have" ] || fail "checksum mismatch for $asset (wanted $want, got $have); nothing was installed"
+
+mkdir -p "$bin_dir"
+chmod 700 "$HOME/.herdr-mobile" 2>/dev/null || true
+chmod 755 "$tmp/$asset"
+mv "$tmp/$asset" "$bin_dir/herdr-host.new"
+# Run it from here, not from $tmp, which may be mounted noexec.
+ver=$("$bin_dir/herdr-host.new" --version 2>/dev/null | awk 'NR == 1 { print $2 }')
+case "$ver" in
+  "" | *[!0-9A-Za-z.+-]*)
+    rm -f "$bin_dir/herdr-host.new"
+    fail "the download does not run on this machine (no version from --version)" ;;
+esac
+mv "$bin_dir/herdr-host.new" "$bin_dir/herdr-host-$ver"
+chmod 700 "$bin_dir/herdr-host-$ver"
+say "installed $bin_dir/herdr-host-$ver"
+printf '{"ok":true}\n'
+''';
+
+/// Installs the keeper binary on the host (stdout `{"ok":true}`, idempotent):
+/// run once per host, when another command exits 65. See [keeperInstallCommand]
+/// for what it does; nothing is written to the channel's stdin.
+String keeperInstallCommand() {
+  // The release of this app's version, not `latest`: a newer release may speak
+  // a protocol this app does not. The assignment comes before the script's own
+  // text, which the test keeps equal to tool/install-host.sh.
+  final command = _wrap("VERSION='v$appVersion'; export VERSION\n$_installScript");
+  if (command.length > 9000) {
+    throw StateError('the install command is over the Dropbear exec cap of 9000 bytes');
   }
-}
-
-/// Installs this app version's keeper script on the host (stdout `{"ok":true}`,
-/// idempotent): run once per host, when another command exits 65. The command
-/// is small; the script travels on the channel's stdin as
-/// [keeperInstallPayload] (write it, then close stdin: the installer reads to
-/// EOF). A long command line is refused by some SSH servers (Dropbear caps an
-/// exec at 9000 bytes). [script] is for tests that need a second version.
-String keeperInstallCommand({String? script}) => _wrap('''
-${_needPython}exec python3 -c ${_shQuote(_installer)} ${keeperScriptVersion(script ?? keeperScript())}
-''');
-
-/// What to write to the stdin of [keeperInstallCommand] before closing it: the
-/// deflated script as base64 in lines of 76 characters (~60 KB).
-String keeperInstallPayload({String? script}) {
-  final b64 = base64.encode(ZLibCodec(level: 9).encode(utf8.encode(script ?? keeperScript())));
-  final lines = [for (var i = 0; i < b64.length; i += 76) b64.substring(i, math.min(i + 76, b64.length))];
-  return '${lines.join('\n')}\n';
-}
-
-/// stdout: one JSON line `{"routes":["omp","claude"]}`: the [agentRoutes] ids
-/// whose binary, or `npx` for a route that has a package, the host can run.
-String keeperProbeCommand() => _command(const ['probe']);
-
-/// stdout: one JSON line, an array of [KeeperInfo] objects (`KeeperInfo.toJson`
-/// keys plus `exit_reason`), newest first: the running keepers and those whose
-/// agent exited within a day. Marks keepers whose process vanished as exited and
-/// removes the expired ones.
-String keeperListCommand() => _command(const ['list']);
-
-/// Starts a keeper that runs [agent] (an [agentRoutes] id) in [cwd] and prints
-/// its [KeeperInfo] as one JSON line once the agent has answered `initialize`.
-/// The keeper outlives the command. `~` and `~/x` expand on the host. On
-/// failure nothing is left behind and stderr says why (exit codes above).
-///
-/// Throws [ArgumentError] for an unknown [agent] or a [cwd] that is empty, too
-/// long or holds a control character (a newline included).
-String keeperStartCommand({required String agent, required String cwd}) {
-  if (agentRouteById(agent) == null) {
-    throw ArgumentError.value(agent, 'agent', 'unknown agent');
-  }
-  if (!_validPath(cwd)) {
-    throw ArgumentError.value(cwd, 'cwd', 'invalid folder');
-  }
-  return _command(['start', '--agent', agent, '--cwd', cwd]);
-}
-
-/// Asks [agent] (an [agentRoutes] id) what it remembers: runs it briefly,
-/// without a keeper or a session, and prints ONE JSON line
-/// `{"agent":..,"list":bool,"load":bool,"resume":bool,"more":bool,"sessions":[..]}`
-/// (`PastSessions.fromJson` reads it; at most 200 sessions, newest first). With
-/// [cwd] only the sessions of that folder, otherwise every folder (the agent
-/// then runs in the home folder). Read-only: no keeper file is touched and the
-/// agent is stopped before the command exits. Exit codes: 66 the folder is not
-/// there, 69 the agent is not installed, 70 the agent failed or did not answer
-/// (stderr has why).
-///
-/// Throws [ArgumentError] for an unknown [agent] or a [cwd] that is empty, too
-/// long or holds a control character (a newline included).
-String keeperHistoryCommand({required String agent, String? cwd}) {
-  if (agentRouteById(agent) == null) {
-    throw ArgumentError.value(agent, 'agent', 'unknown agent');
-  }
-  if (cwd != null && !_validPath(cwd)) {
-    throw ArgumentError.value(cwd, 'cwd', 'invalid folder');
-  }
-  return _command(['history', agent, ?cwd]);
-}
-
-/// Bridges the channel's stdin/stdout to the keeper's socket: lines of ACP
-/// JSON-RPC both ways. Closing stdin detaches (the agent keeps running). Every
-/// attached client is equal (`docs/AGENT_SESSIONS.md`, "Shared sessions"):
-/// each gets every update, a waiting request goes to all of them, and the
-/// others are told who answered first (`_herdr/resolved`, then
-/// `$/cancel_request`). Keepers started by older scripts still evict an older
-/// attach with `{"method":"_herdr/evicted","params":{"reason":...}}`. When the
-/// agent exits while attached the keeper writes
-/// `{"method":"_herdr/agent_exited","params":{"exitCode":n,"reason":...}}`, then
-/// closes. Exit codes: 66 no such keeper, 67 its agent has exited (stderr says
-/// why).
-///
-/// With [zipped] what the keeper writes comes back as `Z<base64>` lines of one
-/// zlib stream wherever a batch of lines is big enough to gain from it
-/// (`ATTACH_ZIP_MIN` in the script; [ZippedLines] reads it): the replay of a
-/// long thread is ~10x smaller on the wire. The other direction is plain.
-String keeperAttachCommand(String keeperId, {bool zipped = false}) {
-  _checkKeeperId(keeperId);
-  return _command(['attach', keeperId, if (zipped) '--z']);
-}
-
-/// Follows the session log [path] (absolute, `.jsonl`, under the host user's
-/// home; anything else exits 66 with a reason on stderr): first the tail of the
-/// file (the last [tailBytes] from a line start, default 192 KB, clamped by the
-/// host to 16 KB..64 MB; the whole file when smaller), or
-/// with [from] everything after that byte offset; then every complete line
-/// that is appended, pushed within [pollMs] (default 250 ms; the file is
-/// stat'ed that often while it grows, every 1 s after 60 s and every 2 s after
-/// 10 min without growth; growth goes back to [pollMs]). Stdout is one record
-/// per line:
-///
-///   `<endOffset>\t<json>`  a log line, re-serialised compactly, with every
-///                          string cut to 16 KB (`... [N bytes cut]`) and
-///                          binary payloads dropped, each with a note that
-///                          says where to fetch it (`ref=`, see
-///                          [keeperBlobCommand]); a line that is not JSON
-///                          is `{"raw":"<first 2 KB>"}`, one over 4 MB a stub;
-///                          an omp message is left without what only omp
-///                          reads (token accounting, the provider's envelope,
-///                          `thinkingSignature`, `details.displayContent`)
-///                          and a `credential_pin` entry is not sent at all
-///   `S\t<offset>`          before the first line of a tail read (at the start,
-///                          and with every `R`): where in the file the tail
-///                          begins, 0 when it is the whole file
-///   `R\t<offset>`          the file shrank or was replaced (or [from] is not
-///                          a line end of it): forget what came before, what
-///                          follows is its content from [offset]
-///   `C\t<offset>`          once, after the first read to the end of the file:
-///                          everything up to [offset] has been sent, so an
-///                          empty log or a resume at its end is up to date
-///   `E\t<message>`         reading failed; the command exits 70
-///
-/// `endOffset` is the byte offset after the line: pass it back as [from] to
-/// resume. Closing stdin ends the command (so does a closed stdout); with
-/// [idleExit] > 0 it also ends, exit 0, after that many seconds without growth
-/// (for a phone that vanished without closing the channel).
-///
-/// With [until] the command reads the part of the file from [from] (default 0)
-/// up to that byte offset once, sends its `C`, and ends: no waiting for more. A
-/// line that holds that offset is sent whole (`C` is its end): the tail of a log
-/// starts inside a line, which is in neither part otherwise.
-/// A [from] that is not a line start of the file makes it start over at 0 with
-/// an `R`. With [digest] the records are the digest of the lines: the model's
-/// thinking emptied, every string cut to 8 KB, and the bookkeeping entries
-/// (`custom`, `model_usage`) left out. That is what a read that looks for what
-/// a session made needs, about a third lighter than the lines the chat shows.
-///
-/// With [zipped] (`--z`) the records of a batch of at least 512 bytes travel as
-/// one `Z<base64 of zlib data>` line of ONE zlib stream (each batch ended with
-/// a sync flush), the others as they are: the log of a long chat is plain JSON
-/// and deflates ~3x. A reader that does not know `Z` lines sees records it
-/// skips, so only a transport that reads them back (`openExec(zipped: true)`)
-/// should ask.
-///
-/// Throws [ArgumentError] for a [path] that is empty, too long or holds a
-/// control character, and for a negative [from], [until] or [idleExit], a
-/// [pollMs] below 1 or a [tailBytes] below 1. [from] wins over [tailBytes].
-String keeperFollowCommand(
-  String path, {
-  int? from,
-  int? until,
-  bool digest = false,
-  int? pollMs,
-  int? idleExit,
-  int? tailBytes,
-  bool zipped = false,
-}) {
-  if (!_validPath(path)) {
-    throw ArgumentError.value(path, 'path', 'invalid path');
-  }
-  if (from != null && from < 0) throw ArgumentError.value(from, 'from', 'invalid offset');
-  if (until != null && until < 0) throw ArgumentError.value(until, 'until', 'invalid offset');
-  if (pollMs != null && pollMs < 1) throw ArgumentError.value(pollMs, 'pollMs', 'invalid interval');
-  if (idleExit != null && idleExit < 0) throw ArgumentError.value(idleExit, 'idleExit', 'invalid time');
-  if (tailBytes != null && tailBytes < 1) throw ArgumentError.value(tailBytes, 'tailBytes', 'invalid size');
-  return _command([
-    'follow',
-    path,
-    if (zipped) '--z',
-    if (from != null) ...['--from', '$from'],
-    if (until != null) ...['--to', '$until'],
-    if (digest) '--digest',
-    if (pollMs != null) ...['--poll-ms', '$pollMs'],
-    if (idleExit != null) ...['--idle-exit', '$idleExit'],
-    if (tailBytes != null) ...['--tail-bytes', '$tailBytes'],
-  ]);
-}
-
-/// The binary payload `follow` dropped from one log line. `follow` says where
-/// to find it in the note that replaces it
-/// (`[N bytes of data not sent; ref=<start>.<hash>]`): [start] is the byte
-/// offset where the line begins in [path], [hash] the 16 lowercase hex digits
-/// of the payload (only a picture in a line up to 4 MiB, about 3 MiB of
-/// picture, is given one: `follow` sends no longer line). Stdout is `B\t<piece of base64 text>` records and then
-/// `D\t<total length>`; exit 66 with a sentence on stderr when the log is not
-/// what it was (the line is not at [start], holds no such payload, the file is
-/// gone, [path] is not a log under the home folder) or the payload is not
-/// base64 text.
-///
-/// Throws [ArgumentError] for a [path] that is empty, too long or holds a
-/// control character, a negative [start] and a [hash] that is not 16 lowercase
-/// hex digits: these reach a remote shell.
-String keeperBlobCommand(String path, {required int start, required String hash}) {
-  if (!_validPath(path)) {
-    throw ArgumentError.value(path, 'path', 'invalid path');
-  }
-  if (start < 0) throw ArgumentError.value(start, 'start', 'invalid offset');
-  if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(hash)) throw ArgumentError.value(hash, 'hash', 'invalid hash');
-  return _command(['blob', path, '$start', hash]);
-}
-
-/// stdout: `{"ok":true}`. Sends the agent's process group SIGTERM, SIGKILL
-/// after 3 s, and forgets the keeper. Also dismisses a keeper whose agent has
-/// already exited.
-String keeperKillCommand(String keeperId) {
-  _checkKeeperId(keeperId);
-  return _command(['kill', keeperId]);
+  return command;
 }
