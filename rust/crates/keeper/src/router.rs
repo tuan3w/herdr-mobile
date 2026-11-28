@@ -353,17 +353,19 @@ impl Router {
         }
     }
 
-    /// A line from a client.
-    pub fn on_client_line(&mut self, client: u64, line: &str, out: &mut Out) {
+    /// A line from a client. Returns whether it was a JSON-RPC message: a connection counts as a
+    /// client with its first valid line (python `on_client_line` `:1714`), garbage and a
+    /// connect-and-close probe never do.
+    pub fn on_client_line(&mut self, client: u64, line: &str, out: &mut Out) -> bool {
         if let Some(c) = self.clients.get_mut(&client) {
             c.last_input_ms = now_ms();
         }
         let Ok(msg) = Message::parse(line) else {
             self.dlog(&format!(
-                "client sent a line that is not JSON: {}",
+                "client sent a line that is not JSON-RPC: {}",
                 trunc(line, 200)
             ));
-            return;
+            return false;
         };
         match msg {
             Message::Request { id, method, params } => {
@@ -374,6 +376,7 @@ impl Router {
             }
             Message::Response { id, outcome } => self.on_client_answer(client, id, outcome, out),
         }
+        true
     }
 
     /// A client connected: register it. Its first `initialize` arrives through

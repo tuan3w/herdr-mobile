@@ -13,8 +13,7 @@ use crate::pane::{self, Pane};
 use crate::records::StateDir;
 use crate::router::{AlertEvent, Out, Router};
 use crate::routes::Route;
-use crate::spawn::{self, Listener, IDLE_CLIENT, MAX_AGENT_LINE, MAX_CLIENT_LINE, TICK};
-use std::collections::HashMap;
+use crate::spawn::{self, Listener, MAX_AGENT_LINE, MAX_CLIENT_LINE, TICK};
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -35,6 +34,21 @@ enum Ev {
 struct Conn {
     id: u64,
     write: UnixStream,
+    /// When it connected.
+    born: Instant,
+    /// Set by its first valid JSON-RPC line (python `conn.active`).
+    active: bool,
+}
+
+/// The connections to close for being idle: those that connected more than `limit` ago and have
+/// not sent one valid line. Active ones are never idle (python `tick` `:2644`), however long they
+/// have been quiet.
+fn never_active(conns: &[Conn], now: Instant, limit: Duration) -> Vec<u64> {
+    conns
+        .iter()
+        .filter(|c| !c.active && now.duration_since(c.born) > limit)
+        .map(|c| c.id)
+        .collect()
 }
 
 /// What the daemon runs beside the agent: the alert hook, the herdr pane, and
@@ -250,7 +264,6 @@ pub fn run() -> i32 {
     // loop both take their lines from this one channel.
     reader_threads(agent_out_raw, agent_err_raw, &tx);
     let mut conns: Vec<Conn> = Vec::new();
-    let mut last_seen: HashMap<u64, Instant> = HashMap::new();
     let mut agent = Router::new(
         id.clone(),
         route.id.clone(),
@@ -335,6 +348,7 @@ pub fn run() -> i32 {
         return code;
     }
     let sig = signal_flag();
+    let idle_limit = spawn::idle_client();
     let mut extras = Extras::open(&home, job, &route, &id, &cwd, &mut agent);
     loop {
         // Wakes early when a line arrives; the event it returns is kept
@@ -360,8 +374,12 @@ pub fn run() -> i32 {
                 id
             };
             client_reader(read, id, &tx);
-            last_seen.insert(id, Instant::now());
-            conns.push(Conn { id, write: stream });
+            conns.push(Conn {
+                id,
+                write: stream,
+                born: Instant::now(),
+                active: false,
+            });
         }
         // The channel: the event that woke the nap (if any) first, then every
         // line that arrived since the last tick. `recv_timeout` returns the
@@ -389,8 +407,11 @@ pub fn run() -> i32 {
                     }
                 }
                 Ev::Client(id, line) => {
-                    agent.on_client_line(id, &line, &mut out);
-                    last_seen.insert(id, Instant::now());
+                    if agent.on_client_line(id, &line, &mut out) {
+                        if let Some(c) = conns.iter_mut().find(|c| c.id == id) {
+                            c.active = true;
+                        }
+                    }
                 }
                 Ev::ClientGone(id) => gone.push(id),
                 Ev::AgentGone => agent_gone = true,
@@ -398,27 +419,22 @@ pub fn run() -> i32 {
         }
         for id in &gone {
             agent.drop_client(*id, &mut out);
-            last_seen.remove(id);
         }
-        // Idle clients: a line in 30 s, or they go.
-        let now = Instant::now();
-        let idle: Vec<u64> = conns
-            .iter()
-            .filter(|c| {
-                last_seen
-                    .get(&c.id)
-                    .is_some_and(|t| now.duration_since(*t) > IDLE_CLIENT)
-            })
-            .map(|c| c.id)
-            .collect();
+        // Connections that never sent a valid line within the limit go; an attached client that is
+        // merely quiet (a long agent turn) stays until it closes.
+        let idle = never_active(&conns, Instant::now(), idle_limit);
         for id in &idle {
             agent.drop_client(*id, &mut out);
-            last_seen.remove(id);
         }
-        conns = conns
-            .drain(..)
-            .filter(|c| !idle.contains(&c.id) && !gone.contains(&c.id))
-            .collect::<Vec<_>>();
+        for c in conns
+            .iter()
+            .filter(|c| idle.contains(&c.id) && !gone.contains(&c.id))
+        {
+            // Closing our handle is not enough: the reader thread holds a clone of the socket,
+            // so the peer would see no EOF and the thread would block until the peer left.
+            let _ = c.write.shutdown(std::net::Shutdown::Both);
+        }
+        conns.retain(|c| !idle.contains(&c.id) && !gone.contains(&c.id));
         let alerts = std::mem::take(&mut out.alerts);
         flush(&agent, &conns, &mut out, &mut agent_in, &dir);
         if extras.tick(&mut agent, alerts) {
@@ -754,4 +770,42 @@ fn signal_flag() -> std::sync::Arc<std::sync::atomic::AtomicBool> {
     let hup = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _ = signal_hook::flag::register(signal_hook::consts::SIGHUP, hup);
     flag
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn(id: u64, born: Instant, active: bool) -> Conn {
+        let (write, _peer) = UnixStream::pair().expect("a socket pair");
+        Conn {
+            id,
+            write,
+            born,
+            active,
+        }
+    }
+
+    #[test]
+    fn only_a_connection_that_never_spoke_is_idle() {
+        let limit = Duration::from_secs(30);
+        let t0 = Instant::now();
+        let conns = [
+            conn(1, t0, false),
+            conn(2, t0, true),
+            conn(3, t0 + Duration::from_secs(20), false),
+        ];
+        // Inside the limit nobody goes.
+        assert!(never_active(&conns, t0 + Duration::from_secs(30), limit).is_empty());
+        // Past it only the silent newcomer that never spoke (1) goes; the attached client (2)
+        // stays however long it has been quiet, and 3 is still young.
+        assert_eq!(
+            never_active(&conns, t0 + Duration::from_secs(31), limit),
+            vec![1]
+        );
+        assert_eq!(
+            never_active(&conns, t0 + Duration::from_secs(10_000), limit),
+            vec![1, 3]
+        );
+    }
 }

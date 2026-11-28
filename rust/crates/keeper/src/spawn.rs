@@ -23,8 +23,24 @@ use std::time::Duration;
 pub const MAX_AGENT_LINE: usize = 64 * 1024 * 1024;
 /// A client's line cap (python `MAX_CLIENT_LINE` `:65`).
 pub const MAX_CLIENT_LINE: usize = 32 * 1024 * 1024;
-/// How long a client may sit idle before the daemon closes it (python `:2644`).
+/// How long a connection may go without a first valid line before the daemon closes it (python
+/// `tick` `:2644`). A client that has sent one valid line is never idle-closed: an attached phone
+/// is silent for a whole agent turn and still wants the update when it lands.
 pub const IDLE_CLIENT: Duration = Duration::from_secs(30);
+
+/// The environment variable that overrides [`IDLE_CLIENT`] with milliseconds. Tests set it so the
+/// sweep can be observed without waiting 30 s; nothing in the product sets it.
+pub const IDLE_CLIENT_ENV: &str = "HERDR_KEEPER_IDLE_MS";
+
+/// [`IDLE_CLIENT`], or the override in [`IDLE_CLIENT_ENV`] when it holds a number of milliseconds.
+#[must_use]
+pub fn idle_client() -> Duration {
+    std::env::var(IDLE_CLIENT_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(IDLE_CLIENT, Duration::from_millis)
+}
+
 /// The event loop's nap when nothing is ready.
 pub const TICK: Duration = Duration::from_millis(250);
 /// The unix socket's backlog (python `claim` `:1401`).

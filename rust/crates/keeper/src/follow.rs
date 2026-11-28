@@ -236,40 +236,53 @@ fn follow_record(raw: &[u8], start: Option<u64>, brief: bool) -> Option<Vec<u8>>
 /// that is not half of a `\ud800-\udbff` + `\udc00-\udfff` pair) replaced by
 /// `\ufffd`, so a line an agent wrote with a lone surrogate still parses:
 /// Python's `json.loads` accepts it, `serde_json` does not.
+///
+/// Escapes are read the way JSON reads them: a backslash and the byte after it
+/// are one unit, so the second `\` of an escaped backslash (`\\ud800` is the
+/// text `\ud800`) never starts a `\u` escape. Works on bytes, so a multi-byte
+/// character after a `\u` is never cut.
 fn sanitize_surrogates(raw: &[u8]) -> Vec<u8> {
-    let s = match std::str::from_utf8(raw) {
-        Ok(s) => s,
-        Err(_) => return raw.to_vec(),
+    if std::str::from_utf8(raw).is_err() {
+        return raw.to_vec();
+    }
+    let hex4 = |at: usize| -> Option<u32> {
+        let digits = raw.get(at..at + 4)?;
+        if !digits.iter().all(u8::is_ascii_hexdigit) {
+            return None;
+        }
+        u32::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()
     };
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(s.len());
+    let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
-    while i < bytes.len() {
-        // A `\uXXXX` escape.
-        if bytes[i] == b'\\' && i + 6 <= bytes.len() && bytes[i + 1] == b'u' {
-            let hex = &s[i + 2..i + 6];
-            let cp = u32::from_str_radix(hex, 16).unwrap_or(0);
-            if (0xd800..=0xdfff).contains(&cp) {
+    while i < raw.len() {
+        if raw[i] != b'\\' {
+            out.push(raw[i]);
+            i += 1;
+            continue;
+        }
+        if raw.get(i + 1) == Some(&b'u') {
+            if let Some(cp) = hex4(i + 2).filter(|cp| (0xd800..=0xdfff).contains(cp)) {
                 // A high surrogate followed by a low one is a valid pair: keep
                 // both. Otherwise it is unpaired: replace with `\ufffd`.
                 let paired = cp <= 0xdbff
-                    && i + 12 <= bytes.len()
-                    && bytes[i + 6] == b'\\'
-                    && bytes[i + 7] == b'u'
-                    && (0xdc00..=0xdfff)
-                        .contains(&u32::from_str_radix(&s[i + 8..i + 12], 16).unwrap_or(0));
+                    && raw.get(i + 6) == Some(&b'\\')
+                    && raw.get(i + 7) == Some(&b'u')
+                    && hex4(i + 8).is_some_and(|lo| (0xdc00..=0xdfff).contains(&lo));
                 if paired {
-                    out.extend_from_slice(&bytes[i..i + 12]);
+                    out.extend_from_slice(&raw[i..i + 12]);
                     i += 12;
-                    continue;
+                } else {
+                    out.extend_from_slice(b"\\ufffd");
+                    i += 6;
                 }
-                out.extend_from_slice(b"\\ufffd");
-                i += 6;
                 continue;
             }
         }
-        out.push(bytes[i]);
-        i += 1;
+        // Any other escape (`\\`, `\"`, `\n`, a `\u` that is not a surrogate): the backslash and
+        // the byte it escapes go through together.
+        let n = if i + 1 < raw.len() { 2 } else { 1 };
+        out.extend_from_slice(&raw[i..i + n]);
+        i += n;
     }
     out
 }
@@ -959,5 +972,54 @@ fn collect_payloads(v: &Value, out: &mut Vec<String>) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod surrogate_tests {
+    use super::sanitize_surrogates;
+    use serde_json::Value;
+
+    /// The string value of `{"t": …}` after sanitising `raw`.
+    fn value_of(raw: &str) -> String {
+        let clean = sanitize_surrogates(raw.as_bytes());
+        let v: Value = serde_json::from_slice(&clean)
+            .unwrap_or_else(|e| panic!("{raw} does not parse after sanitising: {e}"));
+        v["t"].as_str().expect("a string").to_string()
+    }
+
+    #[test]
+    fn an_escaped_backslash_before_u_is_text_not_an_escape() {
+        // JSON text `\\ud800`: a backslash and the five characters `ud800`.
+        assert_eq!(value_of(r#"{"t":"\\ud800"}"#), "\\ud800");
+        assert_eq!(
+            value_of(r#"{"t":"\\udc00 \\ud83d\\ude00"}"#),
+            "\\udc00 \\ud83d\\ude00"
+        );
+        // Four backslashes are two escaped backslashes: still text.
+        assert_eq!(value_of(r#"{"t":"\\\\ud800"}"#), "\\\\ud800");
+    }
+
+    #[test]
+    fn a_real_lone_surrogate_escape_still_becomes_the_replacement_character() {
+        assert_eq!(value_of(r#"{"t":"a\ud800b"}"#), "a\u{fffd}b");
+        assert_eq!(value_of(r#"{"t":"a\udc00b"}"#), "a\u{fffd}b");
+        // A high surrogate followed by something that is not a low one.
+        assert_eq!(value_of(r#"{"t":"\ud83dx"}"#), "\u{fffd}x");
+        assert_eq!(value_of(r#"{"t":"\ud83d\u0041"}"#), "\u{fffd}A");
+        // An escaped backslash (odd run of three: `\\` then `\u`) followed by a real lone one.
+        assert_eq!(value_of(r#"{"t":"\\\ud800"}"#), "\\\u{fffd}");
+    }
+
+    #[test]
+    fn a_valid_pair_is_kept() {
+        assert_eq!(value_of(r#"{"t":"\ud83d\ude00"}"#), "\u{1f600}");
+    }
+
+    #[test]
+    fn a_u_escape_cut_by_a_multibyte_character_does_not_panic() {
+        let raw = "{\"t\":\"\\u123\u{e9}\"}";
+        // Not valid JSON either way; the point is that sanitising returns the bytes untouched.
+        assert_eq!(sanitize_surrogates(raw.as_bytes()), raw.as_bytes());
     }
 }

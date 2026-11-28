@@ -48,14 +48,27 @@ mod update {
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
 
-    fn sha(file: &Path) -> Option<String> {
-        let out = Command::new("sha256sum").arg(file).output().ok()?;
-        Some(
-            String::from_utf8_lossy(&out.stdout)
+    /// The SHA-256 of `file` by `sha256sum`, else `shasum -a 256` (macOS has only the latter), the
+    /// same order as `tool/install-host.sh`. Neither: the test fails.
+    fn sha(file: &Path) -> String {
+        let attempts: [(&str, &[&str]); 2] = [("sha256sum", &[]), ("shasum", &["-a", "256"])];
+        for (program, args) in attempts {
+            let Ok(out) = Command::new(program).args(args).arg(file).output() else {
+                continue;
+            };
+            if !out.status.success() {
+                continue;
+            }
+            if let Some(sum) = String::from_utf8_lossy(&out.stdout)
                 .split_whitespace()
-                .next()?
-                .to_string(),
-        )
+                .next()
+            {
+                return sum.to_string();
+            }
+        }
+        panic!(
+            "these tests need `sha256sum` or `shasum` on PATH to write the mirror's checksum file"
+        );
     }
 
     struct Rig {
@@ -65,9 +78,14 @@ mod update {
         home: PathBuf,
     }
 
-    /// `None` where curl or sha256sum is missing (the command needs them, as the installer does).
+    /// `None` only where this platform has no release asset to stand in for. A missing `curl` or
+    /// checksum tool FAILS: the update command needs them (as the installer does), and a test that
+    /// returned early would pass without checking anything.
     fn rig(release_says: &str) -> Option<Rig> {
-        Command::new("curl").arg("--version").output().ok()?;
+        assert!(
+            Command::new("curl").arg("--version").output().is_ok(),
+            "these tests need `curl` on PATH: the update command downloads from a file:// mirror with it"
+        );
         let dir = tempfile::tempdir().expect("tempdir");
         let (bin, mirror, home) = (
             dir.path().join("bin"),
@@ -89,7 +107,7 @@ mod update {
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         std::fs::write(
             mirror.join("herdr-tui-SHA256SUMS"),
-            format!("{}  {asset}\n", sha(&file)?),
+            format!("{}  {asset}\n", sha(&file)),
         )
         .expect("sums");
         Some(Rig {
