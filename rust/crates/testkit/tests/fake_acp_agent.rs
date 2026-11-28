@@ -1037,10 +1037,27 @@ fn initialize_reports_descriptors_umask_and_chosen_variables_into_files() {
     a.init();
     let seen: Vec<i64> =
         serde_json::from_slice(&std::fs::read(&fds).expect("fds file")).expect("JSON");
+    // A fresh child holds stdin, stdout and stderr, and whatever its parent
+    // leaked into it: a CI runner leaves its own descriptors open in the test
+    // process, so "exactly 0, 1, 2" tests the runner, not the agent. What the
+    // agent must not do is open descriptors of its own.
+    let parent: Vec<i64> = std::fs::read_dir("/dev/fd")
+        .expect("the descriptors of this process")
+        .filter_map(|e| e.ok()?.file_name().to_str()?.parse().ok())
+        .collect();
+    assert!(
+        seen.starts_with(&[0, 1, 2]),
+        "stdin, stdout, stderr: {seen:?}"
+    );
+    let own: Vec<i64> = seen
+        .iter()
+        .copied()
+        .filter(|fd| !parent.contains(fd))
+        .collect();
     assert_eq!(
-        seen,
-        [0, 1, 2],
-        "a fresh child holds stdin, stdout, stderr only"
+        own,
+        Vec::<i64>::new(),
+        "the agent opened no descriptor of its own: {seen:?}"
     );
     let mode = std::fs::metadata(&umask)
         .expect("umask file")
