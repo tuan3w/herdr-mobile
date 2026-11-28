@@ -5,19 +5,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// Two things the person notices in the REAL keeper script (python3):
+// Two things the person notices in the keeper (the `herdr-host` binary):
 //  - an agent writes files the way their own shell would (the login umask),
 //    while the keeper's own files stay private;
 //  - a keeper that is still starting its agent is never reported gone, and
 //    `kill` ends it however its record reads.
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}]) async {
     final h = await KeeperHost.create(env);
     addTearDown(h.dispose);
@@ -27,12 +24,12 @@ void main() {
 
   int mode(String path) => FileStat.statSync(path).mode & 0x1ff;
 
-  group('keeper', skip: hasPython ? false : 'python3 is not installed', () {
+  group('keeper', () {
     test('the agent gets the login umask; the keeper\'s own files stay private', () async {
       final h = await newHost();
       final written = '${h.home.path}/agent.pid';
       h.env['FAKE_ACP_PID_FILE'] = written; // the agent creates it when it answers initialize
-      final r = await h.run('umask 027; ${keeperStartCommand(agent: 'omp', cwd: h.work)}');
+      final r = await h.runStart(umask: '027');
       expect(r.code, 0, reason: r.err);
       final id = asJson(jsonDecode(r.out))['id']! as String;
 
@@ -86,7 +83,7 @@ void main() {
         final record = File('${h.keepers}/$id.json');
         record.writeAsStringSync(jsonEncode({...rec, 'state': 'exited'}));
 
-        final k = await h.run(keeperKillCommand(id));
+        final k = await h.kill(id);
         expect(k.code, 0, reason: k.err);
         await eventually(
           () async => !await processAlive(keeperPid) && !await processAlive(agentPid),
@@ -115,7 +112,7 @@ void main() {
           }
         }
 
-        final r = await h.run(keeperAttachCommand(id));
+        final r = await h.attachAndLeave(id);
         expect(r.code, isNot(67), reason: 'the agent has not exited: ${r.err}');
         expect((await h.rawList()).single['state'], 'starting');
       }, skip: Platform.isMacOS ? false : 'a full unix socket backlog is refused on macOS only');

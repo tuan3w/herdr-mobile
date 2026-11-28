@@ -42,6 +42,7 @@ import '../create/management_sheets.dart' show confirmClosePane;
 import '../dictation/dictation_language_sheet.dart';
 import '../dictation/dictation_session.dart';
 import '../files/files_navigation.dart';
+import '../ports/ports_sheet.dart' show showPortsSheet;
 import 'answer_dock.dart';
 import 'connect_chat.dart';
 import 'key_modifiers.dart';
@@ -185,6 +186,8 @@ class _PaneScreenState extends State<PaneScreen> {
     unawaited(openFileBrowser(context, machine, startDir: machine.paneById(_paneId)?.cwd));
   }
 
+  void _openPorts(MachineConnection machine) => unawaited(showPortsSheet(context, machine));
+
   /// Opens the new-agent-session form on the pane's machine, folder and agent,
   /// the first message empty. Not while the machine is offline or the pane is
   /// gone (there is nothing to copy it from).
@@ -245,6 +248,8 @@ class _PaneScreenState extends State<PaneScreen> {
               onTap: () => unawaited(showConnectChat(context, machine, _paneId, connectTarget)),
             ),
           _duplicateAction(),
+          // Not in the bar: it holds two actions at most (Files and ⋯).
+          if (machine != null) SheetAction(label: 'Ports', icon: LucideIcons.plug, onTap: () => _openPorts(machine)),
           SheetAction(
             label: 'Copy title',
             icon: LucideIcons.copy,

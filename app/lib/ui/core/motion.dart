@@ -271,11 +271,11 @@ abstract final class Dwell {
   /// Waits one frame or so past an animation, so a measurement sees its end state.
   static const afterSettle = Duration(milliseconds: 30);
 
-  /// An open file viewer stats its file this often to notice a change on disk.
-  static const diskWatch = Duration(seconds: 15);
-
   /// A photo zoomed back out to fit keeps its sharp decode this long: zooming in again does not decode twice.
   static const photoSharp = Duration(seconds: 2);
+
+  /// A file viewer whose watch ended (the machine could not be asked) listens again after this long.
+  static const watchRetry = Duration(seconds: 15);
 }
 
 /// The app's haptic vocabulary, as `Motion` is its motion vocabulary. Five

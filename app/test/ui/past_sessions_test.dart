@@ -313,9 +313,9 @@ void main() {
 
     testWidgets('a machine that cannot say which agents it has is a failure; Retry asks again', (tester) async {
       final e = await historyEnv();
-      e.sessions.availableError = const AgentHostException('python3 is missing on studio-mac.');
+      e.sessions.availableError = const AgentHostException('the agent helper is missing on studio-mac.');
       await pumpPast(tester, e);
-      expect(find.text('python3 is missing on studio-mac.'), findsOneWidget);
+      expect(find.text('the agent helper is missing on studio-mac.'), findsOneWidget);
       expect(e.sessions.historyCalls, isEmpty);
 
       e.sessions

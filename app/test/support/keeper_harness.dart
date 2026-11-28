@@ -1,26 +1,90 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
-import 'package:herdr_mobile/data/acp/zipped_lines.dart';
+import 'package:herdr_mobile/data/app_info.dart';
+import 'package:herdr_mobile/data/host/host_channels.dart';
+import 'package:herdr_mobile/data/host/host_link.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
+import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
 
-// Runs the real keeper script (python3) against a scripted ACP agent
-// (`test/support/fake_acp_agent.py`). Every command is run the way an SSH
-// server would run it (`sh -c`), with HOME in a temp directory so nothing
-// touches the real home, and the agent `omp` is a wrapper on PATH.
+import 'process_host.dart';
+
+// Runs the real keeper (the `herdr-host` binary) against a scripted ACP agent
+// (`fake-acp-agent` of `rust/crates/testkit`). The phone path is the app's own:
+// `herdr-host serve` under the app's command (`hostServeCommand`), a `HostLink`
+// on it, and the real `SshAgentHost` over that link. Every command is run the
+// way an SSH server would run it (`sh -c`), with HOME in a temp directory so
+// nothing touches the real home, and the agent `omp` is a wrapper on PATH. No
+// python is involved anywhere.
 
 typedef Json = Map<String, Object?>;
 
 Json asJson(Object? v) => (v as Map).cast<String, Object?>();
 
-String? pythonDir() {
-  for (final d in ['/usr/bin', '/bin', '/usr/local/bin', '/opt/homebrew/bin']) {
-    if (File('$d/python3').existsSync()) return d;
-  }
-  return null;
+/// The prebuilt `herdr-host` binary the tests install into their temp homes.
+/// `$HERDR_HOST_BIN` overrides the default (`../../rust/target/release/herdr-host`
+/// from `app/`). CI builds it in the test job before `flutter test`.
+File hostBinary() {
+  final fromEnv = Platform.environment['HERDR_HOST_BIN'];
+  if (fromEnv != null && fromEnv.isNotEmpty) return File(fromEnv);
+  // `test/support/keeper_harness.dart` → up four → the repo root, whose
+  // `rust/` is a sibling of `app/`.
+  final root = File('test/support/keeper_harness.dart').absolute.parent.parent.parent.parent.absolute.path
+      .replaceAll(r'\', '/');
+  return File('$root/rust/target/release/herdr-host');
+}
+
+/// A binary of `rust/crates/testkit` (`fake-acp-agent`, ...): in
+/// `$HERDR_TESTKIT_DIR`, else next to [hostBinary] (both are built by
+/// `cargo build -p host -p testkit`). Fails the test when it is missing:
+/// a missing fixture is never a reason to skip.
+File testkitBinary(String name) {
+  final fromEnv = Platform.environment['HERDR_TESTKIT_DIR'];
+  final dir = fromEnv != null && fromEnv.isNotEmpty ? fromEnv : hostBinary().parent.path;
+  final bin = File('$dir/$name');
+  expect(
+    bin.existsSync(),
+    isTrue,
+    reason:
+        '$name not found at ${bin.path}; build it (cd rust && cargo build -p testkit) '
+        'or set HERDR_TESTKIT_DIR',
+  );
+  return bin;
+}
+
+/// Writes the script a keeper's PATH finds as the agent [path] (`omp`, ...): it
+/// runs `fake-acp-agent`, after [before] (shell lines) when given.
+Future<void> writeAgentWrapper(String path, {String before = ''}) async {
+  final fake = testkitBinary('fake-acp-agent').absolute.path.replaceAll("'", "'\\''");
+  final wrapper = File(path)..writeAsStringSync("#!/bin/sh\n${before}exec '$fake' \"\$@\"\n");
+  await Process.run('chmod', ['755', wrapper.path]);
+}
+
+/// The file name of the keeper on a host: one per app version, as
+/// `tool/install-host.sh` names it and `keeper_command.dart` execs it.
+const hostBinaryName = 'herdr-host-$appVersion';
+
+/// Copies the prebuilt [hostBinary] into [home]'s `~/.herdr-mobile/bin/<hostBinaryName>`
+/// (0700), the way `tool/install-host.sh` puts it on a real host. The temp home
+/// starts empty, so there is nothing to rename over.
+Future<void> installHostBinary(Directory home) async {
+  final bin = hostBinary();
+  expect(
+    bin.existsSync(),
+    isTrue,
+    reason:
+        'herdr-host not found at ${bin.path}; '
+        'build it (cd rust && cargo build --release -p host) '
+        'or set HERDR_HOST_BIN',
+  );
+  final dir = Directory('${home.path}/.herdr-mobile/bin')..createSync(recursive: true);
+  final dest = File('${dir.path}/$hostBinaryName');
+  dest.writeAsBytesSync(bin.readAsBytesSync());
+  await Process.run('chmod', ['700', dest.path]);
 }
 
 Future<bool> processAlive(int pid) async => (await Process.run('kill', ['-0', '$pid'])).exitCode == 0;
@@ -91,238 +155,6 @@ bool isTrimmed(Json update) =>
     asJson(update['_meta'])['herdr'] is Map &&
     asJson(asJson(update['_meta'])['herdr'])['trimmed'] == true;
 
-/// Loads the keeper script as a module and exercises `ReplayLog.remove`, the
-/// way the keeper takes back the message of a prompt the agent refused.
-const removeProbe = r'''
-import importlib.util, json, sys
-spec = importlib.util.spec_from_file_location("keeper", sys.argv[1])
-k = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(k)
-
-def msg(su, **kw):
-    u = {"sessionUpdate": su}
-    u.update(kw)
-    return {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s", "update": u}}
-
-def add(log, m):
-    return log.add(m, len(json.dumps(m)), lambda: set())
-
-def user(log, text, mid):
-    return add(log, msg("user_message_chunk", content={"type": "text", "text": text}, messageId=mid))
-
-def agent(log, text, mid):
-    return add(log, msg("agent_message_chunk", content={"type": "text", "text": text}, messageId=mid))
-
-def tally(log):
-    # The counters against what the turns really hold.
-    es = [e for t in log.turns.values() for e in t.e]
-    return {
-        "turns": len(log.turns),
-        "bytesOk": log.bytes == sum(e["n"] for e in es) and all(t.n == sum(e["n"] for e in t.e) for t in log.turns.values()),
-        "countOk": log.count == len(es),
-        "texts": [e["o"]["params"]["update"]["content"]["text"] for e in es],
-        "lastOk": (log.last is None and not log.turns) or log.last is list(log.turns.values())[-1],
-    }
-
-out = {}
-
-# Refused attempts after a finished turn: the agent's own output streamed in
-# between ends up in the turn before, not in a turn of its own.
-log = k.ReplayLog(1 << 20, 100, 3)
-user(log, "first", "m1")
-agent(log, "answer", "a1")
-for i in range(3):
-    e = user(log, "again", "k%d" % i)
-    agent(log, "own %d" % i, "o%d" % i)
-    assert log.remove(e)
-    assert not log.remove(e)
-out["refused"] = tally(log)
-
-# A turn whose only entry is the refused message disappears.
-log = k.ReplayLog(1 << 20, 100, 3)
-e = user(log, "alone", "m1")
-assert log.remove(e)
-out["alone"] = tally(log)
-user(log, "after", "m2")
-out["aloneThenAdd"] = tally(log)
-
-# A message of two blocks is one entry; it goes whole.
-log = k.ReplayLog(1 << 20, 100, 3)
-agent(log, "before", "a0")
-e1 = user(log, "one ", "m1")
-e2 = user(log, "two", "m1")
-out["sameEntry"] = e1 is e2
-agent(log, "reply", "a1")
-assert log.remove(e1)
-out["twoBlocks"] = tally(log)
-
-# An entry the log already dropped is not found, and nothing moves.
-log = k.ReplayLog(1 << 20, 100, 3)
-user(log, "x", "m1")
-agent(log, "y", "a1")
-ghost = {"o": msg("user_message_chunk", content={"type": "text", "text": "gone"}, messageId="g"), "n": 99}
-before = (log.bytes, log.count)
-out["ghost"] = [log.remove(ghost), (log.bytes, log.count) == before]
-
-# Under the entry bound: refused attempts (no output of the agent's own) do
-# not eat the room of real turns.
-log = k.ReplayLog(1 << 20, 12, 3)
-for i in range(4):
-    user(log, "q%d" % i, "m%d" % i)
-    agent(log, "a%d" % i, "a%d" % i)
-for i in range(40):
-    e = user(log, "again", "k%d" % i)
-    log.remove(e)
-out["bounded"] = tally(log)
-out["boundedDropped"] = log.dropped
-print(json.dumps(out))
-''';
-
-/// Loads the keeper script as a module and drives `ReplayLog` directly.
-const logProbe = r'''
-import importlib.util, json, sys
-spec = importlib.util.spec_from_file_location("keeper", sys.argv[1])
-k = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(k)
-
-def msg(su, **kw):
-    u = {"sessionUpdate": su}
-    u.update(kw)
-    return {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s", "update": u}}
-
-def add(log, m, waiting=lambda: set()):
-    log.add(m, len(json.dumps(m)), waiting)
-
-def user(log, i, waiting=lambda: set()):
-    add(log, msg("user_message_chunk", content={"type": "text", "text": "u%d" % i}, messageId="m%d" % i), waiting)
-
-def call(log, i, tool, waiting=lambda: set(), size=8000, status="completed"):
-    add(log, msg("tool_call", toolCallId=tool, title="t", status="pending", kind="execute"), waiting)
-    add(log, msg("tool_call_update", toolCallId=tool, status=status, rawOutput="x" * size), waiting)
-
-def answer(log, i, waiting=lambda: set()):
-    add(log, msg("agent_message_chunk", content={"type": "text", "text": "a%d" % i}, messageId="a%d" % i), waiting)
-
-# Python-level calls made by `fn`: what a step costs, the same on an idle and
-# on a busy machine (seconds are not).
-def counted(fn):
-    n = [0]
-    def prof(frame, event, arg):
-        n[0] += 1
-    sys.setprofile(prof)
-    try:
-        fn()
-    finally:
-        sys.setprofile(None)
-    return n[0]
-
-out = {}
-
-# A request waits on a tool call of the oldest turn: it stays whole.
-log = k.ReplayLog(30000, 100000, 1)
-hold = lambda: {"old"}
-user(log, 0, hold)
-call(log, 0, "old", hold, status="in_progress")
-for i in range(1, 31):
-    user(log, i, hold)
-    call(log, i, "t%d" % i, hold)
-    answer(log, i, hold)
-es = list(log.entries())
-users = [e["o"]["params"]["update"]["content"]["text"] for e in es if e["o"]["params"]["update"]["sessionUpdate"] == "user_message_chunk"]
-out["pinned"] = {
-    "oldKept": "u0" in users,
-    "oldHasRaw": any("rawOutput" in e["o"]["params"]["update"] and e["o"]["params"]["update"]["toolCallId"] == "old" for e in es),
-    "otherDropped": log.dropped,
-    "newestKept": "u30" in users,
-    "bytes": log.bytes,
-}
-
-# State a dropped turn held (the mode, the commands) still reaches a replay,
-# whether the turn goes whole (3000-byte calls) or is eaten from the front
-# because it is the newest and over the bounds by itself (8000-byte calls).
-def carried(size):
-    log = k.ReplayLog(5000, 100000, 1)
-    user(log, 0)
-    add(log, msg("current_mode_update", currentModeId="plan"))
-    add(log, msg("available_commands_update", availableCommands=[{"name": "x", "description": "y"}]))
-    call(log, 0, "c0", size=size)
-    answer(log, 0)
-    for i in range(1, 30):
-        user(log, i)
-        call(log, i, "c%d" % i, size=size)
-        answer(log, i)
-    es = list(log.entries())
-    kinds = [e["o"]["params"]["update"]["sessionUpdate"] for e in es]
-    return {
-        "carry": sorted(set(x for x in kinds if x.endswith("_update") and not x.startswith("tool"))),
-        "mode": [e["o"]["params"]["update"]["currentModeId"] for e in es if e["o"]["params"]["update"]["sessionUpdate"] == "current_mode_update"],
-        "first": kinds[0],
-        "dropped": log.dropped,
-        "bytes": log.bytes,
-    }
-
-out["carryWhole"] = carried(3000)
-out["carryCut"] = carried(8000)
-
-# Turns so heavy that the newest three alone pass the soft budget: the older
-# ones among them are cut too (never the newest), rather than turns of the
-# conversation dropped.
-log = k.ReplayLog(4 * 1024 * 1024, 4000, 3, 1536 * 1024)
-for i in range(12):
-    user(log, i)
-    for j in range(28):
-        call(log, i, "f%d-%d" % (i, j), size=60000)
-    answer(log, i)
-es = list(log.entries())
-users = [e for e in es if e["o"]["params"]["update"]["sessionUpdate"] == "user_message_chunk"]
-newest = [e["o"]["params"]["update"] for e in es if e["o"]["params"]["update"].get("toolCallId", "").startswith("f11-")]
-out["fat"] = {
-    "users": len(users),
-    "dropped": log.dropped,
-    "newestRaw": sum(1 for u in newest if "rawOutput" in u),
-    "bytes": log.bytes,
-}
-
-# The soft budget, 600 heavy turns (140 KB each): every turn stays, only the
-# newest is whole, the replay is skeletons plus one turn, and the cursor to
-# the oldest untrimmed turn never goes back.
-log = k.ReplayLog(64 * 1024 * 1024, 100000, 3, 1536 * 1024)
-def soft_turn(i):
-    user(log, i)
-    for j in range(28):
-        call(log, i, "s%d-%d" % (i, j), size=5000)
-    answer(log, i)
-for i in range(500):
-    soft_turn(i)
-# What the newest 100 turns cost per update, with 500 turns behind them.
-soft_calls = counted(lambda: [soft_turn(i) for i in range(500, 600)])
-out["soft"] = {
-    "callsPerUpdate": soft_calls / (100 * 58),
-    "turns": len(log.turns),
-    "dropped": log.dropped,
-    "trimmed": log.trimmed,
-    "bytes": log.bytes,
-    "newestBytes": log.last.n,
-}
-
-# The hot path: 15000 turns through a log that holds 20000 entries.
-log = k.ReplayLog(16 * 1024 * 1024, 20000, 3, 1536 * 1024)
-def hot_turn(i):
-    user(log, i)
-    call(log, i, "h%d" % i, size=200)
-    answer(log, i)
-for i in range(12000):
-    hot_turn(i)
-# The log is full (20000 entries) and drops on every turn: what the last 3000
-# turns cost per update. A scan of the log per update would be 20000 calls.
-hot_calls = counted(lambda: [hot_turn(i) for i in range(12000, 15000)])
-out["callsPerUpdate"] = hot_calls / (3000 * 4)
-out["count"] = log.count
-out["listed"] = len(list(log.entries()))
-out["hotDropped"] = log.dropped
-print(json.dumps(out))
-''';
-
 typedef RunResult = ({String out, String err, int code});
 
 class KeeperHost {
@@ -332,11 +164,14 @@ class KeeperHost {
   final Directory _root;
   final Map<String, String> env;
   final clients = <KeeperAttach>[];
-  final views = <KeeperView>[];
+
+  // Every `herdr-host serve` this host started, one per link.
+  final _serves = <ProcessHostProcess>[];
+  HostLink? _link;
+  Future<HostLink>? _linking;
 
   String get work => '${home.path}/work';
   String get keepers => '${home.path}/.herdr-mobile/keepers';
-  String get hookOut => '${home.path}/hook.out';
 
   /// [homeLeaf] names the home folder inside the temp directory (a hostile
   /// name, for the paths the keeper types into a shell).
@@ -345,18 +180,13 @@ class KeeperHost {
     final home = homeLeaf == null ? temp : (Directory('${temp.path}/$homeLeaf')..createSync());
     final bin = Directory('${home.path}/bin')..createSync();
     Directory('${home.path}/work').createSync();
-    final fake = File('test/support/fake_acp_agent.py').absolute.path;
-    expect(File(fake).existsSync(), isTrue, reason: fake);
     for (final binary in ['omp', 'codex-acp', 'claude-agent-acp', 'cursor-agent']) {
-      final wrapper = File('${bin.path}/$binary')..writeAsStringSync('#!/bin/sh\nexec python3 \'$fake\' "\$@"\n');
-      await Process.run('chmod', ['755', wrapper.path]);
+      await writeAgentWrapper('${bin.path}/$binary');
     }
-    final py = pythonDir()!;
     return KeeperHost._(home, {
       'HOME': home.path,
-      'PATH': '${bin.path}:$py:/usr/bin:/bin',
+      'PATH': '${bin.path}:/usr/bin:/bin',
       'FAKE_ACP_LOG': '${home.path}/agent.jsonl',
-      'HERDR_KEEPER_ON_BLOCKED': '${home.path}/hook.sh',
       // A herdr on this machine must never get a pane from a test.
       'HERDR_MOBILE_NO_PANE': '1',
       // A test keeper stays a child of its starter: no launchd job on the
@@ -366,61 +196,13 @@ class KeeperHost {
     }, temp);
   }
 
-  /// The installed script, as `view` runs it.
-  String get script => '${home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py';
-
-  String get herdrLog => '${home.path}/herdr.calls';
-  String get fakeHerdr => '${home.path}/fake-herdr';
-
-  /// Writes a fake herdr (once) and returns its path: it logs every argv to
-  /// [herdrLog] and answers `workspace list`, `workspace create` and `tab
-  /// create` with JSON shaped like herdr 0.9.3's (`src/api/schema`), keeping
-  /// its workspaces in a file; any other command prints nothing and exits 0.
-  Future<String> writeFakeHerdr() async {
-    final f = File(fakeHerdr);
-    if (!f.existsSync()) {
-      f.writeAsStringSync(_fakeHerdr(herdrLog, '${home.path}/herdr.state'));
-      await Process.run('chmod', ['755', f.path]);
-    }
-    return f.path;
-  }
-
-  /// Points the keeper at the fake herdr (before `start`), panes allowed.
-  Future<void> useFakeHerdr() async {
-    env['HERDR_MOBILE_HERDR'] = await writeFakeHerdr();
-    env['HERDR_MOBILE_NO_PANE'] = '';
-  }
-
-  /// Every command the fake herdr ran, in order.
-  List<List<String>> herdrCalls() {
-    final f = File(herdrLog);
-    if (!f.existsSync()) return [];
-    return [
-      for (final l in f.readAsLinesSync())
-        if (l.trim().isNotEmpty) (jsonDecode(l) as List).cast<String>(),
-    ];
-  }
-
-  /// `view ID` as herdr runs it in a pane, with [env] on top (HERDR_ENV,
-  /// HERDR_PANE_ID, HERDR_BIN_PATH).
-  Future<KeeperView> view(String id, {Map<String, String> env = const {}}) async {
-    final p = await Process.start(
-      'python3',
-      [script, 'view', id],
-      environment: {...this.env, ...env},
-      includeParentEnvironment: false,
-      workingDirectory: home.path,
-    );
-    final v = KeeperView(p);
-    views.add(v);
-    return v;
-  }
-
-  Future<RunResult> run(String command, {String input = ''}) async {
+  /// A raw shell command, the way an SSH server would run it: for what is still
+  /// a command (the installer, the serve command's exit 65).
+  Future<RunResult> run(String command, {String input = '', Map<String, String> environment = const {}}) async {
     final p = await Process.start(
       '/bin/sh',
       ['-c', command],
-      environment: env,
+      environment: {...env, ...environment},
       includeParentEnvironment: false,
       workingDirectory: home.path,
     );
@@ -432,42 +214,92 @@ class KeeperHost {
     return (out: await out, err: await err, code: code);
   }
 
-  /// Installs the keeper script the way the app does before its first command:
-  /// the command, with the script written to its stdin.
-  Future<void> install({String? script}) async {
-    final r = await run(
-      keeperInstallCommand(script: script),
-      input: keeperInstallPayload(script: script),
+  /// Installs the keeper the way the phone does: the `herdr-host` binary at
+  /// `~/.herdr-mobile/bin/herdr-host-<appVersion>` (the phone fetches it from
+  /// the release; the test copies the prebuilt one, `installHostBinary`).
+  Future<void> install() async {
+    await installHostBinary(home);
+  }
+
+  // ---- the host link: what the app talks to ----
+
+  /// A new `herdr-host serve` as an SSH server would run the app's command
+  /// (`hostServeCommand`), with [umask] applied to the login shell first.
+  Future<ProcessHostProcess> _serve({String? umask}) async {
+    final command = hostServeCommand();
+    final p = await ProcessHostProcess.start(
+      '/bin/sh',
+      ['-c', umask == null ? command : 'umask $umask; $command'],
+      environment: env,
+      workingDirectory: home.path,
     );
-    expect(r.code, 0, reason: r.err);
-    expect(r.out.trim(), '{"ok":true}');
+    _serves.add(p);
+    return p;
+  }
+
+  /// A new link to a new `serve` process (its own channel, like another phone).
+  Future<HostLink> openLink({String? umask}) async => HostLink.connect(
+    await _serve(umask: umask),
+    version: appVersion,
+    helloTimeout: const Duration(seconds: 30),
+  );
+
+  /// The shared link, opened on first use and again after it died.
+  Future<HostLink> link() {
+    final live = _link;
+    if (live != null && live.isOpen) return Future.value(live);
+    return _linking ??= openLink().then((l) => _link = l).whenComplete(() => _linking = null);
+  }
+
+  /// The shared link dies without a word: its `serve` is killed outright (the
+  /// keepers live on).
+  void dropLink() {
+    for (final p in _serves) {
+      p.kill();
+    }
+  }
+
+  /// What the app has of this machine: the real [SshAgentHost] over [link].
+  late final LinkTransport transport = LinkTransport(link);
+  late final SshAgentHost agentHost = SshAgentHost(transport, quickTimeout: const Duration(seconds: 30));
+
+  /// `keeper.[method]` as a command's result: the answer is [RunResult.out],
+  /// a failure's words are [RunResult.err] and its code is the exit status the
+  /// keeper's command line ends with (64, 66, 67, 69, 70; -1: link lost).
+  Future<RunResult> _call(HostLink link, String method, Json args, {Duration? timeout}) async {
+    try {
+      final r = await link.call('keeper', method, args, timeout ?? const Duration(seconds: 180));
+      return (out: '${jsonEncode(r)}\n', err: '', code: 0);
+    } on HostException catch (e) {
+      return (out: '', err: e.message, code: exitStatusOf(HostEnd(error: e)) ?? -1);
+    }
+  }
+
+  /// `start` on a link of its own, as a result: for tests that look at the
+  /// failure's words and code. [umask] is the login shell's.
+  Future<RunResult> runStart({String agent = 'omp', String? cwd, String? umask}) async {
+    final l = await openLink(umask: umask);
+    try {
+      return await _call(l, 'start', {'agent': agent, 'cwd': cwd ?? work});
+    } finally {
+      unawaited(l.close());
+    }
   }
 
   /// A `start` that is not waited for: for tests that look at the keeper while
-  /// its agent is still initialising.
+  /// its agent is still initialising. Killing [KeeperRunning.process] is the
+  /// phone going away mid-start.
   Future<KeeperRunning> startInBackground({String agent = 'omp'}) async {
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', keeperStartCommand(agent: agent, cwd: work)],
-      environment: env,
-      includeParentEnvironment: false,
-      workingDirectory: home.path,
-    );
-    await p.stdin.close();
-    return KeeperRunning(p);
+    final serve = await _serve();
+    final l = await HostLink.connect(serve, version: appVersion, helloTimeout: const Duration(seconds: 30));
+    return KeeperRunning(serve.process, _call(l, 'start', {'agent': agent, 'cwd': work}));
   }
 
-  Future<KeeperInfo> start({String agent = 'omp', String? cwd}) async {
-    final r = await run(keeperStartCommand(agent: agent, cwd: cwd ?? work));
-    expect(r.code, 0, reason: r.err);
-    expect(r.out.trim().split('\n'), hasLength(1));
-    return KeeperInfo.fromJson(asJson(jsonDecode(r.out)));
-  }
+  Future<KeeperInfo> start({String agent = 'omp', String? cwd}) => agentHost.start(agent: agent, cwd: cwd ?? work);
 
   Future<List<Json>> rawList() async {
-    final r = await run(keeperListCommand());
-    expect(r.code, 0, reason: r.err);
-    return [for (final j in jsonDecode(r.out) as List) asJson(j)];
+    final rows = await (await link()).call('keeper', 'list');
+    return [for (final j in rows! as List) asJson(j)];
   }
 
   Future<List<KeeperInfo>> list() async => [for (final j in await rawList()) KeeperInfo.fromJson(j)];
@@ -482,38 +314,47 @@ class KeeperHost {
     ];
   }
 
-  /// Writes the alert hook; it appends one line per event to [hookOut].
-  Future<void> writeHook(String body, {String? path}) async {
-    final f = File(path ?? '${home.path}/hook.sh')..writeAsStringSync('#!/bin/sh\n$body\n');
-    await Process.run('chmod', ['755', f.path]);
-  }
-
-  Future<KeeperAttach> attach(String id, {bool zipped = false}) async {
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', keeperAttachCommand(id, zipped: zipped)],
-      environment: env,
-      includeParentEnvironment: false,
-      workingDirectory: home.path,
-    );
-    final a = KeeperAttach(p, zipped: zipped);
+  /// A client of a keeper (a phone), on a link of its own.
+  Future<KeeperAttach> attach(String id) async {
+    final l = await openLink();
+    final a = KeeperAttach.stream(l.open('keeper', 'attach', {'id': id}, true), l);
     clients.add(a);
     return a;
   }
 
+  /// An attach that detaches at once (stdin closed), as a result: its exit
+  /// status says whether the keeper took it (0) or refused (66, 67, ...).
+  Future<RunResult> attachAndLeave(String id) async {
+    final l = await openLink();
+    final channel = HostLineChannel(l.open('keeper', 'attach', {'id': id}, true));
+    try {
+      final lines = <String>[];
+      final sub = channel.lines.listen(lines.add, onError: (Object _) {});
+      await channel.closeInput();
+      final code = await channel.exitCode.timeout(const Duration(seconds: 30));
+      await sub.cancel();
+      return (out: lines.join('\n'), err: channel.stderrTail, code: code ?? -1);
+    } finally {
+      unawaited(l.close());
+    }
+  }
+
+  /// `kill ID` for this host.
+  Future<RunResult> kill(String id) async => _call(await link(), 'kill', {'id': id});
+
   Future<void> dispose() async {
     for (final a in clients) {
-      a.process.kill();
-    }
-    for (final v in views) {
-      v.process.kill();
+      a.kill();
     }
     try {
       for (final j in await rawList()) {
-        await run(keeperKillCommand(j['id']! as String));
+        await kill(j['id']! as String);
       }
     } on Object {
       // best effort: the temp home goes away next
+    }
+    for (final p in _serves) {
+      p.close();
     }
     try {
       _root.deleteSync(recursive: true);
@@ -523,44 +364,60 @@ class KeeperHost {
   }
 }
 
-/// A command started in the background: [finished] completes with its result.
+/// A `start` that was not waited for: [finished] completes with its result;
+/// [process] is the `serve` that carries it.
 class KeeperRunning {
-  KeeperRunning(this.process) {
-    final out = utf8.decodeStream(process.stdout);
-    final err = utf8.decodeStream(process.stderr);
-    finished = () async {
-      final code = await process.exitCode;
-      return (out: await out, err: await err, code: code);
-    }();
-  }
+  KeeperRunning(this.process, this.finished);
 
   final Process process;
-  late final Future<RunResult> finished;
+  final Future<RunResult> finished;
 }
 
-/// The phone's side of `attach`: a process whose stdout lines are parsed.
+/// The phone's side of `attach`: a link whose lines are parsed.
 class KeeperAttach {
-  KeeperAttach(this.process, {bool zipped = false}) {
-    final text = process.stdout
-        .map((chunk) {
-          wire += chunk.length;
-          return chunk;
-        })
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
-    (zipped ? zippedLines(text) : text).listen((l) {
+  KeeperAttach._({
+    required Stream<String> lines,
+    required this.writeRaw,
+    required this.closeInput,
+    required this.exit,
+    required this.kill,
+  }) {
+    lines.listen((l) {
       if (l.trim().isNotEmpty) seen.add(asJson(jsonDecode(l)));
     });
-    process.stderr.transform(utf8.decoder).listen(stderr.write);
   }
 
-  final Process process;
-  final seen = <Json>[];
+  /// An attach stream of [link] (closed with it).
+  factory KeeperAttach.stream(HostStream stream, HostLink link) {
+    final channel = HostLineChannel(stream);
+    final a = KeeperAttach._(
+      lines: channel.lines,
+      writeRaw: (text) => unawaited(stream.write(Uint8List.fromList(utf8.encode(text))).catchError((Object _) {})),
+      closeInput: channel.closeInput,
+      exit: channel.exitCode.then((code) => code ?? -1),
+      kill: () {
+        unawaited(channel.close().catchError((Object _) {}));
+        unawaited(link.close());
+      },
+    );
+    unawaited(channel.exitCode.then((_) => a.stderr.write(channel.stderrTail)));
+    return a;
+  }
 
-  /// Bytes the command wrote to stdout.
-  var wire = 0;
+  /// Writes [text] to the keeper as it is (no newline added).
+  final void Function(String text) writeRaw;
+
+  /// Ends the client's direction (a detach).
+  final Future<void> Function() closeInput;
+
+  /// The connection drops without a word.
+  final void Function() kill;
+  final seen = <Json>[];
   final stderr = StringBuffer();
-  Future<int> get exit => process.exitCode;
+
+  /// Exit status: 0 done, 66 no such keeper, 67 its agent exited, ... -1 the
+  /// link was lost.
+  final Future<int> exit;
   var _cursor = 0;
   var _nextId = 0;
 
@@ -580,7 +437,7 @@ class KeeperAttach {
     }
   }
 
-  void write(Json message) => process.stdin.writeln(jsonEncode({'jsonrpc': '2.0', ...message}));
+  void write(Json message) => writeRaw('${jsonEncode({'jsonrpc': '2.0', ...message})}\n');
 
   /// Sends a request and returns its id.
   int post(String method, [Json params = const {}]) {
@@ -623,79 +480,7 @@ class KeeperAttach {
 
   /// Closes stdin (a detach) and returns the exit code.
   Future<int> close() async {
-    await process.stdin.close();
+    await closeInput();
     return exit.timeout(const Duration(seconds: 30));
   }
 }
-
-/// `view` in a terminal: what it printed, and lines typed into it.
-class KeeperView {
-  KeeperView(this.process) {
-    process.stdout.transform(utf8.decoder).listen(out.write);
-    process.stderr.transform(utf8.decoder).listen(err.write);
-  }
-
-  final Process process;
-  final out = StringBuffer();
-  final err = StringBuffer();
-
-  /// Waits until the output, from [from] on, contains [text]; returns where
-  /// it ends, for the next wait.
-  Future<int> waitFor(String text, {int from = 0}) async {
-    final end = DateTime.now().add(const Duration(seconds: 30));
-    while (true) {
-      final i = out.toString().indexOf(text, from);
-      if (i >= 0) return i + text.length;
-      if (DateTime.now().isAfter(end)) {
-        throw TimeoutException('view never printed "$text"; it printed:\n$out\nstderr: $err');
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
-  }
-
-  void type(String line) => process.stdin.writeln(line);
-}
-
-String _fakeHerdr(String log, String state) =>
-    '''
-#!/usr/bin/env python3
-import json, os, sys
-args = sys.argv[1:]
-with open(${jsonEncode(log)}, "a") as f:
-    f.write(json.dumps(args) + "\\n")
-try:
-    with open(${jsonEncode(state)}) as f:
-        st = json.load(f)
-except (OSError, ValueError):
-    st = {"workspaces": [], "tabs": 0}
-def arg(name):
-    return args[args.index(name) + 1] if name in args else None
-def tab(wid, label):
-    st["tabs"] += 1
-    t = "%s:t%d" % (wid, st["tabs"])
-    return ({"tab_id": t, "workspace_id": wid, "number": st["tabs"], "label": label, "focused": False, "pane_count": 1, "agent_status": "unknown"},
-            {"pane_id": "%s:p%d" % (wid, st["tabs"]), "terminal_id": "term", "workspace_id": wid, "tab_id": t, "focused": False, "cwd": arg("--cwd"), "agent_status": "unknown"})
-out = None
-if args[:2] == ["workspace", "list"]:
-    out = {"type": "workspace_list", "workspaces": st["workspaces"]}
-elif args[:2] == ["workspace", "create"]:
-    wid = "w%d" % (len(st["workspaces"]) + 1)
-    ws = {"workspace_id": wid, "number": len(st["workspaces"]) + 1, "label": arg("--label") or "", "focused": False,
-          "pane_count": 1, "tab_count": 1, "active_tab_id": wid + ":t1", "agent_status": "unknown"}
-    st["workspaces"].append(ws)
-    t, p = tab(wid, "1")
-    out = {"type": "workspace_created", "workspace": ws, "tab": t, "root_pane": p}
-elif args[:2] == ["tab", "create"]:
-    t, p = tab(arg("--workspace"), arg("--label") or "")
-    out = {"type": "tab_created", "tab": t, "root_pane": p}
-elif args[:2] == ["tab", "list"]:
-    out = {"type": "tab_list", "tabs": st.get("tablist", {}).get(arg("--workspace"), [])}
-elif args[:2] == ["pane", "list"]:
-    out = {"type": "pane_list", "panes": st.get("panelist", {}).get(arg("--workspace"), [])}
-elif args[:2] == ["pane", "read"]:
-    sys.stdout.write(st.get("screens", {}).get(args[2], ""))
-with open(${jsonEncode(state)}, "w") as f:
-    json.dump(st, f)
-if out is not None:
-    print(json.dumps({"id": "cli", "result": out}))
-''';

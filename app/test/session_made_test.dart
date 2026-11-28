@@ -323,39 +323,25 @@ void main() {
       expect(_keys([_say('Please run http://localhost:3000', role: MessageRole.user)]), isEmpty);
     });
 
-    test(
-      'state: running only while a running task names the port; stopped when only ended ones do; else just seen',
-      () {
-        final server = madeAssetsOf([_say('http://localhost:5173/')]).single;
-        BackgroundTask task(String title, BackgroundStatus s) =>
-            BackgroundTask(id: title, kind: BackgroundKind.shell, status: s, title: title);
-        expect(serverStateOf(server, const []), ServerState.seen);
-        expect(serverStateOf(server, [task('vite --port 5173', BackgroundStatus.running)]), ServerState.running);
-        expect(
-          serverStateOf(server, [task('vite --port 5173', BackgroundStatus.paused)]),
-          ServerState.stopped,
-          reason: 'paused serves nothing',
-        );
-        expect(serverStateOf(server, [task('vite --port 5173', BackgroundStatus.finished)]), ServerState.stopped);
-        expect(
-          serverStateOf(server, [
-            task('vite --port 5173', BackgroundStatus.finished),
-            task('npm run dev -- --port 5173', BackgroundStatus.running),
-          ]),
-          ServerState.running,
-        );
-        expect(
-          serverStateOf(server, [task('serve -p 51730', BackgroundStatus.running)]),
-          ServerState.seen,
-          reason: 'a longer number is another port',
-        );
-        expect(
-          serverStateOf(server, [task('vite --port 5173', BackgroundStatus.running)], live: false),
-          ServerState.seen,
-          reason: 'a saved copy or a link that is down knows of nothing running now',
-        );
-      },
-    );
+    test('state: what the machine says about the port, and unknown when it did not say', () {
+      final server = madeAssetsOf([_say('http://localhost:5173/')]).single;
+      expect(serverStateOf(server, const {5173: true}), ServerState.running, reason: 'listening now');
+      expect(
+        serverStateOf(server, const {5173: false}),
+        ServerState.stopped,
+        reason: 'the machine looked and nothing listens',
+      );
+      expect(
+        serverStateOf(server, const {}),
+        ServerState.seen,
+        reason: 'no helper, no ports service, an unreachable machine or a question still on its way: unknown',
+      );
+      expect(
+        serverStateOf(server, const {8000: true, 51730: true}),
+        ServerState.seen,
+        reason: 'another port is another server',
+      );
+    });
 
     test('launchLabelOf is what started the server: no cd, wrapper, redirect or folder of the program', () {
       expect(

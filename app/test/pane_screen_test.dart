@@ -1402,6 +1402,46 @@ void main() {
       });
     });
 
+    group('Ports in the pane options', () {
+      Future<void> openPorts(WidgetTester tester) async {
+        await tester.tap(find.byTooltip('Pane options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ports'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('is an option of the pane, not a third button in the bar, and opens the machine’s ports', (
+        tester,
+      ) async {
+        filesystem();
+        transport.onHostMessages = (service, method, args) =>
+            (StreamController<Object?>()..add({
+                  'listeners': [
+                    {'family': 4, 'addr': '127.0.0.1', 'port': 3000, 'pid': 4242, 'process': 'node'},
+                  ],
+                }))
+                .stream;
+        await pumpPane(tester);
+        expect(find.byTooltip('Ports'), findsNothing, reason: 'the bar holds Files and the options, no more');
+
+        await openPorts(tester);
+
+        expect(find.text('Ports'), findsOneWidget, reason: 'the sheet’s title; the options sheet is gone');
+        expect(find.text('node'), findsOneWidget);
+        expect(find.text('localhost:3000 · pid 4242'), findsOneWidget);
+        await teardown(tester);
+      });
+
+      testWidgets('is there on a machine without the helper too, and the sheet says what it needs', (tester) async {
+        await pumpPane(tester);
+
+        await openPorts(tester);
+
+        expect(find.text('Needs the agent helper on this machine.'), findsOneWidget);
+        await teardown(tester);
+      });
+    });
+
     group('scrollback', () {
       testWidgets('reads 300 rows until the user nears the top, then 1000', (tester) async {
         final rows = [for (var i = 0; i < 2000; i++) 'row $i'];

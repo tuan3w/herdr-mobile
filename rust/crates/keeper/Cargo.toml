@@ -10,10 +10,16 @@ description = "herdr-mobile's keeper: owns one agent process so it outlives the 
 acp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-rustix = { version = "0.38", default-features = false, features = ["std", "process"] }
+rustix = { version = "0.38", default-features = false, features = ["std", "process", "pipe", "fs"] }
+libc = "0.2"
+signal-hook = "0.3"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+base64 = "0.22"
+sha1 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
+testkit = { path = "../testkit" }
 
 [lints]
 workspace = true

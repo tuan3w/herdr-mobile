@@ -1,0 +1,22 @@
+[package]
+name = "testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Test fixtures for herdr-mobile: a scripted ACP agent, a deterministic herdr socket, a benchmark agent"
+
+[lib]
+name = "testkit"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json.workspace = true
+signal-hook = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -92,6 +92,13 @@ jobs:
           # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
 
+      - name: Build herdr-host and the test fixtures (what the phone-path tests exec)
+        working-directory: rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build --release --locked -p host -p testkit
+
       - name: Test
         env:
           HERDR_TEST_ONLY: rest
@@ -114,6 +121,13 @@ jobs:
           flutter-version: 3.47.6
           # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
+
+      - name: Build herdr-host and the test fixtures (what the phone-path tests exec)
+        working-directory: rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build --release --locked -p host -p testkit
 
       - name: Test
         env:

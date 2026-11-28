@@ -105,7 +105,8 @@ class FileCopyModel extends ChangeNotifier {
     }
   }
 
-  /// Stops the copy that is running; what was written is removed.
+  /// Stops the copy that is running; what was written stays for the next copy of
+  /// the same file to continue from (see [RemoteFileStaging.fetch]).
   void cancel() => _cancel?.cancel();
 
   /// Hands the copy of [stat] to the share sheet, making it first.

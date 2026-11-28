@@ -11,11 +11,11 @@ you leave it and shows up on your phone. Design: `docs/TUI.md`.
 ```sh
 cd rust
 cargo build --release          # target/release/herdr-tui, about 2.6 MB (1 MB of it the code grammars); about 6 MB of memory with a live session before code is coloured, about 1.5 MB more per language coloured (desktop, measured for Rust)
-cargo test --workspace         # 105 tests, python3 needed for the differential one (skipped without)
+cargo test --workspace         # no python: the scripted agent and the fake herdr are Rust bins (crates/testkit)
 ```
 
-Needs Rust 1.88 or newer. Build and install in one step (it also refreshes the keeper, and works while a
-session is open; that session keeps the old version):
+Needs Rust 1.88 or newer. Build and install in one step (it works while a session is open; that
+session keeps the old version):
 
 ```sh
 tool/tui-install.sh            # release build -> ~/.local/bin/herdr-tui, a few seconds
@@ -46,8 +46,8 @@ log or a pipe it prints one plain line per step. It downloads with `curl` (or `w
 (`sha256sum` or `shasum`), runs it once with `--version`, and only then renames it over the old one, so
 a failure at any step leaves what is installed as it was and sessions that are open keep running. The
 latest release is never a downgrade; a version you name is installed even if it is older. Releases
-before 0.1.30 have no desk client. A copy the app keeps for itself (`~/.herdr-mobile/bin/herdr-tui`) is
-replaced by the app when it updates, so update the one you installed.
+before 0.1.30 have no desk client. The app does not install or replace `herdr-tui` (it installs
+`herdr-host`), so update the one you installed.
 
 A `herdr-tui` that is open notices that its file was replaced (when something wakes the screen, at most
 every few seconds; there is no timer) and says so in the footer when idle: `↻ herdr-tui 0.1.38 is
@@ -58,11 +58,13 @@ does not look, so reopen those once with `herdr-tui attach ID`.
 
 ## The keeper
 
-Every session is owned by a small `keeper` process, so it survives closing the terminal. The binary
-carries the keeper (a python program, so `python3` must be installed) and writes it to
-`~/.herdr-mobile/desktop/keeper-desktop.py` when it differs, so there is nothing else to install.
-(`HERDR_KEEPER_SCRIPT=/path/to/keeper.py` uses another copy.) The agent you start must be
-installed: `omp`, or `claude-agent-acp`, `codex-acp`, `pi-acp` (or `npx`, which is used as a fallback).
+Every session is owned by a small `keeper` process, so it survives closing the terminal. The keeper is
+the Rust `keeper` library linked into this binary: `herdr-tui` starts a session by re-running itself as
+`herdr-tui keeper-daemon` (detached, in its own process group), so there is nothing else to install and
+no `python3` or `herdr-host` is needed on the machine. Its records, sockets and replay log are in
+`~/.herdr-mobile/keepers/`, the same ones the phone's `herdr-host` reads, so a session started here can
+be attached from the app and the other way round. The agent you start must be installed: `omp`, or
+`claude-agent-acp`, `codex-acp`, `pi-acp` (or `npx`, which is used as a fallback).
 
 ## Run
 
@@ -200,11 +202,10 @@ Each has a `-light` twin in `docs/tui/`, drawn from the real frames by `python3 
 ## Inside herdr
 
 Run in a herdr pane, `herdr-tui` reports what the session is doing (`working`, `blocked` while a request
-waits, `idle`) to herdr's agent list, and releases the pane when you leave, exactly as the old python `view`
-did (`herdr-mobile` source, agent `omp · phone`, with `herdr-tui attach ID` as the resume command). Because
-of that, a session started here no longer makes the keeper open a second herdr tab running the old `view`
-(`HERDR_MOBILE_NO_PANE=1`); sessions started from the phone still do. Before this, every `herdr-tui` start
-left a duplicate tab in the `Phone sessions` workspace.
+waits, `idle`) to herdr's agent list, and releases the pane when you leave (`herdr-mobile` source, agent
+`omp · phone`, with `herdr-tui attach ID` as the resume command). Because of that, a session started
+here does not make the keeper open a second herdr tab for it (it starts the keeper with
+`HERDR_MOBILE_NO_PANE=1`).
 
 ## Other programs writing on your terminal
 
@@ -217,17 +218,13 @@ stop. Checked by `python3 tool/tui-check-background-writer.py`.
 
 ## Staying in step with the app
 
-The viewer depends on the python keeper (what `start` prints, its exit codes, the record fields, the wire,
-the replay log) and on the app's agent table. Both are checked on every `cargo test` against the keeper
-as it is in `app/lib/data/services/keeper_script.dart` *now*: `crates/keeper/tests/keeper_contract.rs`
-runs the real keeper with a scripted agent (hermetic: its own home, no herdr, never a real agent), and
-`replay_differential.rs` compares the replay log with the python one on seeded sessions. A change in the
-app that breaks the viewer fails there, so the viewer is updated in the same change.
-
-The app pins the other direction: `DESK_MIN` in `keeper_script.dart` is the herdr-tui release an app version
-works with (it downloads exactly that tag, and never runs a `herdr-tui` below it). A change to herdr-tui or the
-keeper that an older herdr-tui cannot follow raises `DESK_MIN` in the same release. `herdr-tui --version` is the
-release's version (from `app/pubspec.yaml`), which is what `DESK_MIN` is compared with.
+The viewer and the app's `herdr-host` share one keeper library (what `start` prints, its exit codes, the
+record fields, the wire, the replay log) and the agent table (`crates/keeper/routes.json`). The contract
+is checked on every `cargo test` against the real binary: `crates/host/tests/keeper_contract.rs` runs
+`herdr-host` with a scripted agent (hermetic: its own home, no herdr, never a real agent), and
+`crates/viewer/tests/cli.rs` starts, lists and kills a session through `herdr-tui` itself and asserts the
+daemon is `herdr-tui keeper-daemon` and that no `python3` ran. A change in the keeper that breaks the
+viewer fails there, so the viewer is updated in the same change.
 
 ## Exit codes
 
@@ -238,11 +235,13 @@ release's version (from `app/pubspec.yaml`), which is what `DESK_MIN` is compare
 
 ```
 rust/crates/acp      JSON-RPC and ACP messages (pure)
-rust/crates/keeper   records, agent table, replay log (the keeper daemon is still python)
+rust/crates/keeper   keeper library: records, agent table, replay log, daemon, `ctl` (linked into herdr-tui and herdr-host)
+rust/crates/host     herdr-host: `serve` and the keeper command line the phone runs
 rust/crates/viewer   transcript, session state machine, markdown, UI  (the herdr-tui binary)
 ```
 
 ## Not yet
 
-The Rust keeper daemon; reporting state to herdr panes; a session picker (`resume`); delivery of the
-binary to hosts from the GitHub release.
+A session picker (`resume`). The keeper's herdr-pane tab, alert hook (`HERDR_KEEPER_ON_BLOCKED`) and macOS
+launchd start are in the Rust keeper (`pane.rs`, `alerts.rs`, `launchd.rs`); the launchd start's text and
+`launchctl` command lines are unit-tested, but it has not been run on a Mac (unverified).

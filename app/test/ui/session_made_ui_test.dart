@@ -18,8 +18,7 @@ import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/models/web_bridge.dart';
 import 'package:herdr_mobile/data/observed/observed_contracts.dart' show SubagentInfo;
-import 'package:herdr_mobile/data/repositories/agent_session.dart'
-    show AgentLink, MadeReach, SubagentEntry, SubagentState;
+import 'package:herdr_mobile/data/repositories/agent_session.dart' show MadeReach, SubagentEntry, SubagentState;
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
@@ -111,6 +110,9 @@ void main() {
   late _Launcher launcher;
   late FakeWebView web;
   late FleetRepository fleet;
+  var watching = 0;
+  late StreamController<Object?> changes;
+  var cancelled = 0;
 
   var sessions = 0;
   FakeAgentSession session(List<TranscriptItem> items, {String? key}) {
@@ -152,7 +154,42 @@ void main() {
     fleet = emptyFleet();
     addTearDown(fleet.dispose);
     UrlLauncherPlatform.instance = launcher;
+    watching = 0;
+    cancelled = 0;
   });
+
+  /// The machine has the agent helper: the ports in [up] listen (and stay
+  /// listening for the watch), a file whose path ends with a name of [gone] is not there.
+  void machineSays({Set<int> up = const {}, Set<String> gone = const {}}) {
+    transport
+      ..onHostCall = (service, method, args) async {
+        return {
+          'results': [
+            for (final item in (args['items']! as List).cast<Map<String, Object?>>())
+              if (item['path'] case final String path)
+                {'id': item['id'], 'exists': !gone.any(path.endsWith)}
+              else
+                {'id': item['id'], 'listening': up.contains(item['port'])},
+          ],
+        };
+      }
+      ..onHostMessages = (service, method, args) {
+        watching++;
+        changes = StreamController<Object?>(onCancel: () => cancelled++);
+        changes.add({
+          'listeners': [
+            for (final p in up) {'family': 4, 'addr': '127.0.0.1', 'port': p},
+          ],
+        });
+        return changes.stream;
+      };
+  }
+
+  /// The `made.verify` calls the sheet made, with their items.
+  List<String> verifies() => [
+    for (final c in transport.hostCalls)
+      if (c == 'made.verify') c,
+  ];
 
   testWidgets('a session that has put nothing on the web has no chip', (tester) async {
     await pumpBar(tester, session([_say('Refactored the ledger, no pages.')]));
@@ -241,12 +278,13 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the sheet lists them newest first; a server says only what is known', (tester) async {
+  testWidgets('the sheet lists them newest first; a server says what the machine says about its port', (tester) async {
     final s = session([
       _say('Serving http://localhost:5173/'),
       _say('API on http://localhost:8000/docs'),
       _wrote('/home/dev/payments-api/reports/q3.html'),
     ]);
+    machineSays(up: {5173});
     s.setBackground(
       BackgroundWork(
         tasks: [
@@ -342,23 +380,126 @@ void main() {
     ],
   );
 
-  testWidgets('a saved copy or a link that is down doesn’t claim anything runs', (tester) async {
+  testWidgets('a task that names a port is not proof it listens: without the machine’s word it is unknown', (
+    tester,
+  ) async {
     final s = session([_say('Serving http://localhost:5173/')]);
     s.setBackground(runningVite());
     await pumpBar(tester, s);
     await tester.tap(find.text('Made'));
     await _settle(tester);
-    expect(find.text('Port 5173 · Running'), findsOneWidget);
 
-    s.setSavedCopy(DateTime(2026, 5, 20, 6, 31));
-    await _settle(tester);
+    expect(find.text('vite --port 5173'), findsOneWidget, reason: 'the task still names the app');
     expect(find.textContaining('Running'), findsNothing);
     expect(find.text('Port 5173 · Status unknown'), findsOneWidget);
+  });
 
-    s.setSavedCopy(null);
-    s.setLink(AgentLink.reconnecting);
+  testWidgets('the machine’s word wins over the task: running with no task at all, stopped with a running one', (
+    tester,
+  ) async {
+    final s = session([_say('Serving http://localhost:5173/'), _say('and http://localhost:8000/')]);
+    s.setBackground(
+      BackgroundWork(
+        tasks: const [
+          BackgroundTask(
+            id: 'bg1',
+            kind: BackgroundKind.shell,
+            status: BackgroundStatus.running,
+            title: 'uvicorn app:app --port 8000',
+          ),
+        ],
+      ),
+    );
+    machineSays(up: {5173});
+    await pumpBar(tester, s);
+    await tester.tap(find.text('Made'));
     await _settle(tester);
-    expect(find.textContaining('Running'), findsNothing);
+
+    expect(find.text('App on port 5173'), findsOneWidget);
+    expect(find.text('Running'), findsOneWidget, reason: 'listening now, whatever the tasks say');
+    expect(find.text('Port 8000 · Stopped'), findsOneWidget, reason: 'the machine looked: nothing listens on 8000');
+  });
+
+  testWidgets('a page the machine says is gone stays in the list, dimmed, with the reason, and is not opened', (
+    tester,
+  ) async {
+    final s = session([
+      _wrote('/home/dev/payments-api/reports/q3.html'),
+      _wrote('/home/dev/payments-api/reports/old.html'),
+      _say('Serving http://localhost:5173/'),
+    ]);
+    machineSays(up: {5173}, gone: {'old.html'});
+    await pumpBar(tester, s);
+    await tester.tap(find.text('Made'));
+    await _settle(tester);
+
+    expect(find.text('old.html'), findsOneWidget, reason: 'never silently dropped');
+    expect(find.textContaining('File is gone'), findsOneWidget);
+    expect(find.text('q3.html'), findsOneWidget);
+    expect(verifies(), hasLength(1), reason: 'the servers’ ports and the shown files go in one call');
+
+    await tester.tap(find.text('old.html'));
+    await _settle(tester);
+    expect(transport.webBridges, isEmpty);
+    expect(find.byType(WebPreviewScreen), findsNothing);
+  });
+
+  testWidgets('another tab’s files are asked when that tab is opened, not before', (tester) async {
+    final s = session([
+      _wrote('/home/dev/payments-api/notes/plan.md'),
+      _wrote('/home/dev/payments-api/reports/q3.html'),
+    ]);
+    machineSays(gone: {'plan.md'});
+    await pumpBar(tester, s);
+    await tester.tap(find.text('Made'));
+    await _settle(tester);
+    expect(verifies(), hasLength(1));
+    expect(find.textContaining('File is gone'), findsNothing);
+
+    await tapChip(tester, 'Docs');
+    await _settle(tester);
+
+    expect(verifies(), hasLength(2));
+    expect(find.text('plan.md'), findsOneWidget);
+    expect(find.textContaining('File is gone'), findsOneWidget);
+  });
+
+  testWidgets('closing the sheet ends the host watch', (tester) async {
+    final s = session([_say('Serving http://localhost:5173/')]);
+    machineSays(up: {5173});
+    await pumpBar(tester, s);
+    await tester.tap(find.text('Made'));
+    await _settle(tester);
+    expect(watching, 1);
+    expect(cancelled, 0);
+
+    await tester.tapAt(const Offset(200, 20));
+    await _settle(tester);
+
+    expect(find.text('Made in this session'), findsNothing);
+    expect(cancelled, 1);
+  });
+
+  testWidgets('the background ends the host watch and asks nothing more; coming back asks again', (tester) async {
+    final s = session([_say('Serving http://localhost:5173/')]);
+    machineSays(up: {5173});
+    await pumpBar(tester, s);
+    await tester.tap(find.text('Made'));
+    await _settle(tester);
+    expect(find.text('Running'), findsOneWidget);
+
+    // Nothing is drawn in the background (the engine draws no frames), so what
+    // is asked of the machine is what shows.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await _settle(tester);
+    expect(cancelled, 1);
+    expect(verifies(), hasLength(1));
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(watching, 2);
+    expect(verifies(), hasLength(2), reason: 'asked again, on the same rows');
+    expect(find.text('Running'), findsOneWidget);
   });
 
   testWidgets('rows do not move while the sheet is open; a link that arrives is there the next time', (tester) async {
@@ -650,6 +791,7 @@ void main() {
   testWidgets(
     'Apps is a chip that lists them; its dot shows only while one runs; the sheet never opens on it when something else exists',
     (tester) async {
+      machineSays();
       final s = session(mixed(), key: 'm/servers');
       await openSheet(tester, s);
       expect(find.text('Apps'), findsOneWidget);
@@ -666,7 +808,12 @@ void main() {
         reason: 'chips lead the sheet',
       );
 
-      s.setBackground(runningVite());
+      changes.add({
+        'opened': [
+          {'family': 4, 'addr': '127.0.0.1', 'port': 5173},
+        ],
+        'closed': <Object?>[],
+      });
       await _settle(tester);
       expect(find.byType(LinkDot), findsNWidgets(2), reason: 'the row’s dot and the chip’s');
       expect(find.descendant(of: find.byType(Segmented<MadeKind>), matching: find.byType(LinkDot)), findsOneWidget);
@@ -1006,11 +1153,17 @@ void main() {
 
   testWidgets('a running app is said, not only shown as a dot', (tester) async {
     final handle = tester.ensureSemantics();
+    machineSays();
     final s = session(mixed(), key: 'm/says-running');
     await openSheet(tester, s);
     expect(tester.getSemantics(find.text('Apps')).label, 'Apps, 1');
 
-    s.setBackground(runningVite());
+    changes.add({
+      'opened': [
+        {'family': 4, 'addr': '127.0.0.1', 'port': 5173},
+      ],
+      'closed': <Object?>[],
+    });
     await _settle(tester);
     expect(tester.getSemantics(find.text('Apps')).label, 'Apps, 1, running');
     handle.dispose();

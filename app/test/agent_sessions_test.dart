@@ -2654,10 +2654,10 @@ void main() {
         final host = h.host('a');
         h.addMachine('a', 'alpha');
 
-        host.availableFailure = const AgentHostException('python3 is missing on alpha.');
+        host.availableFailure = const AgentHostException('the agent helper is missing on alpha.');
         var started = _Outcome(h.repo.start(machine: h.conn('a'), agent: 'omp', cwd: '/work'));
         async.elapse(const Duration(seconds: 1));
-        expect((started.error! as AgentHostException).message, 'python3 is missing on alpha.');
+        expect((started.error! as AgentHostException).message, 'the agent helper is missing on alpha.');
 
         host.availableFailure = null;
         host.startFailure = const AgentHostException('/work doesn’t exist on alpha.', fatal: true);

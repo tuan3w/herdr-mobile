@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import '../host/host_link.dart' show HostException, HostLinkLost;
 import '../models/remote_file.dart';
+import '../models/remote_search.dart';
 import '../models/web_bridge.dart';
 import 'herdr_transport.dart';
 
@@ -103,8 +105,14 @@ class IsolateTransport implements HerdrTransport {
   ];
 
   @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) async {
-    final bytes = await _op('read', [path, offset, length.clamp(0, remoteReadCap)]);
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) async {
+    final bytes = await _op('read', [
+      path,
+      offset,
+      length.clamp(0, remoteReadCap),
+      ifMatch?.size,
+      ifMatch?.modified?.millisecondsSinceEpoch,
+    ]);
     // Moved, not copied: the worker handed over ownership of the buffer.
     return (bytes! as TransferableTypedData).materialize().asUint8List();
   }
@@ -123,23 +131,86 @@ class IsolateTransport implements HerdrTransport {
   Future<String> realPath(String path) async => await _op('real', [path]) as String;
 
   @override
-  Future<void> makeDirs(String path) async {
-    await _op('mkdirs', [path]);
+  Stream<RemoteStat?> watchFile(String path) {
+    var cancelled = false;
+    void Function()? cancel;
+    late final StreamController<Object?> out;
+    out = StreamController<Object?>(
+      onListen: () async {
+        try {
+          final worker = await _ensure();
+          if (cancelled) return;
+          cancel = worker.openWatch(path, out);
+        } on Object catch (e) {
+          if (cancelled) return;
+          out.addError(e);
+          await out.close();
+        }
+      },
+      onCancel: () {
+        cancelled = true;
+        cancel?.call();
+      },
+    );
+    return out.stream.map((m) => m == null ? null : RemoteStat.fromJson(m as Map));
   }
 
   @override
-  Future<void> removeFile(String path) async {
-    await _op('rm', [path]);
+  Future<Uint8List?> thumbnailFile(String path, {int maxPx = 256, RemoteStat? expect, Future<void>? cancelled}) async {
+    try {
+      final bytes = await (await _ensure()).op('thumb', [
+        path,
+        maxPx,
+        expect?.size,
+        expect?.modified?.millisecondsSinceEpoch,
+      ], cancelled: cancelled);
+      // Moved, not copied, like a read.
+      return bytes == null ? null : (bytes as TransferableTypedData).materialize().asUint8List();
+    } on Object {
+      return null;
+    }
   }
+
+  @override
+  Stream<FileSearchEvent> searchFiles(FileSearchSpec spec) {
+    var cancelled = false;
+    void Function()? cancel;
+    late final StreamController<Object?> out;
+    out = StreamController<Object?>(
+      onListen: () async {
+        try {
+          final worker = await _ensure();
+          if (cancelled) return;
+          cancel = worker.openSearch(spec, out);
+        } on Object catch (e) {
+          if (cancelled) return;
+          out.addError(e);
+          await out.close();
+        }
+      },
+      onCancel: () {
+        cancelled = true;
+        cancel?.call();
+      },
+    );
+    return out.stream.map((m) => FileSearchEvent.fromJson(m! as Map));
+  }
+
+  @override
+  Future<String> reserveInboxFile({required String key, required String name}) async =>
+      await _op('reserve', [key, name]) as String;
+
+  @override
+  Future<int> sweepInbox() async => await _op('sweep', const []) as int;
 
   @override
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
   }) {
     final job = _MainUpload(onProgress);
-    _ensure().then((worker) => worker.startUpload(job, localPath, remotePath), onError: (Object e) => job.fail(e));
+    _ensure().then((worker) => worker.startUpload(job, localPath, inboxPath), onError: (Object e) => job.fail(e));
     return job;
   }
 
@@ -148,8 +219,37 @@ class IsolateTransport implements HerdrTransport {
   int get uploadProgressMessages => _live?.uploadProgress ?? 0;
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) async =>
-      (await _ensure()).openExec(command, zipped: zipped);
+  Future<Object?> hostCall(String service, String method, [Map<String, Object?> args = const {}, Duration? timeout]) =>
+      _op('hcall', [service, method, args, timeout?.inMilliseconds]);
+
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) async =>
+      (await _ensure()).openHostStream(service, method, args);
+
+  @override
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) {
+    var cancelled = false;
+    void Function()? cancel;
+    late final StreamController<Object?> out;
+    out = StreamController<Object?>(
+      onListen: () async {
+        try {
+          final worker = await _ensure();
+          if (cancelled) return;
+          cancel = worker.openMessages(service, method, args, out);
+        } on Object catch (e) {
+          if (cancelled) return;
+          out.addError(e);
+          await out.close();
+        }
+      },
+      onCancel: () {
+        cancelled = true;
+        cancel?.call();
+      },
+    );
+    return out.stream;
+  }
 
   /// How many batches of exec lines the main isolate has received from the
   /// current worker: lines cross the boundary in batches, never one message
@@ -277,6 +377,7 @@ class _Worker {
 
   final _requests = <int, Completer<Map<String, dynamic>>>{};
   final _streams = <int, StreamController<Map<String, dynamic>>>{};
+  final _messageStreams = <int, StreamController<Object?>>{};
   final _ops = <int, Completer<Object?>>{};
   final _execs = <int, _MainExec>{};
   final _opens = <int, Completer<ExecChannel>>{};
@@ -308,20 +409,29 @@ class _Worker {
   }
 
   /// A file operation in the worker. The reply is a JSON-like value, or a
-  /// [TransferableTypedData] for bytes.
-  Future<Object?> op(String name, List<Object?> args) {
+  /// [TransferableTypedData] for bytes. [cancelled] completing tells the worker
+  /// that nobody waits for the answer any more (the operation may then end
+  /// early, with whatever it answers a cancelled call).
+  Future<Object?> op(String name, List<Object?> args, {Future<void>? cancelled}) {
     if (_dead) {
       return Future.error(const HerdrTransportException('herdr connection lost'));
     }
     final id = _nextId++;
     final reply = _ops[id] = Completer<Object?>();
     _to.send(['op', id, name, args]);
+    if (cancelled != null) {
+      unawaited(
+        cancelled.then((_) {
+          if (_ops.containsKey(id)) post(['opcancel', id]);
+        }, onError: (Object _) {}),
+      );
+    }
     return reply.future;
   }
 
   /// Starts [job]'s upload in the worker. Only paths go up and counters come
   /// back; the file is read and sent on the other side.
-  void startUpload(_MainUpload job, String localPath, String remotePath) {
+  void startUpload(_MainUpload job, String localPath, String inboxPath) {
     if (_dead) {
       job.fail(const HerdrTransportException('herdr connection lost'));
       return;
@@ -332,7 +442,7 @@ class _Worker {
     job.bind(() {
       if (_uploads.remove(id) != null) post(['upcancel', id]);
     });
-    _to.send(['up', id, localPath, remotePath]);
+    _to.send(['up', id, localPath, inboxPath]);
   }
 
   /// Forwards the worker's events into [out]; returns the cancel callback.
@@ -351,17 +461,52 @@ class _Worker {
     };
   }
 
-  /// Opens [command] in the worker. The channel is registered before the
-  /// worker answers, so lines that follow the answer in the same turn are not
-  /// lost; they wait in the channel until its stream is listened to.
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) {
+  /// Forwards the messages of the host stream `[service].[method]` into [out];
+  /// returns the cancel callback (which ends the stream on the host).
+  void Function() openMessages(
+    String service,
+    String method,
+    Map<String, Object?> args,
+    StreamController<Object?> out,
+  ) => _openMessageStream(out, (id) => ['hmsg', id, service, method, args]);
+
+  /// Forwards what the worker's `watchFile(path)` says (a stat as JSON, or null
+  /// when nothing is there) into [out]; returns the cancel callback.
+  void Function() openWatch(String path, StreamController<Object?> out) =>
+      _openMessageStream(out, (id) => ['fwatch', id, path]);
+
+  /// Forwards the events of the worker's `searchFiles(spec)` (as JSON) into
+  /// [out]; returns the cancel callback.
+  void Function() openSearch(FileSearchSpec spec, StreamController<Object?> out) =>
+      _openMessageStream(out, (id) => ['fsearch', id, spec.toJson()]);
+
+  void Function() _openMessageStream(StreamController<Object?> out, List<Object?> Function(int id) open) {
+    if (_dead) {
+      out
+        ..addError(const HerdrTransportException('herdr connection lost'))
+        ..close();
+      return () {};
+    }
+    final id = _nextId++;
+    _messageStreams[id] = out;
+    _to.send(open(id));
+    return () {
+      if (_messageStreams.remove(id) != null) post(['hcancel', id]);
+    };
+  }
+
+  /// Opens `[service].[method]` of the agent helper in the worker, with [args];
+  /// its lines cross like an exec's. The channel is registered before the worker
+  /// answers, so lines that follow the answer in the same turn are not lost;
+  /// they wait in the channel until its stream is listened to.
+  Future<ExecChannel> openHostStream(String service, String method, Map<String, Object?> args) {
     if (_dead) {
       return Future.error(const HerdrTransportException('herdr connection lost'));
     }
     final id = _nextId++;
     _execs[id] = _MainExec(this, id);
     final opened = _opens[id] = Completer<ExecChannel>();
-    _to.send(['exec', id, command, zipped]);
+    _to.send(['hstream', id, service, method, args]);
     return opened.future;
   }
 
@@ -386,6 +531,16 @@ class _Worker {
         }
       case 'evtDone':
         _streams.remove(m[1] as int)?.close();
+      case 'hevt':
+        _messageStreams[m[1] as int]?.add(m[2]);
+      case 'herr':
+        final out = _messageStreams.remove(m[1] as int);
+        if (out != null) {
+          out.addError(_decodeOpError(m));
+          out.close();
+        }
+      case 'hdone':
+        _messageStreams.remove(m[1] as int)?.close();
       case 'xopen':
         _opens.remove(m[1] as int)?.complete(_execs[m[1] as int]);
       case 'xopenErr':
@@ -414,21 +569,29 @@ class _Worker {
     }
   }
 
-  /// `['err', id, kind, a, b]`: api -> (code, message), else (message, fatal).
-  Object _decodeError(List<Object?> m) => m[2] == 'api'
-      ? HerdrApiException(m[3]! as String, m[4]! as String)
-      : HerdrTransportException(m[3]! as String, fatal: m[4] == true);
+  /// `['err', id, kind, a, b]`: api -> (code, message), host -> (code, message,
+  /// retryable), else (message, fatal).
+  Object _decodeError(List<Object?> m) => switch (m[2]) {
+    'api' => HerdrApiException(m[3]! as String, m[4]! as String),
+    'host' =>
+      m[3] == 'link_lost'
+          ? HostLinkLost(m[4]! as String)
+          : HostException(m[3]! as String, m[4]! as String, retryable: m[5] == true),
+    _ => HerdrTransportException(m[3]! as String, fatal: m[4] == true),
+  };
 
-  /// `['oerr', id, 'file', kind, message, fatal, path]`, or the shapes of
-  /// [_decodeError] after the id.
-  Object _decodeOpError(List<Object?> m) => m[2] == 'file'
-      ? RemoteFileException(
+  /// `['oerr', id, 'file', kind, message, fatal, path]` (kind `changed` is a
+  /// [RemoteFileChanged]), or the shapes of [_decodeError] after the id.
+  Object _decodeOpError(List<Object?> m) => m[2] != 'file'
+      ? _decodeError(m)
+      : m[3] == 'changed'
+      ? RemoteFileChanged(m[4]! as String, path: m[6] as String?)
+      : RemoteFileException(
           RemoteFileErrorKind.parse(m[3] as String?),
           m[4]! as String,
           fatal: m[5] == true,
           path: m[6] as String?,
-        )
-      : _decodeError(m);
+        );
 
   void _gone({bool graceful = false}) {
     if (_dead) return;
@@ -448,6 +611,12 @@ class _Worker {
         ..close();
     }
     _streams.clear();
+    for (final out in _messageStreams.values.toList()) {
+      out
+        ..addError(lost)
+        ..close();
+    }
+    _messageStreams.clear();
     for (final open in _opens.values.toList()) {
       open.completeError(lost);
     }
@@ -494,8 +663,10 @@ void _workerMain(List<Object?> init) {
   main.send(commands.sendPort);
 
   final subscriptions = <int, StreamSubscription<Map<String, dynamic>>>{};
+  final messageSubs = <int, StreamSubscription<Object?>>{};
   final execs = <int, _WorkerExec>{};
   final uploads = <int, UploadJob>{};
+  final opCancels = <int, Completer<void>>{};
   var closing = false;
 
   Future<void> serve(int id, String method, Map<String, dynamic> params) async {
@@ -506,11 +677,11 @@ void _workerMain(List<Object?> init) {
     }
   }
 
-  Future<void> serveExec(int id, String command, bool zipped) async {
+  Future<void> serveChannel(int id, Future<ExecChannel> Function() open) async {
     final ExecChannel channel;
     try {
       if (closing) throw const HerdrTransportException('Transport closed');
-      channel = await transport.openExec(command, zipped: zipped);
+      channel = await open();
     } on Object catch (e) {
       main.send(['xopenErr', id, ..._encodeError(e)]);
       return;
@@ -521,7 +692,10 @@ void _workerMain(List<Object?> init) {
     if (closing) unawaited(exec.close());
   }
 
-  void serveUpload(int id, String localPath, String remotePath) {
+  Future<void> serveHostStream(int id, String service, String method, Map<String, Object?> args) =>
+      serveChannel(id, () => transport.openHostStream(service, method, args));
+
+  void serveUpload(int id, String localPath, String inboxPath) {
     if (closing) {
       main.send(['uerr', id, ..._encodeError(const HerdrTransportException('Transport closed'))]);
       return;
@@ -530,7 +704,7 @@ void _workerMain(List<Object?> init) {
     try {
       job = transport.uploadFile(
         localPath: localPath,
-        remotePath: remotePath,
+        inboxPath: inboxPath,
         onProgress: (sent, total) => main.send(['uprog', id, sent, total]),
       );
     } on Object catch (e) {
@@ -549,22 +723,45 @@ void _workerMain(List<Object?> init) {
   }
 
   Future<void> serveOp(int id, String name, List<Object?> args) async {
+    // Completes when the main isolate stops waiting for this operation.
+    final stop = opCancels[id] = Completer<void>();
     try {
-      final Object out = switch (name) {
+      final Object? out = switch (name) {
         'stat' => (await transport.statFile(args[0]! as String)).toJson(),
         'list' => [for (final e in await transport.listDirectory(args[0]! as String)) e.toJson()],
         'read' => TransferableTypedData.fromList([
-          await transport.readFile(args[0]! as String, offset: args[1]! as int, length: args[2]! as int),
+          await transport.readFile(
+            args[0]! as String,
+            offset: args[1]! as int,
+            length: args[2]! as int,
+            ifMatch: args[3] == null || args[4] == null
+                ? null
+                : RemoteStat(
+                    path: args[0]! as String,
+                    kind: RemoteEntryKind.file,
+                    size: args[3]! as int,
+                    modified: DateTime.fromMillisecondsSinceEpoch(args[4]! as int, isUtc: true),
+                  ),
+          ),
         ]),
+        'thumb' => await _thumbOp(transport, args, stop.future),
         'real' => await transport.realPath(args[0]! as String),
         'web' => await _openWeb(transport, args),
-        'mkdirs' => await transport.makeDirs(args[0]! as String).then((_) => true),
-        'rm' => await transport.removeFile(args[0]! as String).then((_) => true),
+        'reserve' => await transport.reserveInboxFile(key: args[0]! as String, name: args[1]! as String),
+        'sweep' => await transport.sweepInbox(),
+        'hcall' => await transport.hostCall(
+          args[0]! as String,
+          args[1]! as String,
+          (args[2]! as Map).cast<String, Object?>(),
+          args[3] == null ? null : Duration(milliseconds: args[3]! as int),
+        ),
         _ => throw HerdrTransportException('Unknown file operation $name'),
       };
       main.send(['ores', id, out]);
     } on Object catch (e) {
       main.send(['oerr', id, ..._encodeOpError(e)]);
+    } finally {
+      opCancels.remove(id);
     }
   }
 
@@ -575,8 +772,10 @@ void _workerMain(List<Object?> init) {
         unawaited(serve(m[1]! as int, m[2]! as String, m[3]! as Map<String, dynamic>));
       case 'op':
         unawaited(serveOp(m[1]! as int, m[2]! as String, (m[3]! as List).cast<Object?>()));
-      case 'exec':
-        unawaited(serveExec(m[1]! as int, m[2]! as String, m[3] == true));
+      case 'hstream':
+        unawaited(
+          serveHostStream(m[1]! as int, m[2]! as String, m[3]! as String, (m[4]! as Map).cast<String, Object?>()),
+        );
       case 'up':
         serveUpload(m[1]! as int, m[2]! as String, m[3]! as String);
       case 'upcancel':
@@ -606,6 +805,53 @@ void _workerMain(List<Object?> init) {
             );
       case 'cancel':
         subscriptions.remove(m[1])?.cancel();
+      case 'hmsg':
+        final id = m[1]! as int;
+        messageSubs[id] = transport
+            .openHostMessages(m[2]! as String, m[3]! as String, (m[4]! as Map).cast<String, Object?>())
+            .listen(
+              (value) => main.send(['hevt', id, value]),
+              onError: (Object e) {
+                messageSubs.remove(id);
+                main.send(['herr', id, ..._encodeError(e)]);
+              },
+              onDone: () {
+                if (messageSubs.remove(id) != null) main.send(['hdone', id]);
+              },
+            );
+      case 'hcancel':
+        messageSubs.remove(m[1])?.cancel();
+      case 'fwatch':
+        final id = m[1]! as int;
+        messageSubs[id] = transport
+            .watchFile(m[2]! as String)
+            .listen(
+              (stat) => main.send(['hevt', id, stat?.toJson()]),
+              onError: (Object e) {
+                messageSubs.remove(id);
+                main.send(['herr', id, ..._encodeOpError(e)]);
+              },
+              onDone: () {
+                if (messageSubs.remove(id) != null) main.send(['hdone', id]);
+              },
+            );
+      case 'fsearch':
+        final id = m[1]! as int;
+        messageSubs[id] = transport
+            .searchFiles(FileSearchSpec.fromJson(m[2]! as Map))
+            .listen(
+              (event) => main.send(['hevt', id, event.toJson()]),
+              onError: (Object e) {
+                messageSubs.remove(id);
+                main.send(['herr', id, ..._encodeOpError(e)]);
+              },
+              onDone: () {
+                if (messageSubs.remove(id) != null) main.send(['hdone', id]);
+              },
+            );
+      case 'opcancel':
+        final stop = opCancels[m[1]];
+        if (stop != null && !stop.isCompleted) stop.complete();
       case 'bg':
         transport.setBackground(m[1] == true);
       case 'reset':
@@ -620,6 +866,10 @@ void _workerMain(List<Object?> init) {
           s.cancel();
         }
         subscriptions.clear();
+        for (final s in messageSubs.values) {
+          s.cancel();
+        }
+        messageSubs.clear();
         // Exec channels get a moment to flush stdin and report their end
         // before the connection goes; the main isolate does not wait longer.
         Future.wait([for (final e in execs.values.toList()) e.close()])
@@ -842,6 +1092,27 @@ class _MainUpload implements UploadJob {
   }
 }
 
+/// `['thumb']` in the worker: `[path, maxPx, size?, mtimeMs?]` in, the JPEG as
+/// transferable bytes (moved, not copied) or null out.
+Future<TransferableTypedData?> _thumbOp(HerdrTransport transport, List<Object?> args, Future<void> cancelled) async {
+  final size = args[2] as int?;
+  final mtime = args[3] as int?;
+  final bytes = await transport.thumbnailFile(
+    args[0]! as String,
+    maxPx: args[1]! as int,
+    expect: size == null || mtime == null
+        ? null
+        : RemoteStat(
+            path: args[0]! as String,
+            kind: RemoteEntryKind.file,
+            size: size,
+            modified: DateTime.fromMillisecondsSinceEpoch(mtime, isUtc: true),
+          ),
+    cancelled: cancelled,
+  );
+  return bytes == null ? null : TransferableTypedData.fromList([bytes]);
+}
+
 /// The worker's half of [IsolateTransport.openWebBridge]: `['static', machine,
 /// root]` or `['forward', machine, host, port]` in, `[port, token]` out.
 Future<List<Object?>> _openWeb(HerdrTransport transport, List<Object?> args) async {
@@ -858,11 +1129,15 @@ Future<List<Object?>> _openWeb(HerdrTransport transport, List<Object?> args) asy
 /// `[kind, a, b]` for [Object]s that cannot cross the isolate boundary.
 /// A file operation's error: `['file', kind, message, fatal, path]`, or the
 /// shapes of [_encodeError].
-List<Object?> _encodeOpError(Object e) =>
-    e is RemoteFileException ? ['file', e.kind.name, e.message, e.fatal, e.path] : _encodeError(e);
+List<Object?> _encodeOpError(Object e) => switch (e) {
+  RemoteFileChanged() => ['file', 'changed', e.message, e.fatal, e.path],
+  RemoteFileException() => ['file', e.kind.name, e.message, e.fatal, e.path],
+  _ => _encodeError(e),
+};
 
 List<Object?> _encodeError(Object e) => switch (e) {
   HerdrApiException(:final code, :final message) => ['api', code, message],
+  HostException(:final code, :final message, :final retryable) => ['host', code, message, retryable],
   HerdrTransportException(:final message, :final fatal) => ['transport', message, fatal],
   _ => ['transport', '$e', false],
 };

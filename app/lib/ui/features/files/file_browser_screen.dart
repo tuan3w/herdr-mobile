@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/models/remote_file.dart';
+import '../../../data/models/remote_search.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/plural.dart';
 
@@ -12,6 +13,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'file_browser_view_model.dart';
 import 'file_format.dart';
+import 'file_search_screen.dart';
 import 'file_listing.dart';
 import 'file_row.dart';
 import 'file_thumb.dart';
@@ -114,6 +116,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> implements _Brows
   late FileBrowserViewModel _vm;
   ModalRoute<Object?>? _route;
   var _navigating = false;
+  var _searching = false;
   var _announced = false;
 
   FileBrowserMode get _mode => widget.mode;
@@ -196,7 +199,37 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> implements _Brows
     }
   }
 
-  void _open(RemoteEntry e) {
+  /// Searches this folder and the folders below it. A tap on a match opens it
+  /// as a tap on one of this folder's own rows does, over the search (which
+  /// stays, with its matches, to come back to). A picker's answer pops the
+  /// search and then this browser.
+  Future<void> _openSearch() async {
+    if (_searching || !_vm.resolved) return;
+    _searching = true;
+    Haptics.tick();
+    final navigator = Navigator.of(context);
+    try {
+      final chosen = await navigator.push<String>(
+        MaterialPageRoute<String>(
+          builder: (_) => FileSearchScreen(
+            files: widget.machine.files,
+            root: _vm.path,
+            rootName: _vm.name,
+            kind: _mode == FileBrowserMode.pickDirectory ? FileSearchKind.dir : FileSearchKind.any,
+            hidden: _session.options.showHidden,
+            thumbs: widget.thumbs,
+            clock: widget.clock,
+            onOpen: (entry, siblings) => _open(entry, siblings: siblings),
+          ),
+        ),
+      );
+      if (chosen != null && _mode != FileBrowserMode.browse && navigator.mounted) navigator.pop(chosen);
+    } finally {
+      _searching = false;
+    }
+  }
+
+  void _open(RemoteEntry e, {List<RemoteEntry>? siblings}) {
     Haptics.tick();
     FocusManager.instance.primaryFocus?.unfocus();
     if (e.isDirectory) {
@@ -223,7 +256,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> implements _Brows
             widget.machine,
             RemoteStat(path: e.path, kind: RemoteEntryKind.file, size: e.size, modified: e.modified, mode: e.mode),
             // A picture pages through the folder's other pictures.
-            siblings: _vm.entries,
+            siblings: siblings ?? _vm.entries,
           ),
         ),
       );
@@ -247,6 +280,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> implements _Brows
       onOpen: _open,
       onOpenPhoto: (i) => unawaited(openFolderPhotos(context, widget.machine, _vm.photos, i)),
       onGoTo: _goTo,
+      onSearch: () => unawaited(_openSearch()),
     ),
   );
 }
@@ -259,6 +293,7 @@ class _BrowserView extends StatefulWidget {
     required this.onOpen,
     required this.onOpenPhoto,
     required this.onGoTo,
+    required this.onSearch,
   });
 
   final FileBrowserMode mode;
@@ -268,6 +303,9 @@ class _BrowserView extends StatefulWidget {
   /// A tile of the photo grid was tapped: the index among [FileBrowserViewModel.photos].
   final ValueChanged<int> onOpenPhoto;
   final ValueChanged<String> onGoTo;
+
+  /// The header's search: a search of this folder and the folders below it.
+  final VoidCallback onSearch;
 
   @override
   State<_BrowserView> createState() => _BrowserViewState();
@@ -314,16 +352,11 @@ class _BrowserViewState extends State<_BrowserView> {
               style: Type.secondary.copyWith(color: ds.textSecondary),
             ),
             actions: [
-              if (showToggle)
-                CircleButton(
-                  icon: HerdrIcons.pictures,
-                  tooltip: showGrid ? 'List' : 'Photos',
-                  active: showGrid,
-                  onPressed: () {
-                    Haptics.tick();
-                    vm.setPhotoGrid(!showGrid);
-                  },
-                ),
+              CircleButton(
+                icon: LucideIcons.search,
+                tooltip: 'Search in ${vm.name}',
+                onPressed: vm.resolved && failed == null ? widget.onSearch : null,
+              ),
               CircleButton(
                 icon: vm.showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
                 tooltip: vm.showHidden ? 'Hide hidden files' : 'Show hidden files',
@@ -336,7 +369,17 @@ class _BrowserViewState extends State<_BrowserView> {
           ),
           if (showTools)
             SliverToBoxAdapter(
-              child: _Tools(controller: _search, compact: _pick, search: vm.baseCount >= _searchFrom || vm.searching),
+              child: _Tools(
+                controller: _search,
+                compact: _pick,
+                search: vm.baseCount >= _searchFrom || vm.searching,
+                photos: showToggle,
+                grid: showGrid,
+                onPhotos: () {
+                  Haptics.tick();
+                  vm.setPhotoGrid(!showGrid);
+                },
+              ),
             ),
           if (vm.loading)
             const SliverFillRemaining(child: DelayedSkeleton(rows: true))
@@ -446,7 +489,14 @@ class _BrowserViewState extends State<_BrowserView> {
 /// The find field appears from [_searchFrom] entries up (or while a search is
 /// on): in a folder of a few files it is only height.
 class _Tools extends StatelessWidget {
-  const _Tools({required this.controller, required this.compact, required this.search});
+  const _Tools({
+    required this.controller,
+    required this.compact,
+    required this.search,
+    required this.photos,
+    required this.grid,
+    required this.onPhotos,
+  });
 
   final TextEditingController controller;
 
@@ -455,6 +505,12 @@ class _Tools extends StatelessWidget {
 
   /// The find field is there (a folder of a few entries needs none).
   final bool search;
+
+  /// The folder has enough pictures for a grid: the chip that switches between
+  /// the list and the grid ([grid] says which is shown).
+  final bool photos;
+  final bool grid;
+  final VoidCallback onPhotos;
 
   @override
   Widget build(BuildContext context) {
@@ -486,6 +542,18 @@ class _Tools extends StatelessWidget {
                       onTap: () => unawaited(_showSortSheet(context, options)),
                     ),
                     const SizedBox(width: Gap.sm),
+                    if (photos) ...[
+                      AppChip(
+                        label: 'Photos',
+                        semanticLabel: grid
+                            ? 'Photos, shown as a grid. Switch back to the list'
+                            : 'Show the pictures as a grid',
+                        icon: HerdrIcons.pictures,
+                        selected: grid,
+                        onTap: onPhotos,
+                      ),
+                      const SizedBox(width: Gap.sm),
+                    ],
                     AppChip(
                       label: 'Changed in the last hour',
                       icon: LucideIcons.clock,

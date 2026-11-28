@@ -2,9 +2,9 @@
 //
 //   flutter test benchmark/transfer_bench.dart
 //
-// The real transport stack (IsolateTransport -> dartssh2 -> the remote mux
-// script -> a unix socket) talking to a deterministic stand-in for herdr
-// (`fake_herdr.py`), over SSH to this machine's own sshd. The workload is what
+// The real transport stack (IsolateTransport -> dartssh2 -> the agent helper's
+// `herdr.mux` -> a unix socket) talking to a deterministic stand-in for herdr
+// (the testkit's `fake-herdr`), over SSH to this machine's own sshd. The workload is what
 // a session asks for: snapshot refreshes, pane screen reads (300 ANSI rows),
 // the board's 24-row preview reads, and the stream of `pane_updated` events a
 // working agent causes (herdr sends ~10 a second, ~770 B each). It goes through HerdrApi, so the
@@ -15,14 +15,17 @@
 //    SSH framing and encryption overhead included;
 //  * cpu_ms: CPU time of this process (main isolate + transport isolate),
 //    i.e. the phone's cost of cipher, decompression, JSON and models. Remote
-//    CPU (python, sshd) is not counted;
+//    CPU (the helper, sshd) is not counted;
 //  * wall_ms: elapsed, requests issued one after another.
 //
 // transfer_ms is the headline: cpu_ms plus the time the wire bytes take on a
 // modelled link (ASSUMPTION: 1.25 MB/s, i.e. 10 Mbit/s; round trips are not
 // modelled because the request count does not change).
 //
-// Needs sshd on localhost accepting ~/.ssh/herdr-mobile for $USER, python3.
+// Needs sshd on localhost accepting ~/.ssh/herdr-mobile for $USER, the testkit
+// binaries (`cd rust && cargo build --release -p testkit`, or HERDR_TESTKIT_DIR)
+// and the agent helper of this app version installed in your home, with
+// HERDR_BENCH_HELPER_INSTALLED=1 to say so (see the test).
 // Results go to $BENCH_OUT (METRIC lines): `flutter test` decorates stdout.
 import 'dart:async';
 import 'dart:convert';
@@ -32,6 +35,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/transport_factory.dart';
+
+import 'support/local_keeper.dart' show testkitBinary;
 
 const _linkBytesPerMs = 1250.0; // 10 Mbit/s
 
@@ -94,13 +99,29 @@ Future<_Result> _measure(Future<void> Function() work) async {
 
 void main() {
   test('transfer', () async {
+    // The transport talks to the machine through the agent helper
+    // (`herdr-host-<version>` in the sshd user's REAL home: sshd cannot be given
+    // another HOME). The bench never installs it there, and never touches
+    // ~/.herdr-mobile: it runs only when the owner says the helper is in place.
+    if (Platform.environment['HERDR_BENCH_HELPER_INSTALLED'] != '1') {
+      markTestSkipped(
+        'needs the agent helper for this app version installed on this machine '
+        '(~/.herdr-mobile/bin/herdr-host-<version>, tool/install-host.sh): '
+        'set HERDR_BENCH_HELPER_INSTALLED=1 once it is. The bench never installs into your home.',
+      );
+      return;
+    }
+    final fakeHerdr = testkitBinary('fake-herdr');
+    if (!fakeHerdr.existsSync()) {
+      fail('${fakeHerdr.path} is missing: cd rust && cargo build --release -p testkit (or set HERDR_TESTKIT_DIR)');
+    }
     final home = Platform.environment['HOME']!;
     final user = Platform.environment['USER'] ?? Platform.environment['LOGNAME']!;
     final key = File('$home/.ssh/herdr-mobile').readAsStringSync();
 
     final dir = Directory.systemTemp.createTempSync('transfer_bench');
     final sock = '${dir.path}/herdr.sock';
-    final fake = await Process.start('python3', ['benchmark/fake_herdr.py', sock]);
+    final fake = await Process.start(fakeHerdr.path, [sock]);
     addTearDown(() {
       fake.kill();
       dir.deleteSync(recursive: true);

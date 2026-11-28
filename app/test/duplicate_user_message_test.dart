@@ -2,8 +2,8 @@
 library;
 
 // One message the person typed must show once. The scenario of the bug report,
-// end to end, with the REAL keeper script and the app's real session object
-// (only the agent is scripted: test/support/fake_acp_agent.py):
+// end to end, with the REAL keeper and the app's real session object
+// (only the agent is scripted: `fake-acp-agent` of rust/crates/testkit):
 //
 //   a long turn runs; the person types a message (omp has no steering: it
 //   queues); the link drops and re-attaches; the turn ends; omp is busy with a

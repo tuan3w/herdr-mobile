@@ -71,7 +71,7 @@ sheets are dark too.
   was cached (owner, 2026-11-24: "always show loading even it cached"). A wait
   that is real still says so, and a screen reader hears nothing for one that
   is not.
-  Files are read over SFTP in 2 MB pieces (`photoReadChunk`, `RemoteFiles.readAll`
+  Files are read through the file service (the helper's `fs`, else SFTP) in 2 MB pieces (`photoReadChunk`, `RemoteFiles.readAll`
   with progress and a `ReadCancel`), up to 40 MB (`photoReadCap`); over it
   nothing is read and the panel says `This photo is 52 MB. The viewer opens
   photos up to 40 MB.` with `Share…`, which copies the file to the cache
@@ -79,7 +79,17 @@ sheets are dark too.
   (`PhotoExport.shareLarge`). Save and share use `gal` (MediaStore, album
   `herdr`, no permission from Android 10) and `share_plus`.
 - **Folder grid** (`files/photo_grid.dart`, `photo_thumbs.dart`): a folder with
-  6 or more pictures gets a `Photos` header toggle that swaps the list for a
-  3-column grid; at most 3 thumbnail reads at once, smallest first, files over
-  2 MB are never read for a thumbnail (a glyph and the size), scrolled-away
-  tiles cancel their read.
+  6 or more pictures gets a `Photos` chip (under the title, beside the folder
+  filter: the header already holds Search and hidden files, and
+  `docs/DESIGN.md` allows two trailing actions) that swaps the list for a
+  3-column grid; at most 3 thumbnail loads at once, smallest first, scrolled-away
+  tiles cancel theirs. With the agent helper each tile asks the machine for a
+  256 px thumbnail (`fs.thumb`: a few KB to tens of KB, any picture up to
+  64 MiB, kept on disk under the one key the file list shares); a picture the
+  helper cannot make one of (HEIC, RAW, SVG) is asked once and then left alone.
+  Cancelling a tile stops the decoding on the machine. Without the helper
+  (SFTP) the file itself is read, and files over 2 MB are never read for a
+  thumbnail (a glyph and the size). Measured on a fake host in a test, a 3 MB
+  JPEG tile came to 3,815 bytes (a gradient fixture, so a real photo is likely
+  10-30 KB, not measured); before, that tile was a glyph or the whole 1.45 MB
+  file. Not measured on a phone.

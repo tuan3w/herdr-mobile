@@ -11,7 +11,6 @@ def t(*a): return subprocess.run(["tmux", "-L", "bgw", *a], capture_output=True,
 pids = []
 for name, binary in (("old", OLD), ("new", NEW)):
     home = f"{S}/home8{name}"; os.makedirs(home + "/proj", exist_ok=True)
-    env = dict(os.environ, HOME=home); subprocess.run(["sh", REPO + "/tool/install-keeper.sh"], env=env, capture_output=True)
     t("kill-server")
     t("new-session", "-d", "-x", "90", "-y", "20", "-s", "s", "-c", home + "/proj", "bash --norc --noprofile -i")
     time.sleep(0.5)

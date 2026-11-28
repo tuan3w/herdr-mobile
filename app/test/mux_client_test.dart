@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show zlib;
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/services/bridge_command.dart' show muxReadyLine;
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/mux_client.dart';
 
-const _ready = 'herdr-mux-v1';
+const _ready = muxReadyLine;
 
 class _FakeChannel implements MuxChannel {
   final _controller = StreamController<String>();
@@ -160,6 +160,137 @@ void main() {
         final e = started.error as MuxUnavailable;
         expect(e.linkLost, isFalse);
         expect(ch.closed, isTrue);
+      });
+    });
+  });
+
+  group('started without waiting for ready', () {
+    test('the client is returned at once, the request leaves before ready and is answered after it', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false).then((c) => client = c);
+        async.flushMicrotasks();
+        expect(client, isNotNull, reason: 'no wait for the remote');
+
+        final a = _Outcome(client!.request('session.snapshot'));
+        async.flushMicrotasks();
+        expect(ch.sent.map((m) => m['method']), ['session.snapshot'], reason: 'sent before ready');
+
+        ch.emit('Last login: today');
+        ch.emit(_ready);
+        ch.reply(ch.idOf(0), {'ok': true});
+        async.flushMicrotasks();
+
+        expect(a.value, {'ok': true});
+        expect(client!.isAlive, isTrue);
+      });
+    });
+
+    test('the heartbeat starts after ready and not before, whatever was configured meanwhile', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(
+          ch,
+          waitForReady: false,
+          heartbeatInterval: const Duration(seconds: 2),
+        ).then((c) => client = c);
+        async.flushMicrotasks();
+        client!.setHeartbeat(const Duration(seconds: 3), const Duration(seconds: 5), beatNow: true);
+        async.elapse(const Duration(seconds: 4));
+        expect(ch.sent, isEmpty, reason: 'no ping before ready');
+
+        ch.emit(_ready);
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 3));
+
+        expect(ch.sent.map((m) => m['method']), ['ping'], reason: 'the interval set meanwhile');
+      });
+    });
+
+    test('a host that cannot serve the mux fails every outstanding request with MuxUnavailable, not a lost link', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false).then((c) => client = c);
+        async.flushMicrotasks();
+        final a = _Outcome(client!.request('session.snapshot'));
+        final b = _Outcome(client!.request('ping'));
+        async.flushMicrotasks();
+
+        ch.fail(const MuxUnavailable('no herdr socket at /x for session default'));
+        async.flushMicrotasks();
+
+        for (final o in [a, b]) {
+          final e = o.error as MuxUnavailable;
+          expect(e.linkLost, isFalse);
+          expect(e.helperMissing, isFalse);
+          expect(e.message, contains('no herdr socket'));
+        }
+        expect(client!.isAlive, isFalse);
+        expect(ch.closed, isTrue);
+      });
+    });
+
+    test('a missing helper is flagged so the caller can install it', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false).then((c) => client = c);
+        async.flushMicrotasks();
+        final a = _Outcome(client!.request('ping'));
+        async.flushMicrotasks();
+
+        ch.fail(const MuxUnavailable('not installed', helperMissing: true));
+        async.flushMicrotasks();
+
+        expect((a.error as MuxUnavailable).helperMissing, isTrue);
+      });
+    });
+
+    test('a link that drops before ready fails the outstanding requests as a lost link', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false).then((c) => client = c);
+        async.flushMicrotasks();
+        final a = _Outcome(client!.request('ping'));
+        async.flushMicrotasks();
+
+        ch.remoteExit(null);
+        async.flushMicrotasks();
+
+        expect((a.error as MuxUnavailable).linkLost, isTrue);
+      });
+    });
+
+    test('never becoming ready fails the outstanding requests after the startup timeout', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false, startupTimeout: const Duration(seconds: 5)).then((c) => client = c);
+        async.flushMicrotasks();
+        final a = _Outcome(client!.request('ping'));
+        async.elapse(const Duration(seconds: 4));
+        expect(a.done, isFalse);
+        async.elapse(const Duration(seconds: 2));
+
+        expect((a.error as MuxUnavailable).linkLost, isFalse);
+        expect(client!.isAlive, isFalse);
+      });
+    });
+
+    test('closing while it starts leaves no timer behind', () {
+      fakeAsync((async) {
+        final ch = _FakeChannel();
+        MuxClient? client;
+        MuxClient.connect(ch, waitForReady: false).then((c) => client = c);
+        async.flushMicrotasks();
+        client!.close();
+        async.flushMicrotasks();
+
+        expect(async.pendingTimers, isEmpty);
       });
     });
   });
@@ -596,150 +727,4 @@ void main() {
       });
     });
   });
-
-  group('muxMessages', () {
-    final text = 'Xin chào \u001b[1mđường dẫn\u001b[0m\r\n' * 50;
-    final big = jsonEncode({
-      'id': 'a',
-      'result': {'text': text},
-    });
-    final stream = [
-      ...utf8.encode('herdr-mux-v1\n'),
-      ...utf8.encode('{"id":"p","result":{"type":"pong"}}\n'),
-      ..._frame(big),
-      ...utf8.encode('{"id":"q","result":{"text":"đường"}}\n'),
-      ..._frame(big),
-    ];
-    final expected = [
-      'herdr-mux-v1',
-      '{"id":"p","result":{"type":"pong"}}',
-      big,
-      '{"id":"q","result":{"text":"đường"}}',
-      big,
-    ];
-
-    test('plain lines and deflated frames come out in order, however the bytes are cut', () async {
-      for (final size in [1, 2, 3, 7, 64, 1000, stream.length]) {
-        expect(
-          await muxMessages(Stream.fromIterable(_chunks(stream, size))).toList(),
-          expected,
-          reason: 'chunks of $size bytes',
-        );
-      }
-    });
-
-    test('a message of several MB crosses the buffer intact', () async {
-      final rows = List.generate(120000, (i) => 'row $i ${i * 7919 % 1000003}');
-      final huge = jsonEncode({
-        'id': 'h',
-        'result': {'text': rows.join('\r\n')},
-      });
-      expect(huge.length, greaterThan(2 * 1024 * 1024));
-
-      final got = await muxMessages(
-        Stream.fromIterable(_chunks([..._frame(huge), ...utf8.encode('{"id":"z"}\n')], 16384)),
-      ).toList();
-
-      expect(got, [huge, '{"id":"z"}']);
-    });
-
-    test('a bad header costs only that line', () async {
-      final junk = [
-        ...ascii.encode('Zxyz\n'), // no length
-        ...ascii.encode('Z-3\n'),
-        ...ascii.encode('Z999999999999\n'),
-      ];
-      final got = await muxMessages(Stream.fromIterable(_chunks([...junk, ...utf8.encode('{"id":"ok"}\n')], 3)))
-          .toList();
-
-      expect(got, ['{"id":"ok"}']);
-    });
-
-    test('a frame that does not inflate is an error and ends the reading', () async {
-      final stream = [
-        ..._frame('{"id":"a"}'),
-        ...ascii.encode('Z5\n'),
-        1, 2, 3, 4, 5, // not zlib data
-        ..._frame('{"id":"b"}'),
-      ];
-      final got = <String>[];
-      final errors = <Object>[];
-      await muxMessages(Stream.fromIterable(_chunks(stream, 4))).handleError(errors.add).forEach(got.add);
-
-      expect(got, ['{"id":"a"}']);
-      expect(errors, hasLength(1));
-    });
-
-    group('event stream (E frames)', () {
-      // The events script sends one zlib stream, cut into frames after every
-      // event. Stored blocks make the same kind of stream without a deflater:
-      // a header, then one non-final block per frame (what a sync flush ends
-      // with).
-      List<int> stored(List<int> data, {bool first = false}) {
-        final z = [
-          if (first) ...[0x78, 0x01],
-          0x00,
-          data.length & 0xff,
-          data.length >> 8,
-          ~data.length & 0xff,
-          (~data.length >> 8) & 0xff,
-          ...data,
-        ];
-        return [...ascii.encode('E${z.length}\n'), ...z];
-      }
-
-      final ack = utf8.encode('{"id":"s","result":{"type":"subscription_started"}}\n');
-      final events = [
-        '{"event":"pane_updated","data":{"pane":{"pane_id":"w1:p1","terminal_title":"π ⠋ đường"}}}',
-        '{"event":"pane_updated","data":{"pane":{"pane_id":"w1:p1","terminal_title":"π ⠙ đường"}}}',
-        '{"event":"tab_closed"}',
-      ];
-
-      test('the ack comes plain, then each event, however the bytes are cut', () async {
-        final stream = [
-          ...ack,
-          ...stored(utf8.encode('${events[0]}\n'), first: true),
-          ...stored(utf8.encode('${events[1]}\n${events[2]}\n')),
-        ];
-        for (final size in [1, 2, 5, 17, 100, stream.length]) {
-          expect(await muxMessages(Stream.fromIterable(_chunks(stream, size))).toList(), [
-            utf8.decode(ack).trim(),
-            ...events,
-          ], reason: 'chunks of $size bytes');
-        }
-      });
-
-      test('a line may continue in the next frame', () async {
-        final line = utf8.encode('${events[0]}\n');
-        final cut = line.length ~/ 2 + 1; // inside a multi-byte character too
-        final stream = [...stored(line.sublist(0, cut), first: true), ...stored(line.sublist(cut))];
-        expect(await muxMessages(Stream.fromIterable(_chunks(stream, 7))).toList(), [events[0]]);
-      });
-
-      test('a stream that stops inflating is an error, and ends the reading', () async {
-        final stream = [
-          ...stored(utf8.encode('${events[0]}\n'), first: true),
-          ...ascii.encode('E4\n'),
-          0xff, 0xff, 0xff, 0xff, // not a deflate block
-          ...stored(utf8.encode('${events[1]}\n')),
-        ];
-        final got = <String>[];
-        final errors = <Object>[];
-        await muxMessages(Stream.fromIterable(_chunks(stream, 9))).handleError(errors.add).forEach(got.add);
-
-        expect(got, [events[0]]);
-        expect(errors, hasLength(1));
-      });
-    });
-  });
 }
-
-/// A deflated frame as the mux script writes it.
-List<int> _frame(String json) {
-  final z = zlib.encode(utf8.encode(json));
-  return [...ascii.encode('Z${z.length}\n'), ...z];
-}
-
-List<List<int>> _chunks(List<int> bytes, int size) => [
-  for (var i = 0; i < bytes.length; i += size) bytes.sublist(i, i + size > bytes.length ? bytes.length : i + size),
-];

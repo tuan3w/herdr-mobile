@@ -6,16 +6,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
+import 'package:herdr_mobile/data/app_info.dart';
+import 'package:herdr_mobile/data/host/host_link.dart' show HostMissing;
 import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
 
-// The commands of the REAL keeper script (python3) against the scripted ACP agent
-// (`test/support/fake_acp_agent.py`); see support/keeper_harness.dart.
+// The commands of the REAL keeper (the `herdr-host` binary) against the
+// scripted ACP agent (`fake-acp-agent` of `rust/crates/testkit`); see
+// support/keeper_harness.dart.
 
 void main() {
-  final hasPython = pythonDir() != null;
-
   Future<KeeperHost> newHost([Map<String, String> env = const {}, bool install = true]) async {
     final h = await KeeperHost.create(env);
     addTearDown(h.dispose);
@@ -23,188 +24,126 @@ void main() {
     return h;
   }
 
-  group('commands', skip: hasPython ? false : 'python3 is not installed', () {
+  group('commands', () {
     test('probe lists the routes the host can run', () async {
       final h = await newHost();
-      final r = await h.run(keeperProbeCommand());
-      expect(r.code, 0, reason: r.err);
-      final routes = (asJson(jsonDecode(r.out))['routes'] as List).cast<String>();
+      final routes = await h.agentHost.available();
       expect(routes, contains('omp'));
       expect(agentRoutes.map((a) => a.id), containsAll(routes));
     });
 
-    test('the blob command rejects what cannot reach a remote shell safely, and quotes a path as one word', () {
-      const hash = '0123456789abcdef';
-      for (final bad in ['', 'a\nb.jsonl', 'a\rb.jsonl', 'a\u0000b.jsonl', 'a\u007fb.jsonl', 'x' * 5000]) {
-        expect(
-          () => keeperBlobCommand(bad, start: 0, hash: hash),
-          throwsArgumentError,
-          reason: bad.length > 50 ? 'long' : bad,
-        );
-      }
-      expect(() => keeperBlobCommand('/a.jsonl', start: -1, hash: hash), throwsArgumentError);
-      for (final bad in [
-        '',
-        '0123456789abcde',
-        '0123456789abcdef0',
-        '0123456789ABCDEF',
-        '0123456789abcdeg',
-        '0123456789abcde;',
-        r'$(touch x)abcdefg',
-      ]) {
-        expect(() => keeperBlobCommand('/a.jsonl', start: 0, hash: bad), throwsArgumentError, reason: bad);
-      }
-      // The command travels as base64 of a small script; its last line is the exec.
-      final command = keeperBlobCommand("/home/u/it's \$(x).jsonl", start: 42, hash: hash);
-      final script = utf8.decode(base64.decode(RegExp(r'echo (\S+) \|').firstMatch(command)![1]!));
-      expect(
-        script.trimRight().split('\n').last,
-        endsWith(r"""'blob' '/home/u/it'\''s $(x).jsonl' '42' '0123456789abcdef'"""),
-      );
+    test('the commands are short', () {
+      expect(hostServeCommand().length, lessThan(1024));
+      // The install command embeds the full install-host.sh script; it is
+      // self-contained (nothing travels on stdin) and must fit under the
+      // 9000-byte Dropbear exec cap.
+      expect(keeperInstallCommand().length, lessThan(9000));
     });
 
-    test('every command but install is short', () {
-      final commands = [
-        keeperProbeCommand(),
-        keeperListCommand(),
-        keeperStartCommand(agent: 'omp', cwd: '/tmp/${'x' * 200}'),
-        keeperAttachCommand('abc234'),
-        keeperKillCommand('abc234'),
-      ];
-      for (final c in commands) {
-        expect(c.length, lessThan(1024));
-      }
-      expect(keeperInstallCommand().length, lessThan(2048)); // Dropbear refuses an exec over 9000 bytes
-      final payload = keeperInstallPayload();
-      // It travels on stdin, so there is no hard limit; this only catches a script that
-      // doubled by accident (it was 58 KB before `blob`).
-      expect(payload.length, inInclusiveRange(10000, 80000));
-      expect(payload.trimRight().split('\n').every((l) => l.length <= 76), isTrue);
-      expect(payload.endsWith('\n'), isTrue);
+    test('the install command pins this app version and carries tool/install-host.sh verbatim', () {
+      // The phone embeds the installer in keeper_command.dart; the repo file is
+      // the source of truth. Decode the command's base64 and check it is the
+      // file behind the version assignment, so the two cannot drift.
+      final file = File('../tool/install-host.sh');
+      expect(file.existsSync(), isTrue, reason: 'run from app/');
+      final m = RegExp(r'echo (\S+) \|').firstMatch(keeperInstallCommand());
+      expect(m, isNotNull);
+      final embedded = utf8.decode(base64.decode(m![1]!));
+      expect(embedded, startsWith("VERSION='v$appVersion'; export VERSION\n"));
+      expect(embedded, endsWith(file.readAsStringSync()));
     });
 
-    test('a broken payload installs nothing and says so', () async {
+    test('the serve command execs the version-pinned binary', () {
+      final m = RegExp(r'echo (\S+) \|').firstMatch(hostServeCommand());
+      expect(m, isNotNull);
+      final script = utf8.decode(base64.decode(m![1]!));
+      expect(script, contains('herdr-host-$appVersion'));
+      expect(script.trimRight().split('\n').last, r'exec "$b" serve');
+    });
+
+    test('the install command installs the pinned release as herdr-host-<version> and serve runs it', () async {
       final h = await newHost(const {}, false);
-      final r = await h.run(keeperInstallCommand(), input: 'not base64 of a deflated script\n');
-      expect(r.code, isNot(0));
-      expect(r.out, isNot(contains('"ok"')));
-      final dir = Directory('${h.home.path}/.herdr-mobile');
-      expect(!dir.existsSync() || dir.listSync().isEmpty, isTrue);
+      final bin = hostBinary();
+      expect(bin.existsSync(), isTrue, reason: 'build it: cd rust && cargo build --release -p host');
+      // A release folder as the installer sees it: this platform's asset and
+      // the checksum file. The installer picks the asset by `uname`.
+      final uname = (await Process.run('uname', ['-sm'])).stdout.toString().trim();
+      final asset = switch (uname) {
+        'Linux x86_64' => 'herdr-host-linux-x86_64',
+        'Linux aarch64' || 'Linux arm64' => 'herdr-host-linux-aarch64',
+        'Darwin arm64' => 'herdr-host-macos-arm64',
+        'Darwin x86_64' => 'herdr-host-macos-x86_64',
+        _ => fail('no release asset for $uname'),
+      };
+      final release = Directory('${h.home.path}/release')..createSync();
+      File('${release.path}/$asset').writeAsBytesSync(bin.readAsBytesSync());
+      final sum = (await Process.run('sha256sum', ['${release.path}/$asset'])).stdout.toString().split(' ').first;
+      File('${release.path}/herdr-host-SHA256SUMS').writeAsStringSync('$sum  $asset\n');
+      final r = await h.run(keeperInstallCommand(), environment: {'HERDR_HOST_BASE_URL': 'file://${release.path}'});
+      expect(r.code, 0, reason: r.err);
+      expect(r.out.trim().split('\n').last, '{"ok":true}');
+      final bin2 = File('${h.home.path}/.herdr-mobile/bin/$hostBinaryName');
+      expect(bin2.existsSync(), isTrue, reason: 'the installer names the file after the binary --version');
+      expect(FileStat.statSync(bin2.path).mode & 0x1ff, 0x1c0); // 0700
+      expect(await h.agentHost.available(), contains('omp'), reason: 'serve finds what the installer put there');
+      // A corrupted download is refused and nothing new is left behind.
+      File('${release.path}/herdr-host-SHA256SUMS').writeAsStringSync('${'0' * 64}  $asset\n');
+      bin2.deleteSync();
+      final bad = await h.run(keeperInstallCommand(), environment: {'HERDR_HOST_BASE_URL': 'file://${release.path}'});
+      expect(bad.code, isNot(0));
+      expect(bad.err, contains('checksum mismatch'));
+      final binDir = Directory('${h.home.path}/.herdr-mobile/bin');
+      expect(binDir.existsSync() ? binDir.listSync() : [], isEmpty);
     });
 
-    test('a host without the keeper exits 65 until it is installed', () async {
+    test('a host without the helper exits 65 until it is installed', () async {
       final h = await newHost(const {}, false);
-      for (final c in [
-        keeperProbeCommand(),
-        keeperListCommand(),
-        keeperStartCommand(agent: 'omp', cwd: h.work),
-        keeperAttachCommand('abc234'),
-        keeperKillCommand('abc234'),
-      ]) {
-        final r = await h.run(c);
-        expect(r.code, 65, reason: r.err);
-        expect(r.err, contains('not installed'));
-        expect(r.out, isEmpty);
-      }
+      final r = await h.run(hostServeCommand());
+      expect(r.code, 65, reason: r.err);
+      expect(r.err, contains('not installed'));
+      expect(r.out, isEmpty);
+      await expectLater(h.openLink(), throwsA(isA<HostMissing>()));
       expect(Directory('${h.home.path}/.herdr-mobile').existsSync(), isFalse);
       await h.install();
-      expect((await h.run(keeperProbeCommand())).code, 0);
+      expect(await h.agentHost.available(), contains('omp'));
     });
 
-    test('install writes a private file, is idempotent and leaves no temp files', () async {
+    test('install puts the binary in place, is idempotent and leaves no temp files', () async {
       final h = await newHost(const {}, false);
-      final file = File('${h.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py');
+      final file = File('${h.home.path}/.herdr-mobile/bin/$hostBinaryName');
       await h.install();
-      expect(file.readAsStringSync(), keeperScript());
+      expect(file.existsSync(), isTrue);
       expect(FileStat.statSync(file.path).mode & 0x1ff, 0x1c0); // 0700
-      expect(FileStat.statSync('${h.home.path}/.herdr-mobile').mode & 0x1ff, 0x1c0);
+      // The binary is the prebuilt one: same size, and it reports a version.
+      final v = await h.run('"\$HOME/.herdr-mobile/bin/$hostBinaryName" --version');
+      expect(v.code, 0, reason: v.err);
+      expect(v.out, contains('herdr-host'));
+      // Idempotent: a second install leaves the same binary.
+      final before = file.lengthSync();
       await h.install();
-      expect(file.readAsStringSync(), keeperScript());
-      expect(
-        Directory('${h.home.path}/.herdr-mobile')
-            .listSync()
-            .map((e) => e.uri.pathSegments.where((s) => s.isNotEmpty).last),
-        [file.uri.pathSegments.last],
-      );
+      expect(file.lengthSync(), before);
+      // Only the binary in the bin dir.
+      expect(Directory('${h.home.path}/.herdr-mobile/bin').listSync().length, 1);
     });
 
-    test('installing is atomic: a reader never sees half a script', () async {
-      final h = await newHost(const {}, false);
-      final file = File('${h.home.path}/.herdr-mobile/keeper-${keeperScriptVersion(keeperScript())}.py');
-      var installing = true;
-      var reads = 0;
-      final reader = () async {
-        while (installing) {
-          if (file.existsSync()) {
-            reads++;
-            expect(file.readAsStringSync(), keeperScript());
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 1));
-        }
-      }();
-      final results = await Future.wait([
-        for (var i = 0; i < 4; i++) h.run(keeperInstallCommand(), input: keeperInstallPayload()),
-      ]);
-      installing = false;
-      await reader;
-      for (final r in results) {
-        expect(r.code, 0, reason: r.err);
-        expect(r.out.trim(), '{"ok":true}');
-      }
-      expect(reads, greaterThan(0));
-      expect(file.readAsStringSync(), keeperScript());
-    });
-
-    test('another script version gets its own file; the old one is removed and its keeper lives on', () async {
+    test('the host refuses an unknown agent, a bad folder and a bad keeper id', () async {
       final h = await newHost();
-      final v1 = keeperScriptVersion(keeperScript());
-      final second = '${keeperScript()}\n# a later version\n';
-      final v2 = keeperScriptVersion(second);
-      expect(v2, isNot(v1));
-      expect(v1, matches(RegExp(r'^[0-9a-f]{12}$')));
-      final info = await h.start();
-      final a = await h.attach(info.id);
-      await a.initialize();
-      await a.newSession(h);
-
-      await h.install(script: second);
-      final dir = '${h.home.path}/.herdr-mobile';
-      expect(File('$dir/keeper-$v1.py').existsSync(), isFalse);
-      expect(File('$dir/keeper-$v2.py').readAsStringSync(), second);
-      // The app of the old version now finds nothing and installs again.
-      expect((await h.run(keeperListCommand())).code, 65);
-
-      // The keeper started by the old file still runs and serves.
-      expect(await processAlive(info.pid!), isTrue);
-      expect((await a.request('session/list'))['result'], isNotNull);
-      final listed = await h.run("exec python3 '$dir/keeper-$v2.py' list");
-      expect(((jsonDecode(listed.out) as List).single as Map)['id'], info.id);
-      final b = await h.run("exec python3 '$dir/keeper-$v2.py' kill ${info.id}");
-      expect(b.out.trim(), '{"ok":true}');
-    });
-
-    test('rejects an unknown agent, a bad folder and a bad keeper id', () {
       for (final bad in ['', 'gpt', 'OMP', 'omp; id', r'$(id)', 'omp ', "omp'"]) {
-        expect(
-          () => keeperStartCommand(agent: bad, cwd: '/tmp'),
-          throwsArgumentError,
-          reason: bad,
-        );
+        final r = await h.runStart(agent: bad, cwd: '/tmp');
+        expect(r.code, 64, reason: '$bad: ${r.err}');
       }
       for (final bad in ['', 'a\nb', 'a\u0000b', 'a\rb', 'x' * 5000]) {
-        expect(
-          () => keeperStartCommand(agent: 'omp', cwd: bad),
-          throwsArgumentError,
-          reason: bad.length > 20 ? 'long' : bad,
-        );
+        final r = await h.runStart(cwd: bad);
+        expect(r.code, 64, reason: bad.length > 20 ? 'long' : bad);
       }
       for (final bad in ['', 'a b', r'$(id)', '../x', 'A1b2c3', "ab'c", 'a;b', 'ab', 'x' * 33]) {
-        expect(() => keeperAttachCommand(bad), throwsArgumentError, reason: bad);
-        expect(() => keeperKillCommand(bad), throwsArgumentError, reason: bad);
+        expect((await h.attachAndLeave(bad)).code, 64, reason: bad);
+        expect((await h.kill(bad)).code, 64, reason: bad);
       }
+      expect(await h.list(), isEmpty);
     });
 
-    test('a folder name cannot break out of the command', () async {
+    test('a folder name cannot break out of anything', () async {
       final h = await newHost();
       final marker = '${h.home.path}/pwned';
       for (final evil in [
@@ -215,7 +154,7 @@ void main() {
         'a b; touch $marker',
         '-rf',
       ]) {
-        final r = await h.run(keeperStartCommand(agent: 'omp', cwd: evil));
+        final r = await h.runStart(cwd: evil);
         expect(r.code, 66, reason: '$evil: ${r.err}');
         expect(r.err, contains('does not exist'));
         expect(File(marker).existsSync(), isFalse, reason: evil);
@@ -237,8 +176,8 @@ void main() {
 
     test('unknown keeper ids exit 66', () async {
       final h = await newHost();
-      expect((await h.run(keeperAttachCommand('zzzzzz'))).code, 66);
-      final k = await h.run(keeperKillCommand('zzzzzz'));
+      expect((await h.attachAndLeave('zzzzzz')).code, 66);
+      final k = await h.kill('zzzzzz');
       expect(k.code, 66);
       expect(k.err, contains('no such keeper'));
     });

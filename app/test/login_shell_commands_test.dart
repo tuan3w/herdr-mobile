@@ -5,10 +5,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/app_info.dart';
+import 'package:herdr_mobile/data/host/host_link.dart';
 import 'package:herdr_mobile/data/services/bridge_command.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import 'support/keeper_harness.dart';
+import 'support/process_host.dart';
 
 // sshd hands the whole command string to the person's LOGIN shell
 // (`$SHELL -c '<command>'`), so every command must survive any shell's own
@@ -43,67 +46,73 @@ void main() {
   late String bareBin;
   setUp(() {
     home = Directory.systemTemp.createTempSync('login_shell_');
-    // Only what the wrapper itself needs, and no python3: the script answers 78.
+    // Only what the wrapper and the binary install need: `sh`+`base64` decode
+    // the command, `uname` names the platform. The keeper is a binary, so there
+    // is no interpreter to be missing; curl/wget are absent, so the install script
+    // dies at its own "needs curl or wget" (a code a shell parse failure never
+    // gives).
     final bin = Directory('${home.path}/bin')..createSync();
-    for (final tool in ['sh', 'base64']) {
+    for (final tool in ['sh', 'base64', 'uname']) {
       Link('${bin.path}/$tool').createSync(_installed(tool)!);
     }
     bareBin = bin.path;
   });
   tearDown(() => home.deleteSync(recursive: true));
 
-  final py = pythonDir();
-
   for (final shell in ['fish', 'csh', 'tcsh', 'zsh', 'bash', 'dash', 'ksh']) {
-    final path = _installed(shell);
-    group('under $shell', skip: path == null ? '$shell is not installed' : false, () {
-      test('every command reaches the script and its exit code comes back', () async {
-        final commands = {
-          'keeper list': keeperListCommand(),
-          'keeper install': keeperInstallCommand(),
-          'keeper attach': keeperAttachCommand('abc234'),
-          'bridge': buildBridgeCommand(session: 'default'),
-          'mux': buildMuxCommand(session: 'default'),
-          'events': buildEventsCommand(session: 'default'),
-        };
-        for (final MapEntry(:key, :value) in commands.entries) {
-          final r = await _runUnder(path!, value, home, bareBin);
-          // 78 is the script's own "python3 is missing": the wrapper decoded and ran it.
-          expect(r.code, 78, reason: '$key under $shell: ${r.err}');
-          expect(r.err, contains('python3'), reason: key);
-        }
+    final where = _installed(shell);
+    group('under $shell', skip: where == null ? '$shell is not installed' : false, () {
+      test('every command is decoded, run, and its exit code comes back', () async {
+        final path = where!;
+        // The serve command execs the installed binary: 65 "not installed"
+        // proves the wrapper decoded and ran it.
+        final serve = await _runUnder(path, hostServeCommand(), home, bareBin);
+        expect(serve.code, 65, reason: 'serve under $shell: ${serve.err}');
+        expect(serve.err, contains('not installed'));
+        // The install is the bootstrap: it runs `uname` (present) and then dies
+        // at its own "needs curl or wget" (exit 1) — a code a shell parse
+        // failure (127) never gives.
+        final install = await _runUnder(path, keeperInstallCommand(), home, bareBin);
+        expect(install.code, 1, reason: 'keeper install under $shell: ${install.err}');
+        expect(install.err, contains('needs curl or wget'));
+        // The bridge needs herdr's own bridge or socat: 78 says neither is there.
+        final bridge = await _runUnder(path, buildBridgeCommand(session: 'default'), home, bareBin);
+        expect(bridge.code, 78, reason: 'bridge under $shell: ${bridge.err}');
+        expect(bridge.err, contains('socat'));
       });
 
-      test('stdin stays the data path: install, then list', () async {
-        if (py == null) {
-          markTestSkipped('python3 is not installed');
-          return;
-        }
-        final withPython = '$bareBin:$py:/usr/bin:/bin';
-        final install = await _runUnder(path!, keeperInstallCommand(), home, withPython, input: keeperInstallPayload());
-        expect(install.code, 0, reason: install.err);
-        expect(install.out.trim(), '{"ok":true}');
-        final list = await _runUnder(path, keeperListCommand(), home, withPython);
-        expect(list.code, 0, reason: list.err);
-        expect(jsonDecode(list.out), isEmpty);
+      test('the binary install is self-contained, then serve answers a HELLO', () async {
+        final path = where!;
+        // The real release install needs curl and the network (a release that
+        // carries herdr-host). The wrapper's decode-and-eval is already proven
+        // by the test above; here we place the binary the way install-host.sh
+        // does and check the serve command then reaches it: a link on it gets
+        // the host's HELLO.
+        await installHostBinary(home);
+        final serve = await ProcessHostProcess.start(
+          path,
+          ['-c', hostServeCommand()],
+          environment: {'HOME': home.path, 'PATH': bareBin},
+          workingDirectory: home.path,
+        );
+        final link = await HostLink.connect(serve, version: appVersion, helloTimeout: const Duration(seconds: 30));
+        addTearDown(link.close);
+        expect(link.hello.version, isNotEmpty);
+        expect(link.hello.home, home.path);
       });
     });
   }
 
-  test('the command is one single-quoted word, whatever the remote strings hold', () {
+  test('the command is one single-quoted word', () {
     // The login shell sees `sh -c '<word>'`; a quote inside would end the word
-    // early, and whatever is outside it is parsed by fish or csh. The script,
-    // with every hostile path in it, travels as base64 (A-Za-z0-9+/=).
-    const hostile = "it's \$(touch pwned) `x` \"y\" !z";
+    // early, and whatever is outside it is parsed by fish or csh. The script
+    // travels as base64 (A-Za-z0-9+/=). The session and socket path of the
+    // bridge are the only strings that come from outside.
     final commands = [
-      keeperListCommand(),
-      keeperStartCommand(agent: 'omp', cwd: '/tmp/$hostile'),
-      keeperHistoryCommand(agent: 'omp', cwd: '/tmp/$hostile'),
-      keeperFollowCommand('/home/x/$hostile.jsonl'),
-      keeperKillCommand('abc234'),
+      hostServeCommand(),
+      keeperInstallCommand(),
       buildBridgeCommand(session: 'default'),
-      buildMuxCommand(session: 'default'),
-      buildEventsCommand(session: 'default'),
+      buildBridgeCommand(session: 'work-1', socketPath: "/tmp/it's \$(touch pwned) `x` \"y\" !z.sock"),
     ];
     final shape = RegExp(
       r'''^sh -c 'eval "\$\(echo ([A-Za-z0-9+/=]+) \| \{ base64 -d 2>/dev/null \|\| base64 -D; \}\)"'$''',

@@ -7,7 +7,7 @@
 #
 # Installs to ~/.local/bin/herdr-tui (HERDR_TUI_BIN_DIR to change it) by writing a neighbour and
 # renaming it over the old one, so it works while a session is open: that session keeps running
-# the old version, a new one gets the new. Also refreshes the keeper (~/.herdr-mobile/desktop).
+# the old version, a new one gets the new. The keeper is part of the binary: nothing else to install.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(dirname "$here")
@@ -29,7 +29,6 @@ mkdir -p "$dest"
 cp "$repo/rust/target/release/herdr-tui" "$dest/herdr-tui.new"
 chmod 755 "$dest/herdr-tui.new"
 mv -f "$dest/herdr-tui.new" "$dest/herdr-tui"
-sh "$here/install-keeper.sh" >/dev/null
 
 size=$(wc -c < "$dest/herdr-tui" | tr -d ' ')
 echo "installed $dest/herdr-tui ($("$dest/herdr-tui" --version 2>&1), $((size / 1024)) KB)"

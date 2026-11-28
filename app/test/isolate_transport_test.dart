@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
+import 'package:herdr_mobile/data/models/remote_search.dart';
 import 'package:herdr_mobile/data/models/web_bridge.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/isolate_transport.dart';
@@ -45,7 +46,14 @@ class _Probe implements HerdrTransport {
         );
         return {};
       case 'probe':
-        return {'resets': resets, 'liveStreams': liveStreams, 'closed': closed, 'background': backgrounds};
+        return {
+          'resets': resets,
+          'liveStreams': liveStreams,
+          'closed': closed,
+          'background': backgrounds,
+          'thumbCancelled': thumbCancelled,
+          'searchLive': searchLive,
+        };
       case 'die':
         Isolate.exit();
     }
@@ -86,8 +94,16 @@ class _Probe implements HerdrTransport {
   void setBackground(bool background) => backgrounds.add(background);
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) =>
-      Future.error(const HerdrTransportException('No commands can run here'));
+  Future<Object?> hostCall(String service, String method, [Map<String, Object?> args = const {}, Duration? timeout]) =>
+      Future.error(const HerdrTransportException('No host here'));
+
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) =>
+      Future.error(const HerdrTransportException('No host here'));
+
+  @override
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) =>
+      Stream.error(const HerdrTransportException('No host here'));
 
   @override
   bool get supportsFiles => true;
@@ -137,7 +153,8 @@ class _Probe implements HerdrTransport {
   }
 
   @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) async {
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) async {
+    if (path == '/changed' && ifMatch != null) throw RemoteFileChanged('The file changed', path: path);
     if (path == '/bytes') {
       // Content depends on the position, so a lost or shifted byte shows.
       return Uint8List.fromList([for (var i = 0; i < length; i++) (offset + i) % 251]);
@@ -149,15 +166,88 @@ class _Probe implements HerdrTransport {
   Future<String> realPath(String path) async => path == '.' ? '/home/probe' : '/real$path';
 
   @override
-  Future<void> makeDirs(String path) => throw UnsupportedError('files');
+  Stream<RemoteStat?> watchFile(String path) => switch (path) {
+    '/watched' => Stream.fromIterable([
+      RemoteStat(path: path, kind: RemoteEntryKind.file, size: 1, modified: DateTime.utc(2026, 1, 1)),
+      null,
+    ]),
+    _ => Stream.error(RemoteFileException(RemoteFileErrorKind.permission, 'no', path: path)),
+  };
+
+  var thumbCancelled = false;
+  var searchLive = 0;
 
   @override
-  Future<void> removeFile(String path) => throw UnsupportedError('files');
+  Future<Uint8List?> thumbnailFile(String path, {int maxPx = 256, RemoteStat? expect, Future<void>? cancelled}) async {
+    switch (path) {
+      case '/thumb':
+        return Uint8List.fromList([maxPx % 256, (expect?.size ?? 255) % 256, expect?.modified == null ? 0 : 1]);
+      case '/slow-thumb':
+        // Answers only once the main isolate stops waiting for it.
+        await cancelled;
+        thumbCancelled = true;
+        return null;
+    }
+    return null;
+  }
+
+  @override
+  Stream<FileSearchEvent> searchFiles(FileSearchSpec spec) {
+    switch (spec.root) {
+      case '/found':
+        return Stream.fromIterable([
+          FileSearchBatch([
+            RemoteEntry(
+              name: 'Tệp 1.txt',
+              path: '/found/a/Tệp 1.txt',
+              kind: RemoteEntryKind.file,
+              resolvedKind: RemoteEntryKind.file,
+              size: 11,
+              modified: DateTime.utc(2026, 1, 2),
+            ),
+          ]),
+          FileSearchBatch([
+            const RemoteEntry(
+              name: 'sub',
+              path: '/found/sub',
+              kind: RemoteEntryKind.dir,
+              resolvedKind: RemoteEntryKind.dir,
+            ),
+          ]),
+          const FileSearchDone(scanned: 42, truncated: true, skippedDirs: 1),
+        ]);
+      case '/echo-spec':
+        // The spec as the worker received it, in the one name.
+        return Stream.value(
+          FileSearchBatch([
+            RemoteEntry(
+              name:
+                  '${spec.query}|${spec.kind.name}|${spec.modifiedWithin?.inSeconds}|${spec.maxResults}|${spec.hidden}|${spec.ignore.join(',')}',
+              path: '/x',
+              kind: RemoteEntryKind.file,
+            ),
+          ]),
+        );
+      case '/denied':
+        return Stream.error(RemoteFileException(RemoteFileErrorKind.permission, 'no', path: spec.root));
+      case '/endless':
+        late final StreamController<FileSearchEvent> out;
+        out = StreamController<FileSearchEvent>(onListen: () => searchLive++, onCancel: () => searchLive--);
+        return out.stream;
+    }
+    return Stream.error(StateError('boom'));
+  }
+
+  @override
+  Future<String> reserveInboxFile({required String key, required String name}) async => '/inbox/$key/$name';
+
+  @override
+  Future<int> sweepInbox() async => 7;
 
   @override
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
   }) => throw UnsupportedError('files');
 
@@ -588,5 +678,150 @@ void main() {
 
     await t.close();
     await t.close();
+  });
+
+  group('the file members that cross the worker', () {
+    test('watchFile tells the file as a stat, then null when it is gone, and ends with the stream', () async {
+      t = _transport();
+
+      final seen = await t.watchFile('/watched').toList();
+
+      expect(seen, hasLength(2));
+      expect(seen[0]!.size, 1);
+      expect(seen[0]!.kind, RemoteEntryKind.file);
+      expect(seen[0]!.modified, DateTime.utc(2026, 1, 1));
+      expect(seen[1], isNull);
+    });
+
+    test('watchFile fails with the typed file error, not a bare string', () async {
+      t = _transport();
+
+      await expectLater(
+        t.watchFile('/forbidden'),
+        emitsError(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.permission)),
+      );
+    });
+
+    test('cancelling a watch ends it in the worker and the worker keeps serving', () async {
+      t = _transport();
+      final sub = t.watchFile('/watched').listen((_) {});
+      await sub.cancel();
+
+      expect(await t.realPath('.'), '/home/probe');
+    });
+
+    test('readFile carries ifMatch to the worker, and `changed` comes back as RemoteFileChanged', () async {
+      t = _transport();
+      final seen = RemoteStat(
+        path: '/changed',
+        kind: RemoteEntryKind.file,
+        size: 10,
+        modified: DateTime.utc(2026, 1, 1),
+      );
+
+      await expectLater(
+        t.readFile('/changed', length: 4, ifMatch: seen),
+        throwsA(isA<RemoteFileChanged>().having((e) => e.path, 'path', '/changed')),
+      );
+      // Without ifMatch the worker is never asked to check anything.
+      await expectLater(t.readFile('/changed', length: 4), throwsA(isNot(isA<RemoteFileChanged>())));
+    });
+
+    test('the inbox is reserved and swept through the worker', () async {
+      t = _transport();
+
+      expect(await t.reserveInboxFile(key: 'k', name: 'a b.txt'), '/inbox/k/a b.txt');
+      expect(await t.sweepInbox(), 7);
+    });
+
+    test(
+      'a thumbnail crosses as bytes with the size and time it was asked for; a machine that cannot says null',
+      () async {
+        t = _transport();
+        final seen = RemoteStat(
+          path: '/thumb',
+          kind: RemoteEntryKind.file,
+          size: 300,
+          modified: DateTime.utc(2026, 1, 1),
+        );
+
+        expect(await t.thumbnailFile('/thumb', maxPx: 384, expect: seen), [384 % 256, 300 % 256, 1]);
+        expect(await t.thumbnailFile('/thumb'), [256 % 256, 255, 0], reason: 'nothing expected, nothing checked');
+        expect(await t.thumbnailFile('/no-thumb'), isNull);
+      },
+    );
+
+    test('a thumbnail the caller stops waiting for is cancelled in the worker', () async {
+      t = _transport();
+      final stop = Completer<void>();
+      final asked = t.thumbnailFile('/slow-thumb', cancelled: stop.future);
+      var cancelled = false;
+      unawaited(asked.then((_) {}));
+
+      expect((await t.request('probe'))['thumbCancelled'], isFalse, reason: 'still wanted: it waits');
+      stop.complete();
+      expect(await asked, isNull);
+      while (!cancelled) {
+        cancelled = (await t.request('probe'))['thumbCancelled'] == true;
+        if (!cancelled) await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    });
+
+    test('a search arrives as batches then its end, with the entries intact', () async {
+      t = _transport();
+
+      final events = await t.searchFiles(const FileSearchSpec(root: '/found', query: 'a')).toList();
+
+      expect(events, hasLength(3));
+      final first = events[0] as FileSearchBatch;
+      expect(first.entries.single.path, '/found/a/Tệp 1.txt');
+      expect(first.entries.single.modified, DateTime.utc(2026, 1, 2));
+      expect(first.entries.single.size, 11);
+      expect((events[1] as FileSearchBatch).entries.single.kind, RemoteEntryKind.dir);
+      final done = events[2] as FileSearchDone;
+      expect((done.scanned, done.truncated, done.skippedDirs), (42, true, 1));
+    });
+
+    test('a search carries what was asked, and fails with the typed file error', () async {
+      t = _transport();
+
+      final asked = await t
+          .searchFiles(
+            const FileSearchSpec(
+              root: '/echo-spec',
+              query: 'x',
+              kind: FileSearchKind.dir,
+              modifiedWithin: Duration(hours: 1),
+              maxResults: 7,
+              hidden: true,
+              ignore: ['out'],
+            ),
+          )
+          .first;
+      final echoed = (asked as FileSearchBatch).entries.single.name;
+      expect(echoed, 'x|dir|3600|7|true|out');
+
+      await expectLater(
+        t.searchFiles(const FileSearchSpec(root: '/denied')),
+        emitsError(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.permission)),
+      );
+    });
+
+    test('cancelling a search ends it in the worker', () async {
+      t = _transport();
+      final sub = t.searchFiles(const FileSearchSpec(root: '/endless')).listen((_) {});
+      var live = 0;
+      while (live == 0) {
+        live = (await t.request('probe'))['searchLive'] as int;
+        if (live == 0) await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+
+      await sub.cancel();
+
+      while (live != 0) {
+        live = (await t.request('probe'))['searchLive'] as int;
+        if (live != 0) await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    });
   });
 }

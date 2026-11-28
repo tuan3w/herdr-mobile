@@ -15,6 +15,31 @@ flutter run                  # device / emulator
 flutter run -d linux         # desktop, handy for iterating
 ```
 
+The host helper and the test fakes are Rust, and the Dart tests that talk to a
+host run the real binaries, so build them first (CI does the same before
+`flutter test`):
+
+```bash
+cd rust
+cargo build --release -p host -p testkit   # herdr-host, fake-acp-agent, fake-herdr, bench-acp-agent
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+```
+
+The Dart side finds the helper through `HERDR_HOST_BIN` (default
+`rust/target/release/herdr-host`) and the fakes through `HERDR_TESTKIT_DIR`
+(default: next to the helper). The keeper tests fail with the build command in
+their message when one is missing; the files and transfer tests skip with
+it as the reason, so a run without the build says what it did not cover, never
+that it passed. `tool/check.sh` does not build the Rust side; it warns up front
+when the helper or the fakes are missing. Every workflow that runs it builds them
+first (`ci.yml` test jobs, the `apk` job of `release.yml`).
+No python is needed anywhere in the product or
+its tests; the few python scripts left in `tool/` (screenshot framing, trace
+capture, TUI pictures) are developer tools. `herdr-host api` prints the
+service catalogue; `docs/host-api.json` is that output, and a Rust test fails
+until you regenerate it after changing a method (`docs/HOST_PROTOCOL.md`,
+"Changing the protocol").
+
 `tool/check.sh [--quick]` runs pub get, analyze and the tests in one command
 (`--quick` skips the tests); run it before yielding. It runs the Flutter that
 `tool/flutter-bin.sh` picks: the first whose Dart fits the `sdk:` constraint
@@ -80,15 +105,21 @@ app/lib/
                     (how much arrived text to show now)
     services/       transports: herdr_transport.dart (interface),
                     ssh_transport.dart, isolate_transport.dart,
-                    transport_factory.dart, mux_client.dart (persistent
-                    request channel, frame reader), bridge_command.dart
-                    (remote scripts: bridge, mux, events); herdr_api.dart;
-                    the keeper (keeper_script.dart, keeper_command.dart,
-                    ssh_agent_host.dart); SFTP (sftp_files.dart,
+                    transport_factory.dart, mux_client.dart (request/response
+                    client over a message channel), bridge_command.dart (the
+                    projections the host cuts answers to, and the bridge command
+                    for hosts without the helper); herdr_api.dart;
+                    the keeper (keeper_command.dart: the serve and install
+                    commands; ssh_agent_host.dart, ssh_log_source.dart); SFTP
+                    for hosts without the helper (sftp_files.dart,
                     remote_files.dart); images and the phone's gallery;
                     notifications (local_notifier.dart, task_mover.dart);
                     caches (snapshot_cache.dart, transcript_cache.dart,
                     thumb_cache.dart); network_monitor.dart
+    host/           the host link (`herdr-host serve`): wire.dart (frames),
+                    host_link.dart (streams, credit), host_channels.dart,
+                    host_install.dart, host_files.dart, host_transfer.dart,
+                    host_ports.dart; docs/HOST_PROTOCOL.md
     repositories/   machine_repository.dart   saved machines + secrets
                     machine_connection.dart   one machine: snapshot + reconnect
                     fleet_repository.dart     all machines, merged agent list
@@ -126,7 +157,8 @@ app/lib/
                     attach/          the attach sheet
                     create/          new agent session, machine actions
                                      (rename, close), start-form helpers
-                    files/           SFTP file browser and viewer
+                    files/           file browser and viewer
+                    ports/           the Ports sheet
                     history/         past sessions of an agent
                     machines/        machine list and form
                     pane/            a terminal pane: the bar (pane_bar.dart),
@@ -139,14 +171,19 @@ app/lib/
                     haptic when another agent starts waiting)
 app/test/                    unit and widget tests; support/ (fakes, shot.dart),
                              fixtures/ (prompts, traces, omp_logs)
+rust/crates/                 acp (pure ACP), wire (frames, golden vectors),
+                             keeper (daemon, records, replay log, follow, ctl),
+                             host (herdr-host: serve, services, the CLI), viewer
+                             (herdr-tui), testkit (fake-acp-agent, fake-herdr,
+                             bench-acp-agent); docs/TUI.md, rust/README.md
 app/benchmark/               benchmarks: transfer_bench.dart (bytes on the wire,
-                             fake_herdr.py), pane_bench.dart, startup_bench.dart,
+                             the Rust fake-herdr), pane_bench.dart, startup_bench.dart,
                              session_open_bench.dart (+ session_open_aot.dart,
                              open_cache_bench_test.dart,
                              session_open_wire_bench_test.dart: bytes and round
                              trips of an open, any desktop;
                              observed_open_bench_test.dart: the same for a chat
-                             of an agent in a herdr pane), upload_bench.dart,
+                             of an agent in a herdr pane),
                              upload_real_bench.dart, background_bench_test.dart
                              (virtual time); on a phone:
                              keyboard_device_bench.dart, stream_device_bench.dart
@@ -161,9 +198,12 @@ docs/DESIGN.md               the design system; docs/screens/ per screen
 docs/AGENT_SESSIONS.md       terminal sessions and ACP agent sessions, the keeper
 docs/ALERTS.md               local notifications, and the optional ntfy host plugin
 docs/ENGINEERING.md          per-subsystem facts
+docs/HOST_PROTOCOL.md        the host protocol and what the helper may do
+docs/host-api.json           service catalogue, printed by `herdr-host api` (checked by a test)
 docs/herdr-api.schema.json   protocol schema, from `herdr api schema` (0.8.2)
 docs/screenshots/            store screenshots (tool/screenshots/run.sh)
 tool/check.sh                analyze + tests
+tool/install-host.sh         installs herdr-host from a release (embedded in the app)
 tool/flutter-bin.sh          the Flutter SDK whose Dart fits pubspec.yaml
 tool/capture-prompt.sh       capture a prompt fixture from a real screen
 tool/capture-trace.sh        capture an agent trace (capture_trace.py)
@@ -296,3 +336,47 @@ Android installs it only when it is signed with the same key as the installed
 app: a debug build cannot update to a release, and Android then says "App not
 installed". Not measured on a phone: the install itself (the build and the
 download/verify code are tested; Android's dialog is not).
+
+### The host helper in a release, and in development
+
+`release.yml` builds `herdr-host` for Linux and macOS (x86-64 and arm64) in the
+same job as `herdr-tui` and publishes `herdr-host-<os>-<arch>`,
+`herdr-host-SHA256SUMS` and `install-host.sh` in the same release as the APK.
+Why the same release: the app pins the helper to its own version
+(`~/.herdr-mobile/bin/herdr-host-<appVersion>`), and the installer downloads that
+exact tag, so an updated app always finds its helper, and the two never
+disagree about the wire.
+
+So that holds even when a job fails, the workflow makes the release as a
+**draft** and publishes it as its last job. The graph:
+
+```
+draft (tag = pubspec, notes exist, create draft)
+ ├─ apk ── tests, build, sign, attach the APK
+ └─ tui (4 platforms) ── tui-publish (attach helpers + checksums)
+                 publish (needs apk + tui-publish: checks the assets, then un-drafts)
+```
+
+A published release without the helper (one platform's build failed) or without
+the APK would be what every phone's update check offers next, and each phone that
+took it could not start an agent session. A failed job leaves a draft nobody is
+offered (the update check reads `releases/latest`, which skips drafts): fix the
+cause and re-run the failed jobs; the `publish` job then runs by itself. The
+asset check in `publish` names what is missing. Without the signing secrets no
+APK is built, so the release stays a draft: upload the APK by hand
+(`herdr-mobile-X.Y.Z.apk`, `SHA256SUMS`, the symbols zip), then
+`gh release edit vX.Y.Z --draft=false`.
+
+A debug build, or a version with no release yet, has no helper to download (the
+pinned download is a 404 and the app says the machine could not set up the agent
+helper). Install one from your own build on the machine instead:
+
+```bash
+cd rust && cargo build --release -p host
+mkdir /tmp/herdr-host-dist && cp target/release/herdr-host /tmp/herdr-host-dist/herdr-host-linux-x86_64   # your OS/arch
+(cd /tmp/herdr-host-dist && sha256sum herdr-host-* > herdr-host-SHA256SUMS)
+HERDR_HOST_BASE_URL=file:///tmp/herdr-host-dist VERSION=v<appVersion> sh tool/install-host.sh
+```
+
+The script runs the binary for `--version` and names the file after it, so the
+app finds `herdr-host-<appVersion>` and never downloads.

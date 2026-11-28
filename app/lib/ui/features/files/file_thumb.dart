@@ -15,9 +15,21 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'file_kind.dart';
 
-/// Images over this are never fetched for a thumbnail (a phone photo is
-/// several MB: reading it over SSH to draw 32 pixels is the wrong trade).
+/// Images over this are never READ for a thumbnail (a phone photo is several
+/// MB: reading it over SSH to draw 32 pixels is the wrong trade). A machine
+/// with the agent helper makes the thumbnail itself, up to [thumbHostMaxBytes].
 const thumbMaxBytes = 512 * 1024;
+
+/// The biggest picture a machine is asked to make a thumbnail of (the helper's
+/// own limit is 64 MiB).
+const thumbHostMaxBytes = 64 * 1024 * 1024;
+
+/// The longest side asked of the machine, in pixels (the 240 px the app has
+/// always shrunk to, rounded up to a multiple of 128). Fixed, not scaled by the
+/// screen: the thumbnails are kept on disk under one key per picture (shared by
+/// the list and the grid), so one size has to serve both, and a 32 dp row and
+/// a 120 dp tile both look right from it.
+const thumbRequestPx = 256;
 
 /// Reads of thumbnails running at once, per [ThumbLoader].
 const thumbParallel = 3;
@@ -55,6 +67,9 @@ class ThumbLoader {
   final _queue = Queue<_Job>();
   final _cache = <String, Uint8List>{}; // insertion order: oldest first
   var _cached = 0;
+
+  /// Big pictures the machine could not make a thumbnail of (oldest first).
+  final _noThumb = <String>{};
   var _running = 0;
 
   /// Reads in flight right now (for tests).
@@ -63,11 +78,17 @@ class ThumbLoader {
   /// Waiting for their turn (for tests).
   int get waiting => _queue.length;
 
-  /// Whether [e] is a picture worth fetching: a small raster image. (SVG has
-  /// nothing here to draw it.)
+  /// Whether [e] is a picture worth fetching: a small raster image, or any
+  /// raster image up to [thumbHostMaxBytes] for a machine that makes thumbnails
+  /// itself (one that cannot is asked once per picture and then left alone).
+  /// (SVG has nothing here to draw it.)
   static bool eligible(RemoteEntry e) {
     final size = e.size;
-    return e.isFile && size != null && size > 0 && size <= thumbMaxBytes && typeForName(e.name).kind == FileKind.image;
+    return e.isFile &&
+        size != null &&
+        size > 0 &&
+        size <= thumbHostMaxBytes &&
+        typeForName(e.name).kind == FileKind.image;
   }
 
   static String _key(RemoteEntry e) => '${e.path}\u0000${e.modified?.millisecondsSinceEpoch}\u0000${e.size}';
@@ -81,11 +102,12 @@ class ThumbLoader {
   }
 
   /// Fetches [e]; completes null on any failure, or when [cancelled] says the
-  /// row is gone by the time its turn comes.
-  Future<Uint8List?> load(RemoteFiles files, RemoteEntry e, {required bool Function() cancelled}) {
+  /// row is gone by the time its turn comes. [cancel] firing stops a thumbnail
+  /// the host is still making.
+  Future<Uint8List?> load(RemoteFiles files, RemoteEntry e, {required bool Function() cancelled, ReadCancel? cancel}) {
     final hit = cached(e);
     if (hit != null) return Future.value(hit);
-    final job = _Job(files, e, cancelled);
+    final job = _Job(files, e, () => cancelled() || (cancel?.cancelled ?? false), cancel ?? ReadCancel());
     _queue.add(job);
     _pump();
     return job.done.future;
@@ -113,22 +135,30 @@ class ThumbLoader {
           ? null
           : DiskCache.thumbKey(job.files.machineId, entry.path, size, modified.millisecondsSinceEpoch);
       bytes = key == null ? null : await _store.get(key);
-      if (bytes == null) {
-        final read = await job.files.read(entry.path, length: size);
-        // A file that grew past the limit since it was listed is not a thumb.
-        if (read.isNotEmpty && read.length <= thumbMaxBytes) {
-          // A thumbnail is only made to be kept: without a key it would be
-          // work for nothing.
-          Uint8List? thumb;
-          if (key != null) {
-            try {
-              thumb = await _thumbnailer(read);
-            } on Object {
-              thumb = null;
+      if (bytes == null && !job.cancelled()) {
+        // The machine makes the thumbnail when it can (agent helper): a few
+        // tens of KB cross the radio instead of the picture.
+        final fromHost = await _hostThumbnail(job, size, modified);
+        if (fromHost != null) {
+          bytes = fromHost;
+          if (key != null) unawaited(_store.put(key, fromHost));
+        } else if (size <= thumbMaxBytes && !job.cancelled()) {
+          final read = await job.files.read(entry.path, length: size);
+          // A file that grew past the limit since it was listed is not a thumb.
+          if (read.isNotEmpty && read.length <= thumbMaxBytes) {
+            // A thumbnail is only made to be kept: without a key it would be
+            // work for nothing.
+            Uint8List? thumb;
+            if (key != null) {
+              try {
+                thumb = await _thumbnailer(read);
+              } on Object {
+                thumb = null;
+              }
             }
+            bytes = thumb ?? read;
+            if (thumb != null && key != null) unawaited(_store.put(key, thumb));
           }
-          bytes = thumb ?? read;
-          if (thumb != null && key != null) unawaited(_store.put(key, thumb));
         }
       }
     } on Object {
@@ -138,6 +168,29 @@ class ThumbLoader {
     _running--;
     job.done.complete(bytes);
     _pump();
+  }
+
+  /// The host's thumbnail of [job]'s picture, or null (SFTP, an older helper, a
+  /// picture it cannot read, a file that changed, the row gone). A big picture
+  /// the host could not do is remembered, so a row that scrolls back does not
+  /// ask again.
+  Future<Uint8List?> _hostThumbnail(_Job job, int size, DateTime? modified) async {
+    final entry = job.entry;
+    final key = _key(entry);
+    if (_noThumb.contains(key)) return null;
+    final bytes = await job.files.thumbnail(
+      entry.path,
+      maxPx: thumbRequestPx,
+      expect: modified == null
+          ? null
+          : RemoteStat(path: entry.path, kind: RemoteEntryKind.file, size: size, modified: modified),
+      cancel: job.cancel,
+    );
+    if (bytes == null && !job.cancelled() && size > thumbMaxBytes) {
+      if (_noThumb.length >= 512) _noThumb.remove(_noThumb.first);
+      _noThumb.add(key);
+    }
+    return bytes;
   }
 
   void _remember(String key, Uint8List bytes) {
@@ -167,11 +220,12 @@ Future<Uint8List?> makeThumbnail(Uint8List original) async {
 }
 
 class _Job {
-  _Job(this.files, this.entry, this.cancelled);
+  _Job(this.files, this.entry, this.cancelled, this.cancel);
 
   final RemoteFiles files;
   final RemoteEntry entry;
   final bool Function() cancelled;
+  final ReadCancel cancel;
   final done = Completer<Uint8List?>();
 }
 
@@ -206,6 +260,7 @@ class FileThumb extends StatefulWidget {
 class _FileThumbState extends State<FileThumb> {
   Uint8List? _bytes;
   var _gone = false;
+  var _cancel = ReadCancel();
 
   ThumbLoader get _loader => widget.loader ?? ThumbLoader.shared;
 
@@ -219,6 +274,10 @@ class _FileThumbState extends State<FileThumb> {
   void didUpdateWidget(FileThumb old) {
     super.didUpdateWidget(old);
     if (old.entry != widget.entry) {
+      // The picture of the old entry is not wanted any more: a thumbnail the
+      // host is still making for it stops.
+      _cancel.cancel();
+      _cancel = ReadCancel();
       _bytes = null;
       _start();
     }
@@ -234,7 +293,7 @@ class _FileThumbState extends State<FileThumb> {
     }
     final asked = e;
     unawaited(
-      _loader.load(widget.files, e, cancelled: () => _gone || widget.entry != asked).then((bytes) {
+      _loader.load(widget.files, e, cancelled: () => _gone || widget.entry != asked, cancel: _cancel).then((bytes) {
         if (!mounted || bytes == null || widget.entry != asked) return;
         setState(() => _bytes = bytes);
       }),
@@ -244,6 +303,8 @@ class _FileThumbState extends State<FileThumb> {
   @override
   void dispose() {
     _gone = true;
+    // A row that scrolled away: its thumbnail stops being made on the host.
+    _cancel.cancel();
     super.dispose();
   }
 

@@ -143,8 +143,7 @@ mod tests {
     }
 
     /// The file names in the lines of `text` that carry `marker` (`asset: herdr-tui-linux-x86_64 }`
-    /// in the workflow, `asset=herdr-tui-linux-x86_64 ;;` in the script, `return "herdr-tui-…"` in the
-    /// keeper), sorted.
+    /// in the workflow, `asset=herdr-tui-linux-x86_64 ;;` in the script), sorted.
     fn names_after(text: &str, marker: &str) -> Vec<String> {
         let mut names: Vec<String> = text
             .lines()
@@ -162,10 +161,9 @@ mod tests {
     }
 
     /// Every `herdr-tui` out there asks for these files by name and can only update itself while
-    /// they exist, so the four places that name them must agree.
+    /// they exist, so the three places that name them must agree.
     #[test]
-    fn the_files_this_client_asks_for_are_the_ones_the_release_builds_the_script_installs_and_the_keeper_fetches(
-    ) {
+    fn the_files_this_client_asks_for_are_the_ones_the_release_builds_and_the_script_installs() {
         let mut ours: Vec<String> = [
             ("linux", "x86_64"),
             ("linux", "aarch64"),
@@ -182,7 +180,6 @@ mod tests {
         ours.sort();
         let workflow = include_str!("../../../../../.github/workflows/release.yml");
         let script = include_str!("../../../../../tool/install-tui.sh");
-        let keeper = include_str!("../../../../../app/lib/data/services/keeper_script.dart");
         assert_eq!(
             names_after(workflow, "asset: "),
             ours,
@@ -193,16 +190,7 @@ mod tests {
             ours,
             "tool/install-tui.sh installs other files than this client asks for"
         );
-        assert_eq!(
-            names_after(keeper, "return \""),
-            ours,
-            "keeper_script.dart fetches other files than this client asks for"
-        );
-        for (what, text) in [
-            ("release.yml", workflow),
-            ("tool/install-tui.sh", script),
-            ("keeper_script.dart", keeper),
-        ] {
+        for (what, text) in [("release.yml", workflow), ("tool/install-tui.sh", script)] {
             assert!(
                 text.contains(SUMS),
                 "{what} does not use the checksums file {SUMS}"

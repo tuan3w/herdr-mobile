@@ -15,7 +15,7 @@ bug. Each item has a `check:`, the grep or read that finds it.
   `deprecated`, `legacy`, `compat`, `old`; a re-export or alias; comments that name something
   that no longer exists.
 - **God-class growth.** check: a file over 1,500 lines that grew (`AcpAgentSession`,
-  `ObservedAgentSession`, `keeper_script.dart`): did the change add a second responsibility that
+  `ObservedAgentSession`, the Rust keeper's `router.rs` and the host's `mux.rs`): did the change add a second responsibility that
   belongs in its own type?
 - **Values without a reason** (principle 9: every spacing, timing, colour and word comes from a
   token or a reason). check: raw `Color`, `Duration`, bare numeric thresholds, and error-message

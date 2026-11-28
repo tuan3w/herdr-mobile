@@ -19,7 +19,7 @@ sealed class LogPictureRef {
 }
 
 /// A picture the keeper dropped from a log line and can send again: its note
-/// said `ref=<start>.<hash>` (see `keeperBlobCommand`).
+/// said `ref=<start>.<hash>` (see `SshAgentHost.blob`).
 final class KeeperPictureRef extends LogPictureRef {
   const KeeperPictureRef({required this.start, required this.hash, this.bytes});
 

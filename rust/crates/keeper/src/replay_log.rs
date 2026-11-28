@@ -8,9 +8,9 @@
 //! locations), and only then are whole turns dropped, oldest first. The newest
 //! turn is never cut or dropped, nor is a turn a waiting request is about.
 //!
-//! A port of `ReplayLog` in `keeper_script.dart`, which stays the reference.
 //! Sizes are measured as python's `json.dumps` measures them (non-ASCII
-//! escaped), so both keepers make the same decisions.
+//! escaped): the format of the log and the golden fixture
+//! (`tests/fixtures/replay_golden.json`) depend on it.
 
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashSet, VecDeque};
@@ -192,6 +192,13 @@ impl ReplayLog {
     #[must_use]
     pub fn turn_count(&self) -> usize {
         self.turns.len()
+    }
+    /// True when the log still holds the turn `seq` (a `since` that names a
+    /// turn it has given up is answered with the whole log, python
+    /// `replay_since`).
+    #[must_use]
+    pub fn has_turn(&self, seq: u64) -> bool {
+        self.turns.contains_key(&seq)
     }
 
     /// Every entry in replay order.

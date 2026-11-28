@@ -4,16 +4,23 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
-import '../acp/json_rpc.dart' show splitLines;
+import '../app_info.dart';
+import '../host/host_channels.dart';
+import '../host/host_install.dart';
+import '../host/host_files.dart';
+import '../host/host_link.dart';
+import '../host/host_transfer.dart';
 import '../models/machine_profile.dart';
 import '../models/remote_file.dart';
+import '../models/remote_search.dart';
 import '../models/web_bridge.dart';
 import 'auth_notice.dart';
 import 'bridge_command.dart';
 import 'herdr_transport.dart';
-import 'zipped_exec_channel.dart';
+import 'keeper_command.dart' show hostServeCommand, keeperInstallCommand;
 import 'link_liveness.dart';
 import 'mux_client.dart';
+import 'remote_file_backend.dart';
 import 'sftp_files.dart';
 import 'web_bridge.dart';
 
@@ -118,10 +125,12 @@ const sshAlgorithms = SSHAlgorithms(
   ],
 );
 
-/// [HerdrTransport] over SSH: one authenticated [SSHClient] per machine.
-/// Requests share one persistent multiplexed channel ([MuxClient]); hosts
-/// that cannot run it get a fresh exec channel per request through the
-/// bridge command instead. Each event subscription has its own channel.
+/// [HerdrTransport] over SSH: one authenticated [SSHClient] per machine. The
+/// machine's agent helper (`herdr-host serve`, see [hostLink]) carries the herdr
+/// requests, the event subscriptions and the agent sessions on one channel;
+/// requests share one multiplexed stream ([MuxClient]). A host without the
+/// helper gets one bridge channel per request instead
+/// ([buildBridgeCommand]), and each event subscription opens its own.
 class SshTransport implements HerdrTransport {
   SshTransport({
     required this.profile,
@@ -132,14 +141,16 @@ class SshTransport implements HerdrTransport {
     this.approvalTimeout = const Duration(minutes: 5),
     this.onNotice,
     Future<SSHClient> Function(void Function() onInbound)? connectClient,
-    Future<MuxChannel> Function(String command)? openMuxChannel,
+    Future<MuxChannel> Function()? openMuxChannel,
+    Future<HostProcess> Function(String command)? openHostProcess,
     Duration Function()? livenessClock,
+    Future<SftpApi> Function()? openSftp,
   }) : _connectClient = connectClient, // ignore: prefer_initializing_formals
        _openMuxChannel = openMuxChannel, // ignore: prefer_initializing_formals
+       _openHostProcess = openHostProcess, // ignore: prefer_initializing_formals
        _livenessClock = livenessClock, // ignore: prefer_initializing_formals
-       _command = buildBridgeCommand(session: profile.session, socketPath: profile.socketPath),
-       _muxCommand = buildMuxCommand(session: profile.session, socketPath: profile.socketPath),
-       _eventsCommand = buildEventsCommand(session: profile.session, socketPath: profile.socketPath);
+       _openSftpApi = openSftp, // ignore: prefer_initializing_formals
+       _command = buildBridgeCommand(session: profile.session, socketPath: profile.socketPath);
 
   final MachineProfile profile;
   final MachineSecrets secrets;
@@ -156,16 +167,17 @@ class SshTransport implements HerdrTransport {
   /// Called with every login banner the server sends before authentication.
   final void Function(String banner)? onNotice;
 
-  /// Replace the real connection, the mux channel and the clock of the link
-  /// watch; for tests. The connection is told to call `onInbound` for every
-  /// chunk it receives, as the real socket does (proof of life, see
-  /// [LinkLiveness]).
+  /// Replace the real connection, the mux channel, the process that runs
+  /// `herdr-host serve`, the SFTP session and the clock of the link watch; for
+  /// tests. The
+  /// connection is told to call `onInbound` for every chunk it receives, as the
+  /// real socket does (proof of life, see [LinkLiveness]).
   final Future<SSHClient> Function(void Function() onInbound)? _connectClient;
-  final Future<MuxChannel> Function(String command)? _openMuxChannel;
+  final Future<MuxChannel> Function()? _openMuxChannel;
+  final Future<HostProcess> Function(String command)? _openHostProcess;
   final Duration Function()? _livenessClock;
+  final Future<SftpApi> Function()? _openSftpApi;
   final String _command;
-  final String _muxCommand;
-  final String _eventsCommand;
   late String? _pinned = profile.hostKeyFingerprint;
   Future<SSHClient>? _client;
   // The client [_client] resolved to, so [_drop] can forget it at once: a
@@ -174,13 +186,36 @@ class SshTransport implements HerdrTransport {
   SSHClient? _ready;
   MuxClient? _mux;
   Future<MuxClient>? _muxStart;
-  // After a failed mux start (no python3, or herdr's socket is not there right
-  // now, e.g. herdr is restarting) requests use the slower bridge channel until
-  // this instant, then the mux is tried again. Not permanent: a missing socket
-  // is a transient condition, not a property of the host. An event
-  // subscription whose script exits 78 sets it too, and takes the bridge.
+  HostLink? _host;
+  Future<HostLink>? _hostStart;
+  // After the helper could not be started (it is not installed and the install
+  // failed, or the machine is of a kind it has no build for) the verdict stands
+  // for this long, so no request runs the installer again; the board uses the
+  // bridge meanwhile. A dropped connection is not a verdict.
+  DateTime? _hostRetryAt;
+  static const _hostRetryDelay = Duration(seconds: 30);
+  // After a failed mux start (no helper on the host, or herdr's socket is not
+  // there right now, e.g. herdr is restarting) requests use the slower bridge
+  // channel until this instant, then the mux is tried again. Not permanent: a
+  // missing socket is a transient condition, not a property of the host. An
+  // event subscription the host refuses as unavailable sets it too, and takes
+  // the bridge.
   DateTime? _muxRetryAt;
   static const _muxRetryDelay = Duration(seconds: 30);
+
+  /// The window in which the host holds back repeats of a pane's update on an
+  /// event stream (`coalesce_ms` of `herdr.events`).
+  static const eventCoalesceMs = 250;
+
+  // The helper is installed at most once per failure: every consumer that
+  // started on a link which then exited 65 asks [_recoverHelper] with the
+  // generation it started in, so concurrent ones (the mux, the events, a call)
+  // share one install, and one that started after it is not run again.
+  // [_installTried] holds from an install until a HELLO proves the helper is
+  // there; a second 65 inside that window is the verdict (see [_stillMissing]).
+  var _helperGen = 0;
+  var _installTried = false;
+  Future<void>? _recovery;
   // Bumped by every teardown so a mux that finished starting afterwards is
   // discarded instead of installed.
   var _epoch = 0;
@@ -398,14 +433,57 @@ class SshTransport implements HerdrTransport {
   }
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) async {
-    final channel = SshExecChannel(_SshSessionAdapter(await _open(command)));
-    return zipped ? ZippedExecChannel(channel) : channel;
+  Future<Object?> hostCall(
+    String service,
+    String method, [
+    Map<String, Object?> args = const {},
+    Duration? timeout,
+  ]) async {
+    final link = await hostLink();
+    return link.call(service, method, args, timeout ?? requestTimeout);
   }
 
-  /// Files go over SFTP on the same authenticated connection: one cached
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) async {
+    final link = await hostLink();
+    // zctx: the host compresses the lines as one continuous stream.
+    return HostLineChannel(link.open(service, method, args, true));
+  }
+
+  @override
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) {
+    HostStream? stream;
+    StreamSubscription<Object?>? sub;
+    var cancelled = false;
+    late final StreamController<Object?> out;
+    out = StreamController<Object?>(
+      onListen: () async {
+        try {
+          final link = await hostLink();
+          if (cancelled) return;
+          // zctx: a watch repeats the shape of its last message.
+          final s = stream = link.open(service, method, args, true);
+          sub = s.messages.listen(out.add, onError: out.addError, onDone: () => unawaited(out.close()));
+        } on Object catch (e) {
+          if (cancelled || out.isClosed) return;
+          out.addError(e);
+          await out.close();
+        }
+      },
+      onCancel: () async {
+        cancelled = true;
+        await sub?.cancel();
+        stream?.reset();
+      },
+    );
+    return out.stream;
+  }
+
+  /// Files: the agent helper's `fs` ([HostFiles], see [_backend]) or, on a machine
+  /// without the helper, SFTP on the same authenticated connection: one cached
   /// session, reopened by [SftpFiles] when its channel dies.
-  late final SftpFiles _files = SftpFiles(open: _openSftp);
+  late final SftpFiles _sftp = SftpFiles(open: _openSftp);
+  HostFiles? _hostFiles;
 
   /// How long a host may take to answer the sftp subsystem request before it
   /// is reported as not offering SFTP. Some sshd configs never answer.
@@ -418,6 +496,8 @@ class SshTransport implements HerdrTransport {
 
   Future<SftpApi> _openSftp() async {
     if (_closed) throw const HerdrTransportException('Transport closed');
+    final replaced = _openSftpApi;
+    if (replaced != null) return replaced();
     final remembered = _noSftpUntil;
     if (remembered != null && DateTime.now().isBefore(remembered)) throw _noSftp();
     final client = await _connected();
@@ -453,40 +533,130 @@ class SshTransport implements HerdrTransport {
   @override
   bool get supportsFiles => true;
 
-  @override
-  Future<RemoteStat> statFile(String path) => _files.stat(path);
+  /// Files come from the agent helper's `fs` service when the machine has it
+  /// (one request and one answer, offset reads that check the file's identity,
+  /// real change events) and over SFTP, read-only, when it has not. Decided at
+  /// each call from the machine's one link, which is remembered (a machine
+  /// without the helper is not asked again for a while): a reset or a lost link
+  /// decides again.
+  Future<RemoteFileBackend> _backend() async {
+    final HostLink link;
+    try {
+      link = await hostLink();
+    } on HostException catch (e) {
+      if (_helperCannotBeHad(e)) return _sftp;
+      throw HerdrTransportException(e.message);
+    }
+    if (!link.hello.has('fs')) return _sftp;
+    final cached = _hostFiles;
+    if (cached != null && identical(cached.link, link)) return cached;
+    return _hostFiles = HostFiles(link);
+  }
+
+  /// The machine has no agent helper and cannot get one (unsupported kind of
+  /// machine, offline, download blocked: the install failed, or that verdict
+  /// is remembered), as opposed to a connection that is down or slow.
+  static bool _helperCannotBeHad(HostException e) =>
+      e is! HostLinkLost && (e.code == 'unavailable' || e.code == 'install_failed');
+
+  /// The link to the helper for a write (an upload): without the helper there
+  /// is nothing to write with, and the machine says so.
+  Future<HostLink> _helperLink() async {
+    try {
+      return await hostLink();
+    } on HostException catch (e) {
+      if (_helperCannotBeHad(e)) {
+        throw RemoteFileException(RemoteFileErrorKind.unsupported, needsHostHelper);
+      }
+      throw HerdrTransportException(e.message);
+    }
+  }
 
   @override
-  Future<List<RemoteEntry>> listDirectory(String path) => _files.list(path);
+  Future<RemoteStat> statFile(String path) async => (await _backend()).stat(path);
 
   @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
-      _files.read(path, offset, length);
+  Future<List<RemoteEntry>> listDirectory(String path) async => (await _backend()).list(path);
 
   @override
-  Future<String> realPath(String path) => _files.realPath(path);
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) async =>
+      (await _backend()).read(path, offset, length.clamp(0, remoteReadCap), ifMatch: ifMatch);
 
   @override
-  Future<void> makeDirs(String path) => _files.makeDirs(path);
+  Future<String> realPath(String path) async => (await _backend()).realPath(path);
 
   @override
-  Future<void> removeFile(String path) => _files.remove(path);
+  Stream<RemoteStat?> watchFile(String path) async* {
+    yield* (await _backend()).watch(path);
+  }
+
+  @override
+  Future<Uint8List?> thumbnailFile(String path, {int maxPx = 256, RemoteStat? expect, Future<void>? cancelled}) async {
+    try {
+      return await (await _backend()).thumbnail(path, maxPx: maxPx, expect: expect, cancelled: cancelled);
+    } on Object {
+      // A thumbnail is a convenience: the caller has its own way without one.
+      return null;
+    }
+  }
+
+  @override
+  Stream<FileSearchEvent> searchFiles(FileSearchSpec spec) async* {
+    yield* (await _backend()).search(spec);
+  }
+
+  @override
+  Future<String> reserveInboxFile({required String key, required String name}) async {
+    final link = await _helperLink();
+    if (!link.hello.has('transfer')) throw RemoteFileException(RemoteFileErrorKind.unsupported, needsHostHelper);
+    return HostTransfer(link).reserve(key: key, name: name);
+  }
+
+  @override
+  Future<int> sweepInbox() async {
+    final link = await _helperLink();
+    if (!link.hello.has('transfer')) throw RemoteFileException(RemoteFileErrorKind.unsupported, needsHostHelper);
+    return HostTransfer(link).sweep();
+  }
 
   @override
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
-  }) => _files.upload(localPath, remotePath, onProgress: onProgress);
+  }) => HostUpload(link: _helperLink(), localPath: localPath, inboxPath: inboxPath, onProgress: onProgress);
 
   String _frame(String method, Map<String, dynamic> params) =>
       '${jsonEncode({'id': 'm${_nextId++}', 'method': method, 'params': params})}\n';
 
   @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) async {
-    final mux = await _muxClient();
-    if (mux != null) return mux.request(method, params);
-    return _bridgeRequest(method, params);
+    while (true) {
+      final gen = _helperGen;
+      final mux = await _muxClient();
+      if (mux == null) return _bridgeRequest(method, params);
+      try {
+        return await mux.request(method, params);
+      } on MuxUnavailable catch (e) {
+        // The mux never became ready: this request goes by the bridge, as the
+        // ones after it do until [_muxRetryAt].
+        if (e.linkLost) throw HerdrTransportException('Connection lost: $e');
+        if (e.helperMissing) {
+          // The request went out before the helper said it was missing: install
+          // it once and send the request again on a new mux.
+          try {
+            await _recoverHelper(gen);
+            continue;
+          } on HostLinkLost catch (l) {
+            throw HerdrTransportException('Connection lost: ${l.message}');
+          } on HostException {
+            // not installable: remembered in [_hostRetryAt]
+          }
+        }
+        _muxRetryAt = DateTime.now().add(_muxRetryDelay);
+        return _bridgeRequest(method, params);
+      }
+    }
   }
 
   /// The shared mux, started on first use, or null while it is unavailable
@@ -512,9 +682,42 @@ class SshTransport implements HerdrTransport {
     final epoch = _epoch;
     final started = _timing;
     final open = _openMuxChannel;
-    final MuxChannel channel = open != null ? await open(_muxCommand) : _SshMuxChannel(await _open(_muxCommand));
+    final MuxChannel channel;
+    if (open != null) {
+      channel = await open();
+    } else {
+      final HostLink link;
+      try {
+        // Started, not greeted: the OPEN and the first request leave behind our
+        // HELLO without waiting for the host's.
+        link = await startedLink();
+      } on HostLinkLost catch (e) {
+        throw MuxUnavailable(e.message, linkLost: true);
+      } on HostException catch (e) {
+        throw MuxUnavailable(e.message);
+      }
+      // zctx: requests repeat the same keys and answers repeat the same rows, so
+      // a stream that remembers the last ones costs far less than frames that do
+      // not (the python mux did this for requests, ~16 bytes each instead of ~150).
+      channel = HostMuxChannel(
+        link.open('herdr', 'mux', {
+          'projections': muxProjections,
+          'delta': {
+            'min_chars': muxDeltaMin,
+            'max_rows': muxDeltaRows,
+            'keep': muxDeltaKeep,
+            'keep_chars': muxDeltaChars,
+          },
+        }, true),
+      );
+    }
     final mux = await MuxClient.connect(
       channel,
+      // Over the helper the client is returned before ready and requests go out
+      // at once (see [MuxClient.connect]); the window covers the host's HELLO
+      // and herdr's socket, as the old connect plus ready did.
+      startupTimeout: open == null ? const Duration(seconds: 15) : const Duration(seconds: 5),
+      waitForReady: open != null,
       requestTimeout: requestTimeout,
       heartbeatInterval: started.muxInterval,
       heartbeatTimeout: started.muxTimeout,
@@ -537,6 +740,123 @@ class SshTransport implements HerdrTransport {
       if (cause == MuxDeath.unresponsive) reset();
     });
     return mux;
+  }
+
+  /// The machine's one hostwire link (`herdr-host serve` on one exec channel),
+  /// started on first use and shared by every feature, with the host's HELLO
+  /// in ([HostLink.hello]). When the helper is not on the host it is installed
+  /// once and `serve` started again.
+  ///
+  /// Throws [HostException] when the helper cannot be had on this machine (the
+  /// verdict is remembered for a while), [HostLinkLost] when the connection
+  /// drops meanwhile, and [HerdrTransportException] when no channel can be
+  /// opened.
+  Future<HostLink> hostLink() async {
+    while (true) {
+      final gen = _helperGen;
+      final link = await startedLink();
+      try {
+        await link.helloFuture;
+        return link;
+      } on HostMissing {
+        await _recoverHelper(gen);
+      }
+    }
+  }
+
+  /// The machine's link as soon as its channel is open, before the host's HELLO
+  /// (see [HostLink.start]): for consumers that open their stream at once and
+  /// take its failure ([HostMissing] among them, see [_recoverHelper]) from the
+  /// stream. Throws as [hostLink] does for a verdict already in force.
+  Future<HostLink> startedLink() async {
+    if (_closed) throw const HerdrTransportException('Transport closed');
+    final live = _host;
+    if (live != null && live.isOpen) return live;
+    final retryAt = _hostRetryAt;
+    if (retryAt != null && DateTime.now().isBefore(retryAt)) {
+      throw const HostException('unavailable', 'The agent helper is not available on this machine.');
+    }
+    return _hostStart ??= _startHost().whenComplete(() => _hostStart = null);
+  }
+
+  Future<HostProcess> _processFor(String command) async {
+    final open = _openHostProcess;
+    if (open != null) return open(command);
+    return _SshSessionAdapter(await _open(command));
+  }
+
+  Future<HostLink> _startHost() async {
+    final epoch = _epoch;
+    final process = await _processFor(hostServeCommand());
+    if (epoch != _epoch) {
+      process.close();
+      throw const HerdrTransportException('Connection reset');
+    }
+    final link = HostLink.start(
+      process,
+      version: appVersion,
+      herdrSession: profile.session,
+      herdrSocket: profile.socketPath,
+    );
+    _host = link;
+    unawaited(
+      link.closed.then((_) {
+        if (identical(_host, link)) _host = null;
+      }),
+    );
+    unawaited(
+      link.helloFuture.then<void>(
+        (_) {
+          if (epoch != _epoch) return;
+          _hostRetryAt = null;
+          _installTried = false;
+        },
+        onError: (Object e) {
+          // A refusal or a failed start is a verdict for a while; a dropped
+          // connection, silence and a missing helper (installed by
+          // [_recoverHelper]) are not.
+          if (epoch != _epoch || e is! HostException) return;
+          if (e is HostLinkLost || e is HostMissing || e.code == 'timeout' || e.code == 'cancelled') return;
+          _hostRetryAt = DateTime.now().add(_hostRetryDelay);
+        },
+      ),
+    );
+    return link;
+  }
+
+  /// Installs the helper after a link exited 65. [gen] is the generation the
+  /// failed consumer started in: a newer one means an install already ran since,
+  /// and the consumer only starts again. Throws [HostException]: the install's
+  /// failure, or the verdict ([_stillMissing]) when a second 65 follows an
+  /// install.
+  Future<void> _recoverHelper(int gen) async {
+    if (_helperGen != gen) return;
+    final running = _recovery;
+    if (running != null) return running;
+    if (_installTried) throw _stillMissing();
+    return _recovery = _installHelper().whenComplete(() => _recovery = null);
+  }
+
+  Future<void> _installHelper() async {
+    try {
+      await installHostHelper(await _processFor(keeperInstallCommand()));
+    } on HostLinkLost {
+      rethrow;
+    } on HostException catch (e) {
+      if (e.code != 'timeout') _hostRetryAt = DateTime.now().add(_hostRetryDelay);
+      rethrow;
+    }
+    _installTried = true;
+    _helperGen++;
+  }
+
+  /// The helper is missing again right after it was installed: the machine
+  /// cannot have it. Remembered for [_hostRetryDelay]; the next try after that
+  /// installs again.
+  HostException _stillMissing() {
+    _installTried = false;
+    _hostRetryAt = DateTime.now().add(_hostRetryDelay);
+    return const HostException('unavailable', 'The agent helper is still missing on this machine after installing it.');
   }
 
   Future<Map<String, dynamic>> _bridgeRequest(String method, Map<String, dynamic> params) async {
@@ -570,6 +890,7 @@ class SshTransport implements HerdrTransport {
   @override
   Stream<Map<String, dynamic>> events(List<Map<String, dynamic>> subscriptions) {
     SSHSession? session;
+    HostStream? hostStream;
     StreamSubscription<String>? sub;
     // The consumer cancelled: no channel may be opened for it any more.
     var cancelled = false;
@@ -582,69 +903,130 @@ class SshTransport implements HerdrTransport {
       out.close();
       sub?.cancel();
       session?.close();
+      hostStream?.reset();
+    }
+
+    Future<void> endWith(Object error) async {
+      if (out.isClosed) return;
+      _liveEvents.remove(fail);
+      out.addError(error);
+      await out.close();
+    }
+
+    // The events of one subscription: herdr's acknowledgement first, then each
+    // event. Returns false for a line that is not one.
+    var acked = false;
+    void onLine(String line) {
+      try {
+        if (!acked) {
+          unwrapResponse(line); // throws on API error
+          acked = true;
+          out.add(const {'event': subscriptionStartedEvent});
+          return;
+        }
+        final decoded = jsonDecode(line);
+        if (decoded is Map<String, dynamic>) out.add(decoded);
+      } on Object catch (e) {
+        out.addError(e);
+      }
+    }
+
+    // One channel per subscription through the bridge command, for a host
+    // without the helper (or while herdr's socket is not there for it).
+    Future<void> subscribeBridge() async {
+      final s = session = await _open(_command);
+      if (out.isClosed || cancelled) {
+        s.close();
+        return;
+      }
+      final stderr = utf8.decodeStream(s.stderr).catchError((Object _) => '');
+      s.stdin.add(utf8.encode(_frame('events.subscribe', {'subscriptions': subscriptions})));
+      sub = jsonLines(s.stdout)
+          .listen(onLine, onError: out.addError, onDone: () async => fail(await _bridgeFailure(s, stderr)));
+    }
+
+    // The subscription on the machine's hostwire link, opened before the host's
+    // HELLO (see [HostLink.start]). [gen] is the install generation a retry
+    // after a missing helper starts from.
+    Future<void> subscribeHost() async {
+      final gen = _helperGen;
+      final HostLink link;
+      try {
+        link = await startedLink();
+      } on HostLinkLost catch (e) {
+        throw HerdrTransportException('Connection lost: ${e.message}');
+      } on HostException {
+        // No helper here: the bridge can still carry it.
+        _muxRetryAt = DateTime.now().add(_muxRetryDelay);
+        await subscribeBridge();
+        return;
+      }
+      if (out.isClosed || cancelled) return;
+      final s = hostStream = link.open('herdr', 'events', {
+        'subscriptions': subscriptions,
+        'projection': eventProjection,
+        // The host holds back repeats of a pane's update inside this window
+        // (0 = every event as it comes).
+        'coalesce_ms': eventCoalesceMs,
+      }, true);
+      sub = s.texts.listen(
+        onLine,
+        onError: (Object e) async {
+          final usable = !acked && !out.isClosed && !cancelled;
+          if (e is HostMissing && usable) {
+            // The subscription went out before the helper said it was missing:
+            // install it once and subscribe again; no helper after that, the
+            // bridge asks herdr itself.
+            hostStream = null;
+            try {
+              await _recoverHelper(gen);
+              if (out.isClosed || cancelled) return;
+              await subscribeHost();
+            } on HostLinkLost catch (l) {
+              await endWith(HerdrTransportException('Connection lost: ${l.message}'));
+            } on HostException {
+              _muxRetryAt = DateTime.now().add(_muxRetryDelay);
+              try {
+                await subscribeBridge();
+              } on Object catch (e) {
+                await endWith(e);
+              }
+            } on Object catch (e) {
+              await endWith(e);
+            }
+            return;
+          }
+          if (e is HostException && e.code == 'unavailable' && usable) {
+            // herdr's socket is not there for the helper (herdr restarting):
+            // the bridge asks herdr itself.
+            hostStream = null;
+            _muxRetryAt = DateTime.now().add(_muxRetryDelay);
+            try {
+              await subscribeBridge();
+            } on Object catch (e) {
+              await endWith(e);
+            }
+            return;
+          }
+          fail(HerdrTransportException(e is HostException ? e.message : '$e'));
+        },
+        onDone: () {
+          if (!out.isClosed && !cancelled && hostStream == s) {
+            fail(const HerdrTransportException('The event stream closed'));
+          }
+        },
+      );
     }
 
     out = StreamController<Map<String, dynamic>>(
       onListen: () async {
         _liveEvents.add(fail);
-        // Opens the subscription through [command] (the events script, or
-        // the bridge it falls back to).
-        Future<void> subscribe(String command, {required bool script}) async {
-          final s = session = await _open(command);
-          if (out.isClosed || cancelled) {
-            s.close();
-            return;
-          }
-          final stderr = utf8.decodeStream(s.stderr).catchError((Object _) => '');
-          s.stdin.add(utf8.encode(_frame('events.subscribe', {'subscriptions': subscriptions})));
-          var acked = false;
-          sub = muxMessages(s.stdout).listen(
-            (line) {
-              try {
-                if (!acked) {
-                  unwrapResponse(line); // throws on API error
-                  acked = true;
-                  out.add(const {'event': subscriptionStartedEvent});
-                  return;
-                }
-                final decoded = jsonDecode(line);
-                if (decoded is Map<String, dynamic>) out.add(decoded);
-              } on Object catch (e) {
-                out.addError(e);
-              }
-            },
-            onError: out.addError,
-            onDone: () async {
-              final failure = await _bridgeFailure(s, stderr);
-              if (script && !acked && failure.fatal && !out.isClosed && !cancelled) {
-                // Exit 78: this host cannot run the script (no python3, or no
-                // socket where it looked). The bridge can; mux and script
-                // share the verdict.
-                _muxRetryAt = DateTime.now().add(_muxRetryDelay);
-                try {
-                  await subscribe(_command, script: false);
-                } on Object catch (e) {
-                  if (out.isClosed) return;
-                  _liveEvents.remove(fail);
-                  out.addError(e);
-                  await out.close();
-                }
-                return;
-              }
-              fail(failure);
-            },
-          );
-        }
-
         try {
           final retryAt = _muxRetryAt;
-          final scriptsDown = retryAt != null && DateTime.now().isBefore(retryAt);
-          await (scriptsDown ? subscribe(_command, script: false) : subscribe(_eventsCommand, script: true));
+          final helperDown = retryAt != null && DateTime.now().isBefore(retryAt);
+          await (helperDown ? subscribeBridge() : subscribeHost());
         } on Object catch (e) {
-          if (out.isClosed) return;
-          _liveEvents.remove(fail);
-          out.addError(e);
-          await out.close();
+          await endWith(e);
         }
       },
       onCancel: () async {
@@ -652,6 +1034,7 @@ class SshTransport implements HerdrTransport {
         _liveEvents.remove(fail);
         await sub?.cancel();
         session?.close();
+        hostStream?.reset();
       },
     );
     return out.stream;
@@ -661,9 +1044,13 @@ class SshTransport implements HerdrTransport {
   void reset() => unawaited(_teardown());
 
   /// The loopback listeners for pages (see [WebBridgeHost]). Files come from
-  /// the same SFTP session as the file viewer; a forward is a new channel on
-  /// the one authenticated connection, never a connection of its own.
-  late final WebBridgeHost _web = WebBridgeHost(stat: _files.stat, read: _files.read, dial: _dialForward);
+  /// the same backend as the file viewer ([_backend]); a forward is a new channel
+  /// on the one authenticated connection, never a connection of its own.
+  late final WebBridgeHost _web = WebBridgeHost(
+    stat: statFile,
+    read: (path, offset, length) => readFile(path, offset: offset, length: length),
+    dial: _dialForward,
+  );
 
   Future<SSHSocket> _dialForward(String host, int port) async {
     if (_closed) throw const HerdrTransportException('Transport closed');
@@ -691,11 +1078,16 @@ class SshTransport implements HerdrTransport {
   /// Synchronously invalidates the mux, event streams and SSH client (so
   /// in-flight work fails right away), then closes the client.
   Future<void> _teardown() async {
-    _files.discard();
+    _sftp.discard();
+    _hostFiles = null;
     _noSftpUntil = null;
     _epoch++;
     final mux = _mux;
     _mux = null;
+    final host = _host;
+    _host = null;
+    _hostRetryAt = null;
+    _installTried = false;
     final pending = _client;
     _client = null;
     _ready = null;
@@ -703,6 +1095,7 @@ class SshTransport implements HerdrTransport {
       fail(const HerdrTransportException('Connection reset'));
     }
     mux?.close();
+    unawaited(host?.close());
     try {
       (await pending)?.close();
     } on Object {
@@ -771,22 +1164,8 @@ class _ActivitySocket implements SSHSocket {
   Future<void> flush() => _inner.flush();
 }
 
-/// What [SshExecChannel] needs of an SSH session; [SSHSession] cannot be
-/// faked, so the channel works against this.
-abstract interface class ExecSession {
-  Stream<Uint8List> get stdout;
-  Stream<Uint8List> get stderr;
-  StreamSink<Uint8List> get stdin;
-
-  /// Completes when the channel is closed (errors if the connection died).
-  Future<void> get done;
-
-  /// The remote status; null when killed by a signal, or not known.
-  int? get exitCode;
-  void close();
-}
-
-class _SshSessionAdapter implements ExecSession {
+/// The SSH exec channel as the [HostProcess] of `herdr-host serve`.
+class _SshSessionAdapter implements HostProcess {
   _SshSessionAdapter(this._session);
 
   final SSHSession _session;
@@ -808,109 +1187,4 @@ class _SshSessionAdapter implements ExecSession {
 
   @override
   void close() => _session.close();
-}
-
-/// [ExecChannel] over one SSH exec channel ([ExecSession]).
-class SshExecChannel implements ExecChannel {
-  SshExecChannel(this._session) {
-    // Unread stderr would stall the channel's flow control; keep its tail.
-    _session.stderr.listen(_onStderr, onError: (Object _) {}, onDone: _stderrDone.complete);
-    _exitCode =
-        Future.wait<Object?>([
-          _session.done.then<Object?>((_) => null, onError: (Object _) => null),
-          _stderrDone.future,
-        ]).then((_) {
-          _ended = true;
-          return _session.exitCode;
-        });
-  }
-
-  /// How much of stderr [stderrTail] keeps.
-  static const tailBytes = 2048;
-
-  final ExecSession _session;
-  final _stderrDone = Completer<void>();
-  final _stderr = BytesBuilder(copy: false);
-  late final Future<int?> _exitCode;
-  Future<void>? _closing;
-  var _closed = false;
-  var _ended = false;
-
-  void _onStderr(Uint8List chunk) {
-    _stderr.add(chunk);
-    // Trimmed in steps so a chatty command does not copy per chunk.
-    if (_stderr.length > tailBytes * 2) {
-      final all = _stderr.takeBytes();
-      _stderr.add(Uint8List.sublistView(all, all.length - tailBytes));
-    }
-  }
-
-  // Set once the command's input has been (or is being) closed.
-  Future<void>? _inputClosing;
-
-  // Synchronous splitting, never `await for`: see [splitLines].
-  @override
-  late final Stream<String> lines = splitLines(_session.stdout);
-
-  @override
-  void send(String line) {
-    if (_closed || _inputClosing != null) throw StateError('exec channel closed');
-    if (_ended) return;
-    _session.stdin.add(utf8.encode('$line\n'));
-  }
-
-  @override
-  Future<void> closeInput() => _inputClosing ??= _endInput(const Duration(seconds: 10));
-
-  Future<void> _endInput(Duration limit) async {
-    if (_ended) return;
-    // Everything sent so far is flushed, then the command sees end of input.
-    try {
-      await _session.stdin.close().timeout(limit);
-    } on Object {
-      // the channel is already gone or stuck; closing it ends both
-    }
-  }
-
-  @override
-  Future<int?> get exitCode => _exitCode;
-
-  @override
-  String get stderrTail {
-    final all = _stderr.toBytes();
-    final tail = all.length > tailBytes ? Uint8List.sublistView(all, all.length - tailBytes) : all;
-    return utf8.decode(tail, allowMalformed: true).trim();
-  }
-
-  @override
-  Future<void> close() => _closing ??= _close();
-
-  Future<void> _close() async {
-    _closed = true;
-    await (_inputClosing ??= _endInput(const Duration(seconds: 2)));
-    _session.close();
-  }
-}
-
-/// [MuxChannel] over one SSH exec channel.
-class _SshMuxChannel implements MuxChannel {
-  _SshMuxChannel(this._session) {
-    // Unread stderr would stall the channel's flow control.
-    _session.stderr.listen((_) {}, onError: (Object _) {});
-  }
-
-  final SSHSession _session;
-  final _requests = MuxRequestEncoder();
-
-  @override
-  late final Stream<String> lines = muxMessages(_session.stdout);
-
-  @override
-  void send(String line) => _session.stdin.add(Uint8List.fromList(_requests.frame(line)));
-
-  @override
-  Future<void> close() async => _session.close();
-
-  @override
-  late final Future<int?> exitCode = _session.done.then((_) => _session.exitCode, onError: (Object _) => null);
 }

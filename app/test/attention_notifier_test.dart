@@ -1,6 +1,7 @@
 // When the phone tells the person about an agent: the transitions that notify,
 // what clears a notification, the limits that keep a burst readable, and the
 // "watching" notice that keeps the connections alive in the background.
+import 'dart:async';
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:fake_async/fake_async.dart';
@@ -52,8 +53,18 @@ class _Herdr extends FakeTransport {
   /// Runs as a read starts: the screen or the link can change meanwhile.
   void Function()? duringRead;
 
+  /// While set, a snapshot is answered only once this completes (with what
+  /// herdr said when it was asked).
+  Completer<void>? hold;
+
   @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) async {
+    if (method == 'session.snapshot' && hold != null) {
+      final gate = hold!;
+      final answer = super.request(method, params);
+      await gate.future;
+      return answer;
+    }
     if (method == 'pane.read') {
       calls.add((method, params));
       duringRead?.call();
@@ -1837,6 +1848,117 @@ void main() {
         r.life(away);
         _blockSession(r.sessions.sessions.single as FakeAgentSession);
         expect(r.notifier.shown.single.answers, isEmpty);
+        r.dispose();
+      });
+    });
+  });
+  group('a status event ahead of its snapshot', () {
+    // herdr's own word for a change of status, as the background profile gets
+    // it: the machine shows it before the snapshot has answered.
+    Map<String, dynamic> status(String pane, String to) => {
+      'event': 'pane_agent_status_changed',
+      'data': {'pane_id': pane, 'agent_status': to, 'agent': 'claude', 'workspace_id': 'w1'},
+    };
+
+    test('"needs you" is announced when the event arrives, and once when the snapshot agrees', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {
+          'a': {'w1:p1': 'working'},
+        });
+        r.life(away);
+        final t = r.transports['a']!;
+        final id = _id('a', 'w1:p1');
+        final calls = t.snapshotCalls;
+
+        r.herdr('a', {'w1:p1': 'blocked'});
+        t.hold = Completer();
+        t.emit(status('w1:p1', 'blocked'));
+        async.flushMicrotasks();
+        expect(r.notifier.showsOf(id), 1, reason: 'before any snapshot has been asked for');
+        expect(t.snapshotCalls, calls);
+
+        r.advance(const Duration(milliseconds: 300));
+        expect(t.snapshotCalls, calls + 1, reason: 'the verification is out, unanswered');
+        t.hold!.complete();
+        t.hold = null;
+        async.flushMicrotasks();
+        r.advance(const Duration(seconds: 30)); // inside the 4 min background poll
+
+        expect(r.notifier.showsOf(id), 1, reason: 'agreeing with it is not news again');
+        expect(r.notifier.active.keys, contains(id));
+        expect(r.notifier.log, isNot(contains('cancel:$id')));
+        expect(t.snapshotCalls, calls + 1);
+        r.dispose();
+      });
+    });
+
+    test('an event the snapshot does not bear out withdraws what it announced', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {
+          'a': {'w1:p1': 'working'},
+        });
+        r.life(away);
+        final t = r.transports['a']!;
+        final id = _id('a', 'w1:p1');
+
+        // herdr still says working: the event was stale.
+        t.hold = Completer();
+        t.emit(status('w1:p1', 'blocked'));
+        async.flushMicrotasks();
+        expect(r.notifier.active.keys, contains(id));
+
+        r.advance(const Duration(milliseconds: 300));
+        t.hold!.complete();
+        t.hold = null;
+        async.flushMicrotasks();
+
+        expect(r.notifier.showsOf(id), 1);
+        expect(r.notifier.active.keys, isNot(contains(id)), reason: 'retracted, as a blip is');
+        expect(r.notifier.log, contains('cancel:$id'));
+        r.dispose();
+      });
+    });
+
+    test('a snapshot taken before the event does not withdraw it', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {
+          'a': {'w1:p1': 'working'},
+        });
+        r.life(away);
+        final t = r.transports['a']!;
+        final id = _id('a', 'w1:p1');
+
+        // A refresh is out, asked while the agent still worked ...
+        t.hold = Completer();
+        t.emit({'event': 'tab_created'});
+        r.advance(const Duration(milliseconds: 300));
+        final stale = t.hold!;
+        // ... the agent blocks and says so before that answer comes.
+        r.herdr('a', {'w1:p1': 'blocked'});
+        t.hold = null;
+        t.emit(status('w1:p1', 'blocked'));
+        async.flushMicrotasks();
+        expect(r.notifier.showsOf(id), 1);
+
+        stale.complete();
+        async.flushMicrotasks();
+        r.advance(const Duration(seconds: 30)); // inside the 4 min background poll
+
+        expect(r.notifier.showsOf(id), 1);
+        expect(r.notifier.active.keys, contains(id));
+        expect(r.notifier.log, isNot(contains('cancel:$id')), reason: 'never taken back for the old answer');
+        r.dispose();
+      });
+    });
+
+    test('the app in front is told nothing, whatever an event says', () {
+      fakeAsync((async) {
+        final r = _Rig(async, {
+          'a': {'w1:p1': 'working'},
+        });
+        r.transports['a']!.emit(status('w1:p1', 'blocked'));
+        async.flushMicrotasks();
+        expect(r.notifier.shown, isEmpty);
         r.dispose();
       });
     });

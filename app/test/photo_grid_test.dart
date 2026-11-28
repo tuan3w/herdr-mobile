@@ -16,6 +16,7 @@ import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_row.dart';
 import 'package:herdr_mobile/ui/features/files/photo_grid.dart';
+import 'package:herdr_mobile/ui/features/files/file_thumb.dart' show thumbHostMaxBytes;
 import 'package:herdr_mobile/ui/features/files/photo_thumbs.dart';
 import 'package:herdr_mobile/ui/features/photos/photo_viewer.dart';
 
@@ -60,7 +61,7 @@ class _GatedFiles extends RemoteFiles {
   }
 
   @override
-  Future<Uint8List> read(String path, {int offset = 0, int length = remoteReadCap}) async {
+  Future<Uint8List> read(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) async {
     reads.add(path);
     lengths[path] = length;
     inFlight++;
@@ -74,6 +75,34 @@ class _GatedFiles extends RemoteFiles {
     } finally {
       inFlight--;
     }
+  }
+
+  /// Thumbnails the machine would make, by path; a path not here is one it
+  /// cannot (what SFTP answers for every path).
+  final hostThumbs = <String, Uint8List>{};
+
+  /// `path@maxPx`, in the order thumbnails were asked for.
+  final thumbAsks = <String>[];
+
+  /// The cancel handle each thumbnail was asked with.
+  final thumbCancels = <String, ReadCancel>{};
+  final _thumbHolds = <String, Completer<void>>{};
+
+  /// The thumbnail of [path] waits until [releaseThumb].
+  void holdThumb(String path) => _thumbHolds[path] = Completer<void>();
+
+  void releaseThumb(String path) => _thumbHolds[path]?.complete();
+
+  @override
+  Future<Uint8List?> thumbnail(String path, {int maxPx = 256, RemoteStat? expect, ReadCancel? cancel}) async {
+    thumbAsks.add('$path@$maxPx');
+    if (cancel != null) thumbCancels[path] = cancel;
+    final hold = _thumbHolds[path];
+    if (hold != null) {
+      await Future.any([hold.future, if (cancel != null) cancel.whenCancelled]);
+      if (cancel?.cancelled ?? false) return null;
+    }
+    return hostThumbs[path];
   }
 }
 
@@ -111,6 +140,9 @@ RemoteEntry _entry(String name, int? size, {DateTime? modified, String dir = '/p
   size: size,
   modified: modified ?? DateTime.utc(2026, 5, 20),
 );
+
+/// The chip that switches the browser between the list and the photo grid.
+final _photosChip = find.widgetWithText(AppChip, 'Photos');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -193,23 +225,77 @@ void main() {
       thumbs.dispose();
     });
 
-    test('a file over the limit is never read on its own: it is skipped, and keeps its size', () async {
+    test('a file over the limit is never read on its own: only the machine is asked, and SFTP says no', () async {
       final thumbs = make(autoLimit: 1000);
       final big = _entry('huge.png', 5000);
       final small = _entry('small.png', 200);
       files.sizes[small.path] = 200;
       final hugeHold = thumbs.acquire(files, big);
       final smallHold = thumbs.acquire(files, small);
-      expect(hugeHold.phase, ThumbPhase.tooBig, reason: 'known from the listing, before any read');
       await flush();
       files.openAll();
       await flush();
 
-      expect(files.reads, ['/p/small.png']);
-      expect(hugeHold.phase, ThumbPhase.tooBig);
+      expect(files.reads, ['/p/small.png'], reason: 'the big one is never read over SFTP');
+      expect(files.thumbAsks, containsAll(['/p/huge.png@256', '/p/small.png@256']));
+      expect(hugeHold.phase, ThumbPhase.tooBig, reason: 'the machine could not make one: a glyph and the size');
       expect(hugeHold.image, isNull);
       expect(hugeHold.size, 5000);
       expect(smallHold.phase, ThumbPhase.ready);
+
+      // Scrolled back: not asked again (a picture the machine could not do stays undone).
+      thumbs.release(hugeHold);
+      files.thumbAsks.clear();
+      final again = thumbs.acquire(files, big);
+      await flush();
+      expect(files.thumbAsks, isEmpty);
+      expect(again.phase, ThumbPhase.tooBig);
+      thumbs.dispose();
+    });
+
+    test('a picture past the machine\u2019s own limit is a glyph at once, nobody is asked', () async {
+      final thumbs = make(autoLimit: 1000);
+      final huge = _entry('whale.png', thumbHostMaxBytes + 1);
+      final held = thumbs.acquire(files, huge);
+      expect(held.phase, ThumbPhase.tooBig);
+      await flush();
+      expect(files.thumbAsks, isEmpty);
+      expect(files.reads, isEmpty);
+      thumbs.dispose();
+    });
+
+    test('the machine\u2019s thumbnail is used instead of reading the file, whatever its size', () async {
+      final thumbs = make(autoLimit: 1000);
+      final big = _entry('photo.jpg', 3 * 1024 * 1024);
+      files.hostThumbs[big.path] = Uint8List.fromList([0xFF, 0xD8, 1, 2, 3]);
+      final held = thumbs.acquire(files, big);
+      await flush();
+
+      expect(held.phase, ThumbPhase.ready);
+      expect(files.reads, isEmpty, reason: 'a 3 MB photo is not carried to the phone to draw a tile');
+      expect(files.thumbAsks, ['/p/photo.jpg@256']);
+      expect(decoder.calls, 1);
+      thumbs.release(held);
+      thumbs.dispose();
+    });
+
+    test('a tile that scrolls away stops the machine making its thumbnail', () async {
+      final thumbs = make();
+      final e = _entry('slow.jpg', 5000000);
+      files.hostThumbs[e.path] = Uint8List.fromList([1, 2, 3]);
+      files.holdThumb(e.path);
+      final held = thumbs.acquire(files, e);
+      await flush();
+      expect(files.thumbCancels[e.path]!.cancelled, isFalse, reason: 'still wanted');
+      expect(thumbs.inFlight, 1);
+
+      thumbs.release(held);
+
+      expect(files.thumbCancels[e.path]!.cancelled, isTrue, reason: 'the host is told to stop');
+      expect(thumbs.inFlight, 0);
+      files.releaseThumb(e.path);
+      await flush();
+      expect(decoder.calls, 0, reason: 'what lands late is thrown away');
       thumbs.dispose();
     });
 
@@ -681,20 +767,20 @@ void main() {
       await _settle(tester);
     }
 
-    testWidgets('the Photos toggle appears from six photos, never below, and never when picking', (tester) async {
+    testWidgets('the Photos chip appears from six photos, never below, and never when picking', (tester) async {
       final (fs5, dir5) = await photoFolder(tester, 5, extra: (fs, d) => fs.addFile('$d/notes.txt', 'x'));
       await open(tester, fs5, dir5);
-      expect(find.byTooltip('Photos'), findsNothing);
+      expect(_photosChip, findsNothing);
       expect(find.byTooltip('Show hidden files'), findsOneWidget);
 
       final (fs6, dir6) = await photoFolder(tester, 6);
       await open(tester, fs6, dir6);
-      expect(find.byTooltip('Photos'), findsOneWidget);
+      expect(_photosChip, findsOneWidget);
       expect(find.byTooltip('Show hidden files'), findsOneWidget);
 
       for (final mode in [FileBrowserMode.pickDirectory, FileBrowserMode.pickFile]) {
         await open(tester, fs6, dir6, mode: mode);
-        expect(find.byTooltip('Photos'), findsNothing, reason: '$mode');
+        expect(_photosChip, findsNothing, reason: '$mode');
       }
     });
 
@@ -708,15 +794,15 @@ void main() {
         },
       );
       await open(tester, fs, dir);
-      expect(find.byTooltip('Photos'), findsNothing);
+      expect(_photosChip, findsNothing);
 
       await tester.tap(find.byTooltip('Show hidden files'));
       await _settle(tester);
-      expect(find.byTooltip('Photos'), findsOneWidget);
+      expect(_photosChip, findsOneWidget);
 
       await tester.tap(find.byTooltip('Hide hidden files'));
       await _settle(tester);
-      expect(find.byTooltip('Photos'), findsNothing);
+      expect(_photosChip, findsNothing);
     });
 
     testWidgets('the grid replaces the list, the header counts photos, and the list comes back', (tester) async {
@@ -733,16 +819,15 @@ void main() {
       expect(find.byType(FileRow), findsNWidgets(10));
       expect(find.byType(PhotoGrid), findsNothing);
 
-      await tester.tap(find.byTooltip('Photos'));
+      await tester.tap(_photosChip);
       await _settle(tester);
       expect(find.byType(PhotoGrid), findsOneWidget);
       expect(find.byType(FileRow), findsNothing);
       expect(find.text('raw'), findsNothing, reason: 'folders are not in the grid');
       expect(find.text('8 photos · 1 folder in list'), findsOneWidget);
-      expect(find.byTooltip('List'), findsOneWidget);
-      expect(find.byTooltip('Photos'), findsNothing);
+      expect(tester.widget<AppChip>(_photosChip).selected, isTrue, reason: 'the chip says the grid is on');
 
-      await tester.tap(find.byTooltip('List'));
+      await tester.tap(_photosChip);
       await _settle(tester);
       expect(find.byType(PhotoGrid), findsNothing);
       expect(find.text('raw'), findsOneWidget);
@@ -754,7 +839,7 @@ void main() {
     ) async {
       final (fs, dir) = await photoFolder(tester, 12, extra: (fs, d) => fs.addFile('$d/readme.txt', 'x'));
       await open(tester, fs, dir);
-      await tester.tap(find.byTooltip('Photos'));
+      await tester.tap(_photosChip);
       await _settle(tester);
 
       await tester.tap(find.descendant(of: find.byType(PhotoGrid), matching: find.byType(PressBuilder)).at(2));
@@ -795,7 +880,7 @@ void main() {
         fs.addFile('$dir/Ảnh số $i.jpg', big);
       }
       await open(tester, fs, dir);
-      await tester.tap(find.byTooltip('Photos'));
+      await tester.tap(_photosChip);
       await _settle(tester);
 
       expect(find.text('5,000 photos'), findsOneWidget);
@@ -867,7 +952,7 @@ void main() {
                 tester.view.physicalSize = size * phoneDpr;
                 await tester.pump();
                 await _settle(tester);
-                await tester.tap(find.byTooltip('Photos'));
+                await tester.tap(_photosChip);
                 await _settle(tester);
                 await loaded(tester);
               },

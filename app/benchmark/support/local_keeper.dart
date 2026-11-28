@@ -1,19 +1,155 @@
-// Desktop-only harness for the open-session benchmark: the REAL keeper script
-// (python3, installed the way the app installs it) in a temp HOME, with
-// `benchmark/support/bench_acp_agent.py` behind it as the agent, an
-// [AgentHost] that attaches through `sh -c keeperAttachCommand(id)` (what the
-// SSH exec channel runs, minus SSH), and a link model wrapped around any
-// transport.
+// Desktop-only harness for the open-session benchmarks: the REAL keeper (the
+// `herdr-host` binary, installed the way the app installs it) in a temp HOME,
+// with the testkit's `bench-acp-agent` behind it as the agent, reached the way
+// the app reaches it: `herdr-host serve` started by the app's own command
+// under `sh -c` (what an SSH server runs, minus SSH), one [HostLink] on it, and
+// the real [SshAgentHost] over that link. The bytes the host writes are
+// counted per stream ([WireMeter]) before the link reads them, and a link
+// model can be wrapped around any transport.
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:herdr_mobile/data/acp/agent_host.dart';
 import 'package:herdr_mobile/data/acp/json_rpc.dart';
 import 'package:herdr_mobile/data/acp/past_session.dart';
-import 'package:herdr_mobile/data/acp/process_transport.dart';
+import 'package:herdr_mobile/data/app_info.dart';
+import 'package:herdr_mobile/data/host/host_channels.dart';
+import 'package:herdr_mobile/data/host/host_link.dart';
+import 'package:herdr_mobile/data/host/wire.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/keeper_command.dart';
+import 'package:herdr_mobile/data/services/ssh_agent_host.dart';
+
+import '../../test/support/keeper_harness.dart';
+import '../../test/support/process_host.dart';
+
+/// A binary of the testkit crate (`rust/crates/testkit`): `$HERDR_TESTKIT_DIR`,
+/// else `rust/target/release` (build: `cd rust && cargo build --release -p
+/// testkit`; benchmarks run the release build).
+File testkitBinary(String name) {
+  final dir = Platform.environment['HERDR_TESTKIT_DIR'];
+  if (dir != null && dir.isNotEmpty) return File('$dir/$name');
+  final root = File('benchmark/support/local_keeper.dart').absolute.parent.parent.parent.parent.path;
+  return File('$root/rust/target/release/$name');
+}
+
+/// What the host wrote on one stream: whole frames, header included.
+class StreamTally {
+  var bytes = 0;
+  int? firstUs;
+  int? lastUs;
+}
+
+/// Counts what `serve` writes, per stream, as the phone's side would receive
+/// it (the frame header and compression included; SSH framing and the few
+/// bytes the phone writes are not counted). It walks the frame headers and
+/// skips payloads, so it costs the phone-side CPU measurements next to nothing.
+class WireMeter {
+  /// Never reset: timestamps are microseconds on it.
+  final clock = Stopwatch()..start();
+  final _streams = <int, StreamTally>{};
+  final _head = Uint8List(9);
+  var _have = 0;
+  var _left = 0;
+  var _stream = 0;
+  var _magic = hostMagic.length;
+
+  /// Forgets everything: a new link starts a new stream.
+  void reset() {
+    _streams.clear();
+    _have = 0;
+    _left = 0;
+    _magic = hostMagic.length;
+  }
+
+  /// What was written on [id] so far (nothing: zeros).
+  StreamTally stream(int id) => _streams[id] ?? StreamTally();
+
+  void add(Uint8List chunk) {
+    final now = clock.elapsedMicroseconds;
+    var i = 0;
+    while (i < chunk.length) {
+      if (_magic > 0) {
+        final n = _magic < chunk.length - i ? _magic : chunk.length - i;
+        _magic -= n;
+        i += n;
+        continue;
+      }
+      if (_left > 0) {
+        final n = _left < chunk.length - i ? _left : chunk.length - i;
+        _left -= n;
+        i += n;
+        _streams[_stream]!.lastUs = now;
+        continue;
+      }
+      _head[_have++] = chunk[i++];
+      if (_have == 9) {
+        final h = ByteData.sublistView(_head);
+        final len = h.getUint32(0, Endian.little); // kind + stream + payload
+        _stream = h.getUint32(5, Endian.little);
+        _left = len - 5;
+        _have = 0;
+        (_streams[_stream] ??= StreamTally())
+          ..bytes += 4 + len
+          ..firstUs ??= now
+          ..lastUs = now;
+      }
+    }
+  }
+}
+
+/// The `serve` process as a [HostProcess], with its stdout counted.
+class MeteredHostProcess implements HostProcess {
+  MeteredHostProcess(this._inner, this._meter);
+
+  final ProcessHostProcess _inner;
+  final WireMeter? _meter;
+
+  @override
+  late final Stream<Uint8List> stdout = _meter == null
+      ? _inner.stdout
+      : _inner.stdout.map((chunk) {
+          _meter.add(chunk);
+          return chunk;
+        });
+
+  @override
+  Stream<Uint8List> get stderr => _inner.stderr;
+
+  @override
+  StreamSink<Uint8List> get stdin => _inner.stdin;
+
+  @override
+  Future<void> get done => _inner.done;
+
+  @override
+  int? get exitCode => _inner.exitCode;
+
+  @override
+  void close() => _inner.close();
+}
+
+/// A stream the phone opened on the link: its id, what it was and when.
+typedef OpenedStream = ({int id, String method, int startedUs});
+
+/// [LinkTransport] whose streams are opened with [LocalKeeperHost.zctx] (the
+/// app opens them all with zctx) and noted in [LocalKeeperHost.opens].
+class _BenchTransport extends LinkTransport {
+  _BenchTransport(this._host) : super(_host.link);
+
+  final LocalKeeperHost _host;
+
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) async {
+    final link = await _host.link();
+    final s = link.open(service, method, args, _host.zctx);
+    _host.opens.add((id: s.id, method: '$service.$method', startedUs: _host.meter.clock.elapsedMicroseconds));
+    return HostLineChannel(s);
+  }
+}
 
 /// A keeper host that is a temp directory on this machine.
 class LocalKeeperHost implements AgentHost {
@@ -22,9 +158,20 @@ class LocalKeeperHost implements AgentHost {
   final Directory home;
   final Map<String, String> env;
 
-  /// Attach the way the app does (`keeperAttachCommand(zipped: true)`); false
-  /// to see what the same session costs as plain text.
-  bool zipped = true;
+  /// What the host wrote on the shared link.
+  final meter = WireMeter();
+
+  /// Every stream [transport] opened, in order.
+  final opens = <OpenedStream>[];
+
+  /// Open streams as the app does (`zctx`: the host compresses the stream as
+  /// one continuous zlib stream); false to see what the same session costs as
+  /// plain frames.
+  bool zctx = true;
+
+  final _serves = <ProcessHostProcess>[];
+  HostLink? _link;
+  Future<HostLink>? _linking;
 
   String get work => '${home.path}/work';
 
@@ -32,90 +179,92 @@ class LocalKeeperHost implements AgentHost {
     final home = Directory.systemTemp.createTempSync('session_open_bench_');
     final bin = Directory('${home.path}/bin')..createSync();
     Directory('${home.path}/work').createSync();
-    final agent = File('benchmark/support/bench_acp_agent.py').absolute.path;
-    if (!File(agent).existsSync()) throw StateError('run from app/: $agent is missing');
-    final omp = File('${bin.path}/omp')..writeAsStringSync('#!/bin/sh\nexec python3 \'$agent\' "\$@"\n');
+    final agent = testkitBinary('bench-acp-agent');
+    if (!agent.existsSync()) {
+      throw StateError(
+        '${agent.path} is missing: cd rust && cargo build --release -p testkit (or set HERDR_TESTKIT_DIR)',
+      );
+    }
+    final omp = File('${bin.path}/omp')..writeAsStringSync('#!/bin/sh\nexec \'${agent.absolute.path}\' "\$@"\n');
     await Process.run('chmod', ['755', omp.path]);
-    final host = LocalKeeperHost._(home, {'HOME': home.path, 'PATH': '${bin.path}:/usr/bin:/bin:/usr/local/bin'});
-    await host.install();
+    final host = LocalKeeperHost._(home, {
+      'HOME': home.path,
+      'PATH': '${bin.path}:/usr/bin:/bin:/usr/local/bin',
+      // A herdr on this machine must never get a pane from a benchmark.
+      'HERDR_MOBILE_NO_PANE': '1',
+    });
+    await installHostBinary(home);
     return host;
   }
 
-  Future<({String out, String err, int code})> run(
-    String command, {
-    String input = '',
-    Map<String, String> extraEnv = const {},
-  }) async {
-    final p = await Process.start(
+  /// A new `herdr-host serve` as an SSH server would run the app's command, and
+  /// a link on it. [extraEnv] is added to the process's environment (the agent
+  /// inherits it); [metered] counts what it writes in [meter] (one metered link
+  /// at a time).
+  Future<HostLink> openLink({Map<String, String> extraEnv = const {}, bool metered = true}) async {
+    final p = await ProcessHostProcess.start(
       '/bin/sh',
-      ['-c', command],
+      ['-c', hostServeCommand()],
       environment: {...env, ...extraEnv},
-      includeParentEnvironment: false,
       workingDirectory: home.path,
     );
-    p.stdin.write(input);
-    await p.stdin.close();
-    final out = utf8.decodeStream(p.stdout);
-    final err = utf8.decodeStream(p.stderr);
-    final code = await p.exitCode.timeout(const Duration(seconds: 120));
-    return (out: await out, err: await err, code: code);
+    _serves.add(p);
+    if (metered) meter.reset();
+    return HostLink.connect(
+      MeteredHostProcess(p, metered ? meter : null),
+      version: appVersion,
+      helloTimeout: const Duration(seconds: 30),
+    );
   }
 
-  Future<void> install() async {
-    final r = await run(keeperInstallCommand(), input: keeperInstallPayload());
-    if (r.code != 0 || r.out.trim() != '{"ok":true}') throw StateError('keeper install failed: ${r.err}');
+  /// The shared link, opened on first use (and again after it died).
+  Future<HostLink> link() {
+    final live = _link;
+    if (live != null && live.isOpen) return Future.value(live);
+    return _linking ??= openLink().then((l) => _link = l).whenComplete(() => _linking = null);
   }
 
-  /// Starts a keeper whose agent plays [seedFile] on its first prompt.
+  /// What the app has of this machine: [SshAgentHost] over [transport].
+  late final transport = _BenchTransport(this);
+  late final SshAgentHost agentHost = SshAgentHost(transport, quickTimeout: const Duration(seconds: 30));
+
+  /// Starts a keeper whose agent plays [seedFile] on its first prompt. The
+  /// keeper is started through a `serve` of its own, whose environment carries
+  /// `BENCH_SEED` (the agent inherits it), and not counted by [meter].
   @override
   Future<KeeperInfo> start({required String agent, required String cwd, String? seedFile}) async {
-    final r = await run(
-      keeperStartCommand(agent: agent, cwd: cwd),
-      extraEnv: {'BENCH_SEED': ?seedFile},
-    );
-    if (r.code != 0) throw StateError('keeper start failed (${r.code}): ${r.err}');
-    return KeeperInfo.fromJson((jsonDecode(r.out) as Map).cast<String, Object?>());
+    if (seedFile == null) return agentHost.start(agent: agent, cwd: cwd);
+    final l = await openLink(extraEnv: {'BENCH_SEED': seedFile}, metered: false);
+    try {
+      return await SshAgentHost(LinkTransport(() async => l)).start(agent: agent, cwd: cwd);
+    } finally {
+      unawaited(l.close());
+    }
   }
 
   @override
-  Future<Set<String>> available() async => {'omp'};
+  Future<Set<String>> available() => agentHost.available();
 
   @override
-  Future<List<KeeperInfo>> list() async {
-    final r = await run(keeperListCommand());
-    if (r.code != 0) throw StateError('keeper list failed: ${r.err}');
-    return [for (final j in jsonDecode(r.out) as List) KeeperInfo.fromJson((j as Map).cast<String, Object?>())];
-  }
+  Future<List<KeeperInfo>> list() => agentHost.list();
 
-  /// A `Process` running the plain attach command: raw bytes for a benchmark to read.
-  Future<Process> attachProcess(String id) => Process.start(
-    '/bin/sh',
-    ['-c', keeperAttachCommand(id)],
-    environment: env,
-    includeParentEnvironment: false,
-    workingDirectory: home.path,
-  );
-
-  @override
-  Future<AcpTransport> attach(String keeperId) => ProcessTransport.start(
-    '/bin/sh',
-    ['-c', keeperAttachCommand(keeperId, zipped: zipped)],
-    environment: env,
-    workingDirectory: home.path,
-    zipped: zipped,
-  );
-
-  @override
-  Future<void> kill(String keeperId) async {
-    await run(keeperKillCommand(keeperId));
+  /// The keeper's attach stream, raw: for a benchmark that reads the bytes
+  /// itself. Plain unless [zctx] is given.
+  Future<HostStream> attachStream(String id, {bool? zctx}) async {
+    final link = await this.link();
+    final s = link.open('keeper', 'attach', {'id': id}, zctx ?? false);
+    opens.add((id: s.id, method: 'keeper.attach', startedUs: meter.clock.elapsedMicroseconds));
+    return s;
   }
 
   @override
-  Future<PastSessions> history({required String agent, String? cwd}) async {
-    final r = await run(keeperHistoryCommand(agent: agent, cwd: cwd));
-    if (r.code != 0) throw StateError('keeper history failed (${r.code}): ${r.err}');
-    return PastSessions.fromJson((jsonDecode(r.out) as Map).cast<String, Object?>());
-  }
+  Future<AcpTransport> attach(String keeperId) => agentHost.attach(keeperId);
+
+  @override
+  Future<void> kill(String keeperId) => agentHost.kill(keeperId);
+
+  @override
+  Future<PastSessions> history({required String agent, String? cwd}) => agentHost.history(agent: agent, cwd: cwd);
 
   Future<void> dispose() async {
     try {
@@ -124,6 +273,9 @@ class LocalKeeperHost implements AgentHost {
       }
     } on Object {
       // best effort: the temp home goes away next
+    }
+    for (final p in _serves) {
+      p.close();
     }
     try {
       home.deleteSync(recursive: true);
@@ -233,10 +385,11 @@ class LinkedTransport implements AcpTransport {
   Future<void> close() => inner.close();
 }
 
-/// [LocalKeeperHost] seen through [link]: an attach costs what an SSH exec
-/// channel costs (channel open, then the exec request answered: two round
-/// trips, the command starting after one and a half), everything after it the
-/// transport's delays.
+/// [LocalKeeperHost] seen through [link]. The app keeps one link to the host
+/// open, so an attach costs no channel to open: the stream's OPEN and the
+/// first request travel together, and everything after it is the transport's
+/// delays. (A first use on a new connection also pays the SSH exec and the
+/// HELLO, about 3 round trips, once per connection; not modelled here.)
 class LinkedHost implements AgentHost {
   LinkedHost(this.inner, this.link);
 
@@ -245,11 +398,8 @@ class LinkedHost implements AgentHost {
 
   @override
   Future<AcpTransport> attach(String keeperId) async {
-    if (link == LinkModel.local) return inner.attach(keeperId);
-    await Future<void>.delayed(link.rtt + link.oneWay); // the exec request reaches the host
     final transport = await inner.attach(keeperId);
-    await Future<void>.delayed(link.oneWay); // and its answer reaches the phone
-    return LinkedTransport(transport, link);
+    return link == LinkModel.local ? transport : LinkedTransport(transport, link);
   }
 
   @override

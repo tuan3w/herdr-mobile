@@ -806,6 +806,6 @@ void main() {
 /// SFTP server may.
 class _ShortReads extends FakeTransport {
   @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
-      super.readFile(path, offset: offset, length: length < 100 ? length : 100);
+  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap, RemoteStat? ifMatch}) =>
+      super.readFile(path, offset: offset, length: length < 100 ? length : 100, ifMatch: ifMatch);
 }

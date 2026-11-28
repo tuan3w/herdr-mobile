@@ -2,8 +2,8 @@
 library;
 
 // Opening a chat the phone already holds asks the keeper for its newest turns,
-// not its whole log. The REAL keeper script and the app's real session object
-// (only the agent is scripted: test/support/fake_acp_agent.py), with the saved
+// not its whole log. The REAL keeper and the app's real session object
+// (only the agent is scripted: `fake-acp-agent` of rust/crates/testkit), with the saved
 // copy of an earlier open in a memory cache.
 //
 // What matters to a person: the transcript is exactly what a whole replay

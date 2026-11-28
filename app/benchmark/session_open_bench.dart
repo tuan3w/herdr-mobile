@@ -3,8 +3,9 @@
 //
 //   flutter test benchmark/session_open_bench.dart
 //
-// Needs python3 (the keeper), and for the SSH calibration the sshd and key
-// that `transfer_bench.dart` uses (skipped when they are not there). Results
+// Needs the `herdr-host` and testkit binaries (`cd rust && cargo build
+// --release -p host -p testkit`; `HERDR_HOST_BIN`, `HERDR_TESTKIT_DIR`). No
+// sshd: the host runs as a local `serve` process behind one `HostLink`. Results
 // go to $BENCH_OUT as METRIC lines (`flutter test` decorates stdout); without
 // it they are printed.
 //
@@ -12,7 +13,8 @@
 // holds at most 4 MB / 4000 entries, so a long session is the newest part of
 // what happened, and `items` says what it really is):
 //
-//  1. the REAL keeper script (temp HOME, `bench_acp_agent.py` as its agent) is
+//  1. the REAL keeper (`herdr-host` in a temp HOME, the testkit's
+//     `bench-acp-agent` as its agent) is
 //     seeded with a session built from the recorded traces
 //     (`support/session_workload.dart`);
 //  2. per run: attach to first byte, `initialize` round trip, `session/load`
@@ -24,8 +26,10 @@
 //  4. the screen: `AgentSessionScreen` pushed with the 260 ms page transition
 //     over a final state, over an empty one that is then filled, and over a
 //     state that grows while the replay arrives (`ui_*`);
-//  5. memory held per state (`mem_*`) and the SSH exec channel's own cost for
-//     the same bytes (`ssh_*`).
+//  5. memory held per state (`mem_*`) and what the host link itself costs for
+//     the same bytes (`ssh_exec_*`: a `keeper.follow` of the replay as a log
+//     file, there is no SSH exec channel in it any more; `host_call_ms`: one
+//     warm round trip on the link, the old warm exec channel).
 //
 // Timings are milliseconds on THIS machine (JIT, asserts on: `flutter test`),
 // medians over the runs. Steps that are CPU-bound (the reducer, zlib, frames)
@@ -49,7 +53,7 @@ import 'package:herdr_mobile/data/repositories/acp_agent_session.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
-import 'package:herdr_mobile/data/services/transport_factory.dart';
+import 'package:herdr_mobile/data/host/host_link.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 
@@ -120,7 +124,7 @@ double _cpuMs() {
 }
 
 // ---------------------------------------------------------------------------
-// A raw attach: the keeper's stdout with the time every chunk came.
+// A raw attach: the keeper's `keeper.attach` stream with the time every chunk came.
 // ---------------------------------------------------------------------------
 
 class _Replay {
@@ -138,12 +142,11 @@ class _Replay {
 }
 
 class _Attach {
-  _Attach(this.process, this.clock) {
-    process.stdout.listen(_onData);
-    process.stderr.drain<void>();
+  _Attach(this.stream, this.clock) {
+    unawaited(_pump());
   }
 
-  final Process process;
+  final HostStream stream;
   final Stopwatch clock;
   final _bytes = BytesBuilder(copy: false);
   final _ends = <int>[];
@@ -157,6 +160,13 @@ class _Attach {
     return c.future;
   })();
   Completer<int>? _first;
+  Future<void> _pump() async {
+    while (true) {
+      final chunk = await stream.read();
+      if (chunk == null) return;
+      _onData(chunk);
+    }
+  }
 
   void _onData(List<int> chunk) {
     final t = clock.elapsedMicroseconds;
@@ -187,14 +197,20 @@ class _Attach {
     _waiters.add(waiter);
     final from = _bytes.length;
     final sent = clock.elapsedMicroseconds;
-    process.stdin.add(utf8.encode('${jsonEncode({'jsonrpc': '2.0', 'id': id, 'method': method, 'params': params})}\n'));
+    unawaited(
+      stream.write(
+        Uint8List.fromList(
+          utf8.encode('${jsonEncode({'jsonrpc': '2.0', 'id': id, 'method': method, 'params': params})}\n'),
+        ),
+      ),
+    );
     final done = await waiter.done.future.timeout(timeout);
     return (sent: sent, done: done, from: from);
   }
 
   Future<void> close() async {
-    await process.stdin.close();
-    await process.exitCode.timeout(const Duration(seconds: 30));
+    stream.end();
+    await stream.done.timeout(const Duration(seconds: 30));
   }
 
   /// The lines output since [from], up to and including the answer to request [id].
@@ -342,7 +358,7 @@ Future<String> _seed(LocalKeeperHost host, int n, TracePools pools) async {
   final file = File('${host.home.path}/seed_$n.jsonl')..writeAsStringSync('${updates.map(jsonEncode).join('\n')}\n');
   final info = await host.start(agent: 'omp', cwd: host.work, seedFile: file.path);
   final clock = Stopwatch()..start();
-  final a = _Attach(await host.attachProcess(info.id), clock);
+  final a = _Attach(await host.attachStream(info.id), clock);
   await a.call('initialize', {'protocolVersion': 1, 'clientCapabilities': <String, Object?>{}});
   await a.call('session/new', {'cwd': host.work, 'mcpServers': <Object?>[]});
   await a.call('session/prompt', {
@@ -413,7 +429,7 @@ void main() {
       _Replay? last;
       for (var run = 0; run < _runs + 1; run++) {
         final clock = Stopwatch()..start();
-        final a = _Attach(await host.attachProcess(id), clock);
+        final a = _Attach(await host.attachStream(id), clock);
         final first = a.firstByteUs;
         await a.call('initialize', {'protocolVersion': 1, 'clientCapabilities': <String, Object?>{}});
         final firstUs = await first;
@@ -669,8 +685,8 @@ void main() {
       }
       machine.dispose();
 
-      // The SSH exec channel's own cost for these bytes, when an sshd is there.
-      await _sshCalibration(n, all, p);
+      // What the host link itself costs for these bytes.
+      await _followCalibration(host, all, p);
     });
   }
 
@@ -1036,30 +1052,22 @@ Future<({List<double> frames, double reducerMs})> _stream(
 }
 
 // ---------------------------------------------------------------------------
-// SSH calibration.
+// The host link's own cost.
 // ---------------------------------------------------------------------------
 
-Future<void> _sshCalibration(int n, Uint8List replay, String p) async {
-  final home = _env['HOME'];
-  final user = _env['USER'] ?? _env['LOGNAME'];
-  final keyFile = File('$home/.ssh/herdr-mobile');
-  if (home == null || user == null || !keyFile.existsSync()) {
-    stdout.writeln('  ssh calibration skipped: no ~/.ssh/herdr-mobile');
-    return;
-  }
-  final dir = Directory.systemTemp.createTempSync('session_open_ssh_');
-  final file = File('${dir.path}/replay.jsonl')..writeAsBytesSync(replay);
-  final transport = createSshTransport(
-    MachineProfile(id: 'bench', label: 'bench', host: '127.0.0.1', username: user),
-    MachineSecrets(privateKeyPem: keyFile.readAsStringSync()),
-    (_) {},
-    (_) {},
-  );
+/// The replay as a log file under the host's home, followed from byte 0 to its
+/// end (`keeper.follow` with `to`: the records, then `C` and the end): what
+/// opening an observed session's log costs the link on its own, with the app's
+/// own `SshAgentHost` and `LinkTransport`, and a warm `hostCall`. (The numbers
+/// are named `ssh_exec_*` from when this was a `cat` over an SSH exec channel
+/// to a local sshd.)
+Future<void> _followCalibration(LocalKeeperHost host, Uint8List replay, String p) async {
+  final file = File('${host.home.path}/replay.jsonl')..writeAsBytesSync(replay);
   try {
     Future<({double ms, double cpu, int lines})> once() async {
       final c0 = _cpuMs();
       final sw = Stopwatch()..start();
-      final channel = await transport.openExec("cat '${file.path}'");
+      final channel = await host.agentHost.follow(file.path, from: 0, to: replay.length);
       var lines = 0;
       final done = Completer<void>();
       channel.lines.listen((_) => lines++, onDone: done.complete);
@@ -1069,10 +1077,16 @@ Future<void> _sshCalibration(int n, Uint8List replay, String p) async {
       return (ms: ms, cpu: _cpuMs() - c0, lines: lines);
     }
 
-    // The first exec opens the connection (key exchange, auth): not counted.
-    final warm = await transport.openExec('true');
-    await warm.exitCode.timeout(const Duration(seconds: 20));
+    // The first call on a link starts `serve` and exchanges the HELLOs, and the
+    // first follow warms the page cache: not counted.
+    await host.transport.hostCall('keeper', 'probe');
     await once();
+    final calls = <double>[];
+    for (var i = 0; i < _runs; i++) {
+      final sw = Stopwatch()..start();
+      await host.transport.hostCall('keeper', 'probe');
+      calls.add(sw.elapsedMicroseconds / 1000);
+    }
     final ms = <double>[], cpu = <double>[];
     var lines = 0;
     for (var i = 0; i < _runs; i++) {
@@ -1081,16 +1095,14 @@ Future<void> _sshCalibration(int n, Uint8List replay, String p) async {
       cpu.add(r.cpu);
       lines = r.lines;
     }
+    _metric('${p}host_call_ms', _median(calls));
     _metric('${p}ssh_exec_ms', _median(ms));
     _metric('${p}ssh_exec_cpu_ms', _median(cpu));
     _metric('${p}ssh_exec_lines', lines);
     stdout.writeln(
-      '  ssh exec: ${_median(ms).toStringAsFixed(0)} ms, cpu ${_median(cpu).toStringAsFixed(0)} ms for ${replay.length} B',
+      '  follow: ${_median(ms).toStringAsFixed(0)} ms, cpu ${_median(cpu).toStringAsFixed(0)} ms for ${replay.length} B',
     );
-  } on Object catch (e) {
-    stdout.writeln('  ssh calibration skipped: $e');
   } finally {
-    transport.close();
-    dir.deleteSync(recursive: true);
+    file.deleteSync();
   }
 }

@@ -258,19 +258,21 @@ Iterable<BackgroundTask> _tasksOfPort(int port, Iterable<BackgroundTask> tasks) 
   return tasks.where((t) => pattern.hasMatch(t.title) || (t.detail != null && pattern.hasMatch(t.detail!)));
 }
 
-/// A server's state against the session's background tasks: running while a
-/// task that names its port is running, stopped when only ended ones do, else
-/// just seen. [live] is false for a saved copy or a link that is not up: then
-/// nothing here is known to run.
-ServerState serverStateOf(MadeAsset server, Iterable<BackgroundTask> tasks, {bool live = true}) {
+/// A server's state as far as the phone can tell: what the machine itself says
+/// about its port ([listening], by port: true while something listens on it NOW,
+/// false when the machine looked and nothing does). A port the machine gave no
+/// answer for (it is unreachable, has no agent helper or no way to list ports,
+/// or the question is still on its way) is [ServerState.seen], whatever the
+/// transcript or the background tasks say: a link in the output, or a task that
+/// names the port, says the server existed or was started, not that it listens.
+ServerState serverStateOf(MadeAsset server, Map<int, bool> listening) {
   final port = server.port;
-  if (port == null || !live) return ServerState.seen;
-  var named = false;
-  for (final t in _tasksOfPort(port, tasks)) {
-    if (t.status == BackgroundStatus.running) return ServerState.running;
-    named = true;
-  }
-  return named ? ServerState.stopped : ServerState.seen;
+  final up = port == null ? null : listening[port];
+  return switch (up) {
+    true => ServerState.running,
+    false => ServerState.stopped,
+    null => ServerState.seen,
+  };
 }
 
 /// What to call a server's app: the command of the background task that names

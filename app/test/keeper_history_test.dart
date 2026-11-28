@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
+import 'support/keeper_harness.dart' show eventually;
 import 'support/keeper_process_host.dart';
 
-// The `history` command of the REAL keeper script against the scripted agent
-// (`test/support/fake_acp_agent.py`, whose store is `useAgentStore`): what an
+// The `history` command of the keeper (the `herdr-host` binary) against the scripted agent
+// (`fake-acp-agent` of `rust/crates/testkit`, whose store is `useAgentStore`): what an
 // agent remembers must come back newest first, bounded, and the agent process
 // the command ran must never outlive it.
 
@@ -22,17 +22,13 @@ Map<String, Object?> _session(String id, {String cwd = '/work', Object? title, S
   'messageCount': ?messages,
 };
 
-Matcher _failed(String code, [Object? text]) =>
-    isA<AgentHostException>().having((e) => e.message, 'message', allOf(contains('exit $code'), text ?? anything));
+/// The app's failure for a keeper call the host refused: the host's own words, fatal when trying again
+/// cannot help.
+Matcher _failed(Object? text, {bool? fatal}) => isA<AgentHostException>()
+    .having((e) => e.message, 'message', text)
+    .having((e) => e.fatal, 'fatal', fatal ?? anything);
 
 void main() {
-  final hasPython = [
-    '/usr/bin',
-    '/bin',
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-  ].any((d) => File('$d/python3').existsSync());
-
   Future<KeeperProcessHost> newHost() async {
     final h = await KeeperProcessHost.create();
     addTearDown(h.dispose);
@@ -48,7 +44,7 @@ void main() {
     expect(!keepers.existsSync() || keepers.listSync().isEmpty, isTrue, reason: 'history must not create keeper files');
   }
 
-  group('history command', skip: hasPython ? false : 'python3 is not installed', () {
+  group('history command', () {
     test('lists newest first with title, count and folder; unknown dates last, in the agent\'s order', () async {
       final h = await newHost();
       h.useAgentStore(
@@ -143,7 +139,7 @@ void main() {
       expect(past.more, isTrue);
     });
 
-    test('the line stays small: titles are cut, junk entries dropped, nothing else is passed on', () async {
+    test('the answer stays small: titles are cut, junk entries dropped, nothing else is passed on', () async {
       final h = await newHost();
       h.useAgentStore(
         sessions: [
@@ -157,15 +153,13 @@ void main() {
         ],
       );
 
-      final r = await h.historyLines(agent: 'omp');
-      final line = r.single;
-      final rows = (jsonDecode(line) as Map)['sessions'] as List;
+      final object = await h.historyObject(agent: 'omp');
+      final rows = object['sessions']! as List;
 
       expect(rows.map((s) => (s as Map)['sessionId']), ['long', 'extra']);
       expect(((rows.first as Map)['title'] as String).length, lessThanOrEqualTo(300));
       expect((rows.last as Map).keys, unorderedEquals(['sessionId', 'cwd', 'updatedAt', '_meta']));
-      expect(line.length, lessThan(1500));
-      expect(r.length, 1, reason: 'one line');
+      expect(jsonEncode(object).length, lessThan(1500));
     });
 
     test('an agent without session/list reports canList false, not an empty history', () async {
@@ -209,13 +203,13 @@ void main() {
     });
 
     test(
-      'an agent that answers session/list with an error: the command fails with its words, the agent is gone',
+      'an agent that answers session/list with an error: the call fails with its words, the agent is gone',
       () async {
         final h = await newHost();
         h.useAgentStore(sessions: [_session('s1')]);
         h.env['FAKE_ACP_LIST_FAIL'] = '1';
 
-        await expectLater(h.history(agent: 'omp'), throwsA(_failed('70', contains('omp: store unreadable'))));
+        await expectLater(h.history(agent: 'omp'), throwsA(_failed(contains('omp: store unreadable'))));
 
         await expectNothingLeft(h);
       },
@@ -225,7 +219,7 @@ void main() {
       final h = await newHost();
       h.env['FAKE_ACP_FAIL_INIT'] = '1';
 
-      await expectLater(h.history(agent: 'omp'), throwsA(_failed('70', contains('exited before'))));
+      await expectLater(h.history(agent: 'omp'), throwsA(_failed(contains('exited before'))));
 
       await expectNothingLeft(h);
     });
@@ -252,57 +246,47 @@ void main() {
       },
     );
 
-    test('SIGTERM to the command ends the agent too, with SIGKILL when it ignores SIGTERM', () async {
+    test('the client giving up ends the agent too, with SIGKILL when it ignores SIGTERM', () async {
       final h = await newHost();
       h.useAgentStore(sessions: [_session('s1')]);
       h.env['FAKE_ACP_LIST_DELAY'] = '60';
       h.env['FAKE_ACP_IGNORE_TERM'] = '1';
-      final p = await h.historyProcess(agent: 'omp');
-      p.stdout.drain<void>();
-      p.stderr.drain<void>();
-      final deadline = DateTime.now().add(const Duration(seconds: 20));
-      while (h.agentRuns.isEmpty) {
-        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'the agent never started');
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      }
+      final stream = await h.openHistory(agent: 'omp');
+      await eventually(() => h.agentRuns.isNotEmpty, what: 'the agent to start');
       final agent = h.agentRuns.single.pid;
-      // The command is the agent's parent (the shell the test starts may or may not exec it).
-      final ps = await Process.run('ps', ['-o', 'ppid=', '-p', '$agent']);
-      final command = int.parse((ps.stdout as String).trim());
       expect(await _alive(agent), isTrue);
-      await Future<void>.delayed(const Duration(milliseconds: 300)); // it waits for the answer now
 
-      Process.killPid(command);
+      stream.reset();
 
-      final end = DateTime.now().add(const Duration(seconds: 15));
-      while (await _alive(agent) || await _alive(command)) {
-        expect(DateTime.now().isBefore(end), isTrue, reason: 'agent or command still alive');
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
+      await eventually(
+        () async => !await _alive(agent),
+        what: 'the agent to be gone',
+        timeout: const Duration(seconds: 15),
+      );
       await expectNothingLeft(h);
     });
 
-    test('an agent that is not installed exits 69', () async {
+    test('an agent that is not installed is named, and trying again cannot help', () async {
       final h = await newHost();
       h.useAgentStore();
       File('${h.home.path}/bin/omp').deleteSync();
 
-      await expectLater(h.history(agent: 'omp'), throwsA(_failed('69', contains('not installed'))));
+      await expectLater(h.history(agent: 'omp'), throwsA(_failed(contains('not installed'), fatal: true)));
     });
 
-    test('a missing folder exits 66 before any agent is started', () async {
+    test('a missing folder is named before any agent is started', () async {
       final h = await newHost();
       h.useAgentStore();
 
       await expectLater(
         h.history(agent: 'omp', cwd: '${h.home.path}/nope'),
-        throwsA(_failed('66', contains('does not exist'))),
+        throwsA(_failed(contains('does not exist'), fatal: true)),
       );
 
       expect(h.agentRuns, isEmpty);
     });
 
-    test('a folder name cannot break out of the command', () async {
+    test('a folder name is only ever a folder name: nothing in it is run', () async {
       final h = await newHost();
       h.useAgentStore();
       final marker = '${h.home.path}/pwned';
@@ -316,7 +300,7 @@ void main() {
       ]) {
         await expectLater(
           h.history(agent: 'omp', cwd: evil),
-          throwsA(_failed('66', contains('does not exist'))),
+          throwsA(_failed(contains('does not exist'), fatal: true)),
           reason: evil,
         );
         expect(File(marker).existsSync(), isFalse, reason: evil);
@@ -337,32 +321,5 @@ void main() {
       expect((await h.history(agent: 'omp', cwd: odd.path)).sessions.map((s) => s.sessionId), ['s1']);
       expect((await h.history(agent: 'omp', cwd: '~')).sessions.map((s) => s.sessionId), ['s2']);
     });
-  });
-
-  group('keeperHistoryCommand', () {
-    test('is short, and rejects an unknown agent or a folder that cannot be passed', () {
-      expect(keeperHistoryCommand(agent: 'omp', cwd: '/tmp/${'x' * 200}').length, lessThan(1024));
-      for (final bad in ['', 'gpt', 'OMP', 'omp; id', r'$(id)', 'omp ', "omp'"]) {
-        expect(() => keeperHistoryCommand(agent: bad), throwsArgumentError, reason: bad);
-      }
-      for (final bad in ['', 'a\nb', 'a\u0000b', 'a\rb', 'x' * 5000]) {
-        expect(
-          () => keeperHistoryCommand(agent: 'omp', cwd: bad),
-          throwsArgumentError,
-          reason: bad.length > 20 ? 'long' : bad,
-        );
-      }
-    });
-
-    test(
-      'a host without the script exits 65 like every other command',
-      skip: hasPython ? false : 'python3 is not installed',
-      () async {
-        final h = await newHost();
-        Directory('${h.home.path}/.herdr-mobile').deleteSync(recursive: true);
-
-        await expectLater(h.history(agent: 'omp'), throwsA(_failed('65', contains('not installed'))));
-      },
-    );
   });
 }

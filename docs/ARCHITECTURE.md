@@ -22,23 +22,22 @@ two kinds of session:
 flowchart LR
   subgraph phone["Phone"]
     ui["UI isolate: screens, view models, repositories, ACP client"]
-    wa["Transport isolate for machine A: SSH, SFTP, mux client"]
+    wa["Transport isolate for machine A: SSH, the host link, mux client"]
     wb["Transport isolate for machine B"]
     ui <--> wa
     ui <--> wb
   end
   subgraph hostA["Machine A"]
     sshd["sshd"]
-    mux["mux script (python3)"]
-    ev["events script (python3)"]
+    serve["herdr-host serve: one per phone connection"]
     sock[("herdr API socket")]
-    keeper["keeper (python3), one per agent session"]
+    keeper["keeper daemon (herdr-host keeper-daemon), one per agent session"]
     agent["ACP agent (omp, Claude Code, Codex, pi)"]
-    sftp["sftp subsystem"]
-    sshd --> mux --> sock
-    sshd --> ev --> sock
-    sshd --> keeper --> agent
-    sshd --> sftp
+    fallback["herdr remote-api-bridge or socat, SFTP: only without the helper"]
+    sshd -- "one exec channel" --> serve
+    serve --> sock
+    serve --> keeper --> agent
+    sshd -. "no helper" .-> fallback
   end
   wa -- "one SSH connection" --> sshd
   wb -- "one SSH connection" --> hostB["Machine B: the same parts"]
@@ -50,26 +49,36 @@ On the phone:
   also runs the ACP client, which parses the agent's JSON-RPC lines
   (`app/lib/data/acp/json_rpc.dart`).
 - One transport isolate per machine runs the SSH connection. It handles the
-  encryption, the inflating of compressed answers, JSON decoding of herdr's
-  answers, and SFTP (`app/lib/data/services/isolate_transport.dart`,
-  `app/lib/data/services/transport_factory.dart`).
+  encryption, the host link's frames and their decompression, JSON decoding of
+  herdr's answers, and the file transfers
+  (`app/lib/data/services/isolate_transport.dart`,
+  `app/lib/data/services/transport_factory.dart`, `app/lib/data/host/`).
 
 On each machine:
 
 - **sshd.** The app needs nothing else listening. It opens no ports and installs
   no service.
 - **herdr and its API socket.** The app talks to herdr only through that socket.
-- **The mux script.** A short python3 program that the app sends with the
-  command each time it starts a channel. It serves herdr requests for as long
-  as the channel is open, and nothing is installed
-  (`app/lib/data/services/bridge_command.dart`).
-- **The events script.** Also python3 and also sent with the command. It forwards
-  one `events.subscribe` stream (same file).
-- **The keeper.** Only if you use agent sessions. It is a python3 file that the
-  app installs once per host under `~/.herdr-mobile/`. Each keeper process owns
-  one agent process, so the agent keeps running when the phone's connection
-  drops (`app/lib/data/services/keeper_script.dart`,
-  `app/lib/data/services/keeper_command.dart`).
+- **`herdr-host`, the agent helper.** One self-contained Rust program
+  (`rust/crates/host`), downloaded from this app version's release and kept at
+  `~/.herdr-mobile/bin/herdr-host-<app version>` (section 3). The app runs
+  `herdr-host serve` on **one** exec channel per machine, and everything below
+  is a stream on that channel: herdr's requests and events, agent sessions, log
+  following, file reading and watching, inbox uploads, port listing and Made
+  verification. `serve` lives exactly as long as that channel, listens on
+  nothing and keeps no state. The wire, the services and what each may do are
+  in `docs/HOST_PROTOCOL.md`; this file does not repeat them.
+- **The keeper.** Only if you use agent sessions. It is the same binary run as
+  `herdr-host keeper-daemon`, one process per agent session, started by `serve`
+  on request. Each keeper owns one agent process, so the agent keeps running
+  when the phone's connection drops (`rust/crates/keeper`,
+  `docs/AGENT_SESSIONS.md`). The desk client `herdr-tui` is built on the same
+  keeper library (`docs/TUI.md`).
+- **Nothing in python, nothing to compile.** No interpreter is needed on the
+  machine and none ships in the app or its tests.
+
+A machine without the helper (no build for its CPU, offline, GitHub blocked)
+still works, with less: section 2 says what.
 
 There is no relay server and no account. The app does not talk to any server
 of its own (section 5).
@@ -84,27 +93,48 @@ its own transport, created through `createSshTransportLater`
 (`app/lib/app.dart:42-67`, `app/lib/data/services/transport_factory.dart`).
 The transport runs `SshTransport` inside a worker isolate
 (`app/lib/data/services/ssh_transport.dart`). That gives each machine one SSH
-connection (one `SSHClient`), with these channels on it:
+connection (one `SSHClient`). Its one exec channel is the helper link:
 
-| Channel | Lifetime | Source |
+`herdr-host serve`, started on first use by `SshTransport` (`_startHost`) and
+shared by every feature of the machine (`app/lib/data/host/host_link.dart`). The
+features are streams on it, many at once, with flow control per stream so a
+download cannot starve a permission answer (`docs/HOST_PROTOCOL.md`):
+
+| Stream | Lifetime | Source |
 | --- | --- | --- |
-| The mux: every herdr request | Persistent | `ssh_transport.dart` `_startMux`, `mux_client.dart` |
-| Events: one `events.subscribe` stream | Persistent while connected | `ssh_transport.dart` `events`, `machine_connection.dart` `_watch` |
-| SFTP | Opened on first file use, then cached | `ssh_transport.dart` `_openSftp`, `sftp_files.dart` |
-| Keeper commands and attaches | Short commands; at most 4 attached sessions per machine | `ssh_agent_host.dart`, `docs/ENGINEERING.md` "Permission safety" |
-| Session log follow (observed omp, Claude Code and Codex sessions) | While a screen shows it | `ssh_log_source.dart` |
-| Looking for a session log (Claude Code and Codex: SFTP `stat`/`list`/`read` of their own folders; a `pane.process_info` for a Claude pane herdr reports no session for) | When a screen opens the chat, again when the pane's session reference changes, and every 5 s doubling to 30 s while the file does not exist yet | `session_log_locator.dart`, `claude_locator.dart`, `codex_locator.dart` |
-| Session log peek (omp panes: a name when the title is only the folder, the file's date when idle) | A `stat`, plus two SFTP reads (16 KB head, 64 KB tail) for a name, when a pane needs it and when its status changes; none in the background | `pane_session_names.dart` |
+| The mux (`herdr.mux`): every herdr request | Persistent | `ssh_transport.dart` `_startMux`, `mux_client.dart`, `host_channels.dart` |
+| Events (`herdr.events`): one subscription | Persistent while connected | `ssh_transport.dart` `events`, `machine_connection.dart` `_watch` |
+| Keeper calls (`keeper.list`, `start`, `history`, `kill`) and attaches (`keeper.attach`) | A call is one request; at most 4 attached sessions per machine | `ssh_agent_host.dart`, `docs/ENGINEERING.md` "Permission safety" |
+| Session log follow (observed omp, Claude Code and Codex sessions: `keeper.follow`, `keeper.blob`) | While a screen shows it | `ssh_log_source.dart` |
+| Files (`fs.stat`, `list`, `read`, `watch`) and uploads (`transfer.*`) | A call or a stream per use; a watch while a viewer is open | `host_files.dart`, `host_transfer.dart` |
+| Ports (`ports.watch`) and Made checks (`made.verify`) | While the Ports sheet or the Made sheet is open; `verify` once when Made opens | `host_ports.dart`, `made_verification.dart` |
+| Looking for a session log (Claude Code and Codex: `stat`/`list`/`read` of their own folders; a `pane.process_info` for a Claude pane herdr reports no session for) | When a screen opens the chat, again when the pane's session reference changes, and every 5 s doubling to 30 s while the file does not exist yet | `session_log_locator.dart`, `claude_locator.dart`, `codex_locator.dart` |
+| Session log peek (omp panes: a name when the title is only the folder, the file's date when idle) | A `stat`, plus two reads (16 KB head, 64 KB tail) for a name, when a pane needs it and when its status changes; none in the background | `pane_session_names.dart` |
 | Screen read of a finished omp pane, to see whether its plan review is open (60 rows) | When the pane first shows `done`/`idle` and once more 1.5 s later; on activity or after an answer while the review is up; every 20 s poll at most every 15 s while it is up; none for a working or blocked pane | `screen_waits.dart` |
 
-herdr's socket takes one request per connection. The mux script on the host
-takes pipelined JSON requests on stdin and serves each one on its own thread,
-over a fresh connection to the socket. Answers can come back out of order; the
-client matches them by `id` (`bridge_command.dart:150-153`).
+Without the helper the connection has these channels instead, one per use:
+one `herdr remote-api-bridge` or `socat` channel per herdr request, and SFTP for
+Files (opened on first use, then cached: `ssh_transport.dart` `_openSftp`,
+`sftp_files.dart`).
 
-Every channel counts against sshd's `MaxSessions`. When the host refuses one
+herdr's socket takes one request per connection, so the host opens a fresh
+connection to it for each request: `serve` takes pipelined JSON requests on the
+mux stream and serves each on its own thread (`rust/crates/host/src/mux.rs`).
+Answers can come back out of order; the client matches them by `id`
+(`mux_client.dart`).
+
+The host link starts pipelined: the phone sends its HELLO, the open of the mux
+(or events) stream and the first request in one burst, without waiting for the
+host's HELLO (`HostLink.start`, `docs/HOST_PROTOCOL.md` "Pipelined start"). The
+event stream asks the host to coalesce `pane_updated` events (`coalesce_ms`,
+250 from the app): an identical update is dropped and at most one per pane per
+window is sent, so a busy agent costs the radio one update, not ten
+(`docs/ENGINEERING.md` "Battery and latency of the host link").
+
+Every exec channel counts against sshd's `MaxSessions`; the helper link is one
+of them, where the old design used one per feature. When the host refuses one
 more channel, only that channel fails. The connection and the other channels
-stay up (`ssh_transport.dart:632-648`).
+stay up (`ssh_transport.dart`, `MaxSessions` handling).
 
 ### A request, end to end
 
@@ -112,35 +142,52 @@ stay up (`ssh_transport.dart:632-648`).
    `HerdrApi.readPane` through the machine's `MachineConnection.api`
    (`app/lib/data/services/herdr_api.dart`).
 2. `IsolateTransport` posts `['req', id, method, params]` to the machine's
-   worker isolate (`isolate_transport.dart:312`).
+   worker isolate (`isolate_transport.dart`).
 3. In the worker, `SshTransport.request` hands the request to the shared
-   `MuxClient` (`ssh_transport.dart:417-424`). Requests travel as `Q<n>` frames
-   of one zlib stream (`MuxRequestEncoder`, `mux_client.dart`).
-4. The mux script forwards the request to herdr's socket. It cuts the answer
-   down to the fields the app reads (`muxProjections`). For a repeated
-   `pane.read` or `session.snapshot` it sends only the rows that changed. It
-   deflates any answer over 512 bytes (`bridge_command.dart:30-83`).
+   `MuxClient` (`mux_client.dart`), which sends it as one message on the
+   `herdr.mux` stream. The stream keeps one continuous zlib context in each
+   direction (`zctx`), so a request that repeats the shape of the last costs
+   about 16 bytes.
+4. `herdr-host serve` forwards the request to herdr's socket. It cuts the
+   answer down to the fields the app reads (`muxProjections`, which the app
+   sends when it opens the stream: the host knows no field names). For a
+   repeated `pane.read` or `session.snapshot` it sends only the rows that
+   changed.
 5. The worker inflates and decodes the answer and applies the row deltas. It
    posts the result back to the UI isolate as a map.
 
-### Fallbacks when python3 or the socket is missing
+### When the helper or the socket is missing
 
-The mux and events scripts exit with code 78 when the host has no `python3`, or
-when there is no herdr socket at the expected path
-(`bridge_command.dart:373-399`). The transport then uses one bridge channel per
-request for 30 seconds, and tries the mux again after that
-(`ssh_transport.dart:111-117`, `426-443`). The bridge command tries these in
-order (`bridge_command.dart:401-446`):
+Two different things can be missing, and the app tells them apart.
 
-1. `herdr --session <name> remote-api-bridge`, from `~/.local/bin/herdr` or
-   `PATH`. It is used only if `remote-api-bridge --check` prints
-   `herdr-api-bridge-v1` (herdr 0.9 and newer).
-2. `socat - UNIX-CONNECT:<socket>`.
-3. A short python3 relay.
+**The helper.** `serve`'s command exits 65 when
+`~/.herdr-mobile/bin/herdr-host-<app version>` is not there. The app then runs
+the installer once over a second exec channel (section 3) and starts `serve`
+again. When the host cannot have the helper (no build for its CPU, offline,
+GitHub blocked, the install failed), the app remembers that for 30 s and
+degrades, saying so on each affected surface and never faking it:
 
-If none of these works, the bridge also exits 78. That exit counts as fatal
-(`ssh_transport.dart:496-506`), so the machine shows that it needs attention
-and the app stops retrying.
+- herdr requests use one bridge channel each, for 30 s at a time, and the mux
+  is tried again after that (`ssh_transport.dart` `_muxRetryDelay`). The bridge
+  command tries, in order (`bridge_command.dart` `buildBridgeCommand`):
+  1. `herdr --session <name> remote-api-bridge`, from `~/.local/bin/herdr` or
+     `PATH`. It is used only if `remote-api-bridge --check` prints
+     `herdr-api-bridge-v1` (herdr 0.9 and newer).
+  2. `socat - UNIX-CONNECT:<socket>`.
+  If neither is there the bridge exits 78. That exit counts as fatal
+  (`ssh_transport.dart` `_bridgeFailure`), so the machine shows that it needs
+  attention and the app stops retrying.
+- Files are read over SFTP, read-only, if the host's sshd offers it.
+- There are no agent sessions, no uploads (so nothing can be attached), no
+  ports list and no verified Made status. Each shows as dimmed with the reason
+  (`needsHostHelper` in `ssh_transport.dart`).
+
+**The socket.** When the helper is there but herdr is not running, the `herdr`
+service in its HELLO says so and a `herdr.mux` open fails with `unavailable`
+and a reason. The transport treats that like a missing mux (bridge channels,
+retry in 30 s); the helper's other services keep working. A herdr that starts
+later is noticed at the next try, because availability is checked again at
+every open.
 
 ### Liveness, reconnect and backoff
 
@@ -164,6 +211,21 @@ and the app stops retrying.
   (`machine_connection.dart:57-58`). Events are throttled rather than
   debounced, because busy agents send them all the time
   (`machine_connection.dart:836-842`).
+- **A status event is shown at once, then confirmed.** herdr's status event
+  names the pane, the workspace, the agent and the new status, so a move of a
+  known agent pane between working, blocked and idle is applied to the board
+  when the event arrives (`MachineConnection._patchStatus`) and the usual urgent
+  snapshot refresh follows to confirm or reverse it. Anything involving done
+  (its sequence number is not in events), an unknown status, a changed agent,
+  an unknown pane or a structural change waits for the refresh as before. A
+  refresh re-applies the patches made while it was in flight, so an older
+  answer cannot flip a pane back. Why: "needs you" waited for a round trip it
+  did not need. Modelled on an 80 ms link (`./autoresearch.sh`, desktop): the
+  wait after the event fell from 0.230 s (the 150 ms structural delay plus a
+  round trip) to none; the radio cost, wakeups and snapshots did not change.
+  Not checked against a live herdr: the event's shape comes from
+  `docs/herdr-api.schema.json` and the bench's fake herdr (a 900 s read-only
+  subscription saw no status events, the agents were idle).
 
 ### Per-machine isolation
 
@@ -195,15 +257,18 @@ because sockets die while the app is suspended (`fleet_repository.dart:94-96`,
 ### What runs on which thread
 
 The transport isolate does the network, the SSH encryption (dartssh2 encrypts
-in pure Dart), zlib, decoding herdr's JSON, the row deltas, SFTP reads, and
-uploads (`isolate_transport.dart:20-25`, `docs/ENGINEERING.md` "Files are SFTP,
-never a shell"). The cipher order prefers ChaCha20-Poly1305 and AES-CTR,
+in pure Dart), the host link's frames and zlib, decoding herdr's JSON, the row
+deltas, file reads and uploads (a file's sha256 is computed here, not on the UI
+isolate) (`isolate_transport.dart`, `app/lib/data/host/`,
+`docs/ENGINEERING.md` "Files come over the helper, never a shell"). The cipher
+order prefers ChaCha20-Poly1305 and AES-CTR,
 because AES-GCM measured about 30 times slower in dartssh2
 (`ssh_transport.dart:23-46`).
 
-Exec channels (keeper attach, the log follow) cross into the UI isolate as
+Link streams that carry text (keeper attach, the log follow) cross into the UI
+isolate as
 batches of text lines, collected over at most 8 ms
-(`isolate_transport.dart:649-655`). The ACP JSON-RPC lines are then decoded on
+(`isolate_transport.dart`). The ACP JSON-RPC lines are then decoded on
 the UI isolate (`app/lib/data/acp/json_rpc.dart:329`). Transcript cache writes
 (`app/lib/data/services/transcript_cache.dart`), photo preparation
 (`app/lib/data/services/image_prep.dart`) and reading a saved key's public half
@@ -226,37 +291,62 @@ Why single quotes: with the old double-quoted form the login shell parsed the
 `$( )` and the `{ }` itself before `sh` ran, and fish exited 127 and csh/tcsh
 exited 1; `login_shell_commands_test.dart` runs every installed shell.
 
+There are only three commands, and none of them contains anything a person
+typed except a herdr session name and a socket path (below):
+
 | What | When | What it runs | Source |
 | --- | --- | --- | --- |
-| Mux | First herdr request on a connection | Checks for `python3` and the socket, then `exec python3 -c '<mux script>' "$S"` | `bridge_command.dart` `buildMuxCommand` |
-| Events | One per connection | The same, with the events script | `bridge_command.dart` `buildEventsCommand` |
-| Bridge | Only when the mux or events script cannot run | `herdr remote-api-bridge`, else `socat`, else a python3 relay | `bridge_command.dart` `buildBridgeCommand` |
-| Keeper install | When a keeper command exits 65 (this app version's script is missing) | A python3 installer. It reads the deflated script from stdin and writes `~/.herdr-mobile/keeper-<version>.py` atomically (directory and file 0700). It removes other versions' files | `keeper_command.dart:69-146` |
-| Keeper commands: `probe`, `list`, `start`, `history`, `attach`, `kill`, `follow` | Agent sessions and observed sessions | `exec python3 "$HOME/.herdr-mobile/keeper-<version>.py" '<arg>' ...` | `keeper_command.dart:114-261`, `ssh_agent_host.dart` |
+| Serve | First use of a machine | Checks that `~/.herdr-mobile/bin/herdr-host-<app version>` is executable (else prints a line on stderr and exits 65), then `exec herdr-host-<app version> serve`. stdin and stdout are the wire, so it prints nothing of its own; the first bytes `serve` writes are a fixed magic, and whatever a login shell prints before it is discarded | `keeper_command.dart` `hostServeCommand` |
+| Install | When Serve exits 65; once per connection | `tool/install-host.sh`, embedded in the app verbatim (a test keeps the two equal). The host downloads `herdr-host-<os>-<arch>` and `herdr-host-SHA256SUMS` from this app version's GitHub release, refuses the file unless its SHA-256 is listed, runs it for `--version`, and renames it into `~/.herdr-mobile/bin/herdr-host-<version>` (0700). It needs `curl` or `wget` and `sha256sum` or `shasum`; nothing else, and no root | `keeper_command.dart` `keeperInstallCommand`, `host_install.dart` |
+| Bridge | Only when the helper cannot be had | `herdr remote-api-bridge`, else `socat`: one herdr request per channel | `bridge_command.dart` `buildBridgeCommand` |
 
-What the keeper itself does on the host (`docs/AGENT_SESSIONS.md` "The keeper"):
+The helper is pinned to the app's own version, so an app and the helper it
+runs always speak the same protocol, and two apps of different versions on one
+machine each find their own build. `serve` removes all but the three most
+recently modified `herdr-host-*` files when it starts
+(`rust/crates/host/src/install.rs`). The install command stays under the
+9000-byte cap of Dropbear's exec command (checked in
+`keeper_commands_test.dart`).
+
+What the helper itself does on the host (`docs/HOST_PROTOCOL.md` has the
+services and their limits):
+
+- `serve` opens no port and runs no longer than its channel. When stdin ends it
+  exits and signals nothing; keepers it started stay.
+- `fs` is read-only: it reads what the SSH user can read, as SFTP did. The only
+  files it writes are inbox files (below), and `transfer` decides their names.
+- `ports` lists TCP listeners from `/proc` (macOS: `lsof`); its `probe` connects
+  to loopback only. It does not proxy: a page or port the person opens is still
+  an SSH `direct-tcpip` channel, so a host's `AllowTcpForwarding no` decides.
+- `made.verify` looks at paths and ports the Made sheet names: metadata and
+  listener state only.
+
+What a keeper does on the host (`docs/AGENT_SESSIONS.md` "The keeper"):
 
 - `start` detaches into its own session and starts the agent. That is the
   agent's binary or, if the binary is missing, `npx -y <package>` (which
   downloads the package from npm on the host). The agents are listed in
-  `agentRoutes` (`app/lib/data/acp/agent_host.dart:44-71`).
+  `agentRoutes` (`app/lib/data/acp/agent_host.dart`, `rust/crates/keeper/routes.json`).
 - It listens on a unix socket only. Its state lives in `~/.herdr-mobile/keepers/`
   (directory 0700, files 0600). Every attached client gets every update; the
   first answer to a waiting request wins.
-- When herdr runs on the host, it opens a tab in the workspace of the linked
-  worktree that holds the session's folder, else in herdr's `Phone sessions`
-  workspace (never focused), that runs `view <id>`: a terminal client of the
-  keeper that reports the session's state to herdr, so herdr on any connected
-  computer lists it. `~/.herdr-mobile/no-panes` turns this off
-  (`docs/AGENT_SESSIONS.md` "Shared sessions").
-- `kill` sends SIGTERM to the agent's process group, then SIGKILL after 3 s. It
-  signals only a process whose command line is a keeper script.
+- When herdr runs on the host and a `herdr-tui` can be found there, it opens a
+  tab in the workspace of the linked worktree that holds the session's folder,
+  else in herdr's `Phone sessions` workspace (never focused), that runs
+  `herdr-tui attach <id>`: a terminal client of the keeper that reports the
+  session's state to herdr, so herdr on any connected computer lists it. Without
+  a `herdr-tui` no tab is opened. `~/.herdr-mobile/no-panes` turns this off
+  (`rust/crates/keeper/src/pane.rs`, `docs/AGENT_SESSIONS.md` "Shared sessions").
+- `kill` sends SIGTERM to the agent's process group, then SIGKILL after 2 s. It
+  signals only a process whose command line is a keeper daemon (`herdr-host` or
+  `herdr-tui` run as `keeper-daemon`), so a recycled process id is never hit.
 - `follow` streams an agent's `.jsonl` session log. It refuses any path that is
   not absolute, not `.jsonl`, or not under the home folder
-  (`keeper_command.dart:210-253`).
+  (`rust/crates/keeper/src/follow.rs`).
 - If `HERDR_KEEPER_ON_BLOCKED` names an executable, or `~/.herdr-mobile/on-blocked`
   exists and is executable, the keeper runs it when a request starts waiting.
-  The app never creates that file.
+  The app never creates that file (`rust/crates/keeper/src/alerts.rs`,
+  `docs/ALERTS.md`).
 
 ### Requests through herdr's API
 
@@ -272,19 +362,35 @@ These go over the mux as JSON, never as a shell command line:
   the `*.close` methods, for actions you start.
 - `events.subscribe`, for the event stream.
 
-### Files over SFTP
+### Files
 
-Browsing, the file viewer, photo thumbnails and slash-command discovery all
-read over the `sftp` subsystem on the same connection (`sftp_files.dart`,
-`remote_files.dart`, `app/lib/data/repositories/slash_catalog.dart`). A single
-read is capped at 8 MB (`docs/ENGINEERING.md` "Files are SFTP, never a shell").
+Browsing, the file viewer, photo thumbnails, search below a folder and
+slash-command discovery read
+through the helper's `fs` service on the machine's one link: one request and one
+answer per `stat`, a listing in one stream, a read that checks the file's
+identity (size and modification time) so a copy that was interrupted can resume
+and a file that changed under it is noticed, and a real watch where the host
+looks and the phone only hears changes (`host_files.dart`, `remote_files.dart`,
+`app/lib/data/repositories/slash_catalog.dart`). A photo tile or row asks the
+host for a 256 px JPEG (`fs.thumb`) instead of reading the file, and Search
+(`fs.search`) is a walk on the host that streams matches as it finds them, so
+neither moves a photo or a folder tree over the radio. On a machine without the
+helper (or one whose helper answers `unknown_method`) the same screens read over
+the `sftp` subsystem of the same SSH connection
+(`sftp_files.dart`), read-only and without resume: small pictures are read whole,
+bigger ones keep a glyph, and Search is a bounded walk (3,000 entries, 4 s) that
+says when it stopped early (`file_walk_search.dart`). A single read is capped at
+8 MB by the app (`docs/ENGINEERING.md` "Files come over the helper, never a
+shell").
 
-The app writes only inside `~/.herdr-mobile/inbox/<12 hex>/`. Phone files you
-attach to an agent session are uploaded there (folders 0700, files 0600), and
-each name is built by the app from a sanitised copy of the file name. Once a
-day the app deletes inbox files older than 14 days, at most 200 per sweep, over
-SFTP. Nothing outside the inbox is listed or removed
-(`app/lib/data/repositories/host_inbox.dart:11-26`, `154-158`,
+The app writes only inside `~/.herdr-mobile/inbox/<12 hex>/`, and only through
+the helper's `transfer` service. Phone files you attach to an agent session are
+uploaded there (folders 0700, files 0600); the host builds each name from a
+sanitised copy of the file name and checks the size and SHA-256 of what
+arrived, and an upload that is cut off resumes where it stopped. Once a day the
+app asks the host to delete inbox files older than 14 days, at most 200 per
+sweep. Nothing outside the inbox is listed or removed
+(`rust/crates/host/src/svc/transfer.rs`, `app/lib/data/repositories/host_inbox.dart`,
 `app/lib/data/repositories/attach_upload.dart`).
 
 ### The sign-in terminal
@@ -301,32 +407,41 @@ shows the agent's hint for you to copy
 
 ### How input is validated and quoted
 
-Values that end up inside a remote shell command are checked first, then
-passed as a single quoted shell word:
+Almost nothing a person types reaches a remote shell any more: the keeper's
+folder, agent, ids and log paths are fields of messages to the helper, which
+validates them itself (`rust/crates/host/src/svc/keeper.rs`). Two values still
+end up inside a remote shell command, the one that runs the bridge on a host
+without the helper. They are checked first, then passed as a single quoted
+shell word:
 
 - **herdr session name.** Must match `^[A-Za-z0-9._-]+$`; anything else throws
-  before a command is built (`bridge_command.dart:5`, `324-328`).
-- **Socket path.** Single-quoted (`bridge_command.dart:322`, `381-382`,
-  `416-417`).
-- **Keeper ids.** Must match `^[a-z0-9]{3,32}$` (`keeper_command.dart:30`,
-  `124-128`).
-- **Agent ids.** Must be one of `agentRoutes`.
+  before a command is built (`bridge_command.dart` `_checkSession`) and is
+  refused by the helper as well (`rust/crates/host/src/backend/herdr.rs`).
+- **Socket path.** Single-quoted (`bridge_command.dart` `_shQuote`).
+
+What the helper checks on what it is sent:
+
+- **Keeper ids.** Must match `^[a-z0-9]{3,32}$`.
+- **Agent ids.** Must be one of the routes in `rust/crates/keeper/routes.json`.
 - **Folders and log paths.** Must be non-empty, at most 4096 characters, and
-  free of control characters (newlines included). They are then single-quoted
-  (`keeper_command.dart:32-38`, `121`, `165-173`, `237-240`).
-- **The sign-in `cd`.** Quotes the path after `~/`
-  (`session_launcher.dart:3-17`).
+  free of control characters (newlines included). A log path must also be
+  absolute, end in `.jsonl` and be under the home folder after links are
+  resolved.
+- **Inbox paths.** `transfer.put` accepts only a path the host itself reserved:
+  under `~/.herdr-mobile/inbox/<12 hex>/`, no `..`, a name of the shape the host
+  makes.
 
-Injection tests run the generated commands: `app/test/bridge_command_test.dart`
-(session names such as `$(id)`, and a socket path that tries to `touch` a
-file), `app/test/keeper_*_test.dart`, `app/test/keeper_history_test.dart`,
-`app/test/log_follower_test.dart` (a log name with quotes, `$()` and
-backticks) and `app/test/session_launcher_test.dart`.
+And the one place that still quotes: **the sign-in `cd`**, which quotes the
+path after `~/` (`session_launcher.dart`).
 
-Remote paths handled by the file screens and uploads go through SFTP as
-protocol arguments and never through a shell. The commands that need a host
-path all quote it as described above: the keeper's folder, a session log to
-follow, the socket path, and the sign-in `cd`. Text you type into a terminal
+Tests: the shell-quoting side is `app/test/bridge_command_test.dart` (session
+names such as `$(id)`, and a socket path that tries to `touch` a file) and
+`app/test/session_launcher_test.dart`. The helper's side is Rust unit tests in
+`rust/crates/host/src/svc/` (control characters, `..`, symlink and path-escape
+attempts) and `rust/crates/host/tests/serve_*.rs`, which drive the real binary.
+
+Remote paths handled by the file screens and uploads are fields of `fs` and
+`transfer` messages and never go through a shell. Text you type into a terminal
 pane goes to herdr as a JSON field of `pane.send_input` (or of `agent.prompt`
 for a message to an agent). It reaches that pane's program as keystrokes,
 which is the point, and is never part of an SSH command line.
@@ -550,7 +665,7 @@ Other ways traffic can leave the phone:
   `127.0.0.1` of the phone and show it in the app's WebView (above);
   `Open in browser` in the page's `⋯` hands it to the Custom Tab with an
   entry URL of its own. A *static* listener serves the file's own
-  folder, read-only, over the machine's SFTP session; a *forward* listener
+  folder, read-only, through the same file backend as the viewer (the helper's `fs`, else SFTP); a *forward* listener
   carries raw bytes to a port on the machine over a `direct-tcpip` channel of
   the existing connection (never a connection of its own). What keeps it from
   being a hole:
@@ -595,7 +710,7 @@ Other ways traffic can leave the phone:
     `.git`, `.ssh`: a page in the home folder would otherwise read them); the
     machine is only asked about paths built from the root. No listing; GET and
     HEAD only. A symlink inside the folder that leads outside it is followed
-    by SFTP; telling would cost a `realpath` per request (not done).
+    by the host; telling would cost a `realpath` per request (not done).
   - A forward listener removes its own `herdr_<port>` cookies from the first
     request head it passes on (the dev server on the machine has no business
     with them, and with two machines on one port the browser sends one's to the
@@ -633,11 +748,13 @@ Other ways traffic can leave the phone:
 - **Notifications** are local, through `flutter_local_notifications`
   (`app/lib/data/services/local_notifier.dart`).
 
-On the host, two things can reach the network that are not the app's own
-traffic: a keeper that starts an agent through `npx -y` downloads it from npm,
-and the optional ntfy plugin, if you install it, posts from the host to an
-ntfy server (`docs/ALERTS.md`, part 2). The app does not use or configure that
-plugin.
+On the host, three things can reach the network that are not the app's own
+traffic: the installer, which downloads the helper and its checksum list from
+this app version's GitHub release (and refuses the file unless the checksum
+matches); a keeper that starts an agent through `npx -y`, which downloads it
+from npm; and the optional ntfy plugin, if you install it, which posts from the
+host to an ntfy server (`docs/ALERTS.md`, part 2). The app does not use or
+configure that plugin.
 
 Android permissions (`app/android/app/src/main/AndroidManifest.xml`):
 
@@ -783,7 +900,7 @@ setting decides whether that text appears there.
   and a page of one can call the other's open listener with its cookie
   (cleared when the last page closes; see "Known limits" above).
 - *Cannot:* read phone files you did not attach, or answer a prompt for you.
-- *Limits on what it can send:* reads are capped (8 MB per SFTP read), and the
+- *Limits on what it can send:* reads are capped (8 MB per file read), and the
   keeper's log has byte bounds.
 
 **A network attacker.**
@@ -862,11 +979,17 @@ app/lib/
     services/            transports and host I/O: herdr_transport.dart (interface),
                          ssh_transport.dart, isolate_transport.dart,
                          transport_factory.dart, mux_client.dart,
-                         bridge_command.dart (mux, events, bridge scripts),
-                         herdr_api.dart, keeper_script.dart, keeper_command.dart,
-                         ssh_agent_host.dart, ssh_log_source.dart, sftp_files.dart,
-                         remote_files.dart, key_generator.dart, network_monitor.dart,
+                         bridge_command.dart (projections; the bridge command for
+                         hosts without the helper), herdr_api.dart,
+                         keeper_command.dart (the serve and install commands),
+                         ssh_agent_host.dart, ssh_log_source.dart, sftp_files.dart
+                         (SFTP, without the helper), remote_files.dart,
+                         key_generator.dart, network_monitor.dart,
                          link_liveness.dart, local_notifier.dart, caches
+    host/                the host link: wire.dart (frame codec), host_link.dart
+                         (streams, credit), host_channels.dart (adapters),
+                         host_install.dart, host_files.dart, host_transfer.dart,
+                         host_ports.dart
     repositories/        machine_repository.dart, machine_connection.dart,
                          fleet_repository.dart, attention_set.dart,
                          attention_notifier.dart, agent_session_repository.dart,
@@ -882,8 +1005,8 @@ app/lib/
     core/                design system, terminal view, Markdown, deep links,
                          hold and tap guards
     features/            one folder per screen family, with view models:
-                         agents, agent_session, pane, files, machines, create,
-                         history, attach, photos, settings
+                         agents, agent_session, pane, files, ports, machines,
+                         create, history, attach, photos, settings
     shell/               home (the Agents board, no tab bar) and the pages
                          its header opens (Machines, Settings: HomePages)
 ```
@@ -894,15 +1017,24 @@ system.
 
 ## 8. Testing
 
-- **Unit and widget tests** live in `app/test/` (210 test files). They cover
-  behaviour, boundaries, transitions and errors. Fakes are in
-  `app/test/support/`: a fake transport, a fake SFTP server, a fake network,
-  and a fake ACP agent (`fake_acp_agent.py`).
-- **Real host-side code under test.** The keeper tests run the real keeper
-  script against a scripted agent (`app/test/keeper_*_test.dart` over
-  `app/test/support/keeper_harness.dart`, `keeper_process_host.dart`). The bridge tests run the
-  generated shell and python commands against a local unix socket
+- **Unit and widget tests** live in `app/test/` (about 350 test files). They
+  cover behaviour, boundaries, transitions and errors. Fakes are in
+  `app/test/support/`: a fake transport, a fake file backend, a fake network,
+  and Rust fakes for the host side (below).
+- **Real host-side code under test, no python.** The helper is the real
+  `herdr-host` binary. Dart tests run it as `serve` and talk to it with a real
+  `HostLink` (`app/test/host_*_test.dart`, `keeper_*_test.dart` over
+  `app/test/support/keeper_harness.dart`, `host_serve.dart`). Rust tests drive
+  it with the `wire` crate (`rust/crates/host/tests/serve_*.rs`). The scripted
+  ACP agent, the fake herdr socket and the benchmark agent are Rust binaries
+  in `rust/crates/testkit` (`fake-acp-agent`, `fake-herdr`, `bench-acp-agent`).
+  The binary is found through `HERDR_HOST_BIN` and the fakes through
+  `HERDR_TESTKIT_DIR` (`docs/DEVELOPMENT.md` "Commands"). The bridge tests run
+  the generated shell command against a local unix socket
   (`app/test/bridge_command_test.dart`).
+- **Protocol facts are checked in.** `docs/host-api.json` is what `herdr-host
+  api` prints (a Rust test fails when it is stale), and the wire's golden
+  vectors (`rust/crates/wire/tests/vectors.json`) are decoded by Rust and Dart.
 - **Schema check.** `herdr_api_test.dart` checks the event subscription list
   against `docs/herdr-api.schema.json`.
 - **Captured, not written.** Agent prompts change often, so test inputs come

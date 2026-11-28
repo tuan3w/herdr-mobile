@@ -21,25 +21,47 @@ Android APK only.
   must be up and its socket present.
 - **A POSIX shell.** Windows hosts are not supported.
 
-**herdr versions and fallbacks.** The app needs one of these on the machine
-to reach herdr's socket:
+**The agent helper.** The first time the app connects to a machine it puts a
+small program there, `herdr-host` (about 1.4 MB), under
+`~/.herdr-mobile/bin/`. The machine downloads it itself, from this app
+version's release on GitHub, checks it against the release's checksum list and
+installs it for the user you sign in as (no root). It needs `curl` or `wget`,
+`sha256sum` or `shasum`, and a way to reach github.com; there is nothing to
+install by hand and **no `python3` is needed**. Builds exist for Linux and
+macOS on x86-64 and arm64. With the helper, everything the app does on a
+machine goes over one SSH channel: herdr's requests and events, agent
+sessions, files, uploads, open ports and the checks behind `Made`.
+
+**Without the helper** (an unsupported kind of machine, one that is offline or
+cannot reach GitHub) the app still works, with less, and says so where it is
+missing instead of pretending:
 
 | On the machine | What the app does |
 | --- | --- |
-| `python3` | Runs a small script that keeps one persistent, compressed channel for every request. This is the fast path. |
-| herdr 0.9 or newer (`herdr remote-api-bridge`) | Used when there is no `python3`, one channel per request. Also needed for named herdr sessions. |
-| `socat` | Used on older herdr without `python3`, one channel per request. |
+| herdr 0.9 or newer (`herdr remote-api-bridge`) | One SSH channel per herdr request. Also needed for named herdr sessions. |
+| `socat` | Used on older herdr, one channel per request. |
+| the sshd `sftp` subsystem | `Files` read over SFTP, read-only. |
+
+There are no agent sessions, no file uploads (so nothing can be attached to a
+message), no `Ports` list, and `Made` shows `Status unknown` for servers, because
+all of those need the helper. To put it there by hand, run on the machine
+`curl -fsSL https://github.com/tuan3w/herdr-mobile/releases/latest/download/install-host.sh | VERSION=v<app version> sh`.
+A machine with no internet at all can take the release's
+`herdr-host-<os>-<arch>`, `herdr-host-SHA256SUMS` and `install-host.sh` by
+other means and run
+`HERDR_HOST_BASE_URL=file:///that/folder VERSION=v<app version> sh install-host.sh`.
 
 With herdr older than 0.9 the app can only reach the default herdr session,
 at `~/.config/herdr/herdr.sock`, unless you give the socket path under
 `Advanced` (see below). Log in as the user that runs herdr: the socket is
 looked for in that user's home.
 
-**Agent sessions** (agents you start from the phone, section 6) also need
-`python3` (3.6 or newer) on the machine, and the agent itself installed there:
-`omp`, or Node's `npx` for Claude Code, Codex and pi.
+**Agent sessions** (agents you start from the phone, section 6) also need the
+agent itself installed on the machine: `omp`, or Node's `npx` for Claude Code,
+Codex and pi.
 
-**Files** need the sshd `sftp` subsystem, which most sshd setups have enabled.
+**Files** are read through the helper. Without it they need the sshd `sftp`
+subsystem, which most sshd setups have enabled.
 
 ## 2. Install
 
@@ -216,7 +238,7 @@ log: the session's own title, else your last message in quotes
 (`“Add a regression test”`: what you asked, not the agent's name for it). This
 needs herdr's omp integration on the machine (`herdr integration install omp`),
 which is what tells herdr, and so the app, where the log is. Without it the
-title stays the folder. The log is read over SFTP (the head and the tail of the
+title stays the folder. The log is read through the agent helper (the head and the tail of the
 file) when a pane needs a name and again when its status changes, never while
 the app is in the background. An idle omp pane with a good title costs one
 `stat`, for the date above.
@@ -359,7 +381,14 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
 - **Bar.** `Browse files` (the pane's folder) and `Pane options`:
   `Wrap lines` (re-flow to the screen, or the exact terminal layout),
   `Duplicate` (start an agent session with the same machine, folder and
-  agent), `Copy title`, `Copy pane id <id>`.
+  agent), `Ports`, `Copy title`, `Copy pane id <id>`. `Ports` lists what is
+  listening on the machine (`Nothing is listening on this machine.` when
+  nothing is): a row is the process name, or `Port <n>`, with `localhost:<n>`
+  and the process id under it. It updates by itself while it is open and
+  stops when you close it. A tap opens the port as a page in herdr, through
+  your SSH connection; ports of services that are not web pages (SSH, a
+  database) are dimmed with the service's name and do not open. Without the agent
+  helper on the machine it says `Needs the agent helper on this machine.`
 - **Width.** herdr can't resize a pane to the phone over its API, so a wide
   pane is either pinch-zoomed or re-flowed by wrap. Wrap keeps table and box
   rows whole and scrolls them sideways. Default font size and wrap are in
@@ -416,7 +445,7 @@ scrollback (herdr's limit). It is text only: no cursor or mouse.
 
 An agent session is an agent the phone starts and talks to over the Agent
 Client Protocol ([ACP](https://agentclientprotocol.com)) instead of reading
-its screen. The agent runs inside a small keeper process on the machine, so
+its screen. The agent runs inside a small keeper process on the machine (part of the helper), so
 it keeps working when the phone's connection drops, and the app reattaches
 when it can.
 
@@ -475,7 +504,9 @@ changed files, commands, mode and model, and context use.
 
 **Made, and the link.** The `Made` chip under the title lists what the agent
 made and shows up once there is something: `Apps` (a server and its pages, named
-by what started it, with `Running`, `Stopped` or `Status unknown`), `Pages`,
+by what started it, with `Running` or `Stopped` only when the machine itself says
+so (it is asked whether the port is listening, once when the sheet opens and
+live while it stays open), else `Status unknown`), `Pages`,
 `Media` (pictures, videos and the pictures a tool returned, such as a browser
 screenshot), `Docs` and `Links` (a pull request, issue, release or CI run on
 GitHub). Swipe sideways, or tap a tab, to move between them. A tap on
@@ -520,7 +551,9 @@ tabs:
 - `Gallery`: photos on the phone, plus `Take a photo`. An agent that does not
   take images gets photos as files.
 - `Files`: any phone file (`Choose files…`), up to 200 MB. It is uploaded to
-  `~/.herdr-mobile/inbox/` on the machine and the agent gets its path.
+  `~/.herdr-mobile/inbox/` on the machine (the machine checks it arrived whole;
+  an upload that is cut off continues where it stopped when you retry) and the
+  agent gets its path.
 - `Host`: files already on the machine, starting with ones changed recently.
 
 Up to five attachments per message. The message can't be sent until every
@@ -575,12 +608,22 @@ tasks.
 
 Open the file browser from a pane (`Browse files`), a machine's screen, an
 agent session (`Session options` > `Files`), or by tapping a path in a
-terminal or chat. Files are read over SFTP; nothing is run in a shell.
+terminal or chat. Files are read through the agent helper (over SFTP, read-only, without it); nothing is run in a shell.
 
 **Browsing.** Breadcrumbs at the top, Back goes up one folder.
 `Find in <folder>` filters the current listing; `Changed in the last hour`
 shows recent changes in this folder only. Sorting, `Folders first` and
 `Show hidden files` stay set while you browse.
+
+**Search.** The magnifier at the top right looks in this folder and the folders
+below it, by part of a name. `Last hour` and `Today` show what changed lately
+and work with the field empty; `Any time` is the default. Shallow matches come
+first and stay where they are as more arrive. The foot of the list says how
+many items were searched, and when the search stopped at a limit it says there
+may be more: `Narrow the search`. Search stops when you leave the screen or the
+app. Folders like `.git` and `node_modules` are skipped. With the agent helper
+the machine does the looking, fast; without it (over SFTP) the app looks
+folder by folder and stops after about 3,000 items or 4 seconds, and says so.
 
 **Viewing.**
 
@@ -602,7 +645,9 @@ shows recent changes in this folder only. Sorting, `Folders first` and
   Pictures/herdr), `Share or save…` (any file: it is copied to the phone, then the
   share sheet lists the apps and folders that keep it) and `Copy path`. From Android 13 the
   phone itself confirms a copy, so the app says nothing more unless only part
-  was copied.
+  was copied. A copy that was cancelled or cut off continues where it stopped
+  when you copy the same file again and it has not changed (with the agent
+  helper; over SFTP it starts again).
 
 **Pages in herdr.** A link never takes you out of herdr. A dev server an agent
 started, or an HTML file it wrote, opens as a page inside herdr: `Open page`
@@ -635,8 +680,13 @@ load says why, with `Retry`.
 **Photos.** Pictures open in the photo viewer: pinch or double-tap to zoom,
 swipe sideways for the next photo, drag down to close. `Save or share` has
 `Save to phone` and `Share…`. A folder with six or more pictures has a
-`Photos` button for a grid. The viewer opens photos up to 40 MB; a larger
-one can still be shared.
+`Photos` chip for a grid. With the agent helper the machine sends a small
+preview of each picture (a few KB instead of the whole photo, which is a lot
+less mobile data) and works with JPEG, PNG, WebP and GIF; a photo it cannot
+shrink (HEIC, RAW, SVG) keeps a plain tile. Without the helper (over SFTP)
+only pictures up to 2 MB get a preview in the grid and up to 512 KB in the
+list, and a bigger one shows its size. The viewer opens photos up to 40 MB; a
+larger one can still be shared.
 
 ![The photo viewer](screenshots/image.png)
 
@@ -725,10 +775,11 @@ coming back to the app, reconnects at once. Errors that retrying can't fix
 | `The sign-in ended before it was approved. Retry to get a new link.` | The approval link was refused or expired, or the connection dropped while waiting. Tap `Retry` and approve the new link. |
 | `Sign-in was not approved in time. Retry to get a new link.` | Tap `Retry` and approve the new link. |
 | `This machine runs a regular SSH server (<name>), not Tailscale SSH.` | `Tailscale` sign-in needs Tailscale SSH on the machine. A Mac, or any host without it, runs plain OpenSSH: pick `Private key` or `Password`. The Tailscale address still works as `Host`. |
-| `need herdr >= 0.9, socat or python3 on this host` | Install `python3` or `socat`, or update herdr. If herdr 0.9+ is installed but not found, put it on the PATH of a non-interactive SSH login or in `~/.local/bin`. |
+| `need herdr >= 0.9 or socat on this host` | Update herdr, or install `socat`. If herdr 0.9+ is installed but not found, put it on the PATH of a non-interactive SSH login or in `~/.local/bin`. |
 | `no herdr socket at <path> for session <name>` | herdr isn't running for that user and session, or its socket is elsewhere: start herdr, check `herdr session` under `Advanced`, or set `API socket path (optional)`. |
 | `herdr on this host has no remote-api-bridge; set a socket path for session <name>` | A named session on herdr older than 0.9: update herdr or set `API socket path (optional)`. |
-| `Agent sessions need python3 on this machine.` | Install `python3` (3.6+) on the machine. Terminal agents work without it if herdr 0.9+ or `socat` is there. |
+| `Needs the agent helper on this machine.` (agent sessions, attaching a file, `Ports`) | The helper is not on that machine and could not be put there. Check that the machine can reach github.com, has `curl` or `wget` and `sha256sum` or `shasum`, and is Linux or macOS on x86-64 or arm64; or install it by hand (section 1). Terminal agents and the board work without it if herdr 0.9+ or `socat` is there. |
+| `The machine could not set up the agent helper.` (with what the installer said) | The download or its checksum failed on the machine: the reason after it says which. The app tries again after a while. |
 | `<agent> is not installed on <machine>` | Install the agent on the machine, on the PATH of a non-interactive SSH login. |
 | `This host does not allow SFTP` (…) | Enable the `sftp` subsystem in the machine's `sshd_config` to use Files. |
 | `Too many sessions are open on this host (sshd MaxSessions)` (…) | Close something, or raise `MaxSessions` in `sshd_config`. |
@@ -747,9 +798,12 @@ coming back to the app, reconnects at once. Errors that retrying can't fix
   sending an answer to it.
 - **Links show their full address** before anything opens, and the app never
   downloads a picture an agent links to.
-- **What lands on the machine:** agent sessions install a small keeper script
-  and keep their state under `~/.herdr-mobile/`; files you attach are
-  uploaded to `~/.herdr-mobile/inbox/`.
+- **What lands on the machine:** the agent helper
+  (`~/.herdr-mobile/bin/herdr-host-<version>`, one file, downloaded by the machine
+  from this version's release and checked against its checksum; it opens no port
+  and runs only while the app is connected), the agent sessions' state under
+  `~/.herdr-mobile/`; files you attach are uploaded to `~/.herdr-mobile/inbox/`
+  (nothing else is ever written by the app; `Files` is read-only).
 
 ## 11. FAQ and known limits
 

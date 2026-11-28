@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/models/web_bridge.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/isolate_transport.dart';
 
 import 'support/fake_exec.dart';
+import 'support/no_files.dart';
 
 /// A remote command that answers every line it is sent.
 class _Echo extends FakeExecChannel {
@@ -36,13 +35,22 @@ class _Reader extends FakeExecChannel {
 }
 
 /// Runs inside the worker isolate; the command text picks the behaviour.
-class _ExecProbe implements HerdrTransport {
+class _ExecProbe with NoFiles implements HerdrTransport {
   final channels = <FakeExecChannel>[];
   var closed = false;
 
   @override
-  Future<ExecChannel> openExec(String command, {bool zipped = false}) async {
-    final parts = command.split(':');
+  Future<Object?> hostCall(
+    String service,
+    String method, [
+    Map<String, Object?> args = const {},
+    Duration? timeout,
+  ]) async => {'service': service, 'method': method, 'args': args, 'timeoutMs': timeout?.inMilliseconds};
+
+  /// A stream of the agent helper: [method] picks the behaviour.
+  @override
+  Future<ExecChannel> openHostStream(String service, String method, [Map<String, Object?> args = const {}]) async {
+    final parts = method.split(':');
     final FakeExecChannel channel;
     switch (parts[0]) {
       case 'burst':
@@ -65,10 +73,9 @@ class _ExecProbe implements HerdrTransport {
             channel.emit('${parts[1]}-${i++}');
           }
         });
-      case 'zipflag':
-        // What the worker was asked for: the transport inflates there, so the
-        // flag has to arrive.
-        channel = FakeExecChannel.run(stdout: ['zipped=$zipped']);
+      case 'args':
+        // What the worker was asked for.
+        channel = FakeExecChannel.run(stdout: ['$service.${parts[0]} $args']);
       case 'echo':
         channel = _Echo();
       case 'reader':
@@ -87,6 +94,12 @@ class _ExecProbe implements HerdrTransport {
   }
 
   @override
+  Stream<Object?> openHostMessages(String service, String method, [Map<String, Object?> args = const {}]) =>
+      Stream.fromIterable([
+        {'service': service, 'method': method, 'args': args},
+      ]);
+
+  @override
   Future<Map<String, dynamic>> request(String method, [Map<String, dynamic> params = const {}]) async => {
     'closed': closed,
     'closeCalls': [for (final c in channels) c.closeCalls],
@@ -103,35 +116,6 @@ class _ExecProbe implements HerdrTransport {
 
   @override
   void reset() {}
-
-  @override
-  bool get supportsFiles => false;
-
-  @override
-  Future<RemoteStat> statFile(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<List<RemoteEntry>> listDirectory(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<Uint8List> readFile(String path, {int offset = 0, int length = remoteReadCap}) =>
-      throw UnsupportedError('files');
-
-  @override
-  Future<String> realPath(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<void> makeDirs(String path) => throw UnsupportedError('files');
-
-  @override
-  Future<void> removeFile(String path) => throw UnsupportedError('files');
-
-  @override
-  UploadJob uploadFile({
-    required String localPath,
-    required String remotePath,
-    void Function(int sent, int total)? onProgress,
-  }) => throw UnsupportedError('files');
 
   @override
   Future<WebBridgeInfo> openWebBridge(WebBridgeSpec spec) => throw UnimplementedError();
@@ -159,13 +143,13 @@ void main() {
 
   Future<Map<String, dynamic>> probe() => t.request('probe');
 
-  test('whether the lines are zipped reaches the worker, where the transport reads them back', () async {
-    expect((await _drain(await t.openExec('zipflag'))).lines, ['zipped=false']);
-    expect((await _drain(await t.openExec('zipflag', zipped: true))).lines, ['zipped=true']);
+  test('the service, method and arguments of a host stream reach the worker', () async {
+    final channel = await t.openHostStream('keeper', 'args', {'id': 'abc234', 'n': 3});
+    expect((await _drain(channel)).lines, ['keeper.args {id: abc234, n: 3}']);
   });
 
   test('a burst arrives whole, in order, in a handful of messages', () async {
-    final channel = await t.openExec('burst:6000');
+    final channel = await t.openHostStream('probe', 'burst:6000');
 
     final got = await _drain(channel);
 
@@ -177,7 +161,7 @@ void main() {
   });
 
   test('a batch is also cut by size, so long lines do not make one huge message', () async {
-    final channel = await t.openExec('wide:300');
+    final channel = await t.openHostStream('probe', 'wide:300');
 
     final got = await _drain(channel);
 
@@ -191,7 +175,7 @@ void main() {
   });
 
   test('lines that arrive before anyone listens are kept', () async {
-    final channel = await t.openExec('burst:50');
+    final channel = await t.openHostStream('probe', 'burst:50');
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
     final got = await _drain(channel);
@@ -202,7 +186,7 @@ void main() {
   });
 
   test('a lone line is not held back waiting for a full batch', () async {
-    final channel = await t.openExec('echo');
+    final channel = await t.openHostStream('probe', 'echo');
     final first = channel.lines.first;
 
     channel.send('ping');
@@ -211,7 +195,7 @@ void main() {
   });
 
   test('what is sent reaches the remote command, in order', () async {
-    final channel = await t.openExec('echo');
+    final channel = await t.openHostStream('probe', 'echo');
     final got = <String>[];
     channel.lines.listen(got.add);
 
@@ -226,7 +210,7 @@ void main() {
   });
 
   test('the channel ends when the remote command does, with its status and stderr', () async {
-    final channel = await t.openExec('failing');
+    final channel = await t.openHostStream('probe', 'failing');
 
     final got = await _drain(channel);
 
@@ -238,7 +222,7 @@ void main() {
 
   test('a channel that cannot be opened keeps the error and its fatal flag', () async {
     await expectLater(
-      t.openExec('refuse'),
+      t.openHostStream('probe', 'refuse'),
       throwsA(
         isA<HerdrTransportException>()
             .having((e) => e.fatal, 'fatal', isTrue)
@@ -248,8 +232,8 @@ void main() {
   });
 
   test('when the worker dies the channel ends with a retryable error, and a new one works', () async {
-    final channel = await t.openExec('fatal');
-    final idle = await t.openExec('idle');
+    final channel = await t.openHostStream('probe', 'fatal');
+    final idle = await t.openHostStream('probe', 'idle');
     final dead = _drain(channel);
     final deadIdle = _drain(idle);
 
@@ -264,25 +248,25 @@ void main() {
     // Sending to a channel whose worker is gone is not an error the caller can act on.
     channel.send('late');
 
-    final again = await t.openExec('echo');
+    final again = await t.openHostStream('probe', 'echo');
     final reply = again.lines.first;
     again.send('hi');
     expect(await reply.timeout(const Duration(seconds: 5)), 'echo:hi');
   });
 
   test('opening on a dead worker retries on a fresh one, not an error', () async {
-    final channel = await t.openExec('fatal');
+    final channel = await t.openHostStream('probe', 'fatal');
     final dead = _drain(channel);
     channel.send('x');
     await dead;
 
-    final next = await t.openExec('burst:3');
+    final next = await t.openHostStream('probe', 'burst:3');
 
     expect((await _drain(next)).lines, ['line-0', 'line-1', 'line-2']);
   });
 
   test('closeInput delivers what was sent, then the command answers; the channel stays open', () async {
-    final channel = await t.openExec('reader');
+    final channel = await t.openHostStream('probe', 'reader');
     final answer = <String>[];
     final drained = Completer<void>();
     channel.lines.listen(answer.add, onDone: drained.complete);
@@ -302,7 +286,7 @@ void main() {
   });
 
   test('close is idempotent, ends the stream, and leaves the transport running', () async {
-    final channel = await t.openExec('idle');
+    final channel = await t.openHostStream('probe', 'idle');
     final drained = _drain(channel);
 
     await Future.wait([channel.close(), channel.close()]);
@@ -314,13 +298,13 @@ void main() {
     final state = await probe();
     expect(state['closed'], isFalse, reason: 'the connection is not closed');
     expect(state['closeCalls'], [1], reason: 'the remote command was closed once');
-    final other = await t.openExec('burst:2');
+    final other = await t.openHostStream('probe', 'burst:2');
     expect((await _drain(other)).lines, ['line-0', 'line-1']);
   });
 
   test('closing one channel leaves another untouched', () async {
-    final a = await t.openExec('echo');
-    final b = await t.openExec('echo');
+    final a = await t.openHostStream('probe', 'echo');
+    final b = await t.openHostStream('probe', 'echo');
     final fromB = <String>[];
     b.lines.listen(fromB.add);
 
@@ -335,7 +319,7 @@ void main() {
   });
 
   test('closing the transport ends open channels without an error', () async {
-    final channel = await t.openExec('idle');
+    final channel = await t.openHostStream('probe', 'idle');
     final drained = _drain(channel);
 
     await t.close();
@@ -346,8 +330,8 @@ void main() {
   });
 
   test('two channels do not see each other\'s lines', () async {
-    final a = await t.openExec('ticker:A');
-    final b = await t.openExec('ticker:B');
+    final a = await t.openHostStream('probe', 'ticker:A');
+    final b = await t.openHostStream('probe', 'ticker:B');
 
     final results = await Future.wait([_drain(a), _drain(b)]);
 
@@ -356,8 +340,8 @@ void main() {
   });
 
   test('sends go to their own channel', () async {
-    final a = await t.openExec('echo');
-    final b = await t.openExec('echo');
+    final a = await t.openHostStream('probe', 'echo');
+    final b = await t.openHostStream('probe', 'echo');
     final fromA = <String>[];
     final fromB = <String>[];
     a.lines.listen(fromA.add);

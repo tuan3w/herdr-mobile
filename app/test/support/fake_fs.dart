@@ -160,11 +160,18 @@ class FakeFs {
 
   Future<RemoteStat> stat(String path) async {
     await _enter('stat $path');
+    return peek(path) ?? _notFound(path);
+  }
+
+  /// What [path] is right now, answered at once and not counted as a call: how
+  /// the machine reports a file it watches. Null when it is not there.
+  RemoteStat? peek(String path) {
+    if (fail != null) throw fail!;
     if (_denied(path)) {
       throw RemoteFileException(RemoteFileErrorKind.permission, 'Permission denied', path: path);
     }
     final node = _follow(path);
-    if (node == null) _notFound(path);
+    if (node == null) return null;
     return RemoteStat(
       path: path,
       kind: node.isDir ? RemoteEntryKind.dir : RemoteEntryKind.file,
@@ -214,7 +221,9 @@ class FakeFs {
     return out;
   }
 
-  Future<Uint8List> read(String path, int offset, int length) async {
+  /// With [ifMatch] the file must still have that size and time (what the agent
+  /// helper's `fs.read` checks), else [RemoteFileChanged].
+  Future<Uint8List> read(String path, int offset, int length, {RemoteStat? ifMatch}) async {
     final n = length.clamp(0, remoteReadCap);
     await _enter('read $path@$offset+$n');
     if (_denied(path)) {
@@ -225,41 +234,12 @@ class FakeFs {
     if (node.isDir) {
       throw RemoteFileException(RemoteFileErrorKind.notAFile, 'Is a folder', path: path);
     }
+    if (ifMatch != null && (ifMatch.size != node.bytes.length || ifMatch.modified != node.modified)) {
+      throw RemoteFileChanged('The file changed', path: path);
+    }
     if (offset >= node.bytes.length) return Uint8List(0);
     final end = (offset + n).clamp(0, node.bytes.length);
     return Uint8List.sublistView(node.bytes, offset, end);
-  }
-
-  /// `mkdir -p` with mode 0700; a file in the way is not a folder.
-  Future<void> makeDirs(String path) async {
-    await _enter('mkdirs $path');
-    if (_denied(path)) {
-      throw RemoteFileException(RemoteFileErrorKind.permission, 'Permission denied', path: path);
-    }
-    var acc = '';
-    for (final part in path.split('/').where((s) => s.isNotEmpty)) {
-      acc = '$acc/$part';
-      final have = nodes[acc];
-      if (have == null) {
-        nodes[acc] = FakeNode.dir(modified: DateTime.now().toUtc(), mode: 0x41C0);
-      } else if (!have.isDir) {
-        throw RemoteFileException(RemoteFileErrorKind.notADirectory, 'Not a folder', path: acc);
-      }
-    }
-  }
-
-  /// Deletes a file or link; a folder is refused.
-  Future<void> remove(String path) async {
-    await _enter('rm $path');
-    if (_denied(path)) {
-      throw RemoteFileException(RemoteFileErrorKind.permission, 'Permission denied', path: path);
-    }
-    final node = nodes[path];
-    if (node == null) _notFound(path);
-    if (node.isDir) {
-      throw RemoteFileException(RemoteFileErrorKind.notAFile, 'Is a folder', path: path);
-    }
-    nodes.remove(path);
   }
 
   Future<String> realPath(String path) async {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -11,6 +12,7 @@ import '../../../data/acp/session_made.dart';
 import '../../../data/models/remote_file.dart';
 import '../../../data/models/web_bridge.dart' show sensitiveServiceOf;
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/made_verification.dart';
 import '../../../data/repositories/web_preview.dart' show WebPreview;
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -31,22 +33,21 @@ import 'photo_thread.dart' show showContentImage;
 import 'session_select.dart';
 import '../../render/visible_text.dart';
 
-/// What the sheet and the chip read from a session: the servers and pages, the
-/// background tasks that say whether a server still runs, and whether anything
-/// here may be called live (a saved copy or a link that is down knows nothing
-/// of what runs now).
-typedef _Snap = (List<MadeAsset>, List<BackgroundTask>, bool, MadeReach, MadeHistory?);
+/// What the sheet reads from a session: the servers and pages, the background
+/// tasks that name a server's command, and how far back the log was read. What
+/// runs now and which files are still there is not the session's to say: the
+/// machine says it ([MadeVerification]).
+typedef _Snap = (List<MadeAsset>, List<BackgroundTask>, MadeReach, MadeHistory?);
 
 _Snap _snap(AgentSessionView s) => (
   madeAssetsOf(s.state.items, cwd: s.cwd, history: s.madeHistory),
   s.backgroundWork.tasks,
-  s.link == AgentLink.live && s.cachedAsOf == null,
   s.madeReach,
   s.madeHistory,
 );
 
 bool _same(_Snap a, _Snap b) =>
-    sameMadeAssets(a.$1, b.$1) && identical(a.$2, b.$2) && a.$3 == b.$3 && a.$4 == b.$4 && identical(a.$5, b.$5);
+    sameMadeAssets(a.$1, b.$1) && identical(a.$2, b.$2) && a.$3 == b.$3 && identical(a.$4, b.$4);
 
 /// The apps, pages, pictures and documents a session made, newest first, one tap
 /// from the session bar. Each row opens over the sheet, which stays under it:
@@ -94,7 +95,7 @@ class SessionMadeSheet extends StatefulWidget {
   State<SessionMadeSheet> createState() => _SessionMadeSheetState();
 }
 
-class _SessionMadeSheetState extends State<SessionMadeSheet> {
+class _SessionMadeSheetState extends State<SessionMadeSheet> with WidgetsBindingObserver {
   /// The rows as the sheet found them, in that order, across every kind and
   /// tab. Nothing moves under a thumb while the sheet is open (AGENTS.md
   /// principle 3): a bottom sheet grows upward, so a row added anywhere shifts
@@ -112,6 +113,14 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
   final _more = <MadeKind, int>{};
 
   late final _entries = _EntryLoader(widget.session);
+
+  /// What the machine says about the servers' ports and the pages' files, while
+  /// the sheet is open and the app in front.
+  late final _verification = MadeVerification(widget.session.machine.ports);
+
+  /// What the last build wants verified, asked again when the app is back.
+  var _wantedPorts = const <int>{};
+  var _wantedPaths = const <String>[];
 
   /// The history the order was made from: when the read of the earlier part of
   /// the log lands, the rows it found join the list (the person asked for them
@@ -135,17 +144,51 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Opening the sheet is the ask: the part of a long log the phone has not
     // read is read now, never before (a radio and a battery cost).
     widget.session.readEarlierMade();
   }
 
+  /// Nobody looks while the app is in the background: the host stops watching
+  /// (the ports go back to unknown) and asks again when the app is back.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      _verification.pause();
+    } else if (state == AppLifecycleState.resumed) {
+      _verification.resume();
+      _verify();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _verification.dispose();
     _pager?.dispose();
     _entries.dispose();
     super.dispose();
   }
+
+  /// What the rows show that the machine can answer for: the ports of the
+  /// servers that can be web pages, and the files of the page and document rows
+  /// built on the tab in front. Pictures are checked by their own tiles, which
+  /// read the file anyway. Asked by [_VerifyWhenChanged], not by the build.
+  void _wantVerified(List<MadeAsset> shown, MadeKind? tab) {
+    _wantedPorts = {
+      for (final a in shown)
+        if (a.kind == MadeKind.server && a.port != null && sensitiveServiceOf(a.port!) == null) a.port!,
+    };
+    _wantedPaths = [
+      if (tab == MadeKind.page || tab == MadeKind.doc)
+        for (final a in shown.where((a) => _inTab(a, tab!)).take(_limit(tab!)))
+          if (a.path != null) a.path!,
+    ];
+  }
+
+  /// One `made.verify` for what was not asked yet.
+  void _verify() => unawaited(_verification.check(ports: _wantedPorts, paths: _wantedPaths));
 
   List<MadeAsset> _stable(List<MadeAsset> assets) {
     final order = _order ??= [for (final a in assets) a.key];
@@ -210,6 +253,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
         _FileRow(
           asset: asset,
           filesAvailable: files,
+          gone: asset.path != null && _verification.isGone(asset.path!),
           divider: i < built.length - 1 || rest > 0,
           onTap: () => _open(asset),
         ),
@@ -218,13 +262,13 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
   }
 
   /// [apps] as rows: the first [_limit] of them and a `N more` row.
-  List<Widget> _appRows(List<MadeApp> apps, {required List<BackgroundTask> tasks, required bool live}) {
+  List<Widget> _appRows(List<MadeApp> apps, {required List<BackgroundTask> tasks, required Map<int, bool> listening}) {
     final limit = _limit(MadeKind.server);
     final built = apps.length > limit ? apps.sublist(0, limit) : apps;
     final rest = apps.length - built.length;
     return [
       for (final (i, app) in built.indexed)
-        _AppRow(app: app, tasks: tasks, live: live, divider: i < built.length - 1 || rest > 0, onOpen: _open),
+        _AppRow(app: app, tasks: tasks, listening: listening, divider: i < built.length - 1 || rest > 0, onOpen: _open),
       if (rest > 0) _MoreRow(count: rest, onTap: () => _showMore(MadeKind.server)),
     ];
   }
@@ -298,7 +342,7 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
     TextScaler scaler,
     bool files, {
     required List<BackgroundTask> tasks,
-    required bool live,
+    required Map<int, bool> listening,
     required double cap,
   }) {
     double line(TextStyle s) => scaler.scale(s.fontSize!) * s.height!;
@@ -325,13 +369,14 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
       final apps = kind == MadeKind.server ? madeAppsOf(items) : null;
       if (apps != null) {
         for (final app in apps.take(_listStep)) {
-          final t = _AppRow.textOf(app, tasks, live);
+          final t = _AppRow.textOf(app, tasks, listening);
           sum += _rowHeight(
             t.title,
             t.subtitle,
             width,
             scaler,
-            trailing: t.running ? Gap.md + const LinkDot.live().size : 0,
+            // The live dot, which a row may or may not have by the time it is answered.
+            trailing: Gap.md + const LinkDot.live().size,
           );
           // A line of chips more when it has pages (one wrapped line assumed).
           if (t.hasPages) sum += AppChip.height + Gap.sm;
@@ -360,158 +405,207 @@ class _SessionMadeSheetState extends State<SessionMadeSheet> {
       math.max(56.0, 2 * Gap.md + scaler.scale(Type.row.fontSize!) * Type.row.height!) + 1;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SessionSelect<_Snap>(
+    session: widget.session,
+    select: _snap,
+    same: _same,
+    builder: (context, snap) =>
+        ListenableBuilder(listenable: _verification, builder: (context, _) => _sheet(context, snap)),
+  );
+
+  Widget _sheet(BuildContext context, _Snap snap) {
     final session = widget.session;
-    return SessionSelect<_Snap>(
-      session: session,
-      select: _snap,
-      same: _same,
-      builder: (context, snap) {
-        final (assets, tasks, live, reach, history) = snap;
-        if (!identical(history, _orderHistory)) {
-          // The read of the earlier part landed: the rows it found are older than
-          // the ones shown, so they join at the end. Nothing already here moves.
-          _orderHistory = history;
-          final known = _order?.toSet() ?? const <String>{};
-          if (_order != null) {
-            _order = [
-              ..._order!,
-              for (final a in assets)
-                if (!known.contains(a.key)) a.key,
-            ];
-          }
-        }
-        final shown = _stable(assets);
-        _shown = shown;
-        final ds = context.ds;
-        final files = machineSupportsFiles(session.machine);
-        final kinds = [
-          for (final k in _tabKinds)
-            if (shown.any((a) => _inTab(a, k))) k,
+    final (assets, tasks, reach, history) = snap;
+    if (!identical(history, _orderHistory)) {
+      // The read of the earlier part landed: the rows it found are older than
+      // the ones shown, so they join at the end. Nothing already here moves.
+      _orderHistory = history;
+      final known = _order?.toSet() ?? const <String>{};
+      if (_order != null) {
+        _order = [
+          ..._order!,
+          for (final a in assets)
+            if (!known.contains(a.key)) a.key,
         ];
-        // The kind the person chose if it is still here, else the newest made
-        // (servers only when nothing else exists).
-        final newest =
-            shown.where((a) => a.kind != MadeKind.server).map((a) => _tabOf(a.kind)).firstOrNull ?? MadeKind.server;
-        final tab = kinds.isEmpty ? null : (_picked != null && kinds.contains(_picked) ? _picked! : newest);
-        final tabbed = kinds.length >= 2;
-        _kinds = kinds;
-        if (tabbed) {
-          final at = kinds.indexOf(tab!);
-          final pager = _pager ??= PageController(initialPage: at);
-          // The kinds changed under it (the earlier history brought one): the page follows the tab.
-          if (!_settling && pager.hasClients && pager.page?.round() != at) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && pager.hasClients && !_settling) pager.jumpToPage(kinds.indexOf(tab));
-            });
-          }
-        }
-        final apps = madeAppsOf([
-          for (final a in shown)
-            if (a.kind == MadeKind.server) a,
-        ]);
-        final running = shown.any(
-          (a) => a.kind == MadeKind.server && serverStateOf(a, tasks, live: live) == ServerState.running,
-        );
-        final scaler = MediaQuery.textScalerOf(context);
-        // One kind's list or grid. Each starts at its top (a page that was
-        // scrolled away is built again).
-        Widget scroller(MadeKind kind) => CustomScrollView(
-          key: ValueKey(kind),
-          // About a row of pictures past the edge, not the default
-          // 250 dp: every tile built is a read of up to 2 MiB over
-          // the radio, and on a phone that is a third of the grid.
-          scrollCacheExtent: const ScrollCacheExtent.pixels(120),
-          slivers: [
-            if (kind == MadeKind.picture)
-              _PictureGrid(
-                assets: [
-                  for (final a in shown)
-                    if (_inTab(a, kind)) a,
-                ],
-                limit: _limit(MadeKind.picture),
-                files: files,
-                loader: _entries,
-                onOpen: _open,
-                onMore: () => _showMore(MadeKind.picture),
-              )
-            else
-              SliverToBoxAdapter(
-                child: Column(
-                  children: kind == MadeKind.server
-                      ? _appRows(apps, tasks: tasks, live: live)
-                      : _rows(
-                          [
-                            for (final a in shown)
-                              if (_inTab(a, kind)) a,
-                          ],
-                          kind,
-                          files: files || kind == MadeKind.link,
-                        ),
-                ),
-              ),
-          ],
-        );
-        return SheetScaffold(
-          title: 'Made in this session',
-          kind: SheetKind.list,
-          child: Padding(
-            // The list kind's inset 4 + 12: the rows sit 16 from the edge.
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-            child: LayoutBuilder(
-              builder: (context, box) => Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (shown.isEmpty && reach == MadeReach.whole)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: Gap.xl),
-                      child: Text(
-                        'Nothing has come up in this session yet.',
-                        style: Type.secondary.copyWith(color: ds.textSecondary),
-                      ),
-                    ),
-                  if (tabbed)
-                    _KindTabs(
-                      tabs: [
-                        for (final k in kinds)
-                          (
-                            k,
-                            _tabLabel(k),
-                            k == MadeKind.server ? apps.length : shown.where((a) => _inTab(a, k)).length,
-                            k == MadeKind.server && running,
-                          ),
+      }
+    }
+    final shown = _stable(assets);
+    _shown = shown;
+    final ds = context.ds;
+    final listening = _verification.listening;
+    final files = machineSupportsFiles(session.machine);
+    final kinds = [
+      for (final k in _tabKinds)
+        if (shown.any((a) => _inTab(a, k))) k,
+    ];
+    // The kind the person chose if it is still here, else the newest made
+    // (servers only when nothing else exists).
+    final newest =
+        shown.where((a) => a.kind != MadeKind.server).map((a) => _tabOf(a.kind)).firstOrNull ?? MadeKind.server;
+    final tab = kinds.isEmpty ? null : (_picked != null && kinds.contains(_picked) ? _picked! : newest);
+    final tabbed = kinds.length >= 2;
+    _kinds = kinds;
+    if (tabbed) {
+      final at = kinds.indexOf(tab!);
+      final pager = _pager ??= PageController(initialPage: at);
+      // The kinds changed under it (the earlier history brought one): the page follows the tab.
+      if (!_settling && pager.hasClients && pager.page?.round() != at) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && pager.hasClients && !_settling) pager.jumpToPage(kinds.indexOf(tab));
+        });
+      }
+    }
+    final apps = madeAppsOf([
+      for (final a in shown)
+        if (a.kind == MadeKind.server) a,
+    ]);
+    final running = shown.any((a) => a.kind == MadeKind.server && serverStateOf(a, listening) == ServerState.running);
+    final scaler = MediaQuery.textScalerOf(context);
+    // One kind's list or grid. Each starts at its top (a page that was
+    // scrolled away is built again).
+    Widget scroller(MadeKind kind) => CustomScrollView(
+      key: ValueKey(kind),
+      // About a row of pictures past the edge, not the default
+      // 250 dp: every tile built is a read of up to 2 MiB over
+      // the radio, and on a phone that is a third of the grid.
+      scrollCacheExtent: const ScrollCacheExtent.pixels(120),
+      slivers: [
+        if (kind == MadeKind.picture)
+          _PictureGrid(
+            assets: [
+              for (final a in shown)
+                if (_inTab(a, kind)) a,
+            ],
+            limit: _limit(MadeKind.picture),
+            files: files,
+            loader: _entries,
+            onOpen: _open,
+            onMore: () => _showMore(MadeKind.picture),
+          )
+        else
+          SliverToBoxAdapter(
+            child: Column(
+              children: kind == MadeKind.server
+                  ? _appRows(apps, tasks: tasks, listening: listening)
+                  : _rows(
+                      [
+                        for (final a in shown)
+                          if (_inTab(a, kind)) a,
                       ],
-                      selected: tab!,
-                      onChanged: _pick,
+                      kind,
+                      files: files || kind == MadeKind.link,
                     ),
-                  if (tab != null)
-                    SizedBox(
-                      height: () {
-                        final cap = MediaQuery.sizeOf(context).height * _bodyShare;
-                        return math.min(
-                          _bodyHeight(shown, kinds, box.maxWidth, scaler, files, tasks: tasks, live: live, cap: cap),
-                          cap,
-                        );
-                      }(),
-                      // A swipe sideways goes to the next kind, as the switch above does.
-                      child: tabbed
-                          ? PageView(
-                              controller: _pager,
-                              onPageChanged: _paged,
-                              children: [for (final k in kinds) scroller(k)],
-                            )
-                          : scroller(tab),
-                    ),
-                  if (reach != MadeReach.whole) _EarlierNote(reach: reach, onRead: session.readEarlierMade),
-                ],
-              ),
             ),
           ),
-        );
-      },
+      ],
+    );
+    _wantVerified(shown, tab);
+    return _VerifyWhenChanged(
+      ports: _wantedPorts,
+      paths: _wantedPaths,
+      verify: _verify,
+      child: SheetScaffold(
+        title: 'Made in this session',
+        kind: SheetKind.list,
+        child: Padding(
+          // The list kind's inset 4 + 12: the rows sit 16 from the edge.
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          child: LayoutBuilder(
+            builder: (context, box) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (shown.isEmpty && reach == MadeReach.whole)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Gap.xl),
+                    child: Text(
+                      'Nothing has come up in this session yet.',
+                      style: Type.secondary.copyWith(color: ds.textSecondary),
+                    ),
+                  ),
+                if (tabbed)
+                  _KindTabs(
+                    tabs: [
+                      for (final k in kinds)
+                        (
+                          k,
+                          _tabLabel(k),
+                          k == MadeKind.server ? apps.length : shown.where((a) => _inTab(a, k)).length,
+                          k == MadeKind.server && running,
+                        ),
+                    ],
+                    selected: tab!,
+                    onChanged: _pick,
+                  ),
+                if (tab != null)
+                  SizedBox(
+                    height: () {
+                      final cap = MediaQuery.sizeOf(context).height * _bodyShare;
+                      return math.min(
+                        _bodyHeight(
+                          shown,
+                          kinds,
+                          box.maxWidth,
+                          scaler,
+                          files,
+                          tasks: tasks,
+                          listening: listening,
+                          cap: cap,
+                        ),
+                        cap,
+                      );
+                    }(),
+                    // A swipe sideways goes to the next kind, as the switch above does.
+                    child: tabbed
+                        ? PageView(
+                            controller: _pager,
+                            onPageChanged: _paged,
+                            children: [for (final k in kinds) scroller(k)],
+                          )
+                        : scroller(tab),
+                  ),
+                if (reach != MadeReach.whole) _EarlierNote(reach: reach, onRead: session.readEarlierMade),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
+}
+
+/// Asks the machine ([verify]) when the sheet first shows and whenever what it
+/// wants verified changes (another tab, `N more`, a new row): from the State's
+/// own update path, never from a build. Why: a build runs for every row change
+/// and must stay free of side effects; the ask is also idempotent, so an input
+/// that did not change needs no call.
+class _VerifyWhenChanged extends StatefulWidget {
+  const _VerifyWhenChanged({required this.ports, required this.paths, required this.verify, required this.child});
+
+  final Set<int> ports;
+  final List<String> paths;
+  final VoidCallback verify;
+  final Widget child;
+
+  @override
+  State<_VerifyWhenChanged> createState() => _VerifyWhenChangedState();
+}
+
+class _VerifyWhenChangedState extends State<_VerifyWhenChanged> {
+  @override
+  void initState() {
+    super.initState();
+    widget.verify();
+  }
+
+  @override
+  void didUpdateWidget(_VerifyWhenChanged old) {
+    super.didUpdateWidget(old);
+    if (!setEquals(old.ports, widget.ports) || !listEquals(old.paths, widget.paths)) widget.verify();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Under the list while the rows may not be all of them: the phone read the end
@@ -728,20 +822,21 @@ Future<void> _openMade(
 
 /// One app: the server of a port and the pages the agent named on it. Its name
 /// is what started it (the command of a background task on the port, or the one
-/// the transcript launched it with), else the port. A tap opens the app; a chip
+/// the transcript launched it with), else the port. Whether it runs is what the
+/// machine says about the port ([serverStateOf]). A tap opens the app; a chip
 /// under it opens one of its pages.
 class _AppRow extends StatelessWidget {
   const _AppRow({
     required this.app,
     required this.tasks,
-    required this.live,
+    required this.listening,
     required this.divider,
     required this.onOpen,
   });
 
   final MadeApp app;
   final List<BackgroundTask> tasks;
-  final bool live;
+  final Map<int, bool> listening;
   final bool divider;
   final ValueChanged<MadeAsset> onOpen;
 
@@ -750,14 +845,14 @@ class _AppRow extends StatelessWidget {
   static ({String title, String subtitle, bool running, bool hasPages, bool dim}) textOf(
     MadeApp app,
     List<BackgroundTask> tasks,
-    bool live,
+    Map<int, bool> listening,
   ) {
     final service = sensitiveServiceOf(app.port);
-    final state = serverStateOf(app.entry, tasks, live: live);
+    final state = serverStateOf(app.entry, listening);
     final named = service == null ? serverNameOf(app.entry, tasks) : null;
     final at = app.at;
     final when = at == null ? '' : formatAgo(at, DateTime.now());
-    // Said only as far as the phone knows: a link in the chat does not say the
+    // Said only as far as the machine says: a link in the chat does not say the
     // server still runs.
     final status = service != null
         ? 'not a web page'
@@ -779,7 +874,7 @@ class _AppRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final t = textOf(app, tasks, live);
+    final t = textOf(app, tasks, listening);
     final row = ListRow(
       leading: IconTile(icon: HerdrIcons.madeServer, color: t.running ? ds.done : null),
       leadingOnTitle: false,
@@ -812,18 +907,32 @@ class _AppRow extends StatelessWidget {
 }
 
 /// A page, a document or a link: its name, and under it the folder (or the
-/// repository) and time, or why it cannot be opened on this machine.
+/// repository) and time, or why it cannot be opened: the machine cannot list
+/// files, or said the file is gone.
 class _FileRow extends StatelessWidget {
-  const _FileRow({required this.asset, required this.filesAvailable, required this.divider, required this.onTap});
+  const _FileRow({
+    required this.asset,
+    required this.filesAvailable,
+    this.gone = false,
+    required this.divider,
+    required this.onTap,
+  });
 
   final MadeAsset asset;
   final bool filesAvailable;
+
+  /// The machine said the file is not there (any more). The row stays, dimmed,
+  /// with the reason: nothing made is silently dropped from the list.
+  final bool gone;
   final bool divider;
   final VoidCallback onTap;
 
+  static const goneReason = 'File is gone';
+
   /// Under the name; the sheet's height reads it too, so a row is measured by
   /// the text it shows.
-  static String? subtitleOf(MadeAsset asset, bool filesAvailable) {
+  static String? subtitleOf(MadeAsset asset, bool filesAvailable, {bool gone = false}) {
+    if (gone) return [goneReason, visibleText(asset.where)].where((s) => s.isNotEmpty).join(' · ');
     if (!filesAvailable) return _noFiles;
     final at = asset.at;
     final when = at == null ? '' : formatAgo(at, DateTime.now());
@@ -846,9 +955,9 @@ class _FileRow extends StatelessWidget {
       ),
       leadingOnTitle: false,
       title: visibleText(asset.title),
-      subtitle: subtitleOf(asset, filesAvailable),
-      dim: !filesAvailable,
-      onTap: filesAvailable ? onTap : null,
+      subtitle: subtitleOf(asset, filesAvailable, gone: gone),
+      dim: gone || !filesAvailable,
+      onTap: filesAvailable && !gone ? onTap : null,
     );
     if (!divider) return row;
     return Column(

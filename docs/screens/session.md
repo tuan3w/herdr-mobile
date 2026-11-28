@@ -431,7 +431,7 @@ says `Summary only.` (the same slot shows `Loading…` or the retry row, so
 nothing moves when a read ends without a log), the figures it reported (model, tokens, cost, progress), what it was asked (Markdown),
 what it is doing, its recent output (mono, 5 lines of 300 characters at most),
 the retry or note, why it stopped and its result. omp's run gets the
-conversation too when its own log on the host can be read (best effort, SFTP,
+conversation too when its own log on the host can be read (best effort, file service,
 AGENT_SESSIONS.md "omp subagent transcripts"): the same `TranscriptView`, with
 one caption row under the pinned prompt (`LogOriginNote`: `From omp's log on the
 host`, plus `Earlier part not shown` when a cap cut the start). While that first

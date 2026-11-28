@@ -1,7 +1,7 @@
 @Tags(['timing'])
 library;
 
-import 'dart:io';
+import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -9,39 +9,56 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
 import 'package:herdr_mobile/data/services/isolate_transport.dart';
-import 'package:herdr_mobile/data/services/sftp_files.dart';
 
-import 'support/fake_sftp_server.dart';
+import 'support/no_files.dart';
 
-/// Runs the REAL upload code ([SftpFiles]) inside the worker isolate against
-/// an in-memory SFTP server with a 100 MB/s wire and a 5 ms round trip.
-HerdrTransport _build(Object? config, void Function(String) onPin, void Function(String) onNotice) => _SftpOnly();
+// What crosses the isolate boundary for an upload: counters and typed errors,
+// never a byte; a cancel reaches the worker's job; the inbox calls and the
+// file watch are answered from the worker. The worker's transport is a script:
+// the real upload (hash, resume, credit) is host_transfer_test.dart.
 
-class _SftpOnly implements HerdrTransport {
-  _SftpOnly() {
-    server = FakeSftpServer(rtt: const Duration(milliseconds: 5), bytesPerSecond: 100 << 20, keepBytes: false)
-      ..dirs['/home/dev/inbox'] = 0x41C0;
-    files = SftpFiles(open: () async => server);
-  }
+const _size = 100 * 1024 * 1024;
 
-  late final FakeSftpServer server;
-  late final SftpFiles files;
+/// Runs inside the worker isolate; the inbox path picks the behaviour.
+class _UploadProbe with NoFiles implements HerdrTransport {
+  var cancels = 0;
 
   @override
   bool get supportsFiles => true;
 
   @override
-  Future<void> makeDirs(String path) => files.makeDirs(path);
+  Future<String> reserveInboxFile({required String key, required String name}) async => '/inbox/$key/$name';
 
+  /// How many of its uploads the worker was told to cancel.
   @override
-  Future<void> removeFile(String path) => files.remove(path);
+  Future<int> sweepInbox() async => cancels;
 
   @override
   UploadJob uploadFile({
     required String localPath,
-    required String remotePath,
+    required String inboxPath,
     void Function(int sent, int total)? onProgress,
-  }) => files.upload(localPath, remotePath, onProgress: onProgress);
+  }) {
+    final job = _Scripted(this);
+    switch (inboxPath) {
+      case '/inbox/ok':
+        onProgress?.call(0, _size);
+        onProgress?.call(_size ~/ 2, _size);
+        onProgress?.call(_size, _size);
+        job.finish();
+      case '/inbox/hang':
+        onProgress?.call(1, _size);
+      case '/inbox/changed':
+        job.fail(RemoteFileChanged('The file changed while it was being sent', path: inboxPath));
+      case '/inbox/unsupported':
+        job.fail(RemoteFileException(RemoteFileErrorKind.unsupported, 'Needs the agent helper on this machine.'));
+      case '/inbox/gone':
+        job.fail(RemoteFileException(RemoteFileErrorKind.notFound, 'The file is gone'));
+      default:
+        job.fail(const HerdrTransportException('down', fatal: true));
+    }
+    return job;
+  }
 
   @override
   Future<void> close() async {}
@@ -50,122 +67,120 @@ class _SftpOnly implements HerdrTransport {
   dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError('${invocation.memberName}');
 }
 
+class _Scripted implements UploadJob {
+  _Scripted(this._probe);
+
+  final _UploadProbe _probe;
+  final _done = Completer<void>();
+
+  void finish() => _done.complete();
+  void fail(Object e) => _done.completeError(e);
+
+  @override
+  Future<void> get done => _done.future;
+
+  @override
+  void cancel() => _probe.cancels++;
+}
+
+HerdrTransport _build(Object? config, void Function(String) onPin, void Function(String) onNotice) => _UploadProbe();
+
 void main() {
-  late Directory tmp;
   late IsolateTransport transport;
-  final seen = <(int, List<Object?>)>[];
-  final clock = Stopwatch();
+  final seen = <List<Object?>>[];
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('isolate_upload');
     seen.clear();
-    clock
-      ..reset()
-      ..start();
-    IsolateTransport.debugOnMessage = (m) => seen.add((clock.elapsedMilliseconds, m));
+    IsolateTransport.debugOnMessage = seen.add;
     transport = IsolateTransport(builder: _build, config: () => null, onPin: (_) {});
   });
   tearDown(() async {
     IsolateTransport.debugOnMessage = null;
     await transport.close();
-    tmp.deleteSync(recursive: true);
   });
 
-  File sparse(String name, int size) {
-    final f = File('${tmp.path}/$name');
-    final raf = f.openSync(mode: FileMode.write)..truncateSync(size);
-    raf.closeSync();
-    return f;
-  }
+  List<List<Object?>> uploadMessages() => seen.where((m) => const {'uprog', 'udone', 'uerr'}.contains(m[0])).toList();
 
-  List<(int, List<Object?>)> uploadMessages() =>
-      seen.where((m) => const {'uprog', 'udone', 'uerr'}.contains(m.$2[0])).toList();
-
-  test('100 MB upload: the UI isolate hears ~10 counters a second and never a byte', () async {
-    const size = 100 * 1024 * 1024;
+  test('the UI isolate hears counters in order and never a byte', () async {
     final progress = <(int, int)>[];
-    final sw = Stopwatch()..start();
     final job = transport.uploadFile(
-      localPath: sparse('big.bin', size).path,
-      remotePath: '/home/dev/inbox/big.bin',
+      localPath: '/tmp/ignored',
+      inboxPath: '/inbox/ok',
       onProgress: (s, t) => progress.add((s, t)),
     );
     await job.done;
-    final seconds = sw.elapsedMilliseconds / 1000;
 
+    expect(progress, [(0, _size), (_size ~/ 2, _size), (_size, _size)]);
+    expect(transport.uploadProgressMessages, 3);
     final msgs = uploadMessages();
-    final counters = msgs.where((m) => m.$2[0] == 'uprog').toList();
-    expect(
-      counters.length,
-      lessThanOrEqualTo(seconds * 10 + 3),
-      reason: '${counters.length} progress messages in ${seconds}s',
-    );
-    expect(transport.uploadProgressMessages, counters.length);
-    expect(msgs.where((m) => m.$2[0] == 'udone'), hasLength(1));
-
+    expect(msgs.where((m) => m[0] == 'udone'), hasLength(1));
     // Nothing but small numbers and strings crossed: no bytes, no big lists.
-    for (final (_, m) in msgs) {
+    for (final m in msgs) {
       expect(m.length, lessThanOrEqualTo(4), reason: '$m');
       for (final part in m) {
         expect(
           part is int || part is String || part is bool || part == null,
           isTrue,
-          reason: 'payload ${part.runtimeType} in $m',
+          reason: '${part.runtimeType} in $m',
         );
         expect(part is TypedData, isFalse);
         expect(part is TransferableTypedData, isFalse);
       }
     }
-
-    expect(progress.first.$1, 0);
-    expect(progress.last, (size, size));
-    for (var i = 1; i < progress.length; i++) {
-      expect(progress[i].$1, greaterThanOrEqualTo(progress[i - 1].$1));
-    }
-  }, timeout: const Timeout(Duration(seconds: 60)));
-
-  test('cancel is immediate on this side and stops the counters from the worker', () async {
-    final job = transport.uploadFile(
-      localPath: sparse('c.bin', 100 * 1024 * 1024).path,
-      remotePath: '/home/dev/inbox/c.bin',
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    final sw = Stopwatch()..start();
-    final cancelAt = clock.elapsedMilliseconds;
-    job.cancel();
-    await expectLater(job.done, throwsA(isA<UploadCancelled>()));
-    expect(sw.elapsedMilliseconds, lessThan(50));
-
-    // The upload would run ~0.6 s more; the worker must not report any of it.
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    expect(
-      uploadMessages().where((m) => m.$2[0] == 'uprog' && m.$1 > cancelAt + 150),
-      isEmpty,
-      reason: 'the worker kept sending counters after the cancel',
-    );
-    expect(uploadMessages().where((m) => m.$2[0] == 'udone'), isEmpty);
   });
 
-  test('errors cross typed; folders and removal go through the worker too', () async {
-    await expectLater(
-      transport.uploadFile(localPath: '${tmp.path}/missing', remotePath: '/home/dev/inbox/m').done,
-      throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.notFound)),
+  test('cancel is immediate on this side and reaches the worker\'s job', () async {
+    final job = transport.uploadFile(localPath: '/tmp/ignored', inboxPath: '/inbox/hang');
+    final progress = Completer<void>();
+    // The first counter proves the worker has the job.
+    final probe = transport.uploadFile(
+      localPath: '/tmp/ignored',
+      inboxPath: '/inbox/hang',
+      onProgress: (_, _) => progress.isCompleted ? null : progress.complete(),
     );
-    await transport.makeDirs('/home/dev/inbox/sub/deeper');
-    await expectLater(
-      transport.removeFile('/home/dev/inbox/nothing'),
-      throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.notFound)),
-    );
-    final small = File('${tmp.path}/s.txt')..writeAsBytesSync([1, 2, 3]);
-    await transport.uploadFile(localPath: small.path, remotePath: '/home/dev/inbox/s.txt').done;
-    await transport.removeFile('/home/dev/inbox/s.txt');
+    await progress.future;
+    expect(await transport.sweepInbox(), 0);
+
+    job.cancel();
+    await expectLater(job.done, throwsA(isA<UploadCancelled>()));
+    probe.cancel();
+    await expectLater(probe.done, throwsA(isA<UploadCancelled>()));
+    // The worker answers ops in order: by the time it answers, it has seen both cancels.
+    expect(await transport.sweepInbox(), 2);
+    expect(uploadMessages().where((m) => m[0] == 'udone'), isEmpty);
   });
 
   test('a cancel before the worker is up never starts the upload', () async {
-    final job = transport.uploadFile(localPath: sparse('d.bin', 1024).path, remotePath: '/home/dev/inbox/d.bin')
-      ..cancel();
+    final job = transport.uploadFile(localPath: '/tmp/ignored', inboxPath: '/inbox/hang')..cancel();
     await expectLater(job.done, throwsA(isA<UploadCancelled>()));
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(await transport.sweepInbox(), 0, reason: 'the worker never had a job to cancel');
     expect(uploadMessages(), isEmpty);
+  });
+
+  test('errors cross typed: changed, unsupported, not found, and a lost connection', () async {
+    await expectLater(
+      transport.uploadFile(localPath: '/x', inboxPath: '/inbox/changed').done,
+      throwsA(isA<RemoteFileChanged>().having((e) => e.path, 'path', '/inbox/changed')),
+    );
+    await expectLater(
+      transport.uploadFile(localPath: '/x', inboxPath: '/inbox/unsupported').done,
+      throwsA(
+        isA<RemoteFileException>()
+            .having((e) => e.kind, 'kind', RemoteFileErrorKind.unsupported)
+            .having((e) => e.message, 'message', 'Needs the agent helper on this machine.'),
+      ),
+    );
+    await expectLater(
+      transport.uploadFile(localPath: '/x', inboxPath: '/inbox/gone').done,
+      throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.notFound)),
+    );
+    await expectLater(
+      transport.uploadFile(localPath: '/x', inboxPath: '/inbox/down').done,
+      throwsA(isA<HerdrTransportException>().having((e) => e.fatal, 'fatal', isTrue)),
+    );
+  });
+
+  test('the inbox is reserved through the worker', () async {
+    expect(await transport.reserveInboxFile(key: 'k', name: 'a b.txt'), '/inbox/k/a b.txt');
   });
 }

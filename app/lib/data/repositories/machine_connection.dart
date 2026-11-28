@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../host/host_ports.dart';
 import '../models/herdr_models.dart';
 import '../models/machine_profile.dart';
 import '../models/places.dart';
@@ -142,6 +143,16 @@ class MachineConnection extends ChangeNotifier {
   /// changes are dated against.
   Snapshot _raw = Snapshot.empty;
 
+  /// Status changes applied from events (see [_patchStatus]) that no snapshot
+  /// has confirmed yet, and so not yet written to the cache.
+  bool _unsaved = false;
+
+  /// Counts the patches; [_patches] holds the last one per pane, and is
+  /// emptied whenever no snapshot request is out (see [_keepPatches]).
+  int _patchSeq = 0;
+  int _refreshing = 0;
+  final Map<String, ({int seq, AgentStatus status})> _patches = {};
+
   /// What the app shows: [_raw], with every finished agent the person has
   /// reviewed shown as idle (see [ReviewedState]).
   Snapshot _snapshot = Snapshot.empty;
@@ -210,6 +221,10 @@ class MachineConnection extends ChangeNotifier {
   /// Open pages from this machine on the phone: an HTML file from its folder,
   /// or a dev server link on the machine (see [WebPreview]).
   late final WebPreview web = WebPreview(_api.transport, machineName: profile.label);
+
+  /// What listens on this machine and which "made" things are still there, as
+  /// the agent helper says ([HostPorts]).
+  late final HostPorts ports = HostPorts(_api.transport);
 
   LinkState get state => _state;
   String? get error => _error;
@@ -707,11 +722,25 @@ class MachineConnection extends ChangeNotifier {
   }
 
   Future<void> _refresh() async {
-    final s = await _api.snapshot();
+    final startSeq = _patchSeq;
+    _refreshing++;
+    final Snapshot answered;
+    try {
+      answered = await _api.snapshot();
+    } finally {
+      _refreshing--;
+    }
     if (_disposed) return;
+    // Patches made while the request was out are newer than its answer; they
+    // are put back on it. The log is emptied once no request is out: every
+    // later one started after the last patch.
+    final s = _patchSeq == startSeq ? answered : _keepPatches(answered, startSeq);
+    if (_refreshing == 0) _patches.clear();
     final now = _clock();
     _lastSync = now;
     _lastHeard = now;
+    final unsaved = _unsaved;
+    _unsaved = false;
     final rawChanged = s != _raw;
     _trackStatuses(s, now);
     _raw = s;
@@ -724,11 +753,11 @@ class MachineConnection extends ChangeNotifier {
     if (!rawChanged && !shownChanged && !quietChanged) {
       // Nothing to show, but the time the panes were last seen moved on.
       final written = _lastPersistAt;
-      if (written == null || now.difference(written) >= seenWriteInterval) _persist();
+      if (unsaved || written == null || now.difference(written) >= seenWriteInterval) _persist();
       return;
     }
     _snapshot = shown;
-    if (rawChanged) _persist();
+    if (rawChanged || unsaved) _persist();
     notifyListeners();
   }
 
@@ -919,7 +948,8 @@ class MachineConnection extends ChangeNotifier {
   /// with what we already know instead of blindly refetching:
   ///
   ///  * identical once normalised (spinner/revision churn) -> nothing to do;
-  ///  * status or agent changed (e.g. working -> blocked)    -> refresh now;
+  ///  * status or agent changed (e.g. working -> blocked)    -> shown now when
+  ///    the event carries all of it ([_patchStatus]), and refresh now;
   ///  * anything else (title, cwd)                            -> throttled.
   void _onEvent(Map<String, dynamic> event, _RefreshScheduler refresher) {
     if (event['event'] == subscriptionStartedEvent) {
@@ -937,6 +967,14 @@ class MachineConnection extends ChangeNotifier {
       // Token text answers none of the attention questions: it shares the
       // churn throttle with `pane_updated`, and only while the app is in front.
       if (!_background) refresher.schedule(urgent: false);
+      return;
+    }
+    if (event['event'] == 'pane_agent_status_changed') {
+      // The background profile's one carrier of a status change, and the only
+      // one that arrives as `data: {pane_id, agent_status, ...}` (no `pane`).
+      final data = event['data'];
+      if (data is Map) _patchFromEvent(data['pane_id'], data['agent_status'], data);
+      refresher.schedule(urgent: true);
       return;
     }
     if (event['event'] != 'pane_updated') {
@@ -969,10 +1007,112 @@ class MachineConnection extends ChangeNotifier {
     // there). An event pane has no completion sequence of its own.
     final known = _raw.panes.where((p) => p.id == updated.id).firstOrNull;
     if (known == null || known.status != updated.status || known.agent != updated.agent) {
+      if (known != null &&
+          known.agent == updated.agent &&
+          known.workspaceId == updated.workspaceId &&
+          known.tabId == updated.tabId) {
+        _patchStatus(known, updated.status);
+      }
       refresher.schedule(urgent: true);
     } else if (known != updated.withCompletionSeq(known.completionSeq)) {
       refresher.schedule(urgent: false);
     }
+  }
+
+  /// Applies a `pane_agent_status_changed` payload: `pane_id`, `agent_status`
+  /// and, when herdr sends them, `agent` and `workspace_id`, which must agree
+  /// with what is known (an event that disagrees is not one to patch from).
+  void _patchFromEvent(Object? paneId, Object? status, Map<Object?, Object?> data) {
+    if (paneId is! String || status is! String) return;
+    final known = _raw.panes.where((p) => p.id == paneId).firstOrNull;
+    if (known == null) return;
+    if (data.containsKey('agent') && data['agent'] != known.agent) return;
+    if (data.containsKey('workspace_id') && data['workspace_id'] != known.workspaceId) return;
+    _patchStatus(known, AgentStatus.parse(status));
+  }
+
+  /// Shows a status change the moment its event arrives, before the snapshot
+  /// that confirms it has made its round trip. The caller schedules that
+  /// refresh as always (urgent, no extra delay), so a patch that was wrong
+  /// (a stale or reordered event) lives for one round trip, and the
+  /// notifier sees the same transitions it would see from the snapshot (one
+  /// episode, ended and withdrawn when the refresh disagrees).
+  ///
+  /// Only moves between `working`, `blocked` and `idle` are patched, and
+  /// only of a pane that is already known to run an agent, in the same
+  /// workspace and tab: all of it is carried by the event itself. Everything
+  /// an event does not carry keeps today's path (a refresh, nothing shown
+  /// before it):
+  ///  * `done`, in or out: what `done` means to the person (finished and not
+  ///    yet looked at) rests on `completion_seq`, which events lack, and a
+  ///    wrong "done" would be announced as news and marked as reviewed
+  ///    against the wrong finish;
+  ///  * `unknown`: herdr's word for "cannot tell", not a state to show first;
+  ///  * an agent appearing, vanishing or changing, a pane, tab or workspace
+  ///    created, moved or closed: structure.
+  /// Returns whether [known] was patched.
+  bool _patchStatus(Pane known, AgentStatus status) {
+    if (_disposed || _lastSync == null) return false;
+    if (!known.isAgent || known.status == status) return false;
+    if (!_patchable(known.status) || !_patchable(status)) return false;
+    final now = _clock();
+    _raw = _withStatus(_raw, known.id, status);
+    // Found the moment herdr said it, which is more exact than the refresh
+    // that follows (it keeps this one, its status agrees).
+    _statusSince[known.id] = (status: status, since: StatusTime.exact(now));
+    _patches[known.id] = (seq: ++_patchSeq, status: status);
+    _unsaved = true;
+    final shown = _present(_raw);
+    if (shown != _snapshot) {
+      _snapshot = shown;
+      notifyListeners();
+    }
+    return true;
+  }
+
+  static bool _patchable(AgentStatus s) =>
+      s == AgentStatus.working || s == AgentStatus.blocked || s == AgentStatus.idle;
+
+  /// [s] with pane [id] in [status], and its tab and workspace worked out
+  /// again from their panes (herdr ranks blocked, done, working, idle).
+  static Snapshot _withStatus(Snapshot s, String id, AgentStatus status) {
+    final i = s.panes.indexWhere((p) => p.id == id);
+    if (i < 0 || s.panes[i].status == status) return s;
+    final panes = List.of(s.panes);
+    final pane = panes[i] = panes[i].withStatus(status);
+    AgentStatus rollup(bool Function(Pane) inGroup) {
+      var best = AgentStatus.unknown;
+      for (final p in panes) {
+        if (inGroup(p) && p.status.rollupRank > best.rollupRank) best = p.status;
+      }
+      return best;
+    }
+
+    return Snapshot(
+      version: s.version,
+      workspaces: [
+        for (final w in s.workspaces) w.id == pane.workspaceId ? w.withStatus(rollup((p) => p.workspaceId == w.id)) : w,
+      ],
+      tabs: [for (final t in s.tabs) t.id == pane.tabId ? t.withStatus(rollup((p) => p.tabId == t.id)) : t],
+      panes: panes,
+    );
+  }
+
+  /// A snapshot answered after an event was applied to what is shown was
+  /// taken before herdr said it (the event is not in it, or it would have
+  /// changed nothing): showing it would take the change back for the round
+  /// trip the next snapshot needs. Panes patched since [sinceSeq] keep the
+  /// patched status; that next snapshot (the patch always schedules one)
+  /// has the last word.
+  Snapshot _keepPatches(Snapshot s, int sinceSeq) {
+    var out = s;
+    for (final MapEntry(:key, :value) in _patches.entries) {
+      if (value.seq <= sinceSeq) continue;
+      final pane = out.panes.where((p) => p.id == key).firstOrNull;
+      if (pane == null || !pane.isAgent || !_patchable(pane.status)) continue;
+      out = _withStatus(out, key, value.status);
+    }
+    return out;
   }
 
   static Pane? _parsePane(Map<String, dynamic>? raw) {

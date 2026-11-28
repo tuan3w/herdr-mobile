@@ -1,5 +1,5 @@
-//! herdr-tui: a terminal client for one keeper session. Replaces the python
-//! `view` command: the same socket, a full-screen UI.
+//! herdr-tui: a terminal client for one keeper session: the keeper's socket, a full-screen UI.
+//! The keeper itself is the `keeper` library in this binary (`herdr-tui keeper-daemon`).
 //!
 //! No async runtime. Two threads feed one channel (socket, keyboard); the UI
 //! redraws only when something arrives, so it costs nothing at rest.
@@ -117,7 +117,7 @@ struct App {
     t0: Instant,
     tx: mpsc::Sender<Ev>,
     quit: bool,
-    /// Where the keeper script and the session records live (to start another session).
+    /// Whose folder holds the session records (and starts another session).
     home: PathBuf,
     /// The agent's id (`omp`), to start another session of the same kind.
     agent_id: String,
@@ -185,16 +185,9 @@ fn list_sessions(home: &std::path::Path, all: bool) {
 
 /// `herdr-tui kill ID...`: ends each session for good, and says what it did to each.
 fn kill_sessions(home: &std::path::Path, ids: &[String]) -> ! {
-    let Some(script) = host::find_script(home) else {
-        // No keeper was ever installed here, so none of these can be running.
-        for id in ids {
-            eprintln!("herdr-tui: {id}: no such session (no keeper is installed on this machine)");
-        }
-        std::process::exit(keeper::exit::MISSING);
-    };
     let mut failed = false;
     for id in ids {
-        match host::kill(&script, id) {
+        match host::kill(home, id) {
             Ok(()) => {
                 let _ = writeln!(std::io::stdout(), "ended {id}");
             }
@@ -224,6 +217,11 @@ fn connect(home: &std::path::Path, id: &str) -> (StateDir, UnixStream) {
 }
 
 fn main() {
+    // `keeper::ctl::start` re-executes this program as the session's daemon. It is not a client:
+    // no arguments are parsed, no terminal is touched.
+    if std::env::args().nth(1).as_deref() == Some("keeper-daemon") {
+        std::process::exit(keeper::daemon::run());
+    }
     let cmd = cli::parse(std::env::args().skip(1)).unwrap_or_else(|e| {
         eprintln!("herdr-tui: {e}\n\n{}", cli::USAGE);
         std::process::exit(keeper::exit::USAGE);
@@ -305,13 +303,7 @@ fn main() {
                 .map_or_else(std::env::current_dir, Ok)
                 .unwrap_or_else(|e| die(keeper::exit::GONE, &format!("no current folder ({e})")));
             let cwd = cwd.canonicalize().unwrap_or(cwd);
-            let script = host::find_script(&home).unwrap_or_else(|| {
-                die(
-                    keeper::exit::MISSING,
-                    "no keeper is installed on this machine. Run tool/install-keeper.sh from the herdr-mobile repo (or open the herdr mobile app on this machine once), or set HERDR_KEEPER_SCRIPT.",
-                )
-            });
-            let id = host::start(&script, &agent, &cwd).unwrap_or_else(|e| die(e.code, &e.message));
+            let id = host::start(&home, &agent, &cwd).unwrap_or_else(|e| die(e.code, &e.message));
             (
                 id,
                 Start::Create {
@@ -1619,13 +1611,13 @@ impl App {
     }
 
     /// Whether `/new` can start another session of this one's kind: the agent and the folder are
-    /// known and still there, and a keeper is installed.
+    /// known and still there, and there is a home to keep the session in.
     fn can_fresh(&self) -> bool {
         !self.agent_id.is_empty()
             && !self.cwd.is_empty()
             && std::path::Path::new(&self.cwd).is_dir()
             && keeper::routes::by_id(&self.agent_id).is_some()
-            && host::find_script(&self.home).is_some()
+            && !self.home.as_os_str().is_empty()
     }
 
     /// Keys for the picker of `/model` and the like. Ctrl and Alt chords go on to the usual

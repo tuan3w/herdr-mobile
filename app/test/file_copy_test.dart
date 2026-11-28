@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/models/remote_file.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart' show HerdrTransportException;
 import 'package:herdr_mobile/data/services/photo_export.dart';
 import 'package:herdr_mobile/data/services/remote_file_staging.dart';
 import 'package:herdr_mobile/data/services/remote_files.dart';
@@ -76,17 +77,99 @@ void main() {
       expect(Directory('${root.path}/copies').listSync().length, 1);
     });
 
-    test('a copy that is cancelled leaves nothing behind', () async {
-      fs.addFile('/v/clip.mp4', _bytes(copyChunk * 3));
+    List<String> readOffsets() =>
+        fs.calls.where((c) => c.startsWith('read')).map((c) => c.split('@')[1].split('+')[0]).toList();
+
+    List<File> leftOver() => Directory('${root.path}/copies').listSync(recursive: true).whereType<File>().toList();
+
+    test('a copy that is cancelled keeps what it has; the next copy continues there and reads only the rest', () async {
+      final data = _bytes(copyChunk * 3);
+      fs.addFile('/v/clip.mp4', data);
+      final stat = await fs.stat('/v/clip.mp4');
       final cancel = ReadCancel();
 
       await expectLater(
-        staging.fetch(files, await fs.stat('/v/clip.mp4'), cancel: cancel, onProgress: (_) => cancel.cancel()),
+        staging.fetch(files, stat, cancel: cancel, onProgress: (_) => cancel.cancel()),
         throwsA(isA<ReadCancelled>()),
       );
+      final kept = leftOver();
+      expect(kept.single.path, endsWith('clip.mp4.part'));
+      expect(kept.single.lengthSync(), copyChunk, reason: 'the first piece is on the phone');
 
-      expect(Directory('${root.path}/copies').listSync(recursive: true).whereType<File>(), isEmpty);
+      final heard = <int>[];
+      final file = await staging.fetch(files, stat, onProgress: heard.add);
+
+      expect(file.readAsBytesSync(), data, reason: 'one file, no piece twice or out of place');
+      expect(readOffsets(), ['0', '$copyChunk', '${copyChunk * 2}'], reason: 'the first piece was not read again');
+      expect(heard, [copyChunk, copyChunk * 2, copyChunk * 3], reason: 'it starts at what it already has');
+      expect(leftOver().map((f) => f.path), [file.path]);
     });
+
+    test('a connection that drops keeps the part too', () async {
+      final data = _bytes(copyChunk * 2 + 5);
+      fs.addFile('/v/clip.mp4', data);
+      final stat = await fs.stat('/v/clip.mp4');
+
+      await expectLater(
+        staging.fetch(files, stat, onProgress: (_) => fs.fail = const HerdrTransportException('link dropped')),
+        throwsA(isA<RemoteFileException>().having((e) => e.kind, 'kind', RemoteFileErrorKind.network)),
+      );
+      expect(leftOver().single.lengthSync(), copyChunk);
+
+      fs.fail = null;
+      final file = await staging.fetch(files, stat);
+      expect(file.readAsBytesSync(), data);
+    });
+
+    test('a file that changed since the part was written starts over from the first byte', () async {
+      final old = _bytes(copyChunk * 2);
+      fs.addFile('/v/clip.mp4', old, modified: DateTime.utc(2026, 1, 1));
+      final stat = await fs.stat('/v/clip.mp4');
+      final cancel = ReadCancel();
+      await expectLater(
+        staging.fetch(files, stat, cancel: cancel, onProgress: (_) => cancel.cancel()),
+        throwsA(isA<ReadCancelled>()),
+      );
+      // Same size, new time: the part holds the old file's first piece.
+      final changed = Uint8List.fromList(old.map((b) => b ^ 0x5A).toList());
+      fs.addFile('/v/clip.mp4', changed, modified: DateTime.utc(2026, 1, 2));
+      fs.calls.clear();
+
+      final file = await staging.fetch(files, stat);
+
+      expect(file.readAsBytesSync(), changed, reason: 'nothing of the old first piece survives');
+      expect(readOffsets(), ['0', '$copyChunk'], reason: 'all of it read again');
+    });
+
+    test(
+      'a file that changes under a continued copy is refused by the host: the part goes, the copy starts over',
+      () async {
+        final racy = _Racy();
+        final files = RemoteFiles(FakeTransport()..fs = racy, machineId: 'm1');
+        final old = _bytes(copyChunk * 2);
+        racy.addFile('/v/clip.mp4', old, modified: DateTime.utc(2026, 1, 1));
+        final stat = await racy.stat('/v/clip.mp4');
+        final cancel = ReadCancel();
+        await expectLater(
+          staging.fetch(files, stat, cancel: cancel, onProgress: (_) => cancel.cancel()),
+          throwsA(isA<ReadCancelled>()),
+        );
+        // The file is rewritten after the continued copy looked at it and before
+        // it reads: only the read's own check can notice.
+        final changed = Uint8List.fromList(old.map((b) => b ^ 0x5A).toList());
+        racy.beforeRead = () => racy.addFile('/v/clip.mp4', changed, modified: DateTime.utc(2026, 1, 2));
+        racy.calls.clear();
+
+        final file = await staging.fetch(files, stat);
+
+        expect(file.readAsBytesSync(), changed, reason: 'whole and from one version of the file');
+        expect(racy.calls.where((c) => c.startsWith('read')).map((c) => c.split('@')[1].split('+')[0]).toList(), [
+          '$copyChunk',
+          '0',
+          '$copyChunk',
+        ], reason: 'the continued read was refused, then everything again from 0');
+      },
+    );
 
     test('a file that is shorter than it was said to be is an error, not a short copy', () async {
       fs.addFile('/v/clip.mp4', _bytes(1000));
@@ -297,4 +380,17 @@ void main() {
       expect(reads(), 2);
     });
   });
+}
+
+/// A [FakeFs] that lets a test change the file just before the next read.
+class _Racy extends FakeFs {
+  void Function()? beforeRead;
+
+  @override
+  Future<Uint8List> read(String path, int offset, int length, {RemoteStat? ifMatch}) {
+    final hook = beforeRead;
+    beforeRead = null;
+    hook?.call();
+    return super.read(path, offset, length, ifMatch: ifMatch);
+  }
 }

@@ -114,8 +114,8 @@ library answers.
   in pick mode as before.
 - **Uploads** (`ComposerAttachments`, `data/repositories/attach_upload.dart`).
   A file of the phone (or a photo for an agent without images, or a picture
-  over the encoder's 25 MB) goes to `<home>/.herdr-mobile/inbox/…` over
-  SFTP (`reserveInboxPath` + `RemoteFiles.upload`) and is attached as a
+  over the agent helper's `transfer` service (`HerdrTransport.reserveInboxFile`
+  + `uploadFile`: resumes after a drop) and is attached as a
   resource link to that path. The chip shows a ring over its thumbnail and
   `Uploading 42% · 48 MB`; the cross cancels, a failure shows `Retry`.
 - **One rule for a picture, whatever its source.** The gallery, the camera

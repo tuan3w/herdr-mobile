@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Terminal client for a herdr-mobile keeper session (replaces the python `view`)"
+description = "Terminal client for a herdr-mobile keeper session"
 
 [dependencies]
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
@@ -21,14 +21,12 @@ syntect = { version = "5.3.0", default-features = false, features = ["default-sy
 
 # Small on purpose: a viewer left open in a pane for days must stay in the low MBs.
 
-[build-dependencies]
-serde_json.workspace = true
-
 [lints]
 workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+testkit = { path = "../testkit" }
 [[bench]]
 name = "scroll"
 harness = false

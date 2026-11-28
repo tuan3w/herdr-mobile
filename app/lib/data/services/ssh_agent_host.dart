@@ -6,35 +6,33 @@ import 'dart:typed_data';
 import '../acp/agent_host.dart';
 import '../acp/json_rpc.dart' show AcpTransport;
 import '../acp/past_session.dart';
+import '../host/host_channels.dart' show exitStatusOf;
+import '../host/host_link.dart' show HostEnd, HostException;
 import 'herdr_transport.dart';
-import 'keeper_command.dart';
 
 /// How long the keeper waits for a new agent to answer `initialize` before it
 /// ends the start with the agent's last stderr lines: `INIT_TIMEOUT` in the
-/// keeper script (`keeper_script.dart`; there is no Dart constant to derive it
-/// from, so a test reads the script and fails if the two differ).
+/// keeper (`rust/crates/keeper/src/records.rs`; there is no Dart constant to
+/// derive it from, so a test reads the source and fails if the two differ).
 const keeperInitTimeoutSeconds = 120;
 
 /// Slack on top of [keeperInitTimeoutSeconds] for the SSH round trips.
 const startMarginSeconds = 30;
 
-/// [AgentHost] over the machine's existing SSH connection: every operation is
-/// one exec channel on it ([HerdrTransport.openExec]), never a second
-/// connection. The commands are `keeper_command.dart`'s; their output and
-/// exit codes are the keeper's contract:
+/// [AgentHost] over the machine's agent helper link: every operation is a call
+/// or a stream of the `keeper` service ([HerdrTransport.hostCall],
+/// [HerdrTransport.openHostStream]; `docs/host-api.json` lists the methods),
+/// never a connection or channel of its own. The link installs the helper when
+/// the host does not have it, so nothing here does.
 ///
-/// - 0: done. 65: the script is not on the host (it is installed, once, and the
-///   command repeated). 66: the folder or keeper does not exist. 67: the
-///   keeper's agent has exited. 69: the agent is not installed. 70: the agent
-///   failed to start. 78: the host has no python3. Anything else: the stderr
-///   text.
+/// The helper's errors keep its words and map to the exit statuses the keeper's
+/// commands always ended with: `bad_request` 64, `not_found` 66, `agent_exited`
+/// 67, `agent_missing` 69, `failed` 70.
 class SshAgentHost implements AgentHost {
   SshAgentHost(
     this._transport, {
     this.quickTimeout = const Duration(seconds: 10),
     this.startTimeout = const Duration(seconds: keeperInitTimeoutSeconds + startMarginSeconds),
-    this.installTimeout = const Duration(seconds: 30),
-    this.attachCheck = const Duration(seconds: 2),
   });
 
   final HerdrTransport _transport;
@@ -45,101 +43,136 @@ class SshAgentHost implements AgentHost {
   /// Longest wait for `start`: the keeper launches the agent and asks it to
   /// `initialize`, and a first run of an `npx` route downloads the adapter.
   /// The keeper gives up on its own after [keeperInitTimeoutSeconds] and says
-  /// why on stderr; this waits [startMarginSeconds] longer so that message,
-  /// not a generic timeout, is what the person reads.
+  /// why; this waits [startMarginSeconds] longer so that message, not a generic
+  /// timeout, is what the person reads.
   final Duration startTimeout;
-
-  /// Longest wait for putting the keeper script on the host.
-  final Duration installTimeout;
-
-  /// How long [attach] watches a new channel for an early exit 65 (script not
-  /// installed) while the host is not known to have the script. Once any
-  /// command has worked, or the script was installed, attach opens directly.
-  final Duration attachCheck;
-
-  // Whether the script is known to be on the host. Set by any command that
-  // ran, and by an install; cleared by a 65.
-  var _present = false;
-  // Bumped by every successful install, so an operation that failed with 65
-  // before the install finished does not install again.
-  var _installs = 0;
-  Future<void>? _installing;
 
   @override
   Future<Set<String>> available() async {
-    final out = await _withInstall(() => _run(keeperProbeCommand(), quickTimeout, 'check the agents'));
-    final answer = _json<Map<Object?, Object?>>(out, 'the agent check');
-    final routes = answer['routes'];
-    if (routes is! List) throw _unexpected(out, 'the agent check');
+    const what = 'check the agents';
+    final answer = await _call('probe', const {}, quickTimeout, what);
+    final routes = answer is Map ? answer['routes'] : null;
+    if (routes is! List) throw _unexpected(answer, what);
     return {for (final r in routes) '$r'};
   }
 
   @override
   Future<List<KeeperInfo>> list() async {
-    final out = await _withInstall(() => _run(keeperListCommand(), quickTimeout, 'list the sessions'));
-    final rows = _json<List<Object?>>(out, 'the session list');
-    return KeeperInfo.listFromJson(rows);
+    const what = 'the session list';
+    final answer = await _call('list', const {}, quickTimeout, 'list the sessions');
+    if (answer is! List) throw _unexpected(answer, what);
+    try {
+      return KeeperInfo.listFromJson(answer);
+    } on FormatException {
+      throw _unexpected(answer, what);
+    } on TypeError {
+      throw _unexpected(answer, what);
+    }
   }
 
   @override
   Future<KeeperInfo> start({required String agent, required String cwd}) async {
-    final String command;
+    const what = 'the new session';
+    final answer = await _call('start', {'agent': agent, 'cwd': cwd}, startTimeout, 'start the agent');
+    if (answer is! Map) throw _unexpected(answer, what);
     try {
-      command = keeperStartCommand(agent: agent, cwd: cwd);
-    } on ArgumentError catch (e) {
-      throw AgentHostException(
-        e.name == 'cwd' ? 'That folder name can’t be used.' : 'That agent isn’t known.',
-        fatal: true,
-      );
-    }
-    final out = await _withInstall(() => _run(command, startTimeout, 'start the agent'));
-    final info = _json<Map<Object?, Object?>>(out, 'the new session');
-    try {
-      return KeeperInfo.fromJson(Map<String, Object?>.from(info));
+      return KeeperInfo.fromJson(Map<String, Object?>.from(answer));
     } on FormatException {
-      throw _unexpected(out, 'the new session');
+      throw _unexpected(answer, what);
     } on TypeError {
-      throw _unexpected(out, 'the new session');
+      throw _unexpected(answer, what);
     }
   }
 
   @override
   Future<PastSessions> history({required String agent, String? cwd}) async {
-    final String command;
+    const what = 'the past sessions';
+    final answer = await _call('history', {'agent': agent, 'cwd': ?cwd}, startTimeout, 'read the past sessions');
+    if (answer is! Map) throw _unexpected(answer, what);
     try {
-      command = keeperHistoryCommand(agent: agent, cwd: cwd);
-    } on ArgumentError catch (e) {
-      throw AgentHostException(
-        e.name == 'cwd' ? 'That folder name can’t be used.' : 'That agent isn’t known.',
-        fatal: true,
-      );
+      return PastSessions.fromJson(Map<String, Object?>.from(answer));
+    } on FormatException {
+      throw _unexpected(answer, what);
+    } on TypeError {
+      throw _unexpected(answer, what);
     }
-    final out = await _withInstall(() => _run(command, startTimeout, 'read the past sessions'));
-    final answer = _json<Map<Object?, Object?>>(out, 'the past sessions');
-    return PastSessions.fromJson(Map<String, Object?>.from(answer));
   }
+
+  @override
+  Future<void> kill(String keeperId) async {
+    await _call('kill', {'id': keeperId}, quickTimeout, 'end the session');
+  }
+
+  @override
+  Future<AcpTransport> attach(String keeperId) async => KeeperAttachment._(await _open('attach', {'id': keeperId}));
+
+  /// Follows the agent's session log [path] (an absolute `.jsonl` path under
+  /// the host user's home; the host answers `bad_request` or `not_found` for
+  /// anything else) and returns the line channel of its records:
+  ///
+  /// - `<endOffset>\t<json>`: a log line, re-serialised compactly, every
+  ///   string cut to 16 KB (`... [N bytes cut]`) and binary payloads dropped,
+  ///   each with a note that says where to fetch it (`ref=`, see [blob]);
+  /// - `S\t<offset>`: before the first line of a tail read (at the start and
+  ///   with every `R`): where in the file the tail begins, 0 when whole;
+  /// - `R\t<offset>`: the file shrank or was replaced (or [from] is not a line
+  ///   end of it): forget what came before, what follows is its content from
+  ///   `offset`;
+  /// - `C\t<offset>`: once, after the first read to the end of the file:
+  ///   everything up to `offset` has been sent;
+  /// - `E\t<message>`: reading failed; the stream ends with `failed`.
+  ///
+  /// First the tail of the file (the last [tailBytes] from a line start, 192 KB
+  /// by default, clamped by the host to 16 KB..64 MB), or with [from] everything
+  /// after that byte offset; then every complete line that is appended. With
+  /// [to] it reads the part from [from] (default 0) up to that byte offset
+  /// once, sends its `C` and ends (a line that holds the offset is sent whole).
+  /// With [digest] the records are the digest of the lines (thinking emptied,
+  /// strings cut to 8 KB, bookkeeping entries left out). The host compresses
+  /// the stream. Closing the channel ends the follow.
+  ///
+  /// Failures are [AgentHostException]s, a link problem a non-fatal one.
+  Future<ExecChannel> follow(String path, {int? from, int? to, bool digest = false, int? tailBytes}) =>
+      _open('follow', {'path': path, 'from': ?from, 'to': ?to, if (digest) 'digest': true, 'tail_bytes': ?tailBytes});
 
   /// Longest wait for [blob]: a picture of up to about 3 MB (4 MB of text, the
   /// most `follow` gives a reference to) over a slow link, with the connection
   /// allowed to be slow rather than dead.
   static const blobTimeout = Duration(seconds: 90);
 
-  /// Runs a [keeperBlobCommand]: the picture's base64 text arrives as `B`
-  /// records and a closing `D<length>`; what comes back is its bytes. A reply
-  /// whose length does not match was cut short (the link dropped mid-way).
-  Future<Uint8List> blob(String command) async {
-    final _Output out;
+  /// The binary payload `follow` dropped from the log line that starts at byte
+  /// [start] of [path]; [hash] is the 16 lowercase hex digits in the `ref=` of
+  /// its note. The picture's base64 text arrives as `B\t<piece>` records and a
+  /// closing `D\t<length>`; what comes back is its bytes. A reply whose length
+  /// does not match was cut short (the link dropped mid-way).
+  Future<Uint8List> blob(String path, {required int start, required String hash}) async {
+    const what = 'read the picture';
+    final channel = await _open('blob', {'path': path, 'start': start, 'hash': hash}, timeout: blobTimeout, what: what);
+    final lines = <String>[];
+    final ended = Completer<void>();
+    final sub = channel.lines.listen(lines.add, onError: (Object _) {}, onDone: ended.complete);
     try {
-      out = await _withInstall(() => _run(command, blobTimeout, 'read the picture'));
-    } on AgentHostException catch (e) {
-      // The keeper's sentence is for the person; its prefix is not.
-      const prefix = 'herdr-mobile: ';
-      if (e.message.startsWith(prefix)) throw AgentHostException(e.message.substring(prefix.length), fatal: e.fatal);
-      rethrow;
+      await channel.closeInput();
+      final int? code;
+      try {
+        code = await Future.wait<Object?>([ended.future, channel.exitCode])
+            .then((r) => r[1] as int?)
+            .timeout(blobTimeout);
+      } on TimeoutException {
+        throw const AgentHostException('The machine didn’t answer in time ($what).');
+      }
+      if (code != 0) throw _failure(code, channel.stderrTail, what);
+    } finally {
+      unawaited(sub.cancel());
+      try {
+        await channel.close().timeout(const Duration(seconds: 3));
+      } on Object {
+        // the connection is gone, so the channel is too
+      }
     }
     final text = StringBuffer();
     int? total;
-    for (final line in out.lines) {
+    for (final line in lines) {
       if (line.startsWith('B\t')) {
         text.write(line.substring(2));
       } else if (line.startsWith('D\t')) {
@@ -161,174 +194,46 @@ class SshAgentHost implements AgentHost {
   // threshold as the preview cache's).
   static const _blobIsolateFromChars = 64 * 1024;
 
-  @override
-  Future<void> kill(String keeperId) async {
-    await _withInstall(() => _run(keeperKillCommand(keeperId), quickTimeout, 'end the session', needsOutput: false));
-  }
-
-  @override
-  Future<AcpTransport> attach(String keeperId) async {
-    return KeeperAttachment._(await openKeeperChannel(keeperAttachCommand(keeperId, zipped: true), zipped: true));
-  }
-
-  /// Opens the long-lived channel of a keeper [command] (`keeperAttachCommand`,
-  /// `keeperFollowCommand`) and returns it running. When the host says the
-  /// script is not installed (65) it is installed and the command opened once
-  /// more. [missing] is for a caller whose channel just ended with 65: the
-  /// host has said so, so the script is installed first and no channel is
-  /// opened to find that out again. With [zipped] the command is
-  /// `keeper attach --z`, read back by the transport. With [verify] false the
-  /// channel is handed over at once instead of after [attachCheck]: for a
-  /// caller that reads the exit status itself and comes back with [missing]
-  /// on a 65 (the log follow does), so that the open does not wait a fixed
-  /// 2 s for a channel that is going to keep running. Everything that goes
-  /// wrong is an [AgentHostException] (a link problem a non-fatal one).
-  Future<ExecChannel> openKeeperChannel(
-    String command, {
-    bool missing = false,
-    bool zipped = false,
-    bool verify = true,
-  }) async {
-    if (missing) {
-      _present = false;
-      await _install();
-    }
-    return _withInstall(() => _openAttach(command, zipped: zipped, verify: verify));
-  }
-
-  /// Opens the long-lived attach channel. While the script is not known to be
-  /// on the host the channel is watched for [attachCheck]: the short command
-  /// checks for the script before anything else, so a 65 shows at once.
-  Future<ExecChannel> _openAttach(String command, {bool zipped = false, bool verify = true}) async {
-    final ExecChannel channel;
+  /// `keeper.[method]` as a call: its one JSON answer, or an
+  /// [AgentHostException] in the helper's words.
+  Future<Object?> _call(String method, Map<String, Object?> args, Duration timeout, String what) async {
     try {
-      channel = await _transport.openExec(command, zipped: zipped);
+      return await _transport.hostCall('keeper', method, args, timeout).timeout(timeout);
+    } on TimeoutException {
+      throw AgentHostException('The machine didn’t answer in time ($what).');
+    } on HostException catch (e) {
+      throw _hostFailure(e, what);
     } on HerdrTransportException catch (e) {
       throw AgentHostException(e.message, fatal: e.fatal);
     }
-    if (_present || !verify) return channel;
-    final early = await channel.exitCode.then<int?>((c) => c).timeout(attachCheck, onTimeout: () => -1);
-    if (early == _notInstalledExit) {
-      _present = false;
-      unawaited(channel.close());
-      throw const _NotInstalled();
-    }
-    // Still running after the check, or ended for another reason that the
-    // attachment reports: either way the script is there.
-    _present = true;
-    return channel;
   }
 
-  /// Runs [op]; when the host says the script is not installed (65) installs
-  /// it and runs [op] once more. Never more than one install and one retry
-  /// per call.
-  Future<T> _withInstall<T>(Future<T> Function() op) async {
-    final generation = _installs;
+  /// Opens the stream `keeper.[method]` and returns its line channel, running.
+  /// Everything that goes wrong is an [AgentHostException] (a link problem a
+  /// non-fatal one).
+  Future<ExecChannel> _open(
+    String method,
+    Map<String, Object?> args, {
+    Duration timeout = const Duration(seconds: 30),
+    String what = 'reach the machine',
+  }) async {
+    final opening = _transport.openHostStream('keeper', method, args);
     try {
-      return await op();
-    } on _NotInstalled {
-      _present = false;
-      if (_installs == generation) await _install();
-    }
-    try {
-      return await op();
-    } on _NotInstalled {
-      _present = false;
-      throw const AgentHostException('The agent helper is still missing on the machine after installing it.');
-    }
-  }
-
-  /// One install at a time: callers that arrive while it runs wait for it.
-  Future<void> _install() => _installing ??= _doInstall().whenComplete(() => _installing = null);
-
-  Future<void> _doInstall() async {
-    final _Output out;
-    try {
-      out = await _run(keeperInstallCommand(), installTimeout, 'set up agent sessions', input: keeperInstallPayload());
-    } on _NotInstalled {
-      throw const AgentHostException('The machine couldn’t set up agent sessions.');
-    }
-    final Map<Object?, Object?> answer;
-    try {
-      answer = _json<Map<Object?, Object?>>(out, 'the agent setup');
-    } on AgentHostException {
-      throw AgentHostException('The machine could not set up agent sessions.${_after(out.stderr)}');
-    }
-    if (answer['ok'] != true) {
-      throw AgentHostException('The machine could not set up agent sessions.${_after(out.stderr)}');
-    }
-    _installs++;
-    _present = true;
-  }
-
-  /// Runs [command], collects its stdout and returns it once it exited 0.
-  /// The channel is closed on every path. With [input] the text is written to
-  /// the command's stdin and stdin is then closed (a command that reads to
-  /// end of input, then answers).
-  Future<_Output> _run(String command, Duration timeout, String what, {bool needsOutput = true, String? input}) async {
-    final ExecChannel channel;
-    final opening = _transport.openExec(command);
-    try {
-      channel = await opening.timeout(timeout);
+      return await opening.timeout(timeout);
     } on TimeoutException {
       // The channel may still arrive; it must not stay open.
       unawaited(opening.then((c) => c.close(), onError: (Object _) {}));
       throw AgentHostException('The machine didn’t answer in time ($what).');
+    } on HostException catch (e) {
+      throw _hostFailure(e, what);
     } on HerdrTransportException catch (e) {
       throw AgentHostException(e.message, fatal: e.fatal);
     }
-    final lines = <String>[];
-    final ended = Completer<void>();
-    final sub = channel.lines.listen(lines.add, onError: (Object _) {}, onDone: ended.complete);
-    try {
-      if (input != null) {
-        // `send` adds the final newline itself.
-        channel.send(input.endsWith('\n') ? input.substring(0, input.length - 1) : input);
-        await channel.closeInput();
-      }
-      final int? code;
-      try {
-        code = await Future.wait<Object?>([ended.future, channel.exitCode]).then((r) => r[1] as int?).timeout(timeout);
-      } on TimeoutException {
-        throw AgentHostException('The machine didn’t answer in time ($what).');
-      }
-      final out = _Output(lines, channel.stderrTail);
-      if (code == _notInstalledExit) throw const _NotInstalled();
-      if (code != 0) throw _failure(code, out.stderr, what);
-      if (needsOutput && lines.isEmpty) {
-        throw AgentHostException('The machine answered nothing ($what).${_after(out.stderr)}');
-      }
-      _present = true;
-      return out;
-    } finally {
-      unawaited(sub.cancel());
-      try {
-        await channel.close().timeout(const Duration(seconds: 3));
-      } on Object {
-        // the connection is gone, so the channel is too
-      }
-    }
   }
 
-  static String _after(String stderr) => stderr.isEmpty ? '' : ' ${_excerpt(stderr)}';
-
-  static AgentHostException _unexpected(_Output out, String what) {
-    final last = out.lines.isEmpty ? '' : _excerpt(out.lines.last, 120);
-    return AgentHostException('The machine answered something unexpected for $what${last.isEmpty ? '' : ': $last'}');
-  }
-
-  /// The last line of [out] that is a JSON [T]. Earlier lines are ignored:
-  /// a shell profile that prints a banner must not break the answer.
-  static T _json<T>(_Output out, String what) {
-    for (var i = out.lines.length - 1; i >= 0; i--) {
-      try {
-        final decoded = jsonDecode(out.lines[i]);
-        if (decoded is T) return decoded;
-      } on FormatException {
-        continue;
-      }
-    }
-    throw _unexpected(out, what);
+  static AgentHostException _unexpected(Object? answer, String what) {
+    final text = jsonEncode(answer);
+    return AgentHostException('The machine answered something unexpected for $what: ${_excerpt(text, 120)}');
   }
 }
 
@@ -343,6 +248,15 @@ String _excerpt(String text, [int max = 400]) {
   return t.length <= max ? t : '…${t.substring(t.length - max)}';
 }
 
+/// The words for a [HostException] of a call or stream that did not start.
+AgentHostException _hostFailure(HostException e, String what) => switch (e.code) {
+  'timeout' => AgentHostException('The machine didn’t answer in time ($what).'),
+  'unavailable' => const AgentHostException('The machine couldn’t set up agent sessions.'),
+  // The installer's own words (what it said on stderr) are the explanation.
+  'install_failed' => AgentHostException(e.message),
+  _ => _failure(exitStatusOf(HostEnd(error: e)), e.message, what),
+};
+
 /// The words for an exit status of a keeper command that did not succeed.
 /// [code] is null when the connection dropped. Fatal where trying again
 /// cannot help.
@@ -354,30 +268,21 @@ AgentHostException _failure(int? code, String stderr, String what) {
     66 => AgentHostException(or('That folder or session doesn’t exist on the machine.'), fatal: true),
     67 => AgentHostException(or('The agent of this session has exited.'), fatal: true),
     69 => AgentHostException(or('That agent isn’t installed on the machine.'), fatal: true),
-    65 => AgentHostException(or('The agent helper isn’t installed on the machine.')),
+    65 => AgentHostException(or('The machine couldn’t set up agent sessions.')),
     70 => AgentHostException(or('The agent exited while starting.')),
-    78 => AgentHostException(or('Agent sessions need python3 on this machine.'), fatal: true),
     64 => AgentHostException(or('The app asked the machine something it didn’t understand.'), fatal: true),
-    126 || 127 => AgentHostException(or('The machine couldn’t run the command (command not found).'), fatal: true),
     _ => AgentHostException(or('Couldn’t $what (exit status $code).')),
   };
 }
 
-/// The words for a keeper command that exited with [code] (null: the connection
+/// The words for a keeper stream that ended with [code] (null: the connection
 /// dropped) after it was running: [stderr] is its last words, [what] says what
 /// the person was doing ("follow the session").
 AgentHostException keeperCommandFailure(int? code, String stderr, String what) => _failure(code, stderr, what);
 
-class _Output {
-  const _Output(this.lines, this.stderr);
-
-  final List<String> lines;
-  final String stderr;
-}
-
-/// The [AcpTransport] of one attach: the keeper's stdout as [lines], [send]
-/// to its stdin. [close] detaches (the keeper sees end of input); the agent
-/// lives on.
+/// The [AcpTransport] of one attach: the keeper's lines as [lines], [send]
+/// to it. [close] detaches (the keeper sees the stream end); the agent lives
+/// on.
 ///
 /// When the attach ends with a failure (the keeper is unknown or its agent has
 /// exited) [lines] reports an [AgentHostException] and then ends, and
@@ -423,14 +328,4 @@ class KeeperAttachment implements AcpTransport {
 
   @override
   Future<void> close() => _channel.close();
-}
-
-/// Exit status of a keeper command when the script of this app version is not
-/// on the host (`keeper_command.dart`).
-const _notInstalledExit = 65;
-
-/// Raised inside the host by a command that exited [_notInstalledExit]; never
-/// leaves it.
-class _NotInstalled implements Exception {
-  const _NotInstalled();
 }

@@ -3,14 +3,15 @@
 //
 //   BENCH_OUT=/tmp/open.txt flutter test benchmark/session_open_wire_bench_test.dart
 //
-// The REAL keeper script (python3, temp HOME, `bench_acp_agent.py` as the agent)
-// is seeded with a session built from the recorded traces
-// (`support/session_workload.dart`, fixed seed), and the REAL
-// `AcpAgentSession.acquire()` opens it through the attach command the app
-// runs (`keeperAttachCommand`, minus SSH). Every byte the keeper writes to
-// stdout is counted before anything reads it, so `wire_kb` is what the SSH
-// channel would carry towards the phone (SSH framing and the requests towards
-// the host, a few hundred bytes, are not counted).
+// The REAL keeper (the `herdr-host` binary, temp HOME, the testkit's
+// `bench-acp-agent` as the agent) is seeded with a session built from the
+// recorded traces (`support/session_workload.dart`, fixed seed), and the REAL
+// `AcpAgentSession.acquire()` opens it the way the app does: `SshAgentHost`
+// over one `HostLink` on a `herdr-host serve` process (`LocalKeeperHost`), a
+// `keeper.attach` stream on it. Every byte the host writes on that stream is
+// counted before anything reads it (frame headers included), so `wire_kb` is
+// what the SSH channel would carry towards the phone (SSH framing and the
+// requests towards the host, a few hundred bytes, are not counted).
 //
 //  * cold: the session is opened with nothing on the phone;
 //  * copy: opened again by a new session object that holds the saved copy of
@@ -19,11 +20,22 @@
 //    matters is what the attach still costs and when the session can be
 //    answered (`live`).
 //
+// Variants: `zip` opens the stream the way the app does (zctx: the host
+// deflates it as one continuous zlib stream, sync-flushed per frame); `plain`
+// opens it without zctx. The names are the old ones, from when the phone asked
+// for a `zipped` attach. `plain` is NOT uncompressed: a stream without zctx
+// still has every frame of 512 bytes or more deflated on its own by the host
+// (`send` in rust/crates/host/src/session.rs), so the comparison is what the
+// stream's shared zlib context saves over per-frame deflate. The uncompressed
+// replay is `load_bytes` of `session_open_bench.dart` (about 1.4 MB here).
+//
 // `rtts` is the depth of the chain of requests the open waits on (a request
-// sent after the answer to another has arrived is one level deeper), plus
-// the 2 round trips an SSH exec channel takes to open (channel open, then the
-// exec request), counted by the constant `execRtts`. The modelled open time on a
-// link is
+// sent after the answer to another has arrived is one level deeper). The app
+// keeps one link to the host, so a stream costs no channel to open: its OPEN
+// frame and the first request travel together and the first answer is the
+// first level (the old model added 2 round trips for the SSH exec channel an
+// attach used to be; a first use on a new connection pays about 3, once, and
+// is not in these numbers). The modelled open time on a link is
 //
 //     rtts * RTT + wire_bytes * 8 / rate + phone_cpu_ms
 //
@@ -40,13 +52,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
 import 'package:herdr_mobile/data/acp/json_rpc.dart';
 import 'package:herdr_mobile/data/acp/past_session.dart';
-import 'package:herdr_mobile/data/acp/zipped_lines.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/acp_agent_session.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
-import 'package:herdr_mobile/data/services/keeper_command.dart';
 
 import '../test/support/fake_transport.dart';
 import '../test/support/memory_transcript_cache.dart';
@@ -58,10 +68,6 @@ final _env = Platform.environment;
 final _items = int.parse(_env['OPEN_ITEMS'] ?? '600');
 final _runs = int.parse(_env['OPEN_RUNS'] ?? '5');
 final _agent = _env['OPEN_AGENT'] ?? 'mixed';
-
-/// Round trips of an SSH exec channel before the command runs: the channel
-/// open, then the exec request.
-const execRtts = 2;
 
 /// (name, round trip ms, megabits a second towards the phone)
 const _links = [('fast', 40.0, 30.0), ('mid', 120.0, 10.0), ('slow', 300.0, 2.0)];
@@ -84,27 +90,22 @@ class _Open {
   final double cpuMs;
   final double liveMs;
 
-  int get rtts => execRtts + depth;
+  int get rtts => depth;
 
   double modelledMs(double rttMs, double mbit) => rtts * rttMs + wireBytes * 8 / (mbit * 1000) + cpuMs;
 }
 
-/// The attach channel as the app reads it, counting what comes off the pipe
-/// and how deep the chain of requests is.
+/// The attach as the app reads it, noting how deep the chain of requests is.
+/// The bytes are the meter's, per stream ([LocalKeeperHost.meter]).
 class _Metered implements AcpTransport {
-  _Metered(this._process, this.zipped) {
-    final raw = _process.stdout.map((chunk) {
-      wireBytes += chunk.length;
-      return chunk;
-    });
-    final split = splitLines(raw);
-    lines = (zipped ? zippedLines(split) : split).map(_seen);
-    _process.stderr.drain<void>();
+  _Metered(this._inner, this.streamId) {
+    lines = _inner.lines.map(_seen);
   }
 
-  final Process _process;
-  final bool zipped;
-  var wireBytes = 0;
+  final AcpTransport _inner;
+
+  /// The attach's stream on the link.
+  final int streamId;
 
   // The depth of the request chain: a request sent after the answer to
   // another arrived is one level deeper than that one.
@@ -142,41 +143,23 @@ class _Metered implements AcpTransport {
     } on FormatException {
       // not JSON
     }
-    _process.stdin.add(utf8.encode('$line\n'));
+    _inner.send(line);
   }
 
   @override
-  Future<void> close() async {
-    try {
-      await _process.stdin.close();
-    } on Object {
-      // gone already
-    }
-    try {
-      await _process.exitCode.timeout(const Duration(seconds: 5));
-    } on TimeoutException {
-      _process.kill();
-    }
-  }
+  Future<void> close() => _inner.close();
 }
 
 class _MeteredHost implements AgentHost {
-  _MeteredHost(this.inner, {required this.zipped});
+  _MeteredHost(this.inner);
 
   final LocalKeeperHost inner;
-  final bool zipped;
   _Metered? last;
 
   @override
   Future<AcpTransport> attach(String keeperId) async {
-    final p = await Process.start(
-      '/bin/sh',
-      ['-c', keeperAttachCommand(keeperId, zipped: zipped)],
-      environment: inner.env,
-      includeParentEnvironment: false,
-      workingDirectory: inner.home.path,
-    );
-    return last = _Metered(p, zipped);
+    final attached = await inner.attach(keeperId);
+    return last = _Metered(attached, inner.opens.last.id);
   }
 
   @override
@@ -234,10 +217,9 @@ Future<_Open> _open(
   MachineConnection machine,
   LocalKeeperHost host,
   KeeperInfo info, {
-  required bool zipped,
   MemoryTranscriptCache? cache,
 }) async {
-  final metered = _MeteredHost(host, zipped: zipped);
+  final metered = _MeteredHost(host);
   final session = AcpAgentSession(machine: machine, host: metered, info: info, cache: cache);
   final live = Completer<void>();
   void listener() {
@@ -257,7 +239,7 @@ Future<_Open> _open(
   final cpuMs = (threadCpuMicros() - c0) / 1000;
   final liveMs = wall.elapsedMicroseconds / 1000;
   final m = metered.last!;
-  final open = _Open(wireBytes: m.wireBytes, depth: m.depth, cpuMs: cpuMs, liveMs: liveMs);
+  final open = _Open(wireBytes: host.meter.stream(m.streamId).bytes, depth: m.depth, cpuMs: cpuMs, liveMs: liveMs);
   session.removeListener(listener);
   session.release();
   // Written when the last screen lets go; the copy of a later open.
@@ -302,23 +284,24 @@ void main() {
 
     // The first attach after seeding also carries "a turn ended while nobody
     // looked" and warms the page cache: not counted.
-    await _open(machine, h, info, zipped: true);
+    await _open(machine, h, info);
 
-    for (final zipped in [false, true]) {
+    for (final zctx in [false, true]) {
+      h.zctx = zctx;
       final cold = <_Open>[];
       for (var i = 0; i < _runs; i++) {
-        cold.add(await _open(machine, h, info, zipped: zipped));
+        cold.add(await _open(machine, h, info));
       }
-      final p = zipped ? 'zip' : 'plain';
+      final p = zctx ? 'zip' : 'plain';
       _report(p, 'cold', cold);
 
       // The same chat again, a copy on the phone.
       final cache = MemoryTranscriptCache();
-      await _open(machine, h, info, zipped: zipped, cache: cache); // writes the copy
+      await _open(machine, h, info, cache: cache); // writes the copy
       expect(cache.stored, isNotEmpty, reason: 'the first open left a saved copy');
       final again = <_Open>[];
       for (var i = 0; i < _runs; i++) {
-        again.add(await _open(machine, h, info, zipped: zipped, cache: cache));
+        again.add(await _open(machine, h, info, cache: cache));
       }
       _report(p, 'copy', again);
     }

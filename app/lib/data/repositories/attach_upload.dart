@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import '../services/remote_files.dart';
-import 'host_inbox.dart';
+import '../models/remote_file.dart';
 import 'machine_connection.dart';
 
 /// An upload the person can wait for or cancel.
@@ -24,24 +23,30 @@ abstract interface class AttachUploader {
   });
 }
 
-/// Uploads into the host's inbox for one session (`reserveInboxPath`, then
-/// `RemoteFiles.upload` over the machine's SFTP channel).
+/// Uploads into the host's inbox for one session: the host picks the path
+/// (`RemoteFiles.reserveInboxFile`) and stores the file through the agent
+/// helper (`RemoteFiles.uploadToInbox`).
+///
+/// A transfer that was cut (the link dropped, the person cancelled) keeps its
+/// path, so sending the same file again continues where the host stopped
+/// instead of starting over.
 class HostUploader implements AttachUploader {
   HostUploader({required this.machine, required this.sessionKey});
 
   final MachineConnection machine;
   final String sessionKey;
+  final _paths = <String, String>{};
 
   @override
   AttachUpload start({
     required String localPath,
     required String fileName,
     void Function(int sent, int total)? onProgress,
-  }) => _HostUpload(machine, sessionKey, localPath, fileName, onProgress);
+  }) => _HostUpload(machine, sessionKey, localPath, fileName, onProgress, _paths);
 }
 
 class _HostUpload implements AttachUpload {
-  _HostUpload(this._machine, this._sessionKey, this._localPath, this._fileName, this._onProgress) {
+  _HostUpload(this._machine, this._sessionKey, this._localPath, this._fileName, this._onProgress, this._paths) {
     unawaited(_run());
   }
 
@@ -50,6 +55,7 @@ class _HostUpload implements AttachUpload {
   final String _localPath;
   final String _fileName;
   final void Function(int sent, int total)? _onProgress;
+  final Map<String, String> _paths;
   final _done = Completer<String>();
   UploadJob? _job;
   var _cancelled = false;
@@ -58,17 +64,24 @@ class _HostUpload implements AttachUpload {
   Future<String> get done => _done.future;
 
   Future<void> _run() async {
+    final memory = '$_localPath\n$_fileName';
     try {
-      final remote = await reserveInboxPath(_machine, sessionKey: _sessionKey, fileName: _fileName);
+      final remote = _paths[memory] ?? await _machine.files.reserveInboxFile(key: _sessionKey, name: _fileName);
+      _paths[memory] = remote;
       if (_cancelled) {
         _done.completeError(const _Cancelled());
         return;
       }
-      final job = _machine.files.upload(localPath: _localPath, remotePath: remote, onProgress: _onProgress);
+      final job = _machine.files.uploadToInbox(localPath: _localPath, inboxPath: remote, onProgress: _onProgress);
       _job = job;
       await job.done;
+      _paths.remove(memory);
       _done.complete(remote);
     } on Object catch (e, s) {
+      // What reached the host stays there for a cut transfer; any other
+      // failure (a refused name, a file that changed) starts afresh.
+      final cut = e is UploadCancelled || (e is RemoteFileException && e.kind == RemoteFileErrorKind.network);
+      if (!cut) _paths.remove(memory);
       if (!_done.isCompleted) _done.completeError(e, s);
     }
   }

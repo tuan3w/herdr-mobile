@@ -31,6 +31,8 @@ class FileRow extends StatelessWidget {
     this.thumbs,
     this.trailing,
     this.selected,
+    this.detail,
+    this.detailSuffix,
   });
 
   final RemoteEntry entry;
@@ -50,6 +52,13 @@ class FileRow extends StatelessWidget {
   /// has no selection at all.
   final bool? selected;
 
+  /// Replaces the muted line (size and time) with this text, cut in the
+  /// middle: a search result says which folder it is in.
+  final String? detail;
+
+  /// Words kept whole after [detail] on its line (`3m ago`).
+  final String? detailSuffix;
+
   /// `12 KB · 3 min ago`, `Link → target`, `No permission`.
   String subtitle() {
     final e = entry;
@@ -68,7 +77,7 @@ class FileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ds = context.ds;
     final e = entry;
-    final sub = subtitle();
+    final sub = detail ?? subtitle();
     final indent = Gap.gutter + 32 + Gap.md;
     Widget row = Column(
       mainAxisSize: MainAxisSize.min,
@@ -95,13 +104,33 @@ class FileRow extends StatelessWidget {
                     if (sub.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: Gap.hair),
-                        child: Text(
-                          sub,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          // The one muted line: size and time.
-                          style: Type.secondary.copyWith(color: ds.textSecondary),
-                        ),
+                        child: detail != null
+                            // A folder path keeps its root and its last folder; what comes
+                            // after it (when it changed) is never the part that is cut.
+                            ? Row(
+                                children: [
+                                  Flexible(
+                                    child: MiddleEllipsisText(
+                                      sub,
+                                      style: Type.secondary.copyWith(color: ds.textSecondary),
+                                    ),
+                                  ),
+                                  if (detailSuffix != null)
+                                    Text(
+                                      ' · $detailSuffix',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      style: Type.secondary.copyWith(color: ds.textMuted),
+                                    ),
+                                ],
+                              )
+                            : Text(
+                                sub,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                // The one muted line: size and time.
+                                style: Type.secondary.copyWith(color: ds.textSecondary),
+                              ),
                       ),
                   ],
                 ),

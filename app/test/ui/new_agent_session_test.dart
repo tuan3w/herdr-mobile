@@ -251,10 +251,10 @@ void main() {
 
     testWidgets('a machine that can’t be asked says why and still lets the start report', (tester) async {
       final e = await _env();
-      e.host('a').availableFailure = const AgentHostException('python3 is missing on studio-mac.');
+      e.host('a').availableFailure = const AgentHostException('the agent helper is missing on studio-mac.');
       await _pumpForm(tester, e);
 
-      expect(find.text('python3 is missing on studio-mac.'), findsOneWidget);
+      expect(find.text('the agent helper is missing on studio-mac.'), findsOneWidget);
       expect(tester.widget<AppButton>(_start()).onPressed, isNotNull);
       await _teardown(tester, e);
     });
