@@ -37,6 +37,16 @@ if [ "${1:-}" != "--tests" ]; then
 fi
 
 if [ "${1:-}" != "--quick" ]; then
+  # The phone-path tests run the real Rust helper and its fixtures (docs/DEVELOPMENT.md);
+  # without them 13 test files fail with one message each. Say so once, up front. A warning,
+  # not a failure: the files and transfer tests skip with their own reason, and --quick never
+  # gets here. Building is the caller's choice (minutes of compile, a few hundred MB of disk).
+  host_bin="${HERDR_HOST_BIN:-$PWD/../rust/target/release/herdr-host}"
+  kit_dir="${HERDR_TESTKIT_DIR:-$(dirname "$host_bin")}"
+  for built in "$host_bin" "$kit_dir/fake-acp-agent"; do
+    [ -x "$built" ] || echo "warning: $built is missing, so the tests that run the Rust helper fail." \
+      "Build it: (cd rust && cargo build --release --locked -p host -p testkit)" >&2
+  done
   # One flutter_tester per test file costs a compile and an engine start per
   # file: the compiler is a single process, so with 308 files the run was
   # mostly files waiting to be compiled, whatever -j said. The experimental

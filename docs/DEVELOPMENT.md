@@ -30,7 +30,9 @@ The Dart side finds the helper through `HERDR_HOST_BIN` (default
 (default: next to the helper). The keeper tests fail with the build command in
 their message when one is missing; the files and transfer tests skip with
 it as the reason, so a run without the build says what it did not cover, never
-that it passed. `tool/check.sh` does not build the Rust side.
+that it passed. `tool/check.sh` does not build the Rust side; it warns up front
+when the helper or the fakes are missing. Every workflow that runs it builds them
+first (`ci.yml` test jobs, the `apk` job of `release.yml`).
 No python is needed anywhere in the product or
 its tests; the few python scripts left in `tool/` (screenshot framing, trace
 capture, TUI pictures) are developer tools. `herdr-host api` prints the
@@ -344,6 +346,26 @@ Why the same release: the app pins the helper to its own version
 (`~/.herdr-mobile/bin/herdr-host-<appVersion>`), and the installer downloads that
 exact tag, so an updated app always finds its helper, and the two never
 disagree about the wire.
+
+So that holds even when a job fails, the workflow makes the release as a
+**draft** and publishes it as its last job. The graph:
+
+```
+draft (tag = pubspec, notes exist, create draft)
+ ├─ apk ── tests, build, sign, attach the APK
+ └─ tui (4 platforms) ── tui-publish (attach helpers + checksums)
+                 publish (needs apk + tui-publish: checks the assets, then un-drafts)
+```
+
+A published release without the helper (one platform's build failed) or without
+the APK would be what every phone's update check offers next, and each phone that
+took it could not start an agent session. A failed job leaves a draft nobody is
+offered (the update check reads `releases/latest`, which skips drafts): fix the
+cause and re-run the failed jobs; the `publish` job then runs by itself. The
+asset check in `publish` names what is missing. Without the signing secrets no
+APK is built, so the release stays a draft: upload the APK by hand
+(`herdr-mobile-X.Y.Z.apk`, `SHA256SUMS`, the symbols zip), then
+`gh release edit vX.Y.Z --draft=false`.
 
 A debug build, or a version with no release yet, has no helper to download (the
 pinned download is a 404 and the app says the machine could not set up the agent

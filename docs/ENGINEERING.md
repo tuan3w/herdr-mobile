@@ -163,7 +163,7 @@ desktop and modelled unless said otherwise; none is measured on a phone.
   is the heartbeat, the idle ping and the safety poll (`Notifications and the
   background profile`), and this link did not add or remove one.
 - **Footprint** (desktop, measured): the release binary is 1.87 MB stripped
-  (1,867,056 bytes; the picture decoders and encoder added 423 KiB to 1.43 MB)
+  (1,872,648 bytes; the picture decoders and encoder added 423 KiB to 1.43 MB)
   and an idle `serve` holds 3.8 MB resident, 5.3 MB after a 256 px JPEG and
   24 MB at the peak of a 1024 px one.
 

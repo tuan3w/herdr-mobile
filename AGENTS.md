@@ -180,10 +180,12 @@ cannot be filtered, `fix(test):` and `feat(gallery):` can.
    the top of `CHANGELOG.md`: what the person notices, not the commits (skill
    `herdr-changelog`, which also makes the media).
 2. `tool/check.sh`, then commit and tag: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. `.github/workflows/release.yml` checks the tag against pubspec, runs the
-   checks, builds and signs the APK, and publishes it with `SHA256SUMS` and
-   the changelog section as notes. Without the signing secrets it skips, and
-   the APK is built and uploaded by hand the same way (`docs/DEVELOPMENT.md`).
+3. `.github/workflows/release.yml` checks the tag against pubspec, makes a draft
+   release with the changelog section as notes, runs the checks, builds and
+   signs the APK, builds `herdr-host` for every platform, attaches all of it
+   (the APK with `SHA256SUMS`), and only then publishes. A failed job leaves a
+   draft: re-run it (`docs/DEVELOPMENT.md`). Without the signing secrets no APK
+   is built and the release stays a draft for a by-hand upload.
 4. Attach the release's stills and walkthrough clip with `gh release upload`
    once the workflow has published (`herdr-changelog` section 6). They never
    go into git.

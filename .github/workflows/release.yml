@@ -1,16 +1,23 @@
 name: Release
 
 # Tag a version (git tag v0.1.1 && git push origin v0.1.1) to build and
-# publish the APK. The release notes are that version's section of
-# CHANGELOG.md (`## [0.1.1] - date`); a tag without one fails before building.
+# publish the APK and the host helper. The release notes are that version's
+# section of CHANGELOG.md (`## [0.1.1] - date`); a tag without one fails
+# before building.
+#
+# The release is made as a draft and published by the last job, once the APK
+# and every platform's herdr-host are attached: a published release without
+# the helper strands every phone that updates to it. A failed job leaves the
+# draft; re-run the failed jobs and the last one publishes it.
 #
 # Signing needs these repository secrets (see docs/DEVELOPMENT.md, "Android
 # release build"):
 #   ANDROID_KEYSTORE_BASE64   base64 of release.jks
 #   ANDROID_KEYSTORE_PASSWORD store and key password
 #   ANDROID_KEY_ALIAS         e.g. herdr-mobile
-# Without them the run is skipped with a warning: a debug-signed APK must never
-# be published, and a release can still be built and uploaded by hand.
+# Without them no APK is built (a debug-signed APK must never be published),
+# so the release stays a draft with the helper attached: upload the APK by
+# hand, then `gh release edit vX.Y.Z --draft=false`.
 
 on:
   push:
@@ -20,9 +27,40 @@ permissions:
   contents: write
 
 jobs:
+  # The tag and the notes are checked, and the release is created as a draft, before anything is
+  # built: a tag without a CHANGELOG section fails here in seconds, whatever the signing secrets.
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify tag matches pubspec version and has release notes
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(sed -n 's/^version: \([0-9.]*\)+.*/\1/p' app/pubspec.yaml)"
+          [ "$want" = "$have" ] || { echo "tag $want != pubspec $have"; exit 1; }
+          tool/release-notes.sh "$want" > "$RUNNER_TEMP/notes.md"
+
+      # The one place a release is created, so the jobs below only attach to it. A re-run of a
+      # tag finds its release (draft or published) and only refreshes the notes.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "herdr mobile $GITHUB_REF_NAME" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
   apk:
+    needs: draft
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      enabled: ${{ steps.sign.outputs.enabled }}
     steps:
       - name: Check signing secrets
         id: sign
@@ -34,7 +72,7 @@ jobs:
           if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning title=Release skipped::Signing secrets are not configured, so nothing was built or published. See README, 'Android release build'."
+            echo "::warning title=APK skipped::Signing secrets are not configured, so no APK was built and the release stays a draft (with the host helper attached). Upload the APK by hand, then publish it. See docs/DEVELOPMENT.md, 'Android release build'."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -54,13 +92,13 @@ jobs:
           flutter-version: 3.47.6
           cache: true
 
-      - name: Verify tag matches pubspec version and has release notes
+      - name: Build herdr-host and the test fixtures (what the phone-path tests exec)
         if: steps.sign.outputs.enabled == 'true'
+        working-directory: rust
         run: |
-          want="${GITHUB_REF_NAME#v}"
-          have="$(sed -n 's/^version: \([0-9.]*\)+.*/\1/p' app/pubspec.yaml)"
-          [ "$want" = "$have" ] || { echo "tag $want != pubspec $have"; exit 1; }
-          tool/release-notes.sh "$want" > "$RUNNER_TEMP/notes.md"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build --release --locked -p host -p testkit
 
       # The tests tagged `timing` assert on real time and fail when the CPU is busy (two of them
       # kept the 0.1.37 APK from being published), so they run apart, at half the jobs.
@@ -117,22 +155,17 @@ jobs:
           (cd dist && sha256sum *.apk > SHA256SUMS)
           (cd app/build/symbols && zip -q -r "$GITHUB_WORKSPACE/dist/herdr-mobile-$v-symbols.zip" .)
 
-      - name: Publish release
+      # The release is a draft until `publish` (below) has every asset: see there for why.
+      - name: Attach to the draft release
         if: steps.sign.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* --title "herdr mobile $GITHUB_REF_NAME" \
-              --notes-file "$RUNNER_TEMP/notes.md"
-          fi
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
 
   # herdr-tui, the desktop client (rust/), per platform. Needs no signing secrets. The binary
   # carries the keeper, so a machine installs one file (tool/install-tui.sh).
   tui:
+    needs: draft
     strategy:
       fail-fast: false
       matrix:
@@ -185,9 +218,12 @@ jobs:
             dist/${{ matrix.asset }}
             dist/${{ matrix.host }}
 
+  # Attaches the host helper (and the desktop client) to the draft. It needs every `tui` leg,
+  # so one failed platform publishes nothing and leaves the draft for a re-run.
   tui-publish:
     needs: tui
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -201,14 +237,33 @@ jobs:
           (cd dist && sha256sum herdr-host-* > herdr-host-SHA256SUMS)
           cp tool/install-host.sh dist/install-host.sh
           cat dist/herdr-tui-SHA256SUMS dist/herdr-host-SHA256SUMS
-      - name: Attach to the release
+      - name: Attach to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  # The last step, and only when everything is attached. Why: the app pins its helper to its own
+  # version and downloads it from this release, and the in-app update offers whatever is the
+  # latest published release, so a published release without the helper (or without the APK)
+  # strands every phone that updates to it. A failed job above leaves the draft, never that.
+  # Without signing secrets no APK is built, so the draft is left for a by-hand upload.
+  publish:
+    needs: [apk, tui-publish]
+    if: needs.apk.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check every asset is attached
         run: |
-          # The APK job may have made the release already, or be skipped (no secrets).
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            tool/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
-            gh release create "$GITHUB_REF_NAME" --title "herdr mobile $GITHUB_REF_NAME" \
-              --notes-file "$RUNNER_TEMP/notes.md" || gh release view "$GITHUB_REF_NAME" >/dev/null
-          fi
-          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          v="${GITHUB_REF_NAME#v}"
+          have="$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')"
+          for want in "herdr-mobile-$v.apk" SHA256SUMS "herdr-mobile-$v-symbols.zip" \
+            herdr-host-linux-x86_64 herdr-host-linux-aarch64 herdr-host-macos-arm64 herdr-host-macos-x86_64 \
+            herdr-host-SHA256SUMS install-host.sh; do
+            printf '%s\n' "$have" | grep -qxF "$want" || { echo "::error::the release has no $want"; exit 1; }
+          done
+      - name: Publish the release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
