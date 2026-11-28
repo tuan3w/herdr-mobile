@@ -19,7 +19,14 @@ pub fn prune_old_versions(home: &Path) {
 }
 
 pub(crate) fn prune_dir(dir: &Path, running: Option<&Path>, keep: usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    // `current_exe()` is canonical; `dir` is reached through `$HOME`, which may
+    // be a link. Compare canonical paths, or the running binary is not
+    // recognised and gets deleted.
+    let Ok(dir) = dir.canonicalize() else {
+        return;
+    };
+    let running = running.and_then(|p| p.canonicalize().ok());
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return;
     };
     let mut found: Vec<(SystemTime, PathBuf)> = entries
@@ -30,7 +37,7 @@ pub(crate) fn prune_dir(dir: &Path, running: Option<&Path>, keep: usize) {
         .collect();
     found.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     for (_, path) in found.into_iter().skip(keep) {
-        if running.is_some_and(|me| me == path) {
+        if running.as_deref().is_some_and(|me| me == path) {
             continue;
         }
         let _ = std::fs::remove_file(path);
@@ -99,6 +106,29 @@ mod tests {
         let me = dir.path().join("herdr-host-0.1.1");
         prune_dir(dir.path(), Some(&me), 3);
         assert!(me.exists());
+    }
+
+    /// `current_exe()` is canonical, but the folder is reached through `$HOME`,
+    /// which may be a link (a home on another disk): the comparison used to
+    /// miss, and every start deleted the binary it was running.
+    #[test]
+    fn the_running_binary_survives_when_home_is_reached_through_a_link() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let real = root.path().join("real-home");
+        std::fs::create_dir(&real).expect("real home");
+        let fake = root.path().join("fake-home");
+        std::os::unix::fs::symlink(&real, &fake).expect("link");
+        touch(&real, "herdr-host-0.1.1", 9000);
+        for (i, v) in ["0.1.2", "0.1.3", "0.1.4"].iter().enumerate() {
+            touch(&real, &format!("herdr-host-{v}"), 100 - (i as u64) * 10);
+        }
+        let running = real
+            .canonicalize()
+            .expect("canonical")
+            .join("herdr-host-0.1.1");
+        prune_dir(&fake, Some(&running), 3);
+        assert!(running.exists(), "the running binary was removed");
+        assert!(real.join("herdr-host-0.1.4").exists());
     }
 
     #[test]

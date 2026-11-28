@@ -404,9 +404,13 @@ fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
 
 /// A PNG that only has a header saying `w` by `h` (the data is never read).
 fn png_header_only(w: u32, h: u32) -> Vec<u8> {
+    png_header(w, h, 2, 0)
+}
+
+fn png_header(w: u32, h: u32, color_type: u8, interlace: u8) -> Vec<u8> {
     let mut ihdr = w.to_be_bytes().to_vec();
     ihdr.extend(h.to_be_bytes());
-    ihdr.extend([8, 2, 0, 0, 0]);
+    ihdr.extend([8, color_type, 0, 0, interlace]);
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
     out.extend(png_chunk(b"IHDR", &ihdr));
     out.extend(png_chunk(b"IDAT", &[0x78, 0x9C]));
@@ -544,5 +548,259 @@ fn a_truncated_jpeg_is_an_error_or_a_picture_never_a_panic() {
             Ok(m) => assert_eq!((m.width, m.height), (100, 67)),
             Err(e) => assert_eq!(e.code, ErrorCode::Failed, "{}", e.message),
         }
+    }
+}
+
+/// An RGB PNG whose rows are stored in Adam7 order (seven passes of growing
+/// detail); the encoder of the `png` crate writes none, so it is built by hand.
+fn adam7_png(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
+    const PASSES: [(u32, u32, u32, u32); 7] = [
+        (0, 0, 8, 8),
+        (4, 0, 8, 8),
+        (0, 4, 4, 8),
+        (2, 0, 4, 4),
+        (0, 2, 2, 4),
+        (1, 0, 2, 2),
+        (0, 1, 1, 2),
+    ];
+    let mut raw = Vec::new();
+    for (x0, y0, dx, dy) in PASSES {
+        if x0 >= w || y0 >= h {
+            continue;
+        }
+        let mut y = y0;
+        while y < h {
+            raw.push(0); // filter: none
+            let mut x = x0;
+            while x < w {
+                let i = ((y * w + x) * 3) as usize;
+                raw.extend(&rgb[i..i + 3]);
+                x += dx;
+            }
+            y += dy;
+        }
+    }
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut z, &raw).expect("deflate");
+    let idat = z.finish().expect("zlib");
+    let mut ihdr = w.to_be_bytes().to_vec();
+    ihdr.extend(h.to_be_bytes());
+    ihdr.extend([8, 2, 0, 0, 1]); // 8-bit RGB, Adam7
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    out.extend(png_chunk(b"IHDR", &ihdr));
+    out.extend(png_chunk(b"IDAT", &idat));
+    out.extend(png_chunk(b"IEND", &[]));
+    out
+}
+
+/// `next_row` of an interlaced PNG yields the narrow rows of one pass, so the
+/// thumbnail was cut short and the file was reported as ending early.
+#[test]
+fn an_interlaced_png_makes_the_whole_thumbnail() {
+    for (w, h) in [(200, 100), (13, 9), (3, 1), (1, 5)] {
+        let bytes = adam7_png(&halves(w, h), w, h);
+        let (cw, ch) = target_size(w, h, 64);
+        let made = thumb_of(&bytes, 64).unwrap_or_else(|e| panic!("{w}x{h}: {e:?}"));
+        assert_eq!((made.width, made.height), (cw, ch), "{w}x{h}");
+        let (tw, th, rgb) = open_jpeg(&made.jpeg);
+        assert_eq!((tw, th), (cw, ch));
+        // The colours only survive the JPEG's chroma subsampling in a picture
+        // that is not a few pixels across.
+        if w.min(h) >= 8 {
+            assert!(
+                near(pixel(&rgb, tw, 0, th / 2), [255, 0, 0]),
+                "{w}x{h}: left stays red"
+            );
+            assert!(
+                near(pixel(&rgb, tw, tw - 1, th / 2), [0, 0, 255]),
+                "{w}x{h}: right stays blue"
+            );
+        }
+    }
+}
+
+/// A progressive JPEG header (SOF2) of `w` by `h`, 4:4:4.
+fn progressive_jpeg_header_only(w: u16, h: u16) -> Vec<u8> {
+    let mut bytes = jpeg_header_only(w, h);
+    let sof = bytes
+        .windows(2)
+        .position(|p| p == [0xFF, 0xC0])
+        .expect("SOF0");
+    bytes[sof + 1] = 0xC2;
+    // 4:4:4: every component sampled 1x1.
+    let comps = sof + 10;
+    for i in 0..3 {
+        bytes[comps + i * 3 + 1] = 0x11;
+    }
+    bytes
+}
+
+/// The decoder keeps every coefficient of a progressive JPEG (6 bytes a
+/// pixel at 4:4:4), so a 64 MP one costs 384 MB although a baseline one of the
+/// same size is decoded at 1/8 and costs next to nothing.
+#[test]
+fn a_progressive_444_jpeg_is_refused_by_the_bytes_it_needs_not_its_pixels() {
+    let e = thumb_of(&progressive_jpeg_header_only(8000, 8000), 256).err_or("progressive");
+    assert_eq!(e.code, ErrorCode::TooLarge, "{}", e.message);
+    assert!(e.message.contains("MiB"), "{}", e.message);
+    // The same size, baseline: not refused for its size (the header-only file
+    // then ends early, which is another error).
+    let e = thumb_of(&jpeg_header_only(8000, 8000), 256).err_or("baseline");
+    assert_ne!(e.code, ErrorCode::TooLarge, "{}", e.message);
+}
+
+/// A WebP whose EXIF chunk announces about 4 GiB and holds nothing: the
+/// picture still decodes, upright (the `serve` process test proves nothing
+/// that size is allocated).
+#[test]
+fn a_webp_with_a_huge_empty_exif_block_is_decoded_upright() {
+    let (w, h) = (60u32, 40u32);
+    let plain = webp(&halves(w, h), w, h);
+    let u24 = |n: u32| n.to_le_bytes()[..3].to_vec();
+    let mut body = b"WEBPVP8X".to_vec();
+    body.extend(10u32.to_le_bytes());
+    body.push(0x08);
+    body.extend([0, 0, 0]);
+    body.extend(u24(w - 1));
+    body.extend(u24(h - 1));
+    body.extend(&plain[12..]);
+    body.extend(b"EXIF");
+    body.extend(0xFFFF_FF00u32.to_le_bytes());
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend(u32::try_from(body.len()).expect("fits").to_le_bytes());
+    bytes.extend(body);
+    let made = thumb_of(&bytes, 30).expect("decodes");
+    assert_eq!((made.width, made.height), (30, 20));
+}
+
+// ---- the decode gate and the byte estimates ----
+
+const FOR_EVER: std::time::Duration = std::time::Duration::from_secs(3600);
+const TICK: std::time::Duration = std::time::Duration::from_millis(1);
+const NO_WAIT: std::time::Duration = std::time::Duration::ZERO;
+
+#[test]
+fn the_gate_hands_out_its_permits_and_takes_them_back_when_they_drop() {
+    let gate = Gate::new(2);
+    let first = gate.acquire(NO_WAIT, TICK, &|| false).expect("first");
+    let second = gate.acquire(NO_WAIT, TICK, &|| false).expect("second");
+    assert_eq!(
+        gate.acquire(NO_WAIT, TICK, &|| false).err(),
+        Some(NoPermit::Busy),
+        "a third finds none and, with no patience, says so at once"
+    );
+    drop(first);
+    let third = gate
+        .acquire(NO_WAIT, TICK, &|| false)
+        .expect("one came back");
+    drop((second, third));
+    let both = (
+        gate.acquire(NO_WAIT, TICK, &|| false).expect("again"),
+        gate.acquire(NO_WAIT, TICK, &|| false).expect("and again"),
+    );
+    drop(both);
+}
+
+#[test]
+fn a_waiter_gets_the_permit_when_the_holder_is_done() {
+    let gate = Gate::new(1);
+    let held = gate.acquire(NO_WAIT, TICK, &|| false).expect("held");
+    std::thread::scope(|s| {
+        // Whether it starts waiting before or after the drop, it gets it.
+        let waiter = s.spawn(|| gate.acquire(FOR_EVER, TICK, &|| false).map(|_| ()));
+        drop(held);
+        assert_eq!(waiter.join().expect("no panic"), Ok(()));
+    });
+}
+
+#[test]
+fn a_waiting_stream_stays_cancellable_and_leaves_no_permit_taken() {
+    let gate = Gate::new(1);
+    let held = gate.acquire(NO_WAIT, TICK, &|| false).expect("held");
+    let polls = std::cell::Cell::new(0u32);
+    let result = gate.acquire(FOR_EVER, TICK, &|| {
+        polls.set(polls.get() + 1);
+        polls.get() > 3
+    });
+    assert_eq!(result.err(), Some(NoPermit::Cancelled));
+    assert!(
+        polls.get() > 3,
+        "it waited, looking, until it was cancelled"
+    );
+    drop(held);
+    gate.acquire(NO_WAIT, TICK, &|| false)
+        .expect("the cancelled waiter took nothing");
+
+    // Cancelled before it even asks: no permit is taken although one is free.
+    let free = Gate::new(1);
+    assert_eq!(
+        free.acquire(FOR_EVER, TICK, &|| true).err(),
+        Some(NoPermit::Cancelled)
+    );
+    free.acquire(NO_WAIT, TICK, &|| false).expect("still free");
+}
+
+#[test]
+fn a_permit_comes_back_when_its_holder_panics() {
+    let gate = Gate::new(1);
+    let died = std::thread::scope(|s| {
+        s.spawn(|| {
+            let _permit = gate.acquire(NO_WAIT, TICK, &|| false).expect("held");
+            panic!("a decoder bug");
+        })
+        .join()
+    });
+    assert!(died.is_err());
+    gate.acquire(NO_WAIT, TICK, &|| false)
+        .expect("the permit of the dead decode is back");
+}
+
+#[test]
+fn the_estimates_count_bytes_per_format_and_the_cap_is_256_mib() {
+    let mib = 1024 * 1024u64;
+    assert_eq!(MAX_DECODE_BYTES, 256 * mib);
+    // A progressive 4:4:4 JPEG keeps 6 bytes a pixel of coefficients; the
+    // same size as baseline, decoded at 1/8, needs next to nothing.
+    let progressive = jpeg_decode_bytes((8000, 8000), (1000, 1000), 3, true);
+    assert_eq!(progressive, 8000 * 8000 * 6 + 2 * 1000 * 1000 * 3);
+    assert!(progressive > MAX_DECODE_BYTES);
+    assert!(jpeg_decode_bytes((8000, 8000), (1000, 1000), 3, false) < 8 * mib);
+    // A 12 MP progressive photo (the common big one) is fine.
+    assert!(jpeg_decode_bytes((4000, 3000), (500, 375), 3, true) < MAX_DECODE_BYTES / 3);
+
+    // WebP: output plus what the decoder keeps next to it.
+    let px = 1_000_000;
+    assert_eq!(webp_decode_bytes(1000, 1000, false, false, true), px * 6);
+    assert_eq!(webp_decode_bytes(1000, 1000, false, false, false), px * 7);
+    assert_eq!(webp_decode_bytes(1000, 1000, true, false, false), px * 4);
+    assert_eq!(webp_decode_bytes(1000, 1000, true, true, true), px * 14);
+    assert!(
+        webp_decode_bytes(6500, 6500, false, false, false) > MAX_DECODE_BYTES,
+        "a 42 MP lossless WebP is 296 MB, over the cap that 25 MP (175 MB) is under"
+    );
+    assert!(webp_decode_bytes(5000, 5000, false, false, false) < MAX_DECODE_BYTES);
+
+    // GIF: a frame and a canvas, 8 bytes a pixel.
+    assert_eq!(gif_decode_bytes(1000, 1000), px * 8);
+    assert!(gif_decode_bytes(8000, 8000) > MAX_DECODE_BYTES);
+
+    // PNG: rows when they can stream, the whole picture when interlaced.
+    assert_eq!(png_rows_decode_bytes(1000, 4), 12_000);
+    assert_eq!(png_interlaced_decode_bytes(1000, 1000, 4), (px + 3000) * 4);
+    assert!(png_interlaced_decode_bytes(8000, 8000, 4) < MAX_DECODE_BYTES);
+    assert!(png_interlaced_decode_bytes(10_000, 10_000, 4) > MAX_DECODE_BYTES);
+}
+
+#[test]
+fn a_picture_that_needs_too_many_bytes_is_too_large_from_its_header_alone() {
+    // 8000 x 8000 is under the 64 MP cap, but each of these needs over 256 MiB.
+    for (what, bytes) in [
+        ("gif", gif_header_only(8000, 8000)),
+        ("webp", webp_header_only(8000, 8000)),
+        // RGBA, Adam7: the whole picture is decoded, 4 bytes a pixel.
+        ("interlaced png", png_header(8192, 8192, 6, 1)),
+    ] {
+        let e = thumb_of(&bytes, 256).err_or(what);
+        assert_eq!(e.code, ErrorCode::TooLarge, "{what}: {}", e.message);
     }
 }

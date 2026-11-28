@@ -148,7 +148,7 @@ examples, an availability check, and a handler that runs on the stream's own thr
 | `herdr` | `mux`: herdr's API with pipelining, answers cut to the fields the app reads, and row deltas for repeated screen reads; `events`: the subscription, cut the same way, with optional `coalesce_ms` (below) | the client sends the projections; the host knows no field names |
 | `keeper` | `probe`, `list`, `start`, `history`, `kill`, `attach`, `follow`, `blob`: agent sessions and the log reader | every client string is validated (agent is a route id, folder exists, keeper id shape, log path absolute, `.jsonl`, under the home folder) |
 | `fs` | `stat`, `list`, `real_path`, `read`, `watch`, `thumb`, `search` | **read-only**; reads what the SSH user can read, as SFTP did; `thumb` decodes a picture and `search` walks folders, both bounded (below) |
-| `transfer` | `reserve`, `put`, `sweep` | the **only writes** the helper makes: inside `~/.herdr-mobile/inbox/<12 hex>/`, with names and sizes decided on the host (sanitised name, 0700 folders, 0600 files, 2 GiB cap, sha256 verified, resumable) |
+| `transfer` | `reserve`, `put`, `sweep` | the **only writes** the helper makes: inside `~/.herdr-mobile/inbox/<12 hex>/`, with names and sizes decided on the host (sanitised name, 0700 folders, 0600 files, 2 GiB cap, sha256 verified, resumable); link rules below |
 | `ports` | `list`, `watch`, `probe` | lists TCP listeners (Linux: `/proc/net/tcp*` and the user's own `/proc/<pid>/fd`; macOS: `lsof`); `watch` remembers which process owns each socket, so a tick in which nothing changed reads only `/proc/net/tcp{,6}` and walks no `/proc/<pid>/fd`; `probe` connects to loopback only |
 | `made` | `verify`: one batch of path and port checks | metadata and listener state only |
 
@@ -179,6 +179,24 @@ or written on the host. Why it exists: a tile used to be the whole file over the
 radio (up to 2 MiB) or, for a bigger photo, a glyph. It is pure Rust
 (`jpeg-decoder`, which decodes a JPEG at a fraction of its size by scaling in the
 DCT, `png`, `image-webp`, `gif`, `jpeg-encoder`; `rust/crates/host/src/svc/thumb.rs`).
+
+*What a decode may cost.* Pixels alone say little: a 2 KB file can describe a picture
+whose decode needs 0.4-0.8 GB (a progressive JPEG keeps every coefficient, 6 bytes a
+pixel at 4:4:4; a GIF holds a frame and a canvas, 8 bytes a pixel; a lossless WebP
+holds its output and an RGBA buffer, 7). So the header gives a byte estimate per
+format (`jpeg_decode_bytes` and its siblings in `thumb.rs`, worst case where the
+header says no more: the chroma subsampling of a JPEG is not in it, so 4:2:0 counts
+as 4:4:4) and over 256 MiB is `too_large`, the 64 MP and 64 MiB limits staying. At
+most two pictures decode at once in the whole `serve` process; a third waits (the
+stream stays cancellable, and holds no buffer) and ends with `busy` (retryable) after
+10 s, so one host's peak is two estimates, not one per open stream. An interlaced
+(Adam7) PNG cannot be fed row by row, because `next_row` yields the narrow rows of one
+pass: it is decoded whole into one buffer of at most 4 bytes a pixel (the estimate
+counts it) and resized, while other PNGs still stream row by row. A WebP's EXIF, ICC
+and XMP chunks are sized by the file itself (a 100-byte file can announce 4 GiB, and
+`image-webp` allocates what it is told), so the decoder is given a 1 MiB limit for
+them: a block over it is not read and the picture comes out upright.
+
 Measured on a desktop, release
 build, warm file cache, not a phone: a 4000x3000 3.3 MB JPEG takes 44.6 ms (median)
 and gives 9,401 bytes at 256 px, 66.8 ms and 87,756 bytes at 1024 px; a 12 MP PNG
@@ -202,6 +220,22 @@ the stream and the walk stops within 256 entries
 entries scanned in 10-13 ms on the host. Without the helper (or when it answers
 `unknown_method`) the app walks over SFTP instead, capped at 3,000 entries and 4 s,
 and says when that cut it short (`app/lib/data/services/file_walk_search.dart`).
+
+**`transfer`: links and names.** `~/.herdr-mobile` and `inbox` may be symlinks, and
+are followed: people keep their dotfiles with stow or chezmoi or on a data disk, and
+when the helper refused the link they could never upload and the inbox never
+shrank (`sweep` returned 0). Both are resolved once per call and every operation
+works under the real path, so a `put` takes the path `reserve` gave (under the home)
+or the real path of the same inbox, and nothing else: exactly
+`<inbox>/<12 hex>/<stamp>-<name>`, no `..`. Below the inbox nothing is followed: the
+session folder is made by `reserve`, so a link there was planted and is `bad_request`,
+and so is a link as the file's own name; `sweep` skips a linked session folder and
+never removes or follows a linked file. A link to a file, or to nothing, where a
+folder belongs is `not_a_directory` / `not_found`. `put` keeps leaves ending in
+`.part` and `.meta` for its own companion files, so `reserve` puts a `_` after a name
+that ends that way (`weights.ckpt.meta` becomes `...-weights.ckpt.meta_`): it used to
+hand the name out and then refuse the upload of it. Names carry the UTC time, not the
+phone's.
 
 ## Backends: adding another multiplexer
 
@@ -233,7 +267,7 @@ wire, or the other services changes.
 
 ## Footprint (measured on a desktop Linux machine, release build)
 
-The binary is 1.87 MB stripped (1,867,056 bytes; 1,434,016 before the picture
+The binary is 1.87 MB stripped (1,872,648 bytes; 1,434,016 before the picture
 decoders and encoder, +423 KiB). After the handshake `serve` holds 3.8 MB resident
 when idle (`VmRSS`). Each open stream adds a thread, which costs address space for
 its 2 MiB stack and only the pages it touches in memory; a 1024 px thumbnail is the

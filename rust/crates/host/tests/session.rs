@@ -517,13 +517,20 @@ fn a_download_stops_at_the_window_until_the_client_grants_more() {
     let mut c = start();
     let window = Limits::default().window as usize;
     let id = c.open("test", "download", json!({"bytes": 2 * window}), false);
+    // Wait until the whole window has arrived (`next` fails after `WAIT`, far
+    // longer than a busy machine needs), instead of counting what arrives in
+    // one fixed look: a slow runner delivered fewer bytes in 500 ms.
     let mut got = 0usize;
-    while let Some(f) = c.try_next(Duration::from_millis(500)) {
+    while got < window {
+        let f = c.next();
         if f.kind == Kind::Data {
             got += f.payload.len();
         }
     }
     assert_eq!(got, window, "the host must stop at the granted window");
+    // Nothing more comes without credit (a negative check: a short look can
+    // only miss a violation, never report a false one).
+    assert!(c.try_next(Duration::from_millis(200)).is_none());
     c.send(&Frame::credit(id, u32::try_from(window).expect("fits")));
     let mut ended = false;
     while !ended {

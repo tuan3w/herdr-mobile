@@ -79,7 +79,7 @@
           "name": "thumb",
           "kind": "stream",
           "class": "bulk",
-          "summary": "A JPEG thumbnail of a picture (JPEG, PNG, WebP, GIF first frame; no HEIC, SVG or RAW). The longest edge is `max_px` (32..1024, default 256), never enlarged; `quality` is 30..90 (default 70); EXIF orientation is applied. First MSG {width,height,size,mtime_ms,format:\"jpeg\",source_size}: width and height of the thumbnail, size, mtime_ms and source_size of the source file. Then DATA (the JPEG bytes), then END {}. `if_match` differing from the file ends with error `changed` before anything is decoded. Errors not_found, permission, not_a_file, too_large (source over 64 MiB or 64 Mpx), changed, failed with a message starting `unsupported image` for anything that cannot be decoded. Nothing is cached or written on the host.",
+          "summary": "A JPEG thumbnail of a picture (JPEG, PNG, WebP, GIF first frame; no HEIC, SVG or RAW). The longest edge is `max_px` (32..1024, default 256), never enlarged; `quality` is 30..90 (default 70); EXIF orientation is applied. First MSG {width,height,size,mtime_ms,format:\"jpeg\",source_size}: width and height of the thumbnail, size, mtime_ms and source_size of the source file. Then DATA (the JPEG bytes), then END {}. `if_match` differing from the file ends with error `changed` before anything is decoded. Errors not_found, permission, not_a_file, too_large (source over 64 MiB or 64 Mpx, or a decode that the header says needs over 256 MiB), changed, busy (retryable: two other pictures were still being decoded after 10 s; only two decode at once), failed with a message starting `unsupported image` for anything that cannot be decoded. Nothing is cached or written on the host.",
           "args": {
             "path": "~/Pictures/cat.jpg",
             "max_px": 256,
@@ -413,7 +413,7 @@
           "name": "reserve",
           "kind": "call",
           "class": "interactive",
-          "summary": "Picks the inbox path for the phone file `name` of the session `key` and creates its folders (0700). The name is made safe (letters of any script, digits, `.-_`; never a dotfile; at most 100 characters) and unique (-2, -3 before the extension).",
+          "summary": "Picks the inbox path for the phone file `name` of the session `key` and creates its folders (0700). The name is made safe (letters of any script, digits, `.-_`; never a dotfile; at most 100 characters; a name ending `.part` or `.meta`, which `put` keeps for its own files, gets a `_` after it) and unique (-2, -3 before the extension). `~/.herdr-mobile` and `inbox` may be links (they are followed); the session folder may not (bad_request).",
           "args": {
             "key": "session-1",
             "name": "Report 1.pdf"
@@ -426,7 +426,7 @@
           "name": "put",
           "kind": "stream",
           "class": "bulk",
-          "summary": "Uploads one file to a reserved path. The host answers MSG {have} (bytes it already holds of this exact upload, resume from there), the client sends DATA from `have` and then END; the host checks size and sha256, renames into place (mode 0600) and ends {path,size}. A mismatch deletes the partial file and ends with error `changed`; a dropped connection keeps it for the next try. At most 2 GiB (too_large).",
+          "summary": "Uploads one file to a reserved path (the path `reserve` gave, or the real path of the same inbox). The host answers MSG {have} (bytes it already holds of this exact upload, resume from there), the client sends DATA from `have` and then END; the host checks size and sha256, renames into place (mode 0600) and ends {path,size}. A mismatch deletes the partial file and ends with error `changed`; a dropped connection keeps it for the next try. A link as the session folder or as the file's name is refused (bad_request). At most 2 GiB (too_large).",
           "args": {
             "path": "/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf",
             "size": 1204,
@@ -441,7 +441,7 @@
           "name": "sweep",
           "kind": "call",
           "class": "interactive",
-          "summary": "Removes regular files older than `max_age_days` directly inside the inbox's session folders, oldest first, at most `max_files`, plus unfinished uploads untouched for a day, then the folders that are left empty. Links are never followed or removed; nothing outside the inbox is touched.",
+          "summary": "Removes regular files older than `max_age_days` directly inside the inbox's session folders, oldest first, at most `max_files`, plus unfinished uploads untouched for a day, then the folders that are left empty. A link at `~/.herdr-mobile` or `inbox` is followed; below the inbox links are never followed or removed; nothing outside the inbox is touched.",
           "args": {
             "max_age_days": 14,
             "max_files": 200

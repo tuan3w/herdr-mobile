@@ -10,6 +10,12 @@
 //! path cannot leave the inbox. The naming rules are a port of the app's
 //! `inboxSafeName` / `HostInbox` (`host_inbox.dart`), whose cases are tests
 //! here.
+//!
+//! Links: `~/.herdr-mobile` and `inbox` may be links (stow, chezmoi and a data
+//! disk make them so); both are resolved once per call and the work happens
+//! under the real path. Below that nothing is followed: the session folder is
+//! made by this service, so a link there, or at the file's own name, was
+//! planted and is refused (`bad_request`).
 
 use crate::service::{Class, MethodKind, MethodSpec, Service};
 use crate::session::{Incoming, StreamCtx};
@@ -58,7 +64,7 @@ static METHODS: &[MethodSpec] = &[
         name: "reserve",
         kind: MethodKind::Call,
         class: Class::Interactive,
-        summary: "Picks the inbox path for the phone file `name` of the session `key` and creates its folders (0700). The name is made safe (letters of any script, digits, `.-_`; never a dotfile; at most 100 characters) and unique (-2, -3 before the extension).",
+        summary: "Picks the inbox path for the phone file `name` of the session `key` and creates its folders (0700). The name is made safe (letters of any script, digits, `.-_`; never a dotfile; at most 100 characters; a name ending `.part` or `.meta`, which `put` keeps for its own files, gets a `_` after it) and unique (-2, -3 before the extension). `~/.herdr-mobile` and `inbox` may be links (they are followed); the session folder may not (bad_request).",
         args_example: r#"{"key":"session-1","name":"Report 1.pdf"}"#,
         result_example: r#"{"path":"/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf"}"#,
     },
@@ -66,7 +72,7 @@ static METHODS: &[MethodSpec] = &[
         name: "put",
         kind: MethodKind::Stream,
         class: Class::Bulk,
-        summary: "Uploads one file to a reserved path. The host answers MSG {have} (bytes it already holds of this exact upload, resume from there), the client sends DATA from `have` and then END; the host checks size and sha256, renames into place (mode 0600) and ends {path,size}. A mismatch deletes the partial file and ends with error `changed`; a dropped connection keeps it for the next try. At most 2 GiB (too_large).",
+        summary: "Uploads one file to a reserved path (the path `reserve` gave, or the real path of the same inbox). The host answers MSG {have} (bytes it already holds of this exact upload, resume from there), the client sends DATA from `have` and then END; the host checks size and sha256, renames into place (mode 0600) and ends {path,size}. A mismatch deletes the partial file and ends with error `changed`; a dropped connection keeps it for the next try. A link as the session folder or as the file's name is refused (bad_request). At most 2 GiB (too_large).",
         args_example: r#"{"path":"/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf","size":1204,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}"#,
         result_example: r#"{"path":"/home/dev/.herdr-mobile/inbox/a9993e364706/20261005-090807-Report_1.pdf","size":1204}"#,
     },
@@ -74,7 +80,7 @@ static METHODS: &[MethodSpec] = &[
         name: "sweep",
         kind: MethodKind::Call,
         class: Class::Interactive,
-        summary: "Removes regular files older than `max_age_days` directly inside the inbox's session folders, oldest first, at most `max_files`, plus unfinished uploads untouched for a day, then the folders that are left empty. Links are never followed or removed; nothing outside the inbox is touched.",
+        summary: "Removes regular files older than `max_age_days` directly inside the inbox's session folders, oldest first, at most `max_files`, plus unfinished uploads untouched for a day, then the folders that are left empty. A link at `~/.herdr-mobile` or `inbox` is followed; below the inbox links are never followed or removed; nothing outside the inbox is touched.",
         args_example: r#"{"max_age_days":14,"max_files":200}"#,
         result_example: r#"{"removed":3}"#,
     },
@@ -296,31 +302,31 @@ fn inbox_base(home: &Path) -> PathBuf {
     home.join(HOME_FOLDER).join("inbox")
 }
 
-/// Makes sure `<home>/.herdr-mobile/inbox/<folder>` is a real folder (0700 when
-/// created, others left as they were) and returns it. A link anywhere below
-/// the home is refused: the inbox is never reached through one.
-fn ensure_session_dir(home: &Path, folder: &str) -> Result<PathBuf, WireError> {
+/// The real `<home>/.herdr-mobile/inbox`, made (0700 when created, others left
+/// as they were) when missing. A link at `.herdr-mobile` or at `inbox` is
+/// followed: people keep their dotfiles with stow or chezmoi, or on a data
+/// disk, and refusing the link meant they could never upload and the inbox
+/// never shrank. Both are resolved once, here, and the caller works under the
+/// returned real path. Nothing below `inbox` is ever reached through a link
+/// (see [`ensure_session_dir`]).
+fn real_inbox(home: &Path) -> Result<PathBuf, WireError> {
     let mut path = home.to_path_buf();
     let mut label = String::from("~");
-    for part in [HOME_FOLDER, "inbox", folder] {
+    for part in [HOME_FOLDER, "inbox"] {
         path.push(part);
         label.push('/');
         label.push_str(part);
-        match fs::symlink_metadata(&path) {
-            Ok(m) if m.file_type().is_symlink() => {
-                return Err(WireError::new(
-                    ErrorCode::BadRequest,
-                    format!("{label}: is a link; the inbox is never reached through one"),
-                ));
-            }
-            Ok(m) if !m.is_dir() => {
+        // `metadata` follows a link, so a link to a folder passes and a link
+        // to a file or to nothing does not.
+        match fs::metadata(&path) {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => {
                 return Err(WireError::new(
                     ErrorCode::NotADirectory,
                     format!("{label}: is not a folder"),
                 ));
             }
-            Ok(_) => {}
-            Err(e) if e.kind() == ErrorKind::NotFound => {
+            Err(e) if e.kind() == ErrorKind::NotFound && fs::symlink_metadata(&path).is_err() => {
                 match fs::DirBuilder::new().mode(0o700).create(&path) {
                     Ok(()) => {}
                     Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
@@ -329,6 +335,44 @@ fn ensure_session_dir(home: &Path, folder: &str) -> Result<PathBuf, WireError> {
             }
             Err(e) => return Err(io_error(&e, &label)),
         }
+    }
+    fs::canonicalize(&path).map_err(|e| io_error(&e, &label))
+}
+
+/// The real inbox when it exists, without creating anything.
+fn existing_inbox(home: &Path) -> Option<PathBuf> {
+    let real = fs::canonicalize(inbox_base(home)).ok()?;
+    real.is_dir().then_some(real)
+}
+
+/// Makes sure `<real inbox>/<folder>` is a real folder (0700 when created,
+/// others left as they were) and returns it. A link at the session folder is
+/// refused: this service makes that folder itself, so a link there was planted.
+fn ensure_session_dir(home: &Path, folder: &str) -> Result<PathBuf, WireError> {
+    let path = real_inbox(home)?.join(folder);
+    let label = format!("~/{HOME_FOLDER}/inbox/{folder}");
+    match fs::symlink_metadata(&path) {
+        Ok(m) if m.file_type().is_symlink() => {
+            return Err(WireError::new(
+                ErrorCode::BadRequest,
+                format!("{label}: is a link; a session folder is never one"),
+            ));
+        }
+        Ok(m) if !m.is_dir() => {
+            return Err(WireError::new(
+                ErrorCode::NotADirectory,
+                format!("{label}: is not a folder"),
+            ));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            match fs::DirBuilder::new().mode(0o700).create(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(io_error(&e, &label)),
+            }
+        }
+        Err(e) => return Err(io_error(&e, &label)),
     }
     Ok(path)
 }
@@ -347,19 +391,23 @@ fn taken_insert(path: &Path) -> bool {
 /// process handed out is using.
 ///
 /// # Errors
-/// `bad_request` when the inbox is reached through a link, `permission` and
-/// the like when the folders cannot be made.
+/// `bad_request` when the session folder is a link, `not_a_directory` when
+/// `.herdr-mobile` or `inbox` is not a folder (a link to a folder is fine),
+/// `permission` and the like when the folders cannot be made.
 pub fn reserve_path(
     home: &Path,
     key: &str,
     name: &str,
     now: SystemTime,
 ) -> Result<PathBuf, WireError> {
-    let dir = ensure_session_dir(home, &session_folder(key))?;
-    let safe = safe_name(name);
+    let folder = session_folder(key);
+    let dir = ensure_session_dir(home, &folder)?;
+    let safe = reserve_leaf(name);
     let stamp = stamp(now);
     for n in 1..10_000 {
         let leaf = numbered(&stamp, &safe, n);
+        // Checked and remembered under the real folder, handed out under the
+        // home: that is the path the app puts in the prompt and `put` accepts.
         let path = dir.join(&leaf);
         if !taken_insert(&path) {
             continue;
@@ -368,12 +416,24 @@ pub fn reserve_path(
         if used(&path) || used(&dir.join(format!("{leaf}.part"))) {
             continue;
         }
-        return Ok(path);
+        return Ok(inbox_base(home).join(&folder).join(&leaf));
     }
     Err(WireError::new(
         ErrorCode::Failed,
         "too many files with this name in this second",
     ))
+}
+
+/// The safe name of `raw` for `reserve`: `put` keeps the leaves ending in
+/// `.part` and `.meta` for its own companion files, so a name that ends that
+/// way (`weights.ckpt.meta`) gets a `_` after it, or it would be reserved and
+/// then never accepted.
+fn reserve_leaf(raw: &str) -> String {
+    let mut safe = safe_name(raw);
+    if safe.ends_with(".part") || safe.ends_with(".meta") {
+        safe.push('_');
+    }
+    safe
 }
 
 fn is_session_folder(name: &str) -> bool {
@@ -401,8 +461,10 @@ fn is_inbox_name(name: &str) -> bool {
 }
 
 /// Splits `given` into the session folder and the file name when it is
-/// exactly `<home>/.herdr-mobile/inbox/<12 hex>/<inbox name>` and nothing else
-/// (no `..`, `.`, doubled or extra separators, other parents).
+/// exactly `<inbox>/<12 hex>/<inbox name>` and nothing else (no `..`, `.`,
+/// doubled or extra separators, other parents). `<inbox>` is the path under
+/// the home that `reserve` hands out, or the real path it resolves to when
+/// `.herdr-mobile` or `inbox` is a link: both name the one inbox.
 fn parse_inbox_path(home: &Path, given: &str) -> Result<(String, String), WireError> {
     let bad = || {
         WireError::new(
@@ -410,20 +472,20 @@ fn parse_inbox_path(home: &Path, given: &str) -> Result<(String, String), WireEr
             format!("{given:?} is not a path the inbox handed out"),
         )
     };
-    let base = inbox_base(home);
-    let base = base.to_str().ok_or_else(bad)?;
-    let rest = given
-        .strip_prefix(base)
-        .and_then(|r| r.strip_prefix('/'))
-        .ok_or_else(bad)?;
-    let mut parts = rest.split('/');
-    let (Some(folder), Some(name), None) = (parts.next(), parts.next(), parts.next()) else {
-        return Err(bad());
+    let under = |base: &Path| -> Option<(String, String)> {
+        let rest = given
+            .strip_prefix(base.to_str()?)
+            .and_then(|r| r.strip_prefix('/'))?;
+        let mut parts = rest.split('/');
+        let (Some(folder), Some(name), None) = (parts.next(), parts.next(), parts.next()) else {
+            return None;
+        };
+        (is_session_folder(folder) && is_inbox_name(name))
+            .then(|| (folder.to_string(), name.to_string()))
     };
-    if !is_session_folder(folder) || !is_inbox_name(name) {
-        return Err(bad());
-    }
-    Ok((folder.to_string(), name.to_string()))
+    under(&inbox_base(home))
+        .or_else(|| existing_inbox(home).and_then(|real| under(&real)))
+        .ok_or_else(bad)
 }
 
 // ---- put ----
@@ -585,11 +647,20 @@ fn put(ctx: &StreamCtx) -> Result<Value, WireError> {
     let (folder, name) = parse_inbox_path(ctx.home(), &args.path)?;
     let dir = ensure_session_dir(ctx.home(), &folder)?;
     let target = dir.join(&name);
-    if fs::symlink_metadata(&target).is_ok_and(|m| m.is_dir()) {
-        return Err(WireError::new(
-            ErrorCode::NotAFile,
-            format!("{}: is a folder", args.path),
-        ));
+    match fs::symlink_metadata(&target) {
+        Ok(m) if m.file_type().is_symlink() => {
+            return Err(WireError::new(
+                ErrorCode::BadRequest,
+                format!("{}: is a link; an upload never replaces one", args.path),
+            ));
+        }
+        Ok(m) if m.is_dir() => {
+            return Err(WireError::new(
+                ErrorCode::NotAFile,
+                format!("{}: is a folder", args.path),
+            ));
+        }
+        _ => {}
     }
     let _busy = Busy::acquire(&target)?;
     let part = companion(&dir, &name, "part");
@@ -646,12 +717,13 @@ fn put(ctx: &StreamCtx) -> Result<Value, WireError> {
 
 /// Removes old files from the inbox's session folders; returns how many went.
 /// Best effort: what cannot be listed or removed is left for the next sweep.
+/// A link at `.herdr-mobile` or `inbox` is followed (see [`real_inbox`]);
+/// below the inbox no link is: a linked session folder is skipped and a linked
+/// file is not a file here.
 fn sweep(home: &Path, max_age: Duration, max_files: usize, now: SystemTime) -> usize {
-    let is_real_dir = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir());
-    let base = inbox_base(home);
-    if !is_real_dir(&home.join(HOME_FOLDER)) || !is_real_dir(&base) {
+    let Some(base) = existing_inbox(home) else {
         return 0;
-    }
+    };
     let Ok(folders) = fs::read_dir(&base) else {
         return 0;
     };
@@ -891,6 +963,12 @@ mod tests {
             "tài liệu.pdf",
             r"..\..\x",
             "/etc/passwd",
+            "x.meta",
+            "weights.ckpt.meta",
+            "y.part",
+            "archive.tar.part",
+            ".part",
+            "report.part/",
         ] {
             let path = reserve_path(home.path(), "s", name, at_now()).expect(name);
             assert_eq!(path.parent(), Some(folder.as_path()), "{name:?}");
@@ -902,6 +980,33 @@ mod tests {
                 "put must accept what reserve gives: {leaf}"
             );
         }
+    }
+
+    /// `put` refuses a leaf ending in `.part` or `.meta` (they are its own
+    /// companions), so `reserve` must never hand one out: `x.meta` and
+    /// `weights.ckpt.meta` are ordinary attachments.
+    #[test]
+    fn a_name_that_looks_like_an_upload_companion_never_ends_that_way() {
+        let home = tempfile::tempdir().expect("home");
+        for (name, want) in [
+            ("x.meta", "20261005-090807-x.meta_"),
+            ("weights.ckpt.meta", "20261005-090807-weights.ckpt.meta_"),
+            ("y.part", "20261005-090807-y.part_"),
+            ("photo.jpg", "20261005-090807-photo.jpg"),
+        ] {
+            let path = reserve_path(home.path(), "s", name, at_now()).expect(name);
+            assert_eq!(path.file_name().and_then(|l| l.to_str()), Some(want));
+        }
+        // The second of two equal names is numbered before the extension, and
+        // still does not end in a companion's.
+        let folder = home
+            .path()
+            .join(".herdr-mobile/inbox")
+            .join(session_folder("s"));
+        fs::write(folder.join("20261005-090807-x.meta_"), b"x").expect("taken");
+        let second = reserve_path(home.path(), "s", "x.meta", at_now()).expect("second");
+        let leaf = second.file_name().and_then(|l| l.to_str()).expect("leaf");
+        assert!(is_inbox_name(leaf), "{leaf}");
     }
 
     #[test]
@@ -971,27 +1076,72 @@ mod tests {
         );
     }
 
+    /// `~/.herdr-mobile` and `inbox` are often links (stow, chezmoi, a data
+    /// disk): both are followed, and the work happens under the real path. A
+    /// session folder is made by this service alone, so a link there is never
+    /// followed.
     #[test]
-    fn an_inbox_reached_through_a_link_is_refused() {
-        let home = tempfile::tempdir().expect("home");
+    fn a_link_at_the_state_folder_or_the_inbox_is_followed_but_not_one_at_the_session_folder() {
         let elsewhere = tempfile::tempdir().expect("elsewhere");
-        let state = home.path().join(".herdr-mobile");
-        fs::create_dir(&state).expect("state");
-        symlink(elsewhere.path(), state.join("inbox")).expect("link");
-        assert_eq!(
-            wire_code(reserve_path(home.path(), "s", "x", at_now())),
-            ErrorCode::BadRequest
-        );
-        assert_eq!(fs::read_dir(elsewhere.path()).expect("list").count(), 0);
+        let folder = session_folder("s");
 
-        let second = tempfile::tempdir().expect("home");
-        let inbox = second.path().join(".herdr-mobile/inbox");
-        fs::create_dir_all(&inbox).expect("inbox");
-        symlink(elsewhere.path(), inbox.join(session_folder("s"))).expect("link");
+        // `.herdr-mobile` is a link.
+        let home = tempfile::tempdir().expect("home");
+        let state = elsewhere.path().join("state");
+        fs::create_dir(&state).expect("state");
+        symlink(&state, home.path().join(".herdr-mobile")).expect("link");
+        let path = reserve_path(home.path(), "s", "x", at_now()).expect("linked state folder");
         assert_eq!(
-            wire_code(reserve_path(second.path(), "s", "x", at_now())),
+            path.parent(),
+            Some(
+                home.path()
+                    .join(".herdr-mobile/inbox")
+                    .join(&folder)
+                    .as_path()
+            ),
+            "the path handed out stays under the home"
+        );
+        assert!(state.join("inbox").join(&folder).is_dir());
+
+        // `inbox` is a link.
+        let second = tempfile::tempdir().expect("home");
+        let store = elsewhere.path().join("store");
+        fs::create_dir(&store).expect("store");
+        fs::create_dir(second.path().join(".herdr-mobile")).expect("state");
+        symlink(&store, second.path().join(".herdr-mobile/inbox")).expect("link");
+        reserve_path(second.path(), "s", "x", at_now()).expect("linked inbox");
+        assert!(store.join(&folder).is_dir());
+
+        // A link to a file, or to nothing, is not a folder.
+        let third = tempfile::tempdir().expect("home");
+        fs::create_dir(third.path().join(".herdr-mobile")).expect("state");
+        let file = elsewhere.path().join("file");
+        fs::write(&file, b"x").expect("file");
+        symlink(&file, third.path().join(".herdr-mobile/inbox")).expect("link");
+        assert_eq!(
+            wire_code(reserve_path(third.path(), "s", "x", at_now())),
+            ErrorCode::NotADirectory
+        );
+        let fourth = tempfile::tempdir().expect("home");
+        fs::create_dir(fourth.path().join(".herdr-mobile")).expect("state");
+        symlink(
+            elsewhere.path().join("nothing"),
+            fourth.path().join(".herdr-mobile/inbox"),
+        )
+        .expect("link");
+        assert!(reserve_path(fourth.path(), "s", "x", at_now()).is_err());
+
+        // The session folder is a link: refused, nothing written outside.
+        let outside = tempfile::tempdir().expect("outside");
+        let fifth = tempfile::tempdir().expect("home");
+        let inbox = fifth.path().join(".herdr-mobile/inbox");
+        fs::create_dir_all(&inbox).expect("inbox");
+        symlink(outside.path(), inbox.join(&folder)).expect("link");
+        assert_eq!(
+            wire_code(reserve_path(fifth.path(), "s", "x", at_now())),
             ErrorCode::BadRequest
         );
+        assert_eq!(fs::read_dir(outside.path()).expect("list").count(), 0);
     }
 
     // ---- which paths `put` takes ----
@@ -1288,23 +1438,43 @@ mod tests {
         assert!(fs::symlink_metadata(inbox.base().join("eeeeeeeeeeee/old-link")).is_ok());
     }
 
+    /// Sweeping follows a link at `.herdr-mobile` or at `inbox` (one the user
+    /// made on purpose), or the inbox of such a home would grow for ever; below
+    /// the inbox nothing is followed.
     #[test]
-    fn sweep_through_a_linked_inbox_does_nothing() {
-        let home = tempfile::tempdir().expect("home");
+    fn sweep_works_through_a_linked_state_folder_and_a_linked_inbox() {
+        let store = tempfile::tempdir().expect("store");
         let outside = tempfile::tempdir().expect("outside");
-        fs::create_dir_all(outside.path().join("aaaaaaaaaaaa")).expect("folder");
-        let old = outside.path().join("aaaaaaaaaaaa/old");
-        fs::write(&old, b"x").expect("old");
-        File::options()
-            .write(true)
-            .open(&old)
-            .expect("open")
-            .set_modified(at_now() - DAY * 90)
-            .expect("mtime");
-        fs::create_dir(home.path().join(".herdr-mobile")).expect("state");
-        symlink(outside.path(), home.path().join(".herdr-mobile/inbox")).expect("link");
-        assert_eq!(sweep(home.path(), DAY * 14, 200, at_now()), 0);
-        assert!(old.exists());
+        let old = |path: &Path| {
+            fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+            fs::write(path, b"x").expect("file");
+            File::options()
+                .write(true)
+                .open(path)
+                .expect("open")
+                .set_modified(at_now() - DAY * 90)
+                .expect("mtime");
+        };
+
+        let first = tempfile::tempdir().expect("home");
+        let state = store.path().join("state");
+        old(&state.join("inbox/aaaaaaaaaaaa/old"));
+        symlink(&state, first.path().join(".herdr-mobile")).expect("link");
+        assert_eq!(sweep(first.path(), DAY * 14, 200, at_now()), 1);
+        assert!(!state.join("inbox/aaaaaaaaaaaa/old").exists());
+
+        let second = tempfile::tempdir().expect("home");
+        let boxed = store.path().join("box");
+        old(&boxed.join("aaaaaaaaaaaa/old"));
+        let decoy = outside.path().join("decoy");
+        old(&decoy);
+        symlink(outside.path(), boxed.join("bbbbbbbbbbbb")).expect("linked folder");
+        fs::create_dir(second.path().join(".herdr-mobile")).expect("state");
+        symlink(&boxed, second.path().join(".herdr-mobile/inbox")).expect("link");
+        assert_eq!(sweep(second.path(), DAY * 14, 200, at_now()), 1);
+        assert!(!boxed.join("aaaaaaaaaaaa/old").exists());
+        assert!(decoy.exists(), "a link below the inbox is not followed");
+        assert!(fs::symlink_metadata(boxed.join("bbbbbbbbbbbb")).is_ok());
     }
 
     #[test]

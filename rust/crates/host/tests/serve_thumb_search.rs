@@ -200,6 +200,77 @@ fn thumb_over_the_real_binary_returns_msg_jpeg_end_and_the_typed_errors() {
     );
 }
 
+/// A lossless WebP in a VP8X container whose EXIF flag is set and whose EXIF
+/// chunk announces about 4 GiB but holds no bytes (a 100-byte file).
+fn webp_announcing_4_gib_of_exif(w: u32, h: u32) -> Vec<u8> {
+    let mut plain = Vec::new();
+    image_webp::WebPEncoder::new(&mut plain)
+        .encode(&gradient(w, h), w, h, image_webp::ColorType::Rgb8)
+        .expect("webp");
+    let u24 = |n: u32| n.to_le_bytes()[..3].to_vec();
+    let mut body = b"WEBPVP8X".to_vec();
+    body.extend(10u32.to_le_bytes());
+    body.push(0x08); // the EXIF flag
+    body.extend([0, 0, 0]);
+    body.extend(u24(w - 1));
+    body.extend(u24(h - 1));
+    body.extend(&plain[12..]); // the VP8L chunk
+    body.extend(b"EXIF");
+    body.extend(0xFFFF_FF00u32.to_le_bytes());
+    let mut out = b"RIFF".to_vec();
+    out.extend(u32::try_from(body.len()).expect("fits").to_le_bytes());
+    out.extend(body);
+    out
+}
+
+/// `image-webp` allocates a metadata chunk as long as its header says, so
+/// that file used to abort `serve` (a release build aborts on a failed
+/// allocation). The address space is capped at 2 GiB, so the 4 GiB request
+/// fails on any machine, whatever its overcommit setting: the old code died
+/// here, the stream now ends with the picture, upright, and the process lives.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_webp_announcing_4_gib_of_exif_neither_aborts_the_host_nor_allocates_it() {
+    let home = tempfile::tempdir().expect("home");
+    let mut child = Command::new("sh")
+        .args(["-c", "ulimit -v 2097152 && exec \"$0\" serve"])
+        .arg(env!("CARGO_BIN_EXE_herdr-host"))
+        .env("HOME", home.path())
+        .env_remove("HERDR_SOCKET_PATH")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn");
+    let stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let client = Client::connect(stdout, stdin, &client_hello(None));
+    let mut s = Serve {
+        client,
+        child,
+        home,
+    };
+    fs::write(
+        s.path().join("crafted.webp"),
+        webp_announcing_4_gib_of_exif(300, 200),
+    )
+    .expect("write");
+    fs::write(s.path().join("pic.jpg"), jpeg(300, 200)).expect("write");
+
+    let (msgs, data, end) = s.run("thumb", &json!({"path": "~/crafted.webp", "max_px": 100}));
+    end.expect("the picture still comes, the EXIF block is not read");
+    assert_eq!(
+        (msgs[0]["width"].clone(), msgs[0]["height"].clone()),
+        (json!(100), json!(67))
+    );
+    assert_eq!(dims(&data), (100, 67));
+
+    // The process is alive and serves the next request.
+    let (_, data, end) = s.run("thumb", &json!({"path": "~/pic.jpg", "max_px": 100}));
+    end.expect("still serving");
+    assert_eq!(dims(&data), (100, 67));
+}
+
 #[test]
 fn search_over_the_real_binary_finds_breadth_first_and_ends_with_the_summary() {
     let mut s = serve();

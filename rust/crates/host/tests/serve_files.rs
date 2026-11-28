@@ -1097,6 +1097,160 @@ fn put_refuses_an_inbox_reached_through_a_link() {
     assert_eq!(e.code, ErrorCode::BadRequest);
 }
 
+/// An upload cut off halfway, resumed on a new connection, then a sweep, in
+/// a home whose inbox lives at `real_inbox` behind a link the user made.
+fn linked_inbox_round_trip(home: &Home, real_inbox: &Path) {
+    let content = pseudo_random(3 * 1024 * 1024, 7);
+    let mut c = home.conn();
+    let path = reserve(&mut c, "k", "big.bin");
+    assert!(
+        path.starts_with(&format!("{}/", inbox(home.path()).display())),
+        "the app is handed a path under its home: {path}"
+    );
+    let folder = Path::new(&path).parent().expect("folder");
+    let real_folder = real_inbox.join(folder.file_name().expect("folder name"));
+    assert!(
+        real_folder.is_dir(),
+        "the folders were made behind the link"
+    );
+    let args = put_args(&path, &content);
+
+    let s = c.open("transfer", "put", &args);
+    assert_eq!(c.msg(s)["have"], 0);
+    c.send_data(s, &content[..1024 * 1024]);
+    wait_for_len(&PathBuf::from(format!("{path}.part")), 512 * 1024);
+    c.drop_link();
+
+    let mut c = home.conn();
+    let (s, have) = put_again(&mut c, &args);
+    assert!(have >= 512 * 1024, "resumed from {have}");
+    c.send_data(s, &content[usize::try_from(have).expect("fits")..]);
+    c.end(s);
+    c.ended(s).expect("the resumed upload ends well");
+    let leaf = Path::new(&path).file_name().expect("leaf");
+    let landed = real_folder.join(leaf);
+    assert_eq!(
+        sha256_hex(&fs::read(&landed).expect("landed behind the link")),
+        sha256_hex(&content)
+    );
+    assert_eq!(mode_of(&landed), 0o600);
+
+    // The real path is accepted too (it is the same inbox).
+    let real_path = real_folder
+        .canonicalize()
+        .expect("canonical")
+        .join(leaf)
+        .to_string_lossy()
+        .into_owned();
+    let again = b"second";
+    let s = c.open("transfer", "put", &put_args(&real_path, again));
+    assert_eq!(c.msg(s)["have"], 0);
+    c.send_data(s, again);
+    c.end(s);
+    c.ended(s).expect("the canonical path is the same inbox");
+    assert_eq!(fs::read(&landed).expect("replaced"), again);
+
+    // The sweep reaches the files behind the link as well.
+    let old = real_folder.join("old-file");
+    fs::write(&old, b"x").expect("old");
+    set_mtime(&old, SystemTime::now() - Duration::from_secs(30 * 86_400));
+    let r = c
+        .call("transfer", "sweep", &json!({}))
+        .expect("sweep through the link");
+    assert_eq!(r, json!({"removed": 1}));
+    assert!(!old.exists());
+    assert!(landed.exists(), "a fresh file stays");
+}
+
+#[test]
+fn uploads_and_sweeps_work_when_the_state_folder_is_a_link() {
+    let home = Home::new();
+    let store = tempfile::tempdir().expect("store");
+    let real = store.path().join("herdr-mobile");
+    fs::create_dir(&real).expect("real");
+    symlink(&real, home.path().join(".herdr-mobile")).expect("link");
+    linked_inbox_round_trip(&home, &real.join("inbox"));
+}
+
+#[test]
+fn uploads_and_sweeps_work_when_the_inbox_is_a_link() {
+    let home = Home::new();
+    let store = tempfile::tempdir().expect("store");
+    let real = store.path().join("inbox-on-the-data-disk");
+    fs::create_dir(&real).expect("real");
+    fs::create_dir(home.path().join(".herdr-mobile")).expect("state");
+    symlink(&real, inbox(home.path())).expect("link");
+    linked_inbox_round_trip(&home, &real);
+}
+
+#[test]
+fn a_link_at_the_session_folder_is_refused_even_behind_a_linked_inbox() {
+    let home = Home::new();
+    let store = tempfile::tempdir().expect("store");
+    let outside = tempfile::tempdir().expect("outside");
+    let real = store.path().join("inbox");
+    fs::create_dir(&real).expect("real");
+    fs::create_dir(home.path().join(".herdr-mobile")).expect("state");
+    symlink(&real, inbox(home.path())).expect("link");
+    let mut c = home.conn();
+    let good = reserve(&mut c, "k", "ok.txt");
+    let folder = real.join(
+        Path::new(&good)
+            .parent()
+            .and_then(Path::file_name)
+            .expect("name"),
+    );
+    fs::remove_dir(&folder).expect("remove folder");
+    symlink(outside.path(), &folder).expect("link");
+
+    let s = c.open("transfer", "put", &put_args(&good, b"data"));
+    assert_eq!(
+        c.ended(s).expect_err("linked folder").code,
+        ErrorCode::BadRequest
+    );
+    assert_eq!(fs::read_dir(outside.path()).expect("list").count(), 0);
+}
+
+#[test]
+fn put_refuses_a_link_planted_as_the_final_name() {
+    let home = Home::new();
+    let outside = tempfile::tempdir().expect("outside");
+    let decoy = outside.path().join("decoy");
+    fs::write(&decoy, b"precious").expect("decoy");
+    let mut c = home.conn();
+    let path = reserve(&mut c, "k", "x.bin");
+    symlink(&decoy, &path).expect("planted link");
+    let s = c.open("transfer", "put", &put_args(&path, b"new content"));
+    assert_eq!(
+        c.ended(s).expect_err("a link as the target").code,
+        ErrorCode::BadRequest
+    );
+    assert_eq!(fs::read(&decoy).expect("decoy"), b"precious");
+    assert!(fs::symlink_metadata(&path)
+        .expect("still there")
+        .file_type()
+        .is_symlink());
+}
+
+/// `put` keeps `.part` and `.meta` leaves for its own companions, so a
+/// reserved name must never end that way: `weights.ckpt.meta` is an ordinary
+/// attachment and used to fail every upload.
+#[test]
+fn attachments_named_like_the_upload_companions_reserve_and_upload() {
+    let home = Home::new();
+    let mut c = home.conn();
+    for name in ["x.meta", "weights.ckpt.meta", "y.part", "archive.tar.part"] {
+        let path = reserve(&mut c, "k", name);
+        let content = name.as_bytes();
+        let s = c.open("transfer", "put", &put_args(&path, content));
+        assert_eq!(c.msg(s)["have"], 0, "{name}");
+        c.send_data(s, content);
+        c.end(s);
+        c.ended(s).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(fs::read(&path).expect("final"), content, "{name}");
+    }
+}
+
 #[test]
 fn put_never_writes_through_a_link_planted_as_the_partial_file() {
     let home = Home::new();

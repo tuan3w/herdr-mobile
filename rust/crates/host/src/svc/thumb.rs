@@ -5,13 +5,21 @@
 //! for JPEG, `png`, `image-webp` and `gif` for the rest, and `jpeg-encoder` for
 //! the output. Nothing is written on the host.
 //!
-//! Memory is bounded without reading the file into memory: the header says how
-//! many pixels there are (over [`MAX_PIXELS`] is refused before any decoding),
-//! a JPEG is decoded at 1/2, 1/4 or 1/8 of its size (the decoder's own DCT
-//! scaling, so a 12 MP photo costs the work of a 0.2 MP one), and PNG rows
-//! are fed one at a time into an area-averaging [`Resizer`], so a big PNG
-//! never exists in memory as a whole. WebP and GIF decode into one buffer of
-//! the picture's size (at most 4 bytes a pixel).
+//! Memory is bounded in three layers, without reading the file into memory.
+//! The header says how many pixels there are (over [`MAX_PIXELS`] is refused
+//! before any decoding) and so what the decode would need at its peak, in
+//! bytes ([`MAX_DECODE_BYTES`]; the per-format estimates are by the `*_decode_bytes`
+//! functions: a small file can describe a picture whose decode costs far more
+//! than its pixels, a progressive JPEG keeps every coefficient, a lossless
+//! WebP or a GIF holds several buffers of the picture's size). A JPEG is
+//! decoded at 1/2, 1/4 or 1/8 of its size (the decoder's own DCT scaling, so a
+//! 12 MP photo costs the work of a 0.2 MP one), and PNG rows are fed one at a
+//! time into an area-averaging [`Resizer`], so a big PNG never exists in memory
+//! as a whole. The exception is an interlaced (Adam7) PNG: its rows arrive as
+//! seven passes of narrower rows, so it is decoded whole (at most 4 bytes a
+//! pixel, counted in the estimate) and resized from the buffer, like WebP and
+//! GIF. Last, at most [`DECODE_PERMITS`] pictures decode at once in the whole
+//! process, so the host's peak is that many estimates, not one per open stream.
 
 use crate::service::{Class, MethodKind, MethodSpec};
 use crate::session::{Compress, StreamCtx};
@@ -20,6 +28,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::sync::{Condvar, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 use wire::{ErrorCode, WireError};
 
 /// The biggest source file `fs.thumb` opens.
@@ -27,6 +37,26 @@ pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The most pixels (width times height) of a source: 64 Mpx, counted as 64 * 2^20.
 pub const MAX_PIXELS: u64 = 64 * 1024 * 1024;
+
+/// The most memory one decode may need at its peak, by the estimates of the
+/// `*_decode_bytes` functions: 256 MiB. A phone-sized host has a few GB; two
+/// decodes at the cap ([`DECODE_PERMITS`]) are half of one.
+pub const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How many pictures decode at once in the process.
+pub const DECODE_PERMITS: usize = 2;
+
+/// How long a stream waits for one of them before it ends with `busy`
+/// (retryable: the app asks again when the grid scrolls back).
+const DECODE_PATIENCE: Duration = Duration::from_secs(10);
+
+/// How often a waiting stream looks at its cancel flag.
+const DECODE_POLL: Duration = Duration::from_millis(100);
+
+/// The EXIF, ICC and XMP chunks of a WebP are sized by the file's own header (a
+/// 100-byte file can announce 4 GiB) and `image-webp` allocates what they say:
+/// it honours this limit and fails instead. The orientation is a few dozen bytes.
+const WEBP_METADATA_LIMIT: usize = 1024 * 1024;
 
 pub const MIN_MAX_PX: i64 = 32;
 pub const MAX_MAX_PX: i64 = 1024;
@@ -39,7 +69,7 @@ pub(crate) const SPEC: MethodSpec = MethodSpec {
     name: "thumb",
     kind: MethodKind::Stream,
     class: Class::Bulk,
-    summary: "A JPEG thumbnail of a picture (JPEG, PNG, WebP, GIF first frame; no HEIC, SVG or RAW). The longest edge is `max_px` (32..1024, default 256), never enlarged; `quality` is 30..90 (default 70); EXIF orientation is applied. First MSG {width,height,size,mtime_ms,format:\"jpeg\",source_size}: width and height of the thumbnail, size, mtime_ms and source_size of the source file. Then DATA (the JPEG bytes), then END {}. `if_match` differing from the file ends with error `changed` before anything is decoded. Errors not_found, permission, not_a_file, too_large (source over 64 MiB or 64 Mpx), changed, failed with a message starting `unsupported image` for anything that cannot be decoded. Nothing is cached or written on the host.",
+    summary: "A JPEG thumbnail of a picture (JPEG, PNG, WebP, GIF first frame; no HEIC, SVG or RAW). The longest edge is `max_px` (32..1024, default 256), never enlarged; `quality` is 30..90 (default 70); EXIF orientation is applied. First MSG {width,height,size,mtime_ms,format:\"jpeg\",source_size}: width and height of the thumbnail, size, mtime_ms and source_size of the source file. Then DATA (the JPEG bytes), then END {}. `if_match` differing from the file ends with error `changed` before anything is decoded. Errors not_found, permission, not_a_file, too_large (source over 64 MiB or 64 Mpx, or a decode that the header says needs over 256 MiB), changed, busy (retryable: two other pictures were still being decoded after 10 s; only two decode at once), failed with a message starting `unsupported image` for anything that cannot be decoded. Nothing is cached or written on the host.",
     args_example: r#"{"path":"~/Pictures/cat.jpg","max_px":256,"quality":70,"if_match":{"size":2400000,"mtime_ms":1760000000000}}"#,
     result_example: r#"{}"#,
 };
@@ -88,6 +118,18 @@ pub(crate) fn thumb(ctx: &StreamCtx) -> Result<Value, WireError> {
     }
     let max_px = u32::try_from(args.max_px.clamp(MIN_MAX_PX, MAX_MAX_PX)).unwrap_or(256);
     let quality = u8::try_from(args.quality.clamp(MIN_QUALITY, MAX_QUALITY)).unwrap_or(70);
+    // A picture is decoded by at most `DECODE_PERMITS` streams at once; a
+    // waiting stream is not decoding, holds no buffer and stays cancellable.
+    let _permit = match DECODES.acquire(DECODE_PATIENCE, DECODE_POLL, &|| ctx.cancelled()) {
+        Ok(permit) => permit,
+        Err(NoPermit::Cancelled) => return Err(cancelled()),
+        Err(NoPermit::Busy) => {
+            return Err(WireError::new(
+                ErrorCode::Busy,
+                "other pictures are being decoded on this machine; try again in a moment",
+            ));
+        }
+    };
     let made = make(file, &args.path, max_px, quality, &|| ctx.cancelled())?;
     if ctx.cancelled() {
         return Err(cancelled());
@@ -102,6 +144,78 @@ pub(crate) fn thumb(ctx: &StreamCtx) -> Result<Value, WireError> {
     }))?;
     ctx.send_data(&made.jpeg)?;
     Ok(json!({}))
+}
+
+// ---- the decode gate ----
+
+static DECODES: Gate = Gate::new(DECODE_PERMITS);
+
+/// A counting semaphore (a `Mutex` and a `Condvar`: no async runtime here).
+#[derive(Debug)]
+pub(crate) struct Gate {
+    free: Mutex<usize>,
+    freed: Condvar,
+}
+
+/// Why [`Gate::acquire`] gave no permit.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum NoPermit {
+    /// The caller's cancel flag was set while it waited.
+    Cancelled,
+    /// None came free within the patience.
+    Busy,
+}
+
+/// One of the gate's permits; returned when dropped, whether the holder
+/// finished, failed, was cancelled or panicked.
+#[derive(Debug)]
+pub(crate) struct Permit<'a>(&'a Gate);
+
+impl Gate {
+    pub(crate) const fn new(permits: usize) -> Self {
+        Self {
+            free: Mutex::new(permits),
+            freed: Condvar::new(),
+        }
+    }
+
+    /// Takes a permit, waiting up to `patience` for one and looking at
+    /// `cancelled` at least every `poll` (a reset stream cannot wake a
+    /// condition variable, so the wait is sliced).
+    pub(crate) fn acquire(
+        &self,
+        patience: Duration,
+        poll: Duration,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Permit<'_>, NoPermit> {
+        let deadline = Instant::now().checked_add(patience);
+        let mut free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if cancelled() {
+                return Err(NoPermit::Cancelled);
+            }
+            if *free > 0 {
+                *free -= 1;
+                return Ok(Permit(self));
+            }
+            let left = deadline.map_or(poll, |d| d.saturating_duration_since(Instant::now()));
+            if left.is_zero() {
+                return Err(NoPermit::Busy);
+            }
+            free = self
+                .freed
+                .wait_timeout(free, left.min(poll))
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        *self.0.free.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        self.0.freed.notify_one();
+    }
 }
 
 fn too_large(given: &str, why: &str) -> WireError {
@@ -266,6 +380,80 @@ fn check_pixels(w: u32, h: u32) -> Res<()> {
         )));
     }
     Ok(())
+}
+
+fn check_decode_bytes(bytes: u64) -> Res<()> {
+    if bytes > MAX_DECODE_BYTES {
+        return Err(Fail::TooLarge(format!(
+            "would need about {} MiB to decode, over the {} MiB limit",
+            bytes.div_ceil(1024 * 1024),
+            MAX_DECODE_BYTES / 1024 / 1024
+        )));
+    }
+    Ok(())
+}
+
+// What a decode needs at its peak, counted in bytes from the header. They are
+// worst cases where the header says no more, and cover what the decoder holds
+// besides the output; the thumbnail itself is at most 1024 x 1024 x 3.
+
+/// JPEG: the decoded planes (`components` bytes a pixel at the decoded size
+/// `sw` x `sh`) and the interleaved output, twice; a progressive JPEG also keeps
+/// every coefficient of the whole picture (2 bytes per sample). The header does
+/// not give the chroma subsampling, so 4:2:0 files are counted as 4:4:4, which
+/// makes a progressive JPEG over about 44 MP refused where it would just fit.
+pub(crate) fn jpeg_decode_bytes(
+    (w, h): (u32, u32),
+    (sw, sh): (u32, u32),
+    components: u64,
+    progressive: bool,
+) -> u64 {
+    let planes = u64::from(sw) * u64::from(sh) * components;
+    let coefficients = if progressive {
+        u64::from(w) * u64::from(h) * 2 * components
+    } else {
+        0
+    };
+    coefficients + 2 * planes
+}
+
+/// PNG decoded row by row: three rows (the raw row, the previous one, the
+/// unfiltered one); the area average is the thumbnail's size.
+pub(crate) fn png_rows_decode_bytes(w: u32, channels: u64) -> u64 {
+    3 * u64::from(w) * channels
+}
+
+/// Interlaced PNG: the whole picture (`channels` bytes a pixel, at most 4: the
+/// peak) and the three rows of the unfilter step, which only matter for a
+/// picture a few rows tall. An RGBA picture within a few thousand pixels of
+/// 64 MP is therefore just over the cap.
+pub(crate) fn png_interlaced_decode_bytes(w: u32, h: u32, channels: u64) -> u64 {
+    (u64::from(w) * u64::from(h) + 3 * u64::from(w)) * channels
+}
+
+/// WebP: the output buffer (3 or 4 bytes a pixel) and what the decoder holds
+/// next to it: lossless without alpha decodes into a 4-byte RGBA buffer first;
+/// lossy keeps its Y, U and V planes (1.5) and, with alpha, the alpha plane
+/// (3 in all); an animation also has a 4-byte canvas and a 4-byte frame (10).
+pub(crate) fn webp_decode_bytes(w: u32, h: u32, alpha: bool, animated: bool, lossy: bool) -> u64 {
+    let pixels = u64::from(w) * u64::from(h);
+    let output = if alpha { 4 } else { 3 };
+    let extra = if animated {
+        10
+    } else if lossy {
+        3
+    } else if alpha {
+        0
+    } else {
+        4
+    };
+    pixels * (output + extra)
+}
+
+/// GIF: the first frame (RGBA, up to the screen's size) and the canvas it is
+/// put on.
+pub(crate) fn gif_decode_bytes(w: u32, h: u32) -> u64 {
+    u64::from(w) * u64::from(h) * 8
 }
 
 /// The size of the thumbnail of a `w` by `h` picture: the longest edge is
@@ -591,13 +779,19 @@ fn decode_jpeg<R: Read>(reader: R, max_px: u32) -> Res<Decoded> {
         let (a, b) = decoder.scale(ask, ask).map_err(jpeg_fail)?;
         (u32::from(a), u32::from(b))
     };
-    let pixels = decoder.decode().map_err(jpeg_fail)?;
-    let layout = match info.pixel_format {
-        jpeg_decoder::PixelFormat::L8 => Layout::Gray,
-        jpeg_decoder::PixelFormat::RGB24 => Layout::Rgb,
+    let (layout, components) = match info.pixel_format {
+        jpeg_decoder::PixelFormat::L8 => (Layout::Gray, 1),
+        jpeg_decoder::PixelFormat::RGB24 => (Layout::Rgb, 3),
         jpeg_decoder::PixelFormat::L16 => return Err(Fail::Bad("16-bit JPEG".into())),
         jpeg_decoder::PixelFormat::CMYK32 => return Err(Fail::Bad("CMYK JPEG".into())),
     };
+    check_decode_bytes(jpeg_decode_bytes(
+        (w, h),
+        (sw, sh),
+        components,
+        info.coding_process == jpeg_decoder::CodingProcess::DctProgressive,
+    ))?;
+    let pixels = decoder.decode().map_err(jpeg_fail)?;
     let orientation = decoder.exif_data().map_or(1, exif_orientation);
     let (dw, dh) = (dw.min(sw), dh.min(sh));
     let rgb = resize_buffer(layout, &pixels, (sw, sh), (dw, dh))?;
@@ -616,9 +810,7 @@ fn decode_png<R: io::BufRead + Seek>(
     let mut decoder = png::Decoder::new(reader);
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     decoder.set_limits(png::Limits {
-        bytes: usize::try_from(MAX_PIXELS)
-            .unwrap_or(usize::MAX)
-            .saturating_mul(8),
+        bytes: usize::try_from(MAX_DECODE_BYTES).unwrap_or(usize::MAX),
     });
     let mut reader = decoder.read_info().map_err(png_fail)?;
     let (w, h) = {
@@ -643,6 +835,25 @@ fn decode_png<R: io::BufRead + Seek>(
         .as_deref()
         .map_or(1, exif_orientation);
     let (dw, dh) = target_size(w, h, max_px);
+    let channels = layout.channels() as u64;
+    if reader.info().interlaced {
+        // `next_row` of an Adam7 image yields the narrow rows of one pass, not
+        // the picture's rows: decode whole. The buffer is at most 4 bytes a
+        // pixel (RGBA, 8-bit after the transformations), so at most
+        // `MAX_DECODE_BYTES` by the check, and it is the peak.
+        check_decode_bytes(png_interlaced_decode_bytes(w, h, channels))?;
+        let size = reader
+            .output_buffer_size()
+            .ok_or_else(|| Fail::TooLarge("is too large to decode".into()))?;
+        let mut buf = vec![0u8; size];
+        reader.next_frame(&mut buf).map_err(png_fail)?;
+        if cancel() {
+            return Err(Fail::Cancelled);
+        }
+        let rgb = resize_buffer(layout, &buf, (w, h), (dw, dh))?;
+        return Ok((rgb, dw, dh, orientation));
+    }
+    check_decode_bytes(png_rows_decode_bytes(w, channels))?;
     let mut rz = Resizer::new(layout, w, h, dw, dh);
     let mut rows = 0u32;
     while let Some(row) = reader.next_row().map_err(png_fail)? {
@@ -661,13 +872,20 @@ fn decode_webp<R: io::BufRead + Seek>(reader: R, max_px: u32) -> Res<Decoded> {
         other => Fail::Bad(other.to_string()),
     };
     let mut decoder = image_webp::WebPDecoder::new(reader).map_err(webp_fail)?;
+    // Only the metadata chunks honour this limit, and they are the ones whose
+    // size the file announces by itself.
+    decoder.set_memory_limit(WEBP_METADATA_LIMIT);
     let (w, h) = decoder.dimensions();
     check_pixels(w, h)?;
-    let layout = if decoder.has_alpha() {
-        Layout::Rgba
-    } else {
-        Layout::Rgb
-    };
+    let alpha = decoder.has_alpha();
+    let layout = if alpha { Layout::Rgba } else { Layout::Rgb };
+    check_decode_bytes(webp_decode_bytes(
+        w,
+        h,
+        alpha,
+        decoder.is_animated(),
+        decoder.is_lossy(),
+    ))?;
     let size = decoder
         .output_buffer_size()
         .ok_or_else(|| Fail::TooLarge("is too large to decode".into()))?;
@@ -703,6 +921,7 @@ fn decode_gif<R: Read>(reader: R, max_px: u32) -> Res<Decoded> {
     let mut decoder = options.read_info(reader).map_err(gif_fail)?;
     let (w, h) = (u32::from(decoder.width()), u32::from(decoder.height()));
     check_pixels(w, h)?;
+    check_decode_bytes(gif_decode_bytes(w, h))?;
     let frame = decoder
         .read_next_frame()
         .map_err(gif_fail)?
