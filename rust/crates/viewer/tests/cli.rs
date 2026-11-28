@@ -343,12 +343,27 @@ mod session {
 
         // The daemon is this program, run as `herdr-tui keeper-daemon …`.
         let pid = info.pid.expect("a running keeper has a pid");
-        let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).expect("the daemon is alive");
-        let words: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+        // `/proc` where there is one, `ps` where there is not (macOS): the same two
+        // ways the keeper's own pid check reads it.
+        let cmdline = std::fs::read(format!("/proc/{pid}/cmdline"))
+            .ok()
+            .or_else(|| {
+                Command::new("ps")
+                    .args(["-o", "command=", "-p", &pid.to_string()])
+                    .output()
+                    .ok()
+                    .map(|o| o.stdout)
+            })
+            .expect("the daemon is alive");
+        let text = String::from_utf8_lossy(&cmdline).into_owned();
+        let words: Vec<&str> = text
+            .split(|c: char| c == '\0' || c.is_whitespace())
+            .filter(|w| !w.is_empty())
+            .collect();
         assert!(
-            words[0].ends_with(b"herdr-tui") && words[1] == b"keeper-daemon",
-            "{:?}",
-            String::from_utf8_lossy(&cmdline)
+            words.first().is_some_and(|w| w.ends_with("herdr-tui"))
+                && words.get(1) == Some(&"keeper-daemon"),
+            "{text:?}"
         );
 
         let ls = m.command(&["ls"]).output().expect("run ls");

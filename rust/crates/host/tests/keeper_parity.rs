@@ -747,6 +747,7 @@ fn no_pane_is_opened_when_the_person_or_the_machine_says_no() {
 
 // -- file descriptors and the umask ------------------------------------------------
 
+#[cfg(target_os = "linux")]
 fn fds_the_agent_saw(m: &Machine) -> Vec<i64> {
     let path = m.root().join("fds.json");
     wait_for("the agent to report its descriptors", || path.exists());
@@ -754,6 +755,7 @@ fn fds_the_agent_saw(m: &Machine) -> Vec<i64> {
     serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("a JSON list")
 }
 
+#[cfg(target_os = "linux")]
 fn open_fds_of(pid: i64) -> Vec<i64> {
     let mut fds: Vec<i64> = std::fs::read_dir(format!("/proc/{pid}/fd"))
         .expect("the process is alive")
@@ -763,6 +765,10 @@ fn open_fds_of(pid: i64) -> Vec<i64> {
     fds
 }
 
+// Linux only: it reads `/proc/<pid>/fd`, which macOS does not have. The macOS
+// descriptor closing is therefore not run by any test (launchd and the Mac
+// paths are unverified, as the docs say).
+#[cfg(target_os = "linux")]
 #[test]
 fn the_agent_gets_only_stdin_stdout_and_stderr_by_either_path() {
     let mut m = Machine::new();
