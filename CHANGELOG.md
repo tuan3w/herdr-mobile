@@ -4,46 +4,92 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [Unreleased]
+## [0.1.72] - 2026-11-28
 
-- Each session started from the phone is now its own workspace in herdr, named
-  `<agent> · <folder>` (for example `omp · herdr-mobile`). Before, they all
-  shared one workspace called `Phone sessions`, whose tabs carried the same few
-  names and could not be told apart. A session in a linked worktree still opens
-  as a tab in that worktree's workspace; one in a repo's main checkout gets a
-  workspace of its own and never adds a tab to yours.
-- Ending a session from the phone closes its workspace in herdr (its tab, for a
-  worktree). A workspace or tab of yours is never closed.
-- Sessions already in `Phone sessions` stay there, as they were; it is not
-  moved or closed. Not checked on a live herdr desktop yet.
-- On a small phone or with large text, a permission request keeps `Allow once`,
-  `Always allow` and `Reject` on screen: only the command and the diff scroll,
-  and they open scrolled to the command being approved. Before, the buttons
-  could sit below the fold with nothing saying so.
+[![Watch what's new · 5 changes · 0:21 · 10.1 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.72/0.1.72-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.72/0.1.72-whats-new.mp4)
+
+### Opening an agent is instant
+
+Tap an agent on the board and its screen is already there: a terminal shows
+what it showed when you last looked, marked `stale · 12s`, and the live screen
+replaces it a moment later. Before, it opened empty and the text appeared a
+round trip later.
+
+> [!TIP]
+> Try it: on the board, tap an agent that needs you.
+
+- The read starts as your finger touches the card, not when you lift it, and a
+  scroll that begins on a card cancels it. The two agents that need you first
+  are kept warm while the board is in front; nothing is read in the
+  background.
+- The screen simply appears, with no fade or slide; Back slides out as before.
+  Swiping to the next agent slides the new screen in without fading, so the
+  old text no longer shows through it.
+- The chat of an agent in a terminal starts reading its log when you touch it
+  and shows `Connecting…` until it arrives, then fills in at once. Before, it
+  said `Nothing said yet` while it was still loading.
+- A notification that opens a session no longer says `That agent is no longer
+  on …` while the machine is still listing its agents.
+- On a modelled 80 ms link a terminal's live screen lands about 30 ms after
+  the tap instead of 80 ms, and the first frame has text. Not measured on a
+  phone: how it feels, and real link latency.
+
+![An agent's terminal in the light theme opens on its last saved screen, dimmed and marked stale · 13s, until the live screen arrives.](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.72/0.1.72-instant-open.png)
+
+### A terminal you can read
+
+A dark terminal keeps its real colours, and text that would be hard to read is
+lightened as it is drawn: a black status line, dim text, the greys from 232 to
+255 and black on black were nearly invisible.
+
+- A light terminal is slightly darker where its dim text was faint.
+- Pressed key caps and the faint secondary text in Files are easier to read.
+- Not checked on a phone: a real terminal with a lot of colour.
+
+![A dark terminal after the fix: every ANSI colour, the black status line, dim text and the grey ramp from 232 to 255 are all readable.](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.72/0.1.72-readable-terminal.png)
+
+### Answers stay in reach, and every session has its place
+
+On a small phone or with large text, a permission request keeps `Allow once`,
+`Always allow` and `Reject` on screen: only the command and the diff scroll,
+and they open scrolled to the command being approved. Before, the buttons
+could sit below the fold with nothing saying so.
+
 - The board no longer jumps when a machine drops or comes back: the line that
   names it opens and closes in its own height instead of pushing every card
   down at once.
 - In Files search, a long name is cut around what matched and the match is
-  marked, so the word you typed stays visible in the middle of a long name.
+  marked, so the word you typed stays visible in a long name.
 - A machine whose host key changed offers `Remove` instead of a `Retry` that
   could never work, and the key on the add-machine screen can be selected and
   copied.
-- Replying to an agent from the board while the machine is offline now says
-  `Offline · reconnecting` and `Not connected` and keeps what you typed, as the
-  chat does. A message to several agents that fails for some gives your text
-  back.
-- Every sheet opens at the same minimum height, so rows arriving no longer move
-  its top edge.
+- Replying to an agent from the board while the machine is offline says
+  `Offline · reconnecting` and `Not connected` and keeps what you typed, as
+  the chat does. A message to several agents that fails for some gives your
+  text back.
+- Every sheet opens at the same minimum height, so rows arriving no longer
+  move its top edge.
+- In herdr on your computer, each session you start from the phone is its own
+  workspace, named `<agent> · <folder>`. Before, they shared one workspace
+  called `Phone sessions` whose tabs could not be told apart. A session in a
+  linked worktree still opens as a tab in that worktree's workspace, ending a
+  session closes the workspace it made (never one of yours), and sessions
+  already in `Phone sessions` stay there. Not checked on a live herdr yet.
 - Hardware keyboards can press any button or row with Enter or Space; a focus
   ring shows only for keyboard focus.
-- Easier to read: pressed key caps, the Files tertiary text, and black in a
-  dark terminal. An `Undo` toast keeps its remaining time while the app is in
-  the background. The status mark and counts finish their animation when they
-  change twice in a row instead of starting over. Copying code fades to the
-  check mark. The subagent list no longer checks the machine every 4 s while
-  the app is in the background.
-- Words: `Read earlier messages`, `No subagents yet.`, `Nothing made yet`, and
-  empty states without a decorative icon.
+
+![A permission request to edit a file: the command and diff scroll while Allow once, Always allow and Reject stay in view above the message box.](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.72/0.1.72-answers-in-reach.png)
+
+**Fixed**
+
+- An `Undo` toast keeps its remaining time while the app is in the background.
+- The status mark and counts finish their animation when they change twice in
+  a row instead of starting over.
+- The subagent list no longer checks the machine every 4 s while the app is in
+  the background.
+- Copying code fades to the check mark; `Read earlier messages`,
+  `No subagents yet.` and `Nothing made yet` replace vaguer words, and empty
+  states lose a decorative icon.
 
 ## [0.1.71] - 2026-11-28
 
